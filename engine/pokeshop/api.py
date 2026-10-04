@@ -565,10 +565,10 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         reserve = svc.mandate.cash_reserve_chf if svc.mandate else (svc.stoploss_config.cash.reserve_chf if svc.stoploss_config else Decimal("1600"))
         blocked_ext = set(status.no_reorder_extensions) if status else set()
         blocked_prod = set(status.blocked_products) if status else set()
-        if status is not None and status.purchases_and_ads_frozen:
-            blocked_ext |= {c.extension for c in body.candidates}
+        # Stop-loss trésorerie : plus aucun achat => budget utilisable nul (motif CASH_RESERVE).
+        budget = Decimal("0") if status is not None and status.purchases_and_ads_frozen else body.budget_available
         proposal = propose_reorder(
-            body.candidates, budget_available=body.budget_available,
+            body.candidates, budget_available=budget,
             stock_budget_total=body.stock_budget_total or svc.rules.stock.stock_budget_chf, now=now,
             extension_exposure=body.extension_exposure, extension_cap_pct=svc.rules.stock.extension_budget_cap,
             cap_exceptions=body.cap_exceptions, max_age=svc.rules.stock.max_age, rules_version=svc.rules.rules_version,
