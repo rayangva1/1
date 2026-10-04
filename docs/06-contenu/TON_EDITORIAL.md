@@ -13,7 +13,7 @@
 | **Calme** | Aucune fausse urgence, aucune pression, aucune comparaison agressive | On peut lire le message demain sans qu'il soit devenu faux |
 | **Honnête** | On dit ce qu'on a, ce qu'on n'a pas, et ce qu'on ne sait pas encore | « Date non confirmée » plutôt qu'une date supposée |
 
-Voix : on vouvoie, on parle au nom de la boutique (« nous »), phrases courtes (20 mots en moyenne), une idée par phrase, verbes actifs. Français de Suisse romande : « septante », « nonante » à l'oral si naturel ; à l'écrit, chiffres. Montants en CHF avec point décimal comme sur le site (« 49.90 CHF »), dates au format « 6.11.2026 » ou « 6 novembre 2026 ». Espaces insécables avant « : ; ? ! » et dans « » (contrôlé automatiquement sur les pages).
+Voix : on vouvoie, on parle au nom de la boutique (« nous »), phrases courtes (20 mots en moyenne), une idée par phrase, verbes actifs. Français de Suisse romande : « septante », « nonante » à l'oral si naturel ; à l'écrit, chiffres. Montants en CHF, devise devant et point décimal comme sur le site et dans les emails de la DA (« CHF 49.90 »), dates au format « 6.11.2026 » ou « 6 novembre 2026 ». Espaces insécables avant « : ; ? ! » et dans « » (contrôlé automatiquement sur les pages).
 
 ## 2. Mots et formulations à éviter
 
