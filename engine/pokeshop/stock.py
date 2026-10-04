@@ -1,0 +1,648 @@
+"""Stock vendable, précommandes, péremption, réservations et propositions de réassort (BP §5).
+
+Principes appliqués :
+
+* Un stock fournisseur ne devient jamais un stock boutique : seule la quantité locale
+  disponible (après réservations, dommages et sécurité) est promise comme expédiable.
+* Précommande = allocation **ferme** confirmée − précommandes engagées − réserve.
+* Donnée amont > 24 h : bloque achats et nouvelles promesses, pas la vente du stock local.
+* Offres pouvant partager le même stock amont : jamais additionnées.
+* Le réassort produit une **proposition à valider**, jamais une commande.
+
+Note d'architecture (BP §6) : Shopify reste l'autorité des réservations de vente. Le
+:class:`StockRegistry` est le modèle du service (mouvements, rapprochements, tests de
+concurrence) ; il applique le même contrôle compare-and-set que ``inventorySetQuantities``.
+"""
+
+from __future__ import annotations
+
+import threading
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
+
+from .errors import ConcurrencyError, InsufficientStockError, InvalidStateError, ReservationNotFoundError, StockError
+from .models import (
+    AvailabilityPromise,
+    AvailabilityStatus,
+    MovementKind,
+    PromiseKind,
+    ReorderCandidate,
+    ReorderLine,
+    ReorderProposal,
+    ReorderSkip,
+    Reservation,
+    ReservationStatus,
+    StockLevel,
+    StockMovement,
+    SupplierOffer,
+    canonical_hash,
+)
+
+__all__ = [
+    "DEFAULT_MAX_AGE",
+    "sellable_local",
+    "preorder_quota",
+    "is_stale",
+    "pooled_quantity",
+    "availability_promise",
+    "StockRegistry",
+    "reorder_point",
+    "propose_reorder",
+]
+
+DEFAULT_MAX_AGE = timedelta(hours=24)
+DEFAULT_FUTURE_SKEW = timedelta(minutes=5)
+ZERO = Decimal("0")
+CENT = Decimal("0.01")
+
+
+def _check_count(value: int, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{name} doit être un entier")
+    if value < 0:
+        raise StockError(f"{name} négatif ({value})")
+    return value
+
+
+def sellable_local(on_hand: int, reserved: int, damaged: int, safety: int) -> int:
+    """Stock local vendable = physique − réservé − endommagé − sécurité, jamais < 0 (BP §5)."""
+    total = _check_count(on_hand, "on_hand")
+    out = _check_count(reserved, "reserved") + _check_count(damaged, "damaged") + _check_count(safety, "safety")
+    return max(0, total - out)
+
+
+def preorder_quota(firm_allocation: int, committed_preorders: int, safety: int) -> int:
+    """Quota de précommande = allocation ferme − précommandes engagées − réserve, jamais < 0."""
+    alloc = _check_count(firm_allocation, "firm_allocation")
+    used = _check_count(committed_preorders, "committed_preorders") + _check_count(safety, "safety")
+    return max(0, alloc - used)
+
+
+def _require_aware(ts: datetime, name: str) -> None:
+    if ts.tzinfo is None or ts.utcoffset() is None:
+        raise StockError(f"{name} doit porter un fuseau horaire (datetime naïf refusé)")
+
+
+def is_stale(
+    source_ts: datetime,
+    now: datetime,
+    max_age: timedelta = DEFAULT_MAX_AGE,
+    *,
+    future_skew: timedelta = DEFAULT_FUTURE_SKEW,
+) -> bool:
+    """Vrai si la donnée amont a **plus** de ``max_age`` (24 h par défaut ; exactement 24 h = fraîche).
+
+    Un horodatage dans le futur au-delà de ``future_skew`` (5 min) est jugé non fiable,
+    donc périmé. Les datetimes naïfs sont refusés.
+    """
+    _require_aware(source_ts, "source_ts")
+    _require_aware(now, "now")
+    if max_age <= timedelta(0):
+        raise StockError("max_age doit être positif")
+    age = now - source_ts
+    if age < -future_skew:
+        return True
+    return age > max_age
+
+
+def _upstream_qty(offer: SupplierOffer, field: str) -> int:
+    value = getattr(offer, field)
+    return 0 if value is None else int(value)
+
+
+def pooled_quantity(offers: Sequence[SupplierOffer], field: str = "allocation_qty") -> int:
+    """Quantité amont totale **sans double comptage** des stocks partagés.
+
+    Offres d'un même ``stock_pool_id`` : on retient le maximum (même stock). Pools
+    explicitement distincts : additionnés. Offres sans pool (stock potentiellement partagé
+    avec n'importe quelle autre) : jamais additionnées — résultat = max(somme des pools
+    déclarés, plus grande offre sans pool).
+    """
+    if field not in ("allocation_qty", "available_qty"):
+        raise StockError(f"champ non agrégeable : {field}")
+    pools: dict[str, int] = {}
+    unknown = 0
+    for offer in offers:
+        qty = _upstream_qty(offer, field)
+        if offer.stock_pool_id is None:
+            unknown = max(unknown, qty)
+        else:
+            pools[offer.stock_pool_id] = max(pools.get(offer.stock_pool_id, 0), qty)
+    return max(sum(pools.values()), unknown)
+
+
+def _offer_label(offer: SupplierOffer) -> str:
+    return f"{offer.supplier_id}/{offer.supplier_sku}"
+
+
+def availability_promise(
+    *,
+    local_sellable: int,
+    offers: Sequence[SupplierOffer] = (),
+    now: datetime,
+    committed_preorders: int = 0,
+    preorder_safety: int = 0,
+    preorders_enabled: bool = False,
+    max_age: timedelta = DEFAULT_MAX_AGE,
+) -> AvailabilityPromise:
+    """Calcule la promesse de disponibilité d'un produit (BP §5).
+
+    * Stock local vendable > 0 -> ``LOCAL_STOCK`` (seule promesse « expédié depuis Genève »).
+    * Sinon, précommande seulement si activée et couverte par une allocation ferme
+      d'offres **fraîches** (pools non additionnés) -> ``PREORDER``.
+    * Sinon ``UNAVAILABLE``. Le stock amont non alloué ne donne qu'un ``restock_signal``
+      interne ; une offre périmée est exclue (motif ``STALE_OFFER``).
+    """
+    local = _check_count(local_sellable, "local_sellable")
+    fresh: list[SupplierOffer] = []
+    excluded: list[str] = []
+    reasons: list[str] = []
+    for offer in offers:
+        if is_stale(offer.source_ts, now, max_age):
+            excluded.append(_offer_label(offer))
+            if "STALE_OFFER" not in reasons:
+                reasons.append("STALE_OFFER")
+        else:
+            fresh.append(offer)
+    firm = pooled_quantity(fresh, "allocation_qty")
+    unallocated = pooled_quantity(
+        [o for o in fresh if o.availability_status in (AvailabilityStatus.IN_STOCK, AvailabilityStatus.LOW_STOCK)],
+        "available_qty",
+    )
+    restock_signal = unallocated > 0 or firm > 0
+    preorder_qty = preorder_quota(firm, committed_preorders, preorder_safety) if preorders_enabled else 0
+    if local > 0:
+        kind = PromiseKind.LOCAL_STOCK
+    elif preorder_qty > 0:
+        kind = PromiseKind.PREORDER
+    else:
+        kind = PromiseKind.UNAVAILABLE
+        if unallocated > 0:
+            reasons.append("UPSTREAM_STOCK_NOT_PROMISED")
+        if firm > 0 and not preorders_enabled:
+            reasons.append("PREORDERS_DISABLED")
+        elif firm > 0:
+            reasons.append("PREORDER_QUOTA_EXHAUSTED")
+    return AvailabilityPromise(
+        kind=kind,
+        local_qty=local,
+        preorder_qty=preorder_qty,
+        firm_allocation=firm,
+        restock_signal=restock_signal,
+        reasons=tuple(reasons),
+        excluded_offers=tuple(excluded),
+    )
+
+
+# ------------------------------------------------------------------ registry
+
+
+@dataclass
+class _Slot:
+    on_hand: int = 0
+    reserved: int = 0
+    damaged: int = 0
+    safety: int = 0
+    version: int = 0
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+class StockRegistry:
+    """Registre en mémoire du stock local, thread-safe, avec contrôle compare-and-set.
+
+    Chaque mutation incrémente la ``version`` du SKU. Passer ``expected_version`` (lue via
+    :meth:`level`) fait échouer l'opération avec :class:`ConcurrencyError` si un autre
+    acteur a modifié le SKU entre-temps : cas « dernière unité achetée simultanément ».
+    Les réservations sont idempotentes par (commande, SKU) et les remboursements par
+    ``refund_id`` : une reprise ne double jamais une écriture.
+    """
+
+    def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
+        self._clock = clock or _utcnow
+        self._lock = threading.RLock()
+        self._slots: dict[str, _Slot] = {}
+        self._reservations: dict[str, Reservation] = {}
+        self._by_order: dict[tuple[str, str], str] = {}
+        self._refunds: set[str] = set()
+        self._movements: list[StockMovement] = []
+        self._seq = 0
+
+    # -- lecture ------------------------------------------------------------
+    def level(self, sku: str) -> StockLevel:
+        """Photo courante du SKU (zéros et version 0 si inconnu)."""
+        with self._lock:
+            slot = self._slots.get(sku, _Slot())
+            return StockLevel(
+                sku=sku,
+                on_hand=slot.on_hand,
+                reserved=slot.reserved,
+                damaged=slot.damaged,
+                safety=slot.safety,
+                version=slot.version,
+            )
+
+    def sellable(self, sku: str) -> int:
+        """Quantité vendable locale du SKU."""
+        return self.level(sku).sellable
+
+    def reservation(self, reservation_id: str) -> Reservation:
+        """Réservation par identifiant (ReservationNotFoundError si inconnue)."""
+        with self._lock:
+            try:
+                return self._reservations[reservation_id]
+            except KeyError:
+                raise ReservationNotFoundError(f"Réservation inconnue : {reservation_id}") from None
+
+    def reservations(self, order_id: str | None = None) -> tuple[Reservation, ...]:
+        """Toutes les réservations (ou celles d'une commande), dans l'ordre de création."""
+        with self._lock:
+            items = list(self._reservations.values())
+        return tuple(r for r in items if order_id is None or r.order_id == order_id)
+
+    def movements(self, sku: str | None = None) -> tuple[StockMovement, ...]:
+        """Journal append-only des mouvements (filtré par SKU si fourni)."""
+        with self._lock:
+            return tuple(m for m in self._movements if sku is None or m.sku == sku)
+
+    # -- interne ------------------------------------------------------------
+    def _slot(self, sku: str, expected_version: int | None) -> _Slot:
+        if not sku:
+            raise StockError("SKU vide")
+        slot = self._slots.setdefault(sku, _Slot())
+        if expected_version is not None and expected_version != slot.version:
+            raise ConcurrencyError(f"{sku} : version attendue {expected_version}, courante {slot.version}")
+        return slot
+
+    def _log(self, sku: str, slot: _Slot, kind: MovementKind, qty: int, ref: str, at: datetime) -> None:
+        slot.version += 1
+        self._seq += 1
+        self._movements.append(
+            StockMovement(seq=self._seq, sku=sku, kind=kind, qty=qty, ref=ref, at=at, version_after=slot.version)
+        )
+
+    def _now(self, at: datetime | None) -> datetime:
+        ts = at or self._clock()
+        _require_aware(ts, "at")
+        return ts
+
+    @staticmethod
+    def _positive(qty: int) -> int:
+        _check_count(qty, "qty")
+        if qty == 0:
+            raise StockError("quantité nulle")
+        return qty
+
+    # -- mutations ----------------------------------------------------------
+    def receive(self, sku: str, qty: int, ref: str, *, expected_version: int | None = None, at: datetime | None = None) -> StockLevel:
+        """Entrée en stock local (réception contrôlée physiquement)."""
+        self._positive(qty)
+        with self._lock:
+            now = self._now(at)
+            slot = self._slot(sku, expected_version)
+            slot.on_hand += qty
+            self._log(sku, slot, MovementKind.RECEIPT, qty, ref, now)
+            return self.level(sku)
+
+    def set_safety(self, sku: str, qty: int, *, ref: str = "", expected_version: int | None = None, at: datetime | None = None) -> StockLevel:
+        """Fixe le stock de sécurité du SKU."""
+        _check_count(qty, "safety")
+        with self._lock:
+            now = self._now(at)
+            slot = self._slot(sku, expected_version)
+            slot.safety = qty
+            self._log(sku, slot, MovementKind.SET_SAFETY, qty, ref, now)
+            return self.level(sku)
+
+    def reserve(
+        self, sku: str, qty: int, order_id: str, *, expected_version: int | None = None, at: datetime | None = None
+    ) -> Reservation:
+        """Réserve ``qty`` unités pour une commande payée (atomique).
+
+        Idempotent : une réservation ACTIVE/FULFILLED existante pour (order_id, sku) avec la
+        même quantité est renvoyée telle quelle. InsufficientStockError si vendable < qty.
+        """
+        self._positive(qty)
+        if not order_id:
+            raise StockError("order_id vide")
+        with self._lock:
+            now = self._now(at)
+            existing_id = self._by_order.get((order_id, sku))
+            if existing_id is not None:
+                existing = self._reservations[existing_id]
+                if existing.status is not ReservationStatus.CANCELLED:
+                    if existing.qty != qty:
+                        raise InvalidStateError(
+                            f"Commande {order_id} : réservation {existing_id} existante avec une autre quantité"
+                        )
+                    return existing
+            slot = self._slot(sku, expected_version)
+            available = max(0, slot.on_hand - slot.reserved - slot.damaged - slot.safety)
+            if available < qty:
+                raise InsufficientStockError(f"{sku} : vendable {available} < demandé {qty}")
+            slot.reserved += qty
+            res_id = f"RES-{len(self._reservations) + 1:06d}"
+            reservation = Reservation(
+                reservation_id=res_id,
+                sku=sku,
+                order_id=order_id,
+                qty=qty,
+                status=ReservationStatus.ACTIVE,
+                created_at=now,
+                updated_at=now,
+            )
+            self._reservations[res_id] = reservation
+            self._by_order[(order_id, sku)] = res_id
+            self._log(sku, slot, MovementKind.RESERVE, qty, f"{order_id}:{res_id}", now)
+            return reservation
+
+    def cancel(self, reservation_id: str, *, at: datetime | None = None) -> Reservation:
+        """Annule une réservation active et libère le stock (idempotent si déjà annulée)."""
+        with self._lock:
+            now = self._now(at)
+            res = self.reservation(reservation_id)
+            if res.status is ReservationStatus.CANCELLED:
+                return res
+            if res.status is ReservationStatus.FULFILLED:
+                raise InvalidStateError(f"{reservation_id} déjà expédiée : utiliser refund()")
+            slot = self._slot(res.sku, None)
+            slot.reserved -= res.qty
+            updated = res.replace(status=ReservationStatus.CANCELLED, updated_at=now)
+            self._reservations[reservation_id] = updated
+            self._log(res.sku, slot, MovementKind.CANCEL, res.qty, f"{res.order_id}:{reservation_id}", now)
+            return updated
+
+    def fulfill(self, reservation_id: str, *, at: datetime | None = None) -> Reservation:
+        """Sortie physique (colis remis au transporteur) : physique et réservé diminuent."""
+        with self._lock:
+            now = self._now(at)
+            res = self.reservation(reservation_id)
+            if res.status is ReservationStatus.FULFILLED:
+                return res
+            if res.status is ReservationStatus.CANCELLED:
+                raise InvalidStateError(f"{reservation_id} annulée : expédition impossible")
+            slot = self._slot(res.sku, None)
+            slot.reserved -= res.qty
+            slot.on_hand -= res.qty
+            updated = res.replace(status=ReservationStatus.FULFILLED, updated_at=now)
+            self._reservations[reservation_id] = updated
+            self._log(res.sku, slot, MovementKind.FULFILL, res.qty, f"{res.order_id}:{reservation_id}", now)
+            return updated
+
+    def refund(
+        self,
+        reservation_id: str,
+        refund_id: str,
+        qty: int | None = None,
+        *,
+        returned: bool,
+        damaged: bool = False,
+        at: datetime | None = None,
+    ) -> Reservation:
+        """Remboursement (idempotent par ``refund_id``).
+
+        * Réservation ACTIVE (non expédiée) : remboursement total = annulation (stock libéré).
+        * FULFILLED : ``returned=True`` remet en stock ; ``damaged=True`` le compte en
+          endommagé (non vendable) ; ``returned=False`` (colis perdu, geste) ne touche pas au stock.
+        """
+        if not refund_id:
+            raise StockError("refund_id vide")
+        if damaged and not returned:
+            raise StockError("un article endommagé doit être retourné pour être compté")
+        with self._lock:
+            now = self._now(at)
+            res = self.reservation(reservation_id)
+            if refund_id in self._refunds:
+                return res
+            if res.status is ReservationStatus.CANCELLED:
+                raise InvalidStateError(f"{reservation_id} déjà annulée : stock déjà libéré")
+            if res.status is ReservationStatus.ACTIVE:
+                if qty is not None and qty != res.qty:
+                    raise InvalidStateError("remboursement partiel avant expédition : modifier la commande")
+                self._refunds.add(refund_id)
+                return self.cancel(reservation_id, at=now)
+            n = res.qty - res.refunded_qty if qty is None else self._positive(qty)
+            if n <= 0 or res.refunded_qty + n > res.qty:
+                raise InvalidStateError(f"{reservation_id} : remboursement {n} > quantité restante")
+            slot = self._slot(res.sku, None)
+            if returned:
+                slot.on_hand += n
+                if damaged:
+                    slot.damaged += n
+                kind = MovementKind.RETURN_DAMAGED if damaged else MovementKind.RETURN_RESTOCK
+            else:
+                kind = MovementKind.REFUND_NO_RETURN
+            updated = res.replace(refunded_qty=res.refunded_qty + n, updated_at=now)
+            self._reservations[reservation_id] = updated
+            self._refunds.add(refund_id)
+            self._log(res.sku, slot, kind, n, f"{res.order_id}:{refund_id}", now)
+            return updated
+
+    def mark_damaged(
+        self, sku: str, qty: int, ref: str, *, expected_version: int | None = None, at: datetime | None = None
+    ) -> StockLevel:
+        """Déclare des unités disponibles comme endommagées (retirées du vendable)."""
+        self._positive(qty)
+        with self._lock:
+            now = self._now(at)
+            slot = self._slot(sku, expected_version)
+            free = slot.on_hand - slot.reserved - slot.damaged
+            if qty > free:
+                raise InsufficientStockError(f"{sku} : {free} unité(s) non réservée(s) seulement")
+            slot.damaged += qty
+            self._log(sku, slot, MovementKind.MARK_DAMAGED, qty, ref, now)
+            return self.level(sku)
+
+    def write_off_damaged(
+        self, sku: str, qty: int, ref: str, *, expected_version: int | None = None, at: datetime | None = None
+    ) -> StockLevel:
+        """Sort définitivement des unités endommagées (destruction, retour fournisseur)."""
+        self._positive(qty)
+        with self._lock:
+            now = self._now(at)
+            slot = self._slot(sku, expected_version)
+            if qty > slot.damaged:
+                raise InsufficientStockError(f"{sku} : seulement {slot.damaged} unité(s) endommagée(s)")
+            slot.damaged -= qty
+            slot.on_hand -= qty
+            self._log(sku, slot, MovementKind.WRITE_OFF, qty, ref, now)
+            return self.level(sku)
+
+
+# ------------------------------------------------------------------- reorder
+
+
+def reorder_point(avg_daily_sales: Decimal, lead_time_days: int | Decimal, safety: int | Decimal) -> Decimal:
+    """Point de commande = ventes journalières moyennes × délai + sécurité (BP §5)."""
+    if isinstance(avg_daily_sales, float) or isinstance(lead_time_days, float) or isinstance(safety, float):
+        raise TypeError("float interdit : utiliser Decimal ou int")
+    avg = Decimal(avg_daily_sales)
+    lead = Decimal(lead_time_days)
+    sec = Decimal(safety)
+    if avg < 0 or lead < 0 or sec < 0:
+        raise StockError("paramètres de point de commande négatifs")
+    return avg * lead + sec
+
+
+def _round_down_to(qty: int, multiple: int) -> int:
+    return (qty // multiple) * multiple
+
+
+def _round_up_to(qty: int, multiple: int) -> int:
+    return -(-qty // multiple) * multiple
+
+
+_UNAVAILABLE_UPSTREAM = (AvailabilityStatus.OUT_OF_STOCK, AvailabilityStatus.DISCONTINUED)
+
+
+def propose_reorder(
+    candidates: Sequence[ReorderCandidate],
+    *,
+    budget_available: Decimal,
+    stock_budget_total: Decimal,
+    now: datetime,
+    extension_exposure: Mapping[str, Decimal] | None = None,
+    extension_cap_pct: Decimal = Decimal("0.25"),
+    cap_exceptions: Mapping[str, Decimal] | None = None,
+    max_age: timedelta = DEFAULT_MAX_AGE,
+    rules_version: str = "unversioned",
+) -> ReorderProposal:
+    """Prépare un **panier fournisseur à valider** (jamais une commande, BP §5).
+
+    Pour chaque candidat (le plus urgent d'abord : jours de couverture croissants) :
+    offre périmée / statut indisponible ou inconnu / MOQ ou carton inconnu -> écarté ;
+    position (vendable + en commande) > point de commande -> écarté ; sinon quantité =
+    ventes probables (délai + ``coverage_days``) + sécurité − position, relevée au MOQ,
+    arrondie au carton supérieur, puis réduite (par cartons, sans passer sous le MOQ) par la
+    quantité amont connue, le budget disponible et le plafond par extension
+    (``extension_cap_pct`` × ``stock_budget_total``, 25 % par défaut ; exceptions documentées
+    via ``cap_exceptions``). ``extension_exposure`` = valeur au coût déjà engagée par extension.
+    """
+    _require_aware(now, "now")
+    budget = Decimal(budget_available)
+    total_budget = Decimal(stock_budget_total)
+    if budget < 0 or total_budget < 0:
+        raise StockError("budget négatif")
+    if not Decimal(0) < extension_cap_pct <= 1:
+        raise StockError("plafond par extension hors ]0, 1]")
+    keys = [c.product_key for c in candidates]
+    if len(set(keys)) != len(keys):
+        raise StockError("product_key en double dans les candidats")
+    exposure: dict[str, Decimal] = {k: Decimal(v) for k, v in (extension_exposure or {}).items()}
+    exceptions = {k: Decimal(v) for k, v in (cap_exceptions or {}).items()}
+    for ext, pct in exceptions.items():
+        if not Decimal(0) < pct <= 1:
+            raise StockError(f"exception de plafond invalide pour {ext}")
+
+    def cover_days(c: ReorderCandidate) -> Decimal:
+        position = Decimal(c.sellable_qty + c.on_order_qty)
+        return position / c.avg_daily_sales if c.avg_daily_sales > 0 else Decimal("Infinity")
+
+    ordered = sorted(candidates, key=lambda c: (cover_days(c), c.product_key))
+    remaining = budget
+    lines: list[ReorderLine] = []
+    skipped: list[ReorderSkip] = []
+    for c in ordered:
+        offer = c.offer
+        if is_stale(offer.source_ts, now, max_age):
+            skipped.append(ReorderSkip(product_key=c.product_key, reason="STALE_OFFER", detail="offre > 24 h"))
+            continue
+        if offer.availability_status in _UNAVAILABLE_UPSTREAM:
+            skipped.append(ReorderSkip(product_key=c.product_key, reason="UPSTREAM_UNAVAILABLE", detail=offer.availability_status.value))
+            continue
+        missing = [n for n in ("moq", "carton_qty") if getattr(offer, n) is None]
+        if offer.availability_status is AvailabilityStatus.UNKNOWN:
+            missing.append("availability_status")
+        if missing:
+            skipped.append(ReorderSkip(product_key=c.product_key, reason="UNKNOWN_FIELDS", detail=", ".join(missing)))
+            continue
+        if c.unit_cost_chf <= 0:
+            skipped.append(ReorderSkip(product_key=c.product_key, reason="INVALID_COST"))
+            continue
+        assert offer.moq is not None and offer.carton_qty is not None
+        moq, carton = offer.moq, offer.carton_qty
+        position = c.sellable_qty + c.on_order_qty
+        rp = reorder_point(c.avg_daily_sales, c.lead_time_days, c.safety_stock)
+        if Decimal(position) > rp:
+            skipped.append(ReorderSkip(product_key=c.product_key, reason="ABOVE_REORDER_POINT", detail=f"{position} > {rp}"))
+            continue
+        target = c.avg_daily_sales * Decimal(c.lead_time_days + c.coverage_days) + Decimal(c.safety_stock) - Decimal(position)
+        need = int(target.to_integral_value(rounding=ROUND_CEILING))
+        if need <= 0:
+            skipped.append(ReorderSkip(product_key=c.product_key, reason="NO_PROBABLE_SALES"))
+            continue
+        notes: list[str] = []
+        qty = _round_up_to(max(need, moq), carton)
+        if qty > need:
+            notes.append(f"MOQ/carton : {qty} > besoin {need}")
+        upstream = offer.allocation_qty if offer.allocation_qty else offer.available_qty
+        if upstream is None:
+            notes.append("UPSTREAM_QTY_UNKNOWN : quantité amont à confirmer")
+        elif qty > upstream:
+            qty = _round_down_to(upstream, carton)
+            notes.append(f"UPSTREAM_CAPPED à {qty}")
+            if qty < moq or qty == 0:
+                skipped.append(ReorderSkip(product_key=c.product_key, reason="INSUFFICIENT_UPSTREAM", detail=f"amont {upstream}"))
+                continue
+        unit = c.unit_cost_chf
+        cap_pct = exceptions.get(c.extension, extension_cap_pct)
+        ext_room = cap_pct * total_budget - exposure.get(c.extension, ZERO)
+        max_budget = _round_down_to(int((remaining / unit).to_integral_value(rounding=ROUND_FLOOR)), carton) if remaining > 0 else 0
+        max_ext = _round_down_to(int((ext_room / unit).to_integral_value(rounding=ROUND_FLOOR)), carton) if ext_room > 0 else 0
+        limit = min(max_budget, max_ext)
+        if qty > limit:
+            binding = "BUDGET" if max_budget <= max_ext else "EXTENSION_CAP"
+            if limit < moq or limit == 0:
+                skipped.append(ReorderSkip(product_key=c.product_key, reason=binding, detail=f"max {limit} < MOQ {moq}"))
+                continue
+            qty = limit
+            notes.append(f"REDUCED_BY_{binding} à {qty}")
+        if c.extension in exceptions:
+            notes.append(f"EXTENSION_CAP_EXCEPTION {exceptions[c.extension]}")
+        line_cost = (Decimal(qty) * unit).quantize(CENT, rounding=ROUND_HALF_UP)
+        remaining -= line_cost
+        exposure[c.extension] = exposure.get(c.extension, ZERO) + line_cost
+        lines.append(
+            ReorderLine(
+                product_key=c.product_key,
+                extension=c.extension,
+                supplier_id=offer.supplier_id,
+                supplier_sku=offer.supplier_sku,
+                qty=qty,
+                unit_cost_chf=unit,
+                line_cost_chf=line_cost,
+                reorder_point=rp,
+                position=position,
+                notes=tuple(notes),
+            )
+        )
+    total = sum((ln.line_cost_chf for ln in lines), ZERO)
+    inputs_hash = canonical_hash(
+        {
+            "fn": "propose_reorder",
+            "candidates": list(candidates),
+            "budget_available": budget,
+            "stock_budget_total": total_budget,
+            "now": now,
+            "extension_exposure": dict(extension_exposure or {}),
+            "extension_cap_pct": extension_cap_pct,
+            "cap_exceptions": exceptions,
+            "max_age": max_age,
+            "rules_version": rules_version,
+        }
+    )
+    return ReorderProposal(
+        lines=tuple(lines),
+        skipped=tuple(skipped),
+        total_cost_chf=total,
+        budget_available_chf=budget,
+        budget_remaining_chf=remaining,
+        extension_exposure_after=exposure,
+        rules_version=rules_version,
+        inputs_hash=inputs_hash,
+        generated_at=now,
+    )

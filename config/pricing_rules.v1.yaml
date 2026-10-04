@@ -1,0 +1,55 @@
+# Règles de prix et de stock versionnées — {{NOM_BOUTIQUE}}
+# STATUT : hypothèses BP §4-5 (version du 4 octobre 2026), à confirmer par devis
+# (PSP, transporteur, fiduciaire). Aucun de ces montants n'est un tarif contractuel.
+# Montants en chaînes de caractères pour éviter toute conversion flottante.
+# Toute modification => nouveau fichier pricing_rules.vN.yaml + nouveau rules_version.
+
+rules_version: "v1-2026-10-04"
+status: "hypotheses BP §4-5, à confirmer par devis"
+source: "docs/business-plan/business_plan_extrait.txt §4 (formule, exemple) et §5 (table de règles)"
+effective_date: "2026-10-04"
+
+# Deux traitements TVA (BP §4). Le profil actif est un choix de la fiduciaire.
+profiles:
+  EFFECTIVE:
+    description: "Assujetti méthode effective : TVA suisse récupérable, ventes HT, t = 8,1 %"
+    vat_rate_sales: "0.081"   # taux normal CH au 4.10.2026 [S6]
+  NOT_REGISTERED:
+    description: "Non assujetti : TVA non récupérable dans C, t = 0 ; saisir L, R, A TTC"
+    vat_rate_sales: "0"
+
+pricing:
+  payment_pct: "0.025"              # r — hypothèse BP §4, à confirmer par contrat PSP
+  payment_fixed: "0.30"             # b — CHF/commande, hypothèse BP §4
+  logistics_cost: "3.00"            # L — coût NET supporté CHF/commande, hypothèse BP §4
+  after_sales_provision: "1.00"     # R — provision SAV CHF/commande, hypothèse BP §4
+  acquisition_cost: "5.00"          # A — CAC attribué CHF/commande, hypothèse BP §4
+  target_margin: "0.20"             # m — contribution cible 20 % du CA net (BP §5)
+  hard_floor_margin: "0.12"         # plancher dur 12 % (BP §5)
+  hard_floor_chf_per_order: "8.00"  # plancher dur 8 CHF par commande (BP §5)
+  market_review_threshold: "0.10"   # prix rentable > marché +10 % => REVIEW (BP §5)
+  max_daily_price_change: "0.05"    # variation publique > 5 %/jour => validation (BP §5)
+  price_anomaly_factor: "10"        # ×10 / ÷10 => quarantaine (BP §13)
+  # Règle petits produits (BP §5 « règles adaptées aux petits produits ») — hypothèse moteur :
+  # coût rendu ≤ seuil => frais par commande (b, L, R, A) exclus du prix unitaire ;
+  # le plancher 12 % / 8 CHF est contrôlé sur le panier complet. Seuil à valider.
+  small_product_max_cost: "15.00"
+  # Grille d'arrondi retail vers le haut (BP §4-5 : arrondir puis revérifier la marge).
+  # Reproduit l'exemple BP 208,79 -> 209,90.
+  rounding_tiers:
+    - min_price: "0"
+      step: "1.00"
+      endings: ["0.50", "0.90"]
+    - min_price: "10"
+      step: "1.00"
+      endings: ["0.90"]
+    - min_price: "100"
+      step: "10.00"
+      endings: ["4.90", "9.90"]
+
+stock:
+  staleness_hours: 24               # donnée amont > 24 h => achats/promesses bloqués (BP §5)
+  extension_budget_cap: "0.25"      # ≤ 25 % du budget stock par extension (BP §1)
+  stock_budget_chf: "3000"          # budget stock pilote rendu Suisse (BP §3)
+  reorder_coverage_days: 14         # ventes probables couvertes après délai — hypothèse moteur
+  future_skew_minutes: 5            # tolérance d'horloge sur les horodatages amont
