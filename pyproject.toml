@@ -1,0 +1,15 @@
+[project]
+name = "pokeshop"
+version = "0.1.0"
+description = "Moteur coûts/prix/stock et intégrations pour la boutique Pokémon FR Suisse"
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2", "fastapi", "uvicorn", "httpx", "openpyxl", "pyyaml", "jinja2"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["engine"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

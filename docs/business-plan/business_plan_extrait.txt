@@ -1,0 +1,382 @@
+Title | Business plan boutique Pokémon FR en Suisse
+ | Automatisation du sourcing aux ventes et organisation de la flotte d’agents
+ | Version du 4 octobre 2026 • Hypothèse de lancement depuis Genève • Ventes en Suisse uniquement
+Heading2 | La décision proposée
+ | Lancer une boutique de produits Pokémon JCC officiels en français, avec un petit stock local, un site marchand standard et un système central qui récupère les offres fournisseurs, calcule les coûts et les marges, puis publie les produits éligibles. L’objectif est une exploitation supervisée par exceptions : les opérations répétitives sont automatiques et les décisions commerciales inhabituelles remontent à la responsable.
+ | Le premier investissement doit valider l’accès au stock FR et aux données B2B. Aucun tarif grossiste réel ni accès API fournisseur n’est confirmé dans ce document. Les chiffres sont des hypothèses de gestion, à remplacer par des devis et des factures avant achat.
+Heading2 | Ce que le système doit faire
+ListBullet | Importer les prix, remises, unités de vente, stocks et allocations de chaque fournisseur autorisé.
+ListBullet | Normaliser les références FR, comparer le coût rendu en Suisse et choisir les offres réellement accessibles.
+ListBullet | Calculer un prix de vente qui couvre la TVA applicable, les frais de paiement, la logistique et la marge cible.
+ListBullet | Créer les fiches, actualiser les prix et piloter le stock vendable sans exposer les coûts internes au public.
+ListBullet | Déclencher les communications, préparer les réassorts et produire un tableau de bord de trésorerie et de rentabilité.
+Heading2 | Conditions de lancement
+ | Au moins un fournisseur FR accepté avec un flux exploitable ; une seconde source identifiée ; des marges positives sur une sélection pilote ; des paiements et une expédition testés ; une trésorerie qui finance le stock et les remboursements ; des règles d’automatisation validées.
+Heading2 | Le périmètre de départ
+ | Produits scellés FR et quelques accessoires. Les cartes à l’unité, le grading, les rachats clients et les autres langues arrivent ensuite : ils nécessitent des règles d’état, d’authentification et de valorisation distinctes.
+ | Le dossier couvre le modèle économique, les contacts, le calcul des prix, le site, la DA, la communication, l’exploitation, les agents, la recette et un programme de lancement sur 90 jours. Il ne constitue ni une boutique déjà déployée ni une autorisation d’acheter du stock.
+Heading1 | 1 Positionnement et validation du marché
+Heading2 | Une proposition simple
+ | Pokémon FR, expédié depuis la Suisse, avec une disponibilité lisible, des produits identifiés correctement et un service fiable. La différenciation repose sur la confiance et la sélection, soutenues par une identité visuelle propre et des contenus utiles. Une belle DA doit renforcer cette promesse, pas compenser des marges insuffisantes.
+ | Public
+ | Besoin
+ | Offre de départ
+ | Collectionneurs FR
+ | Nouveautés et produits scellés fiables
+ | Displays, ETB, bundles, alertes réassort
+ | Parents et cadeaux
+ | Comprendre quoi acheter
+ | Sélection par budget et guides simples
+ | Joueurs
+ | Disponibilité et accessoires
+ | Boosters, sleeves et produits de jeu sélectionnés
+Heading2 | Validation avant de commander
+ListBullet | Comparer 10 à 15 références identiques chez 5 boutiques suisses : langue, extension, contenu, stock, prix total livré et délai. Conserver URL et date.
+ListBullet | Interroger 10 à 15 clients potentiels et recueillir leurs formats préférés, budgets, fréquence d’achat et critères de confiance.
+ListBullet | Tester une page de présentation avec inscription aux alertes. Aucun faux stock et aucune précommande encaissée sans allocation.
+ListBullet | Obtenir un devis fournisseur sur ces mêmes références, avec paliers, transport, conditions d’export et délais.
+ListBullet | N’acheter que les références dont le prix rentable reste compatible avec le marché observé.
+Heading2 | Assortiment pilote
+ | Prévoir 15 à 25 références, dont 8 à 12 réellement en stock. Répartition indicative du budget stock : displays 25 %, ETB 25 %, bundles et tripacks 20 %, coffrets 20 %, accessoires 10 %. Cette répartition doit suivre les marges et les allocations disponibles ; elle n’est pas un objectif de volume obligatoire.
+Heading2 | Indicateurs de validation
+ | Objectifs internes pour les 60 premiers jours de vente : 30 commandes payées, contribution positive après publicité, absence de survente, et au moins 50 % du stock pilote écoulé en valeur de coût. Ces seuils sont des critères de test, pas une prévision de demande.
+ | Limiter l’exposition : pas plus de 25 % du budget stock dans une extension au lancement ; documenter les exceptions. Les allocations rares ne sont pas un motif suffisant pour acheter un produit à faible marge.
+Heading1 | 2 Fournisseurs et personnes à contacter
+ | Les sites ci-dessous sont des pistes commerciales vérifiées publiquement, pas des partenariats acquis. Une mention Pokémon sur un site ne confirme ni une distribution officielle pour la France, ni un export vers la Suisse, ni une allocation FR régulière.
+ | Priorité et contact
+ | Ce qui est visible
+ | À obtenir
+ | 1 Asmodee Franceasmodee.fr/contact/
+ | Parcours de création de compte détaillant [S1]
+ | Acceptation entreprise suisse en ligne ; distributeur territorial FR ; allocations ; export de données
+ | 1 Matoo et Miaowholesale.miao.matoocorp.com
+ | Offre Pokémon FR annoncée [S2]
+ | Export Suisse ; prix nets ; disponibilité FR ; flux automatisable
+ | 1 TCG Distributiontcgdistribution.fr/contactez-nous.html
+ | Catalogue Pokémon FR et inscription pro [S3]
+ | Livraison Suisse ; facture export ; tarif ; API ou CSV
+ | 2 OtakuWorlddistribuzione@otakuworld.ch
+ | Portail pro suisse ; pas de minimum contraignant annoncé [S4]
+ | FR régulier ; accès sans numéro TVA si non assujetti ; allocations et flux
+ | 2 CardCosmoscardcosmos.ch/fr/pages/acces-b2b
+ | Accès B2B publié [S5]
+ | Stock FR ; pays réel d’expédition ; conditions CH ; catalogue exportable
+Heading2 | La demande commerciale et technique
+ | Demander sur chaque référence : SKU fournisseur, EAN/GTIN, langue, extension, conditionnement, nombre d’unités par carton, prix net HT ou TTC, devise, remises, MOQ, disponibilité, allocation, date de sortie, frais de port, Incoterm, pays d’expédition, modalités de paiement et procédure SAV. Demander aussi l’autorisation de réutiliser descriptions et images.
+ | Pour l’automatisation : API documentée, CSV/XML/Excel, téléchargement authentifié ou envoi périodique ; fréquence ; identifiants stables ; stock quantifié ou simple statut ; commandes et accusés de réception électroniques ; limites d’usage. Un portail visible dans un navigateur n’est pas la preuve d’une API.
+Heading2 | Les autres interlocuteurs
+ | Fiduciaire suisse : statut, TVA, import et comptabilité. Banque et prestataire de paiement : compte professionnel, TWINT, frais et délais de versement. Transporteur ou La Poste : colis suisses, suivi et retour. Prestataire logistique : stockage et préparation si délégation physique. Juriste : CGV, données et usage des marques. Créateurs TCG suisses : partenariats après validation du stock.
+ | Aucun contact n’a été envoyé ni aucun compte ouvert. Les agents préparent les dossiers, suivent les réponses et comparent les offres ; les engagements commerciaux restent à décider.
+Heading1 | 3 Modèle économique et budget de départ
+Heading2 | Les revenus
+ | Ventes de produits scellés FR, accessoires ajoutés au panier et réachat après une nouvelle sortie. Les précommandes ne portent que sur des quantités fermement allouées. Les frais de livraison facturés doivent être comparés au coût logistique réel ; ils ne sont pas supposés constituer une marge.
+ | Décaissement initial
+ | Budget pilote CHF
+ | Nature
+ | Stock acheté rendu Suisse
+ | 3 000
+ | Hypothèse de coût cash
+ | Site et automatisation pilote
+ | 1 500
+ | Budget plafonné ; réalisation interne/assistée
+ | DA et contenus de lancement
+ | 400
+ | Dépenses cash hors temps interne
+ | Administration et revue des documents
+ | 700
+ | Provision à confirmer par devis
+ | Emballages et matériel
+ | 300
+ | Provision
+ | Test acquisition
+ | 500
+ | Plafond avant validation CAC
+ | Réserve de trésorerie
+ | 1 600
+ | Réassort, versements différés, remboursement
+ | Total
+ | 8 000
+ | Aucune offre prestataire confirmée
+ | Un capital de 3 000 à 5 000 CHF permet surtout un test de stock et une boutique simple. Il ne couvre pas automatiquement une architecture complète multi-fournisseurs. Le budget de 8 000 CHF suppose beaucoup de travail interne ; faire chiffrer séparément un développement externalisé avant décision.
+Heading2 | Charges mensuelles de simulation
+ | Poste
+ | CHF par mois
+ | Site, apps, hébergement et automatisation
+ | 180
+ | Comptabilité et administration
+ | 120
+ | Divers, assurance et petit stockage
+ | 100
+ | Total fixe hors publicité et rémunération
+ | 400
+ | Ces montants sont des enveloppes, pas les tarifs actuels de logiciels ou prestataires. Prévoir également 6 à 10 heures de supervision hebdomadaire au lancement, plus la préparation des colis. Valoriser le temps dans un second compte de résultat ; une activité cash positive peut rémunérer très peu le travail.
+Heading2 | Gestion de trésorerie
+ | Distinguer ventes, résultat et cash. Le stock immobilise du cash avant sa vente. Tenir un prévisionnel glissant sur 13 semaines : solde disponible, achats engagés, TVA, livraisons, remboursements, publicité et versements des paiements. Garder une réserve pour les précommandes et ne pas traiter tout encaissement comme disponible pour un nouvel achat.
+Heading1 | 4 Coût et marge automatiques
+ | Le calcul financier doit être déterministe, vérifiable et versionné. L’IA extrait ou rédige ; elle ne décide pas librement d’une TVA, d’un taux de change ou d’un montant à facturer.
+Heading2 | Les deux traitements TVA
+ | Au 4 octobre 2026, le taux normal suisse est de 8,1 % et le seuil général d’assujettissement est de 100 000 CHF de chiffre d’affaires déterminant [S6]. Examiner l’ensemble de l’activité de l’entité exploitante avec la fiduciaire, pas uniquement cette nouvelle boutique. Si assujettie selon la méthode effective et déduction admise, travailler avec achats nets de TVA récupérable et ventes hors TVA. Sinon, intégrer la TVA non récupérable dans le coût et ne pas retirer 8,1 % du prix de vente. Les autres méthodes TVA demandent un paramétrage spécifique.
+Heading2 | Coût rendu par unité
+ | C = achat net converti en CHF + transport amont réparti + dédouanement et autres frais non récupérables + TVA non récupérable. Pour une importation, séparer TVA à l’importation et frais du transporteur ; contrôler la base fiscale sur le justificatif [S7]. Ne pas supposer une facture française HT avant confirmation de l’export.
+ | Conserver deux valeurs : coût comptable historique du stock acheté et coût de remplacement à la dernière offre fournisseur. Une baisse de tarif ne réduit pas rétroactivement le coût des unités déjà achetées. Une fiche sans stock peut afficher un prix calculé, mais reste indisponible ou en alerte réassort.
+Heading2 | Formule du prix plancher
+ | P est le prix public, t la TVA sur ventes, r les frais de paiement proportionnels au montant encaissé, b les frais fixes de paiement, L le coût net de préparation/expédition supporté, R une provision SAV, A le coût acquisition attribué et m la contribution cible en % du CA net. Pour une vente unitaire sans port facturé séparément :
+ | P minimum = (C + b + L + R + A) / ((1 − m) / (1 + t) − r). Le dénominateur doit être positif. Pour une entité non assujettie, utiliser t = 0 et C incluant les taxes non récupérables. En panier multi-produits, répartir les frais par commande et recalculer la contribution finale sans facturer plusieurs fois les frais fixes.
+Heading2 | Exemple fictif et reproductible
+ | Assujettissement effectif ; C = 140 CHF hors TVA récupérable ; r = 2,5 % ; b = 0,30 ; L = 3 ; R = 1 ; A = 5 ; m = 20 %. Le prix plancher est 208,79 CHF, puis arrondi vers le haut à 209,90 CHF. À 199,90 CHF : vente nette 184,92 ; paiement 5,30 ; contribution 30,62 CHF, soit 16,56 % du CA net. Avec t = 0 et C = 151,34 CHF incluant 8,1 % non récupérables, le plancher serait 207,28 CHF sous les mêmes autres hypothèses. Aucun de ces coûts n’est un devis fournisseur.
+Heading1 | 5 Politique de prix et de stock
+Heading2 | Les règles commerciales initiales
+ | Règle proposée
+ | Comportement automatique
+ | Contribution cible 20 % avant coûts fixes
+ | Calcul du prix recommandé avec frais variables et acquisition prévue
+ | Plancher dur 12 % et 8 CHF par commande
+ | Blocage des paniers/promotions non rentables ; règles adaptées aux petits produits
+ | Prix rentable supérieur au marché comparable de plus de 10 %
+ | Proposition à revoir ; ne pas sacrifier automatiquement la marge
+ | Variation publique supérieure à 5 % en une journée
+ | Validation requise ; plafond paramétrable
+ | Frais, taxe, langue ou conditionnement inconnus
+ | Fiche en brouillon ; aucun prix public nouveau
+ | Offre fournisseur périmée
+ | Inéligible au réassort ; ne pas inventer une disponibilité
+ | Ces seuils sont des choix de lancement modifiables. Arrondir après calcul, puis revérifier la marge. Les promotions, codes, frais de paiement et livraison gratuite passent par le même moteur. Ne jamais changer le prix d’une commande déjà conclue.
+Heading2 | Un stock fournisseur ne devient pas un stock boutique
+ | Pour l’offre expédiée depuis Genève : vendable = stock local disponible après réservations, dommages et stock de sécurité. Une quantité fournisseur ne doit pas être publiée comme immédiatement expédiable. Pour une précommande : quota = allocation ferme confirmée − précommandes engagées − réserve de sécurité. Ne pas additionner des offres qui peuvent partager le même stock amont.
+ | Le lancement recommande le stock local. Le dropshipping reste une option conditionnelle : accord fournisseur, réservation de stock, expédition directe en Suisse, délais, douane, colis neutres et SAV définis. Sans cet accord, le workflow prépare des achats et non des ventes à découvert.
+Heading2 | Synchronisation proposée
+ | Prix et offres : toutes les 6 heures si le flux le permet. Stock amont : toutes les 30 à 60 minutes si API fiable, sinon à la fréquence du fichier. Commandes et stock local : événements avec rapprochement périodique. Une donnée amont vieille de plus de 24 heures bloque les achats et nouvelles promesses de disponibilité ; elle n’empêche pas de vendre le stock local réel.
+Heading2 | Réassort
+ | Point de commande = ventes journalières moyennes × délai de réapprovisionnement + sécurité. La quantité proposée respecte MOQ, cartons, budget disponible, plafond par extension et ventes probables. Les commandes automatiques ne sont activées qu’après recette et dans une enveloppe décidée ; au départ, le système prépare le panier fournisseur pour validation.
+Heading1 | 6 Architecture du système automatisé
+Heading2 | Architecture recommandée à valider au pilote
+ | Shopify pour la boutique et les commandes ; une base PostgreSQL pour les produits, offres, coûts et règles ; un orchestrateur tel que n8n pour les imports et événements ; un service de calcul pour prix, réservations et contrôle. Cette architecture est une recommandation technique, pas une intégration déjà disponible chez les fournisseurs. Shopify documente la synchronisation de produits externes et les mises à jour de stock [S8, S9].
+ | Ne pas maintenir deux autorités concurrentes du stock local. Shopify gère la vente et ses réservations ; le service conserve les mouvements et rapproche les écarts. Les mises à jour doivent respecter les contrôles de concurrence, les identifiants des événements et les traitements déjà exécutés.
+ | Bloc
+ | Données et rôle
+ | Connecteurs fournisseurs
+ | API/CSV/XML autorisés ; captures datées des offres brutes
+ | Catalogue central
+ | GTIN + langue + extension + format + contenu + état/scellé ; liens SKU fournisseur et variante boutique
+ | Moteur coûts et prix
+ | Devise, taux et source ; statut TVA ; coûts historiques et remplacement ; marge et version des règles
+ | Publication
+ | Champs publics, images autorisées, prix, SEO et visibilité ; coûts conservés en espace interne
+ | Commandes et logistique
+ | Paiement confirmé, réservation, préparation, suivi, annulation et retour
+ | Pilotage
+ | Incidents, trésorerie, commandes à valider, rapprochements et historique des décisions
+Heading2 | Acquisition des données
+ | Priorité 1 : API ou flux documenté. Priorité 2 : fichier régulièrement fourni ou export approuvé. Priorité 3 : extraction d’un email/PDF tarifaire avec contrôle des unités et du total. Une lecture automatisée du portail ne s’envisage qu’avec accès autorisé et accord sur l’usage ; ne pas contourner CAPTCHA ou contrôle d’accès. Sans flux stable, garder un import assisté.
+Heading2 | Fiabilité et confidentialité
+ | Journal de chaque changement ; clés d’idempotence ; file de reprise ; alerte de flux en panne ; sauvegardes et test de restauration ; mode simulation avant publication ; arrêt des écritures et retour au dernier état vérifié. Secrets dans un coffre et accès minimaux. Les prix B2B, marges et données personnelles ne sont jamais intégrés au HTML public ni aux prompts marketing.
+ | Une nouvelle référence passe d’abord en brouillon. Après validation de la règle de catégorie, les références similaires peuvent être publiées automatiquement si tous les champs et droits d’images sont présents.
+Heading1 | 7 Site marchand et expérience client
+Heading2 | Structure de la boutique
+ | Accueil avec promesse, nouveautés, produits réellement disponibles et sélection cadeaux. Collections : displays, ETB, bundles, coffrets, boosters et accessoires. Pages extensions, précommandes, livraison et retours, FAQ, contact, à propos, CGV, confidentialité et mentions légales. Recherche et filtres : format, extension, budget, FR, stock local et précommande.
+Heading2 | Fiche produit standard
+ListBullet | Titre exact : format + extension + langue. SKU stable et EAN lorsqu’il existe ; contenu validé par le fournisseur.
+ListBullet | Photos officielles autorisées ou photos propres. Ne pas générer un emballage fictif pour représenter la marchandise vendue.
+ListBullet | Prix public en CHF, frais de livraison accessibles, quantité autorisée et état du stock explicite.
+ListBullet | Délai réaliste, date de sortie confirmée ou statut incertain, conditions des commandes mixtes et précommandes.
+ListBullet | Description et guide d’usage simples ; aucune promesse de carte rare ou de valeur financière future.
+Heading2 | Paiement et conformité
+ | Prévoir carte et TWINT après vérification du contrat et des frais ; Shopify documente TWINT avec Shopify Payments sous conditions d’éligibilité [S10]. Tester paiements réussis, refusés, doublons, remboursements et délais de versement. L’identité, l’adresse et l’email de contact, la correction de la commande et la confirmation électronique font partie des obligations décrites par le portail PME [S11].
+ | Les prix à payer doivent être lisibles en CHF et les frais de livraison transparents. En Suisse, il n’existe pas de droit général de rétractation e-commerce : définir une politique volontaire claire, sans supprimer les droits liés aux défauts [S11]. Faire revoir les CGV et les règles de précommande. Prévoir information données, consentements marketing et suppression/désinscription ; limiter le suivi à ce qui est configuré légalement.
+Heading2 | Recette avant ouverture
+ | Sur mobile et ordinateur : recherche → produit → panier → paiement → confirmation → préparation → suivi → remboursement. Vérifier le stock simultané, un panier avec remise, le port gratuit, une rupture pendant paiement et une commande mixte. Les pages de confirmation et les emails doivent afficher exactement ce qui a été acheté.
+ | Version française au lancement et livraison Suisse uniquement. Ajouter l’allemand après validation commerciale, avec vraie traduction et politique support adaptée. Coût et marge sont visibles exclusivement dans le tableau de bord interne.
+Heading1 | 8 Direction artistique et contenus de marque
+Heading2 | Brief créatif
+ | Créer une marque de boutique indépendante : claire, enthousiaste, crédible et facile à lire sur mobile. Elle doit pouvoir accueillir d’autres TCG plus tard. Utiliser Pokémon pour désigner les produits, sans laisser croire que la boutique appartient à la marque ou bénéficie d’un statut officiel non obtenu.
+Heading2 | Livrables DA
+ListBullet | Trois pistes de nom avec vérification domaine, réseaux et recherche préliminaire de marque ; validation du nom avant achat de domaine.
+ListBullet | Deux directions visuelles : palette, typographies, grille, références et application à une page produit.
+ListBullet | Logo original, variantes, favicon, règles de lisibilité et mini-charte de 8 à 12 pages.
+ListBullet | Composants : badges FR, stock local, précommande, nouveauté ; cartes produit ; bannières ; emails transactionnels.
+ListBullet | Templates pour 9:16, 4:5 et carré, à vérifier lors de la production selon les plateformes choisies ; pack de couvertures, stories et carrousels.
+ListBullet | Packaging simple : sticker, carte de remerciement et repère d’identification des commandes, chiffrés au coût réel.
+Heading2 | Une première direction possible
+ | Fond clair neutre, contraste noir, un accent vif propre à la boutique, typographie lisible et photographie produit cohérente. Donner de l’espace aux boîtes et aux titres. L’ambiance peut évoquer la collection et le jeu à travers des formes originales ; éviter de construire le logo à partir de personnages ou symboles Pokémon non autorisés.
+Heading2 | Production et contrôle
+ | L’agent DA prépare les directions et les fichiers ; la responsable valide l’identité une fois. Les agents de contenu utilisent ensuite les composants approuvés. Les éléments produits restent vérifiés : langue, emballage, quantité et prix. Le prix sur un visuel promotionnel doit correspondre au prix validé au moment de publication.
+Heading2 | Contenus réutilisables
+ | Créer une base de 15 sujets : différence ETB/display, choisir un premier coffret, comprendre une extension, acheter pour offrir, protéger ses cartes, repérer la langue, fonctionnement des précommandes et coulisses d’expédition. Produire les démonstrations et photos réelles lors d’une session groupée ; l’IA décline les légendes, monte les briefs et adapte les formats.
+ | Définir le ton : précis, accessible, sans jargon inutile, sans fausse urgence. La communication montre les stocks et délais effectivement proposés. Les coûts et marges restent des informations internes.
+Heading1 | 9 Communication et acquisition sur 90 jours
+ | Période
+ | Actions
+ | Critère de passage
+ | Jours 1 à 15
+ | Étude concurrence ; 10 entretiens ; dossier B2B ; page présentation et inscriptions
+ | Flux fournisseur et marges pilote identifiés
+ | Jours 16 à 30
+ | Identité ; site test ; 10 fiches ; contenus éducatifs ; recette prix/stock
+ | Paiement et stock sans erreur critique
+ | Jours 31 à 45
+ | Réception stock ; photos ; ouverture douce à la liste ; 3 contenus par semaine
+ | Premières commandes livrées et contribution positive
+ | Jours 46 à 60
+ | Test publicité 500 CHF maximum ; collaboration locale limitée ; emails réassort
+ | CAC inférieur à la contribution disponible
+ | Jours 61 à 90
+ | Réassort des ventes prouvées ; SEO extensions ; scénarios email et bilan
+ | Rotation et trésorerie compatibles avec croissance
+Heading2 | Le rythme après ouverture
+ | Instagram et TikTok : 3 publications par semaine au départ, dont 1 guide, 1 nouveauté réellement accessible et 1 preuve de service ou ouverture authentique. Stories adaptées aux stocks et à la préparation. Email : 1 récapitulatif pertinent par semaine maximum, complété par des alertes explicitement demandées. Cette cadence est un choix de production à ajuster selon résultats.
+Heading2 | Automatisations marketing
+ | Inscription → accueil et préférence de formats. Nouveau stock local → alerte aux inscrits intéressés. Commande expédiée → suivi. Livraison → demande d’avis après délai adapté. Réachat → recommandation sur extension/format, avec consentement et disponibilité. Panier abandonné → relance uniquement si le dispositif de collecte le permet. Désinscription propagée à tous les outils.
+ | Les textes peuvent être générés automatiquement à partir du catalogue validé. Une annonce promotionnelle repasse par le moteur prix ; une campagne s’arrête si le stock passe sous le seuil ou si la marge est insuffisante. Pas de SMS ou email non sollicité pour remplir une audience.
+Heading2 | Publicité et partenariats
+ | Tester 2 ou 3 créations et une offre claire. Calculer le coût d’acquisition sur commandes payées, après annulations et remboursements. Fixer un plafond quotidien et arrêter si l’acquisition absorbe la contribution. Pour les créateurs TCG locaux, demander audience suisse, exemples, coût et droits d’utilisation ; mesurer un code ou lien dédié et intégrer produits offerts/commissions au CAC.
+ | La première validation commerciale est un achat rentable et livré, pas le nombre de followers. Construire les budgets suivants à partir de cette preuve.
+Heading1 | 10 Prévisions et seuil de rentabilité
+ | Simulation pour une entité assujettie selon méthode effective. Panier produits moyen 95 CHF TTC, soit 87,88 CHF HT. Livraison facturée supposée couvrir le port réel ; contribution produit avant acquisition 22 % du CA HT après achat, paiement, emballage et provision SAV. Charges fixes 400 CHF/mois. CAC moyen mélangé à toutes les commandes. Aucun salaire, impôt, amortissement ni coût initial inclus dans le résultat ci-dessous.
+ | Par mois
+ | Prudent
+ | Central
+ | Développement
+ | Commandes
+ | 40
+ | 100
+ | 200
+ | CA produits TTC CHF
+ | 3 800
+ | 9 500
+ | 19 000
+ | CA produits HT CHF
+ | 3 515
+ | 8 788
+ | 17 577
+ | Contribution avant acquisition CHF
+ | 773
+ | 1 933
+ | 3 867
+ | CAC moyen CHF
+ | 8
+ | 6
+ | 5
+ | Acquisition totale CHF
+ | 320
+ | 600
+ | 1 000
+ | Charges fixes CHF
+ | 400
+ | 400
+ | 400
+ | Résultat avant rémunération CHF
+ | 53
+ | 933
+ | 2 467
+Heading2 | Ce que ces chiffres impliquent
+ | Dans le scénario central, une commande contribue environ 19,33 CHF avant acquisition et 13,33 CHF après CAC. Le seuil cash d’exploitation est donc d’environ 31 commandes par mois : 400 / 13,33, arrondi au-dessus. Avec une rémunération budgétée de 2 000 CHF, il faut environ 181 commandes par mois sous ces mêmes hypothèses ; les cotisations et coûts éventuels de la rémunération doivent être ajoutés.
+ | Le scénario central annualisé représenterait 114 000 CHF TTC de ventes produits ; il justifie d’anticiper l’examen d’assujettissement TVA, sans attendre un franchissement constaté. Les prévisions ne prouvent pas que ce volume existe.
+Heading2 | Sensibilité
+ | Si la contribution avant acquisition tombe à 15 %, elle devient 13,18 CHF par commande. Après un CAC de 6 CHF, il reste 7,18 CHF : il faut environ 56 commandes pour couvrir 400 CHF de fixes. Si le CAC atteint 15 CHF avec 22 % de contribution, il ne reste que 4,33 CHF : environ 93 commandes sont nécessaires. Une erreur de coût ou de livraison peut donc annuler le bénéfice.
+Heading2 | Stock nécessaire à la croissance
+ | À 100 commandes par mois et 95 CHF de panier, le CA net est de 8 788 CHF. Avec, par hypothèse, 70 % de coût produit, les achats consommés représentent 6 152 CHF HT par mois. Un stock initial de 3 000 CHF cash nécessite une rotation rapide et des réassorts fréquents ; il ne finance pas un mois entier d’activité centrale. Recalculer le besoin de fonds de roulement avec les délais fournisseurs et paiements réels.
+Heading1 | 11 Missions de la flotte d’agents
+ | Douze rôles logiques, pouvant être exécutés par quelques agents avec des outils spécialisés. Il n’est pas nécessaire de faire tourner douze modèles en permanence. Les imports, calculs et écritures sont des workflows ; l’IA intervient sur recherche, extraction ambiguë, rédaction et analyse. Chaque mission produit un livrable contrôlable.
+ | Agent
+ | Mission et livrable
+ | Validation ou limite
+ | 1 Chef de projet
+ | Backlog, dépendances, échéances et revue des exceptions
+ | Ne modifie pas seul budgets ni règles
+ | 2 Sourcing
+ | Dossier B2B, comparaison et suivi de contacts
+ | Pas de tarif inventé ; pas d’engagement non autorisé
+ | 3 Données fournisseurs
+ | Connecteurs, dictionnaire des champs et historique des imports
+ | Preuve accès/usage ; anomalie en quarantaine
+ | 4 Catalogue
+ | Correspondance SKU/GTIN, FR, format, images et fiches
+ | Identité ambiguë = brouillon
+ | 5 Finance et pricing
+ | Coût rendu, prix plancher, contribution et cash 13 semaines
+ | Calcul testé ; paramètres fiscaux validés
+ | 6 DA
+ | Naming, directions visuelles, charte et templates
+ | Identité initiale approuvée ; droits visuels
+ | 7 Site et intégrations
+ | Thème, checkout, API, comptes et dashboard
+ | Recette complète avant publication
+ | 8 SEO et rédaction
+ | Fiches, catégories, guides et métadonnées
+ | Faits produits uniquement sourcés
+ | 9 Communication
+ | Calendrier, scripts, emails et déclinaisons
+ | Stock/prix contrôlés avant diffusion
+ | 10 Acquisition
+ | Tests publicitaires, attribution et bilan CAC
+ | Plafond explicite ; coupure automatique
+ | 11 Opérations et SAV
+ | Préparation, suivi, FAQ, retours et réassort
+ | Litige, fraude ou geste hors règle escaladé
+ | 12 QA et conformité
+ | Tests, surveillance, sauvegarde, accès et rapprochements
+ | Peut bloquer une mise en ligne risquée
+Heading2 | Brief commun à donner à chaque agent
+ | Objectif, périmètre, entrées autorisées, format de sortie, critères de réussite, règles de calcul applicables, plafond de dépense, responsable et conditions d’escalade. Chaque livrable inclut sources datées, hypothèses, anomalies et statut. Une sortie non validée n’alimente pas directement le catalogue public.
+Heading2 | Ordre des dépendances
+ | Sourcing + cadre fiscal → données fiables → catalogue et coûts → prix et stock → site. La DA peut avancer pendant le sourcing ; la publication marketing attend le stock ou une allocation ferme. Le QA contrôle les calculs et le parcours. Le chef de projet reçoit les exceptions et arbitre avec la responsable.
+Heading1 | 12 Workflows et fonctionnement quotidien
+Heading2 | Workflow fournisseur vers site
+ | 1 Récupérer le flux autorisé et dater la source. 2 Valider devise, TVA, unité, langue et quantité. 3 Rapprocher la référence exacte. 4 Évaluer l’offre et le coût rendu avec les contraintes MOQ/cartons. 5 Calculer le prix et tester les seuils. 6 Générer ou actualiser la fiche. 7 Publier uniquement si les données et le stock vendable le permettent. 8 Vérifier l’état réel sur le site et journaliser la décision.
+Heading2 | Workflow commande vers livraison
+ | Paiement confirmé → réservation de stock → contrôle de doublon et anomalies → bon de préparation → étiquette et tâche colis → scan du produit et confirmation → remise au transporteur → suivi client → rapprochement paiement/facture. Un robot logiciel ne prépare pas un colis : une personne ou un prestataire logistique assure le stockage, le picking, l’emballage et les contrôles physiques.
+Heading2 | Workflow facture vers marge réelle
+ | Importer la facture fournisseur et le justificatif import → rapprocher commande/réception → ventiler les frais → enregistrer le coût historique → recalculer la contribution réalisée des ventes → signaler écarts avec estimation. Ne pas modifier automatiquement une commande client déjà conclue. Les paiements et remboursements sont rapprochés des versements bancaires.
+Heading2 | Workflow incident
+ | Prix anormal, langue ambiguë, flux absent, échec paiement, marge sous seuil ou survente → mise en quarantaine de la référence ou suspension du workflow concerné → notification avec cause et action proposée → correction → test → reprise. Une panne de flux fournisseur ne doit pas effacer du stock local confirmé.
+Heading2 | Tableau de bord à consulter
+ | Chaque jour : ventes payées, contribution, cash disponible, commandes à préparer, ruptures locales, offres périmées et incidents. Chaque semaine : rotation par extension, produits sans ventes, CAC, réachat, écarts de coûts, litiges, remboursements et commandes proposées. Chaque mois : résultat avec valorisation du temps, seuil TVA, capacité stock et dépenses outils.
+Heading2 | Ce qui demande encore une personne
+ | Ouverture des comptes, contrats et KYC ; arbitrage d’une allocation ; réception et authenticité ; colis ou pilotage du prestataire ; litiges complexes ; fiscalité ; contenu vidéo réel. Une fois ces cadres établis, le quotidien peut fonctionner principalement par alertes. Promettre 100 % autonome dès le départ serait incompatible avec ces opérations.
+Heading1 | 13 Plan de réalisation et critères de recette
+ | Étape
+ | Livrables nécessaires
+ | Terminé lorsque
+ | Semaine 1
+ | Statut exploitant ; dossier B2B ; comparaison marché ; règles TVA
+ | Accès fournisseur et hypothèses critiques identifiés
+ | Semaine 2
+ | Un fichier réel ; 10 SKU normalisés ; coût et pricing pilote
+ | Calculs contrôlés contre facture/devis
+ | Semaines 3 et 4
+ | Identité ; site test ; dashboard ; sync en simulation
+ | 20 synchronisations sans erreur critique
+ | Semaines 5 et 6
+ | Stock reçu ; checkout ; support ; contenus ; lancement limité
+ | Commandes tests payées et livrées correctement
+ | Semaines 7 à 12
+ | Deuxième fournisseur ; réassort ; campagnes ; marge réelle
+ | Automatisation stable et contribution positive
+Heading2 | Tests obligatoires du moteur
+ListBullet | EUR versus CHF ; HT versus TTC ; TVA récupérable ou non ; carton versus unité ; remises par palier.
+ListBullet | FR versus JP/EN, produits de même nom mais contenu différent ; GTIN absent ; prix zéro ou doublon.
+ListBullet | Coût transport ventilé, port gratuit, réduction, frais fixes par commande et panier multi-produits.
+ListBullet | Source vieille, prix multiplié par dix, import incomplet, API boutique refusée, reprise sans double écriture.
+ListBullet | Dernière unité achetée simultanément ; réservation annulée ; remboursement ; stock endommagé ; quota précommande.
+ListBullet | Nouvelle offre moins chère sans modification du coût historique ; facture réelle plus chère ; retour au dernier prix validé.
+Heading2 | Niveaux d’autonomie
+ | Niveau 1 : tout en simulation et brouillons. Niveau 2 : prix et stock des références approuvées synchronisés dans des seuils. Niveau 3 : nouveaux produits conformes publiés et campagnes déclenchées selon règles. Niveau 4 : réassorts automatiques avec budgets, allocations et trésorerie contrôlés. Chaque niveau est activé après recette ; un incident critique rétablit le niveau précédent.
+Heading2 | Décision de poursuivre ou arrêter
+ | Poursuivre si le sourcing FR est accepté, les prix restent compétitifs après coûts, le système évite les ventes non couvertes et les premières commandes contribuent positivement. Reporter si les tarifs ne sont pas accessibles, si le prix rentable dépasse systématiquement le marché ou si le flux amont ne peut pas être fiabilisé. Un joli site ne constitue pas un feu vert commercial.
+Heading2 | La première action concrète
+ | Préparer un dossier professionnel commun et demander à trois fournisseurs FR le même panier pilote, accompagné d’un exemple de fichier de prix/stock. Construire le premier connecteur sur cet exemple réel. C’est ce qui permet de chiffrer et réaliser le cœur automatisé avant de multiplier les agents et les outils.
+Heading1 | 14 Sources et données à obtenir
+ | Sources publiques consultées le 4 octobre 2026. Elles établissent les parcours B2B annoncés, le cadre suisse et les possibilités techniques du site. Elles ne confirment aucun prix net, compte accepté, droit d’image ou accès API fournisseur. Les budgets, marges, rythmes et seuils du dossier sont des recommandations ou simulations.
+ | S1 Asmodee France — contact et compte détaillanthttps://www.asmodee.fr/contact/
+ | S2 Matoo et Miao — offre Pokémon français annoncéehttps://wholesale.miao.matoocorp.com/
+ | S3 TCG Distribution — catalogue FR et contacthttps://tcgdistribution.fr/ ; https://tcgdistribution.fr/contactez-nous.html
+ | S4 OtakuWorld — portail B2B et conditions annoncéeshttps://b2b.otakuworld.ch/
+ | S5 CardCosmos — accès revendeurhttps://cardcosmos.ch/fr/pages/acces-b2b
+ | S6 AFC — TVA et assujettissementhttps://www.estv.admin.ch/fr/taxe-sur-la-valeur-ajoutee
+ | S7 OFDF — réception de lettres et paquetshttps://www.bazg.admin.ch/fr/reception-de-lettres-et-paquets
+ | S8 Shopify — synchronisation des produits productSethttps://shopify.dev/docs/api/admin-graphql/latest/mutations/productSet
+ | S9 Shopify — inventorySetQuantitieshttps://shopify.dev/docs/api/admin-graphql/latest/mutations/inventorySetQuantities
+ | S10 Shopify — TWINT et éligibilitéhttps://help.shopify.com/fr/manual/payments/shopify-payments/local-payment-methods/twint
+ | S11 Portail PME — obligations du commerce électroniquehttps://www.kmu.admin.ch/fr/obligations-legales-les-lois-suisses-et-europeennes-sur-le-e-commerce
+Heading2 | À confirmer pour transformer le plan en budget engagé
+ | Entité exploitante et statut TVA ; budget disponible ; temps ou prestataire de préparation ; fournisseurs acceptés ; devis et exemple de flux réel ; conditions d’export ; coûts et versements paiement ; tarif colis ; accès images ; délai de mise en œuvre et coût du développement. Mettre à jour le plan financier avec ces données avant achat significatif.
