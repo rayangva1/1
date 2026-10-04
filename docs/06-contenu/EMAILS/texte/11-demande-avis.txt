@@ -1,0 +1,17 @@
+Objet : Votre commande {{ $json.numero_commande }} est bien arrivée ?
+
+TOUT S'EST BIEN PASSÉ ?
+
+{{ $json.salutation }}
+
+Votre commande {{ $json.numero_commande }} a été livrée il y a quelques jours. Votre avis nous aide à corriger ce qui ne va pas et aide d'autres personnes à choisir.
+
+Donner mon avis : {{ $json.url_avis }}
+
+Un problème avec votre commande ? Ne passez pas par l'avis : répondez à cet email, une personne vous répond.
+
+--
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que vous avez commandé chez nous et ne vous êtes pas opposé à ce type de message. Une seule demande par commande.
+Ne plus recevoir de demande d'avis : {{ $json.url_refus_avis }} · Confidentialité : {{URL_CONFIDENTIALITE}}

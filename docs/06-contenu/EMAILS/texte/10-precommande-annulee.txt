@@ -1,0 +1,22 @@
+Objet : Précommande annulée et remboursée : {{ $json.produit_titre }}
+
+VOTRE PRÉCOMMANDE NE PEUT PAS ÊTRE SERVIE
+
+{{ $json.salutation }}
+
+La quantité qui nous a été attribuée pour {{ $json.produit_titre }} a été réduite ou annulée. Les précommandes sont servies dans l'ordre de leur paiement ; la vôtre (commande {{ $json.numero_commande }}) ne peut pas l'être. Nous en sommes désolés.
+
+> Remboursement intégral : CHF {{ $json.montant_rembourse }}, sur votre {{ $json.moyen_paiement }}, dans un délai de {{DELAI_REMBOURSEMENT}}. Le crédit sur votre compte dépend ensuite de votre banque.
+
+Les autres articles éventuels de votre commande ne sont pas concernés.
+
+Si vous le souhaitez, nous pouvons vous prévenir quand ce produit arrive en stock local :
+
+Demander une alerte : {{ $json.url_alerte_produit }}
+
+--
+Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
+Conditions de vente : {{URL_CGV}} · Livraison et retours : {{URL_RETOURS}}
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.

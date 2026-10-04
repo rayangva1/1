@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fr-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>Commande {{ order_name }} expédiée</title>
+  <!--
+    FICHIER GÉNÉRÉ par docs/06-contenu/outils/generer_emails.py depuis EMAILS/source/emails.yaml — ne pas modifier.
+    Email 07-expedition-suivi — Expédition et suivi (notification Shopify) — canal : shopify
+    Objet : Commande [[order_name]] expédiée
+    Pré-en-tête : Votre numéro de suivi et le contenu de ce colis.
+    Déclencheur : Envoi marqué expédié (notification Shopify « Confirmation d'expédition »)
+    Segment : Le client de la commande
+    Base : Exécution du contrat
+    Fréquence : Une fois par envoi (une commande mixte = deux envois)
+    Variables :
+      - order_name : Numéro de commande
+      - customer.first_name : Prénom du client
+      - fulfillment.fulfillment_line_items : Articles de cet envoi (line.line_item.title, line.quantity)
+      - fulfillment.tracking_numbers : Numéros de suivi
+      - fulfillment.tracking_urls : Liens de suivi
+      - fulfillment.tracking_company : Transporteur
+      - order_status_url : Page de suivi de la commande
+    Champs fixes (MAJUSCULES entre doubles accolades) : registre docs/04-legal/champs_a_remplir.yaml, plus URL_LOGO_PNG
+    (PNG du logo hébergé, docs/05-da/logo/png/). Pour Shopify, coller la copie produite par --integration, jamais ce fichier.
+    Règles : aucune donnée interne ; prix publics relus à l'envoi ; aucune fausse urgence.
+  -->
+</head>
+<body style="margin:0;padding:0;background:#F6F5F1;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Votre numéro de suivi et le contenu de ce colis.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="{{URL_LOGO_PNG}}" width="200" alt="{{NOM_BOUTIQUE}}" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Votre colis est parti</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour{% if customer.first_name %} {{ customer.first_name }}{% endif %},</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Votre colis a été remis au transporteur. Voici ce qu'il contient :</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <ul style="margin:0 0 12px 20px;padding:0;font-size:15px;line-height:22px;color:#111111;">{% for line in fulfillment.fulfillment_line_items %}<li>{{ line.line_item.title }} × {{ line.quantity }}</li>{% endfor %}</ul>
+{% if fulfillment.tracking_numbers.size > 0 %}
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;"><strong>Suivi :</strong> {{ fulfillment.tracking_company }} · n° {{ fulfillment.tracking_numbers | join: ', ' }}</p>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="{{ fulfillment.tracking_urls.first }}" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Suivre mon colis</a></td></tr></table>
+{% endif %}
+              <p style="margin:0 0 12px 0;font-size:14px;line-height:21px;color:#55534E;word-break:break-word;">Si votre commande contient une précommande, elle fait l'objet d'un envoi séparé, dès sa réception.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Le suivi peut mettre quelques heures à s'activer. S'il ne bouge plus depuis {{SEUIL_COLIS_BLOQUE}}, écrivez-nous : nous ouvrons une recherche.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Colis abîmé à la livraison ? Photographiez le colis et les articles, puis écrivez-nous dans un délai de {{DELAI_SIGNALEMENT}}.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="border:2px solid #111111;border-radius:4px;"><a href="{{ order_status_url }}" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#111111;text-decoration:none;">Voir ma commande</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.<br>Conditions de vente : {{URL_CGV}} · Livraison et retours : {{URL_RETOURS}}<br>{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

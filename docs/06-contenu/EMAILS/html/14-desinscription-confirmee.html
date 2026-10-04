@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="fr-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>Désinscription enregistrée</title>
+  <!--
+    FICHIER GÉNÉRÉ par docs/06-contenu/outils/generer_emails.py depuis EMAILS/source/emails.yaml — ne pas modifier.
+    Email 14-desinscription-confirmee — Désinscription confirmée (facultatif) — canal : n8n
+    Objet : Désinscription enregistrée
+    Pré-en-tête : Vous ne recevrez plus nos alertes ni nos récapitulatifs.
+    Déclencheur : Clic sur « me désinscrire » (envoi facultatif : décision propriétaire et juriste)
+    Segment : La personne qui se désinscrit
+    Base : Information sur l'exécution de la demande ; aucun contenu promotionnel
+    Fréquence : Une fois ; jamais de relance
+    Variables :
+      - url_reinscription : Page d'inscription
+    Champs fixes (MAJUSCULES entre doubles accolades) : registre docs/04-legal/champs_a_remplir.yaml, plus URL_LOGO_PNG
+    (PNG du logo hébergé, docs/05-da/logo/png/). Pour Shopify, coller la copie produite par --integration, jamais ce fichier.
+    Règles : aucune donnée interne ; prix publics relus à l'envoi ; aucune fausse urgence.
+  -->
+</head>
+<body style="margin:0;padding:0;background:#F6F5F1;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Vous ne recevrez plus nos alertes ni nos récapitulatifs.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="{{URL_LOGO_PNG}}" width="200" alt="{{NOM_BOUTIQUE}}" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Désinscription enregistrée</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Votre adresse est retirée de nos alertes et de nos récapitulatifs, dans tous nos outils. Nous la conservons uniquement dans une liste d'exclusion, pour ne plus vous écrire.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Les emails liés à une commande (confirmation, expédition) restent envoyés si vous commandez.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Une erreur ? Vous pouvez vous réinscrire : <a href="{{ $json.url_reinscription }}" style="color:#B33F00;">page d'inscription</a>.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              {{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Confidentialité : {{URL_CONFIDENTIALITE}}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

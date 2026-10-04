@@ -1,0 +1,23 @@
+Objet : {{NOM_BOUTIQUE}} est ouverte : ce qui est en stock local
+
+LA BOUTIQUE EST OUVERTE
+
+{{ $json.salutation }}
+
+Les produits sont arrivés à Genève et ont été contrôlés. Voici ce qui est en stock local aujourd'hui :
+
+{{ $json.lignes_produits_texte }}
+
+Une limite par commande s'applique à certains produits ; elle figure sur chaque fiche. La disponibilité affichée sur le site au moment de votre commande fait foi.
+
+Voir le stock local : {{ $json.url_stock_local }}
+
+> Livraison en Suisse uniquement · expédition sous {{DELAI_EXPEDITION}} · frais affichés avant le paiement.
+
+--
+Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que vous vous êtes inscrit à nos alertes (confirmé le {{ $json.date_consentement }}).
+Modifier mes préférences : {{ $json.url_preferences }} · Me désinscrire en un clic : {{ $json.url_desinscription }}
+Confidentialité : {{URL_CONFIDENTIALITE}}

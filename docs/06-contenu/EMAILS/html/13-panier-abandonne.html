@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fr-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>Votre panier est enregistré</title>
+  <!--
+    FICHIER GÉNÉRÉ par docs/06-contenu/outils/generer_emails.py depuis EMAILS/source/emails.yaml — ne pas modifier.
+    Email 13-panier-abandonne — Panier abandonné (seulement avec consentement marketing) — canal : n8n
+    Objet : Votre panier est enregistré
+    Pré-en-tête : Vos articles et leur disponibilité actuelle, sans engagement.
+    Déclencheur : Paiement non terminé depuis 4 h (hypothèse) ; articles encore disponibles
+    Segment : Uniquement les personnes ayant coché le consentement marketing au checkout (note C4 du juriste)
+    Base : Consentement marketing explicite ; sinon AUCUN envoi
+    Fréquence : Un seul email par panier ; aucun code promo
+    Variables :
+      - salutation : Salutation calculée par le workflow
+      - lignes_produits_html : Articles encore disponibles (stock local ou précommande), prix relus
+      - note_ruptures : « Un article de votre panier n'est plus disponible. » ou vide
+      - url_panier : Lien de reprise du panier
+      - url_preferences : Page de préférences
+      - url_desinscription : Désinscription en un clic
+      - date_consentement : Date du consentement
+    Champs fixes (MAJUSCULES entre doubles accolades) : registre docs/04-legal/champs_a_remplir.yaml, plus URL_LOGO_PNG
+    (PNG du logo hébergé, docs/05-da/logo/png/). Pour Shopify, coller la copie produite par --integration, jamais ce fichier.
+    Règles : aucune donnée interne ; prix publics relus à l'envoi ; aucune fausse urgence.
+  -->
+</head>
+<body style="margin:0;padding:0;background:#F6F5F1;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Vos articles et leur disponibilité actuelle, sans engagement.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="{{URL_LOGO_PNG}}" width="200" alt="{{NOM_BOUTIQUE}}" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Votre panier est enregistré</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">{{ $json.salutation }}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Vous avez commencé une commande sans la terminer. Voici vos articles, avec leur disponibilité au moment de cet email :</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              {{ $json.lignes_produits_html }}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">{{ $json.note_ruptures }}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Nous ne réservons pas les articles d'un panier : la disponibilité affichée au moment de la commande fait foi.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="{{ $json.url_panier }}" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Reprendre mon panier</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Une question avant de commander ? Répondez à cet email.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.<br>{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous vous êtes inscrit à nos alertes (confirmé le {{ $json.date_consentement }}).<br><a href="{{ $json.url_preferences }}" style="color:#B33F00;">Modifier mes préférences</a> · <a href="{{ $json.url_desinscription }}" style="color:#B33F00;">Me désinscrire en un clic</a><br>Confidentialité : {{URL_CONFIDENTIALITE}}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

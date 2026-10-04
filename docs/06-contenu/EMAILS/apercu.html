@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="fr-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aperçu des emails — Quai des Cartes (nom provisoire)</title>
+  <!-- FICHIER GÉNÉRÉ par docs/06-contenu/outils/generer_emails.py — données d'exemple FICTIVES. -->
+  <style>
+    body { margin: 0; padding: 16px; background: #ECEAE4; color: #111111; font-family: Arial, Helvetica, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; }
+    section { margin: 32px 0; padding: 16px; background: #FFFFFF; border: 1px solid #D9D6CF; }
+    .meta { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
+    .meta th, .meta td { text-align: left; vertical-align: top; padding: 4px 8px; border-bottom: 1px solid #D9D6CF; }
+    .meta th { width: 9rem; }
+    .email { overflow-x: auto; }
+    .avertissement { padding: 12px; background: #FFF1CC; color: #6B4A00; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Aperçu des 14 emails</h1>
+    <p class="avertissement"><strong>Données FICTIVES.</strong> Nom de travail provisoire « Quai des Cartes ». Les valeurs marquées ⟦à valider⟧ sont des propositions du registre légal ; ⟦CHAMP⟧ = champ encore à remplir. Les emails Shopify (06, 07) sont montrés avec des lignes d'exemple à la place des boucles Liquid.</p>
+    <ol><li><a href="#email-01-confirmation-inscription">01-confirmation-inscription — Confirmation d&#x27;inscription (double opt-in)</a></li><li><a href="#email-02-bienvenue-preferences">02-bienvenue-preferences — Bienvenue et préférences</a></li><li><a href="#email-03-ouverture-boutique">03-ouverture-boutique — Ouverture douce (BL-118)</a></li><li><a href="#email-04-alerte-stock-local">04-alerte-stock-local — Alerte : nouveau stock local</a></li><li><a href="#email-05-recapitulatif-hebdo">05-recapitulatif-hebdo — Récapitulatif hebdomadaire</a></li><li><a href="#email-06-confirmation-commande">06-confirmation-commande — Confirmation de commande (notification Shopify)</a></li><li><a href="#email-07-expedition-suivi">07-expedition-suivi — Expédition et suivi (notification Shopify)</a></li><li><a href="#email-08-precommande-confirmee">08-precommande-confirmee — Précommande confirmée</a></li><li><a href="#email-09-precommande-report">09-precommande-report — Précommande : report de date</a></li><li><a href="#email-10-precommande-annulee">10-precommande-annulee — Précommande annulée et remboursée (quantité réduite ou annulée)</a></li><li><a href="#email-11-demande-avis">11-demande-avis — Demande d&#x27;avis après livraison</a></li><li><a href="#email-12-reachat">12-reachat — Réachat : suggestion sur extension ou format déjà acheté</a></li><li><a href="#email-13-panier-abandonne">13-panier-abandonne — Panier abandonné (seulement avec consentement marketing)</a></li><li><a href="#email-14-desinscription-confirmee">14-desinscription-confirmee — Désinscription confirmée (facultatif)</a></li></ol>
+    <section id="email-01-confirmation-inscription"><h2>01-confirmation-inscription — Confirmation d&#x27;inscription (double opt-in)</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Formulaire d&#x27;inscription reçu (landing ou formulaire Shopify), adresse non encore confirmée</td></tr><tr><th scope="row">Segment</th><td>La seule personne inscrite, statut en_attente</td></tr><tr><th scope="row">Base</th><td>Demande explicite de la personne ; email unique, sans contenu promotionnel</td></tr><tr><th scope="row">Fréquence</th><td>Une fois par inscription ; pas de relance automatique</td></tr><tr><th scope="row">Objet</th><td>Confirmez votre alerte Quai des Cartes (nom provisoire)</td></tr><tr><th scope="row">Pré-en-tête</th><td>Un clic pour activer vos alertes. Sans confirmation, nous ne vous écrirons pas.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Un clic pour activer vos alertes. Sans confirmation, nous ne vous écrirons pas.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Confirmez votre inscription</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Vous avez demandé à recevoir l'alerte d'ouverture de Quai des Cartes (nom provisoire) et, si vous l'avez choisi, nos alertes de stock et au plus un email récapitulatif par semaine.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="https://n8n.exemple.invalid/webhook/alertes-confirmer?jeton=FICTIF" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Confirmer mon inscription</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Ce lien est valable 7 jours.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Vous n'êtes pas à l'origine de cette demande ? Ignorez simplement cet email : sans clic de votre part, votre adresse n'est pas inscrite.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              ⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email unique parce que cette adresse a été saisie sur notre page d'inscription.<br>Confidentialité : ⟦URL_CONFIDENTIALITE⟧
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-02-bienvenue-preferences"><h2>02-bienvenue-preferences — Bienvenue et préférences</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Clic sur le lien de confirmation</td></tr><tr><th scope="row">Segment</th><td>La personne qui vient de confirmer</td></tr><tr><th scope="row">Base</th><td>Consentement confirmé (double opt-in)</td></tr><tr><th scope="row">Fréquence</th><td>Une fois</td></tr><tr><th scope="row">Objet</th><td>Vos alertes Quai des Cartes (nom provisoire) sont actives</td></tr><tr><th scope="row">Pré-en-tête</th><td>Ce que vous allez recevoir, et comment changer vos choix.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Ce que vous allez recevoir, et comment changer vos choix.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Vos alertes sont actives</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Merci d'avoir confirmé. Voici ce que vous recevrez :</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <ul style="margin:0 0 12px 20px;padding:0;font-size:15px;line-height:22px;color:#111111;"><li style="margin:0 0 6px 0;">l'alerte d'ouverture de la boutique, quand les produits sont reçus et contrôlés ;</li><li style="margin:0 0 6px 0;">les alertes de stock local pour : Coffrets Dresseur d'élite (ETB), Displays ;</li><li style="margin:0 0 6px 0;">au plus un email récapitulatif par semaine, seulement s'il y a quelque chose d'utile.</li></ul>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;"><strong>Nos règles.</strong> « Stock local » : le produit est chez nous, à Genève. « Précommande » : seulement quand la quantité nous est confirmée par écrit. Aucune fausse urgence, aucune promesse de carte rare ni de valeur.</td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="border:2px solid #111111;border-radius:4px;"><a href="https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#111111;text-decoration:none;">Modifier mes préférences</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Pour commencer : <a href="https://exemple.invalid/blogs/guides/etb-ou-display" style="color:#B33F00;">ETB ou display, lequel choisir ?</a></p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous vous êtes inscrit à nos alertes (confirmé le 14.10.2026).<br><a href="https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF" style="color:#B33F00;">Modifier mes préférences</a> · <a href="https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF" style="color:#B33F00;">Me désinscrire en un clic</a><br>Confidentialité : ⟦URL_CONFIDENTIALITE⟧
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-03-ouverture-boutique"><h2>03-ouverture-boutique — Ouverture douce (BL-118)</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>GO de l&#x27;ouverture douce (C14) : fiches publiées, stock local réel</td></tr><tr><th scope="row">Segment</th><td>Tous les inscrits confirmés</td></tr><tr><th scope="row">Base</th><td>Consentement confirmé (alerte d&#x27;ouverture)</td></tr><tr><th scope="row">Fréquence</th><td>Une fois</td></tr><tr><th scope="row">Objet</th><td>Quai des Cartes (nom provisoire) est ouverte : ce qui est en stock local</td></tr><tr><th scope="row">Pré-en-tête</th><td>Produits reçus et contrôlés à Genève. Livraison en Suisse.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Produits reçus et contrôlés à Genève. Livraison en Suisse.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">La boutique est ouverte</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Les produits sont arrivés à Genève et ont été contrôlés. Voici ce qui est en stock local aujourd'hui :</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;"><a href="https://exemple.invalid/products/display-extension-exemple-fr" style="color:#111111;text-decoration:none;">Display 36 boosters — Extension Exemple — FR (FICTIF)</a></strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E3F4E8;color:#0F5A2A;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">STOCK LOCAL</span> <span style="font-size:13px;color:#55534E;">Expédié depuis Genève sous 3 jours ouvrés ⟦à valider⟧</span></div><div style="margin-top:8px;font-family:'Courier New', Courier, monospace;font-size:17px;font-weight:bold;color:#111111;">CHF 209.90 (FICTIF)</div></td></tr></table>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;"><a href="https://exemple.invalid/products/coffret-extension-exemple-2-fr" style="color:#111111;text-decoration:none;">Coffret — Extension Exemple 2 — FR (FICTIF)</a></strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E6E9FB;color:#2B3990;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">PRÉCOMMANDE</span> <span style="font-size:13px;color:#55534E;">Sortie estimée au 6.11.2026 (peut changer) · expédiée dès réception</span></div><div style="margin-top:8px;font-family:'Courier New', Courier, monospace;font-size:17px;font-weight:bold;color:#111111;">CHF 59.90 (FICTIF)</div></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Une limite par commande s'applique à certains produits ; elle figure sur chaque fiche. La disponibilité affichée sur le site au moment de votre commande fait foi.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="https://exemple.invalid/collections/disponible-maintenant" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Voir le stock local</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;">Livraison en Suisse uniquement · expédition sous 3 jours ouvrés ⟦à valider⟧ · frais affichés avant le paiement.</td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous vous êtes inscrit à nos alertes (confirmé le 14.10.2026).<br><a href="https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF" style="color:#B33F00;">Modifier mes préférences</a> · <a href="https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF" style="color:#B33F00;">Me désinscrire en un clic</a><br>Confidentialité : ⟦URL_CONFIDENTIALITE⟧
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-04-alerte-stock-local"><h2>04-alerte-stock-local — Alerte : nouveau stock local</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Entrée en stock local réelle (réception contrôlée, fiche publiée) d&#x27;un produit suivi</td></tr><tr><th scope="row">Segment</th><td>Inscrits confirmés : alerte sur ce produit, ou préférences correspondant au format</td></tr><tr><th scope="row">Base</th><td>Consentement confirmé (alertes de stock choisies)</td></tr><tr><th scope="row">Fréquence</th><td>Au plus une alerte par produit et par personne ; pas d&#x27;envoi si le stock repasse à zéro avant l&#x27;envoi</td></tr><tr><th scope="row">Objet</th><td>En stock local : Display 36 boosters — Extension Exemple — FR (FICTIF)</td></tr><tr><th scope="row">Pré-en-tête</th><td>Le produit que vous suivez est arrivé à Genève.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Le produit que vous suivez est arrivé à Genève.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">C'est en stock local</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Vous avez demandé une alerte pour ce produit.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;">Display 36 boosters — Extension Exemple — FR (FICTIF)</strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E3F4E8;color:#0F5A2A;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">STOCK LOCAL</span> <span style="font-size:13px;color:#55534E;">Expédié depuis Genève sous 3 jours ouvrés ⟦à valider⟧</span></div><div style="margin-top:8px;font-family:'Courier New', Courier, monospace;font-size:17px;font-weight:bold;color:#111111;">CHF 209.90 (FICTIF)</div><div style="margin-top:4px;font-size:13px;color:#55534E;">Limite : 2 par commande</div></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="https://exemple.invalid/products/display-extension-exemple-fr" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Voir la fiche</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Le prix et la disponibilité affichés sur le site au moment de votre commande font foi. Nous ne réservons pas de produit par email.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous vous êtes inscrit à nos alertes (confirmé le 14.10.2026).<br><a href="https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF" style="color:#B33F00;">Modifier mes préférences</a> · <a href="https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF" style="color:#B33F00;">Me désinscrire en un clic</a><br>Confidentialité : ⟦URL_CONFIDENTIALITE⟧
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-05-recapitulatif-hebdo"><h2>05-recapitulatif-hebdo — Récapitulatif hebdomadaire</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Jeudi (calendrier), seulement s&#x27;il y a un contenu utile ; sinon pas d&#x27;envoi</td></tr><tr><th scope="row">Segment</th><td>Inscrits confirmés ayant choisi le récapitulatif</td></tr><tr><th scope="row">Base</th><td>Consentement confirmé (récapitulatif au plus hebdomadaire)</td></tr><tr><th scope="row">Fréquence</th><td>Au plus un par semaine (BP §9)</td></tr><tr><th scope="row">Objet</th><td>Cette semaine chez Quai des Cartes (nom provisoire) : ETB ou display, et ce qui est en stock</td></tr><tr><th scope="row">Pré-en-tête</th><td>Un guide et les produits réellement en stock cette semaine.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Un guide et les produits réellement en stock cette semaine.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">ETB ou display, et ce qui est en stock</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Cette semaine, un guide pour choisir entre ETB et display, et les produits en stock local.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;"><a href="https://exemple.invalid/products/display-extension-exemple-fr" style="color:#111111;text-decoration:none;">Display 36 boosters — Extension Exemple — FR (FICTIF)</a></strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E3F4E8;color:#0F5A2A;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">STOCK LOCAL</span> <span style="font-size:13px;color:#55534E;">Expédié depuis Genève sous 3 jours ouvrés ⟦à valider⟧</span></div><div style="margin-top:8px;font-family:'Courier New', Courier, monospace;font-size:17px;font-weight:bold;color:#111111;">CHF 209.90 (FICTIF)</div></td></tr></table>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;"><a href="https://exemple.invalid/products/coffret-extension-exemple-2-fr" style="color:#111111;text-decoration:none;">Coffret — Extension Exemple 2 — FR (FICTIF)</a></strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E6E9FB;color:#2B3990;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">PRÉCOMMANDE</span> <span style="font-size:13px;color:#55534E;">Sortie estimée au 6.11.2026 (peut changer) · expédiée dès réception</span></div><div style="margin-top:8px;font-family:'Courier New', Courier, monospace;font-size:17px;font-weight:bold;color:#111111;">CHF 59.90 (FICTIF)</div></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h2 style="margin:8px 0 8px 0;font-size:17px;line-height:23px;font-weight:bold;color:#111111;">Le guide de la semaine : ETB ou display : lequel choisir ?</h2>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Deux formats, deux usages : on vous aide à choisir.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="border:2px solid #111111;border-radius:4px;"><a href="https://exemple.invalid/blogs/guides/etb-ou-display" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#111111;text-decoration:none;">Lire le guide</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous vous êtes inscrit à nos alertes (confirmé le 14.10.2026).<br><a href="https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF" style="color:#B33F00;">Modifier mes préférences</a> · <a href="https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF" style="color:#B33F00;">Me désinscrire en un clic</a><br>Confidentialité : ⟦URL_CONFIDENTIALITE⟧
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-06-confirmation-commande"><h2>06-confirmation-commande — Confirmation de commande (notification Shopify)</h2><table class="meta"><tr><th scope="row">Canal</th><td>shopify</td></tr><tr><th scope="row">Déclencheur</th><td>Commande payée (notification Shopify « Confirmation de commande »)</td></tr><tr><th scope="row">Segment</th><td>Le client de la commande</td></tr><tr><th scope="row">Base</th><td>Exécution du contrat ; aucun contenu promotionnel</td></tr><tr><th scope="row">Fréquence</th><td>Une fois par commande</td></tr><tr><th scope="row">Objet</th><td>Commande #1001 (FICTIF) confirmée</td></tr><tr><th scope="row">Pré-en-tête</th><td>Récapitulatif, statut de chaque article et suite de votre commande.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Récapitulatif, statut de chaque article et suite de votre commande.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Merci, votre commande est confirmée</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Nous avons bien reçu votre paiement. Voici exactement ce que vous avez commandé.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:14px 0;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:15px;line-height:21px;color:#111111;word-break:break-word;"><strong>Display 36 boosters — Extension Exemple — FR (FICTIF)</strong><br><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E3F4E8;color:#0F5A2A;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">STOCK LOCAL</span> <span style="font-size:13px;color:#55534E;">&nbsp;Expédition sous 3 jours ouvrés ⟦à valider⟧</span></td><td align="right" valign="top" style="padding:14px 0 14px 12px;border-top:1px solid #D9D6CF;font-family:'Courier New', Courier, monospace;font-size:15px;line-height:21px;color:#111111;white-space:nowrap;">1 × 209.90<br><strong>CHF 209.90</strong></td></tr><tr><td style="padding:14px 0;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:15px;line-height:21px;color:#111111;word-break:break-word;"><strong>Protège-cartes ×100 — exemple (FICTIF)</strong><br><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E3F4E8;color:#0F5A2A;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">STOCK LOCAL</span> <span style="font-size:13px;color:#55534E;">&nbsp;Expédition sous 3 jours ouvrés ⟦à valider⟧</span></td><td align="right" valign="top" style="padding:14px 0 14px 12px;border-top:1px solid #D9D6CF;font-family:'Courier New', Courier, monospace;font-size:15px;line-height:21px;color:#111111;white-space:nowrap;">2 × 9.90<br><strong>CHF 19.80</strong></td></tr><tr><td style="padding:14px 0;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:15px;line-height:21px;color:#111111;word-break:break-word;"><strong>Coffret — Extension Exemple 2 — FR — Précommande (FICTIF)</strong><br><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E6E9FB;color:#2B3990;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">PRÉCOMMANDE</span> <span style="font-size:13px;color:#55534E;">&nbsp;Expédiée à part, dès réception</span></td><td align="right" valign="top" style="padding:14px 0 14px 12px;border-top:1px solid #D9D6CF;font-family:'Courier New', Courier, monospace;font-size:15px;line-height:21px;color:#111111;white-space:nowrap;">1 × 59.90<br><strong>CHF 59.90</strong></td></tr><tr><td style="padding:12px 0 4px 0;border-top:2px solid #111111;font-family:Arial, Helvetica, sans-serif;font-size:15px;color:#111111;">Sous-total articles</td><td align="right" style="padding:12px 0 4px 0;border-top:2px solid #111111;font-family:'Courier New', Courier, monospace;font-size:15px;color:#111111;white-space:nowrap;">CHF 289.60</td></tr><tr><td style="padding:4px 0;font-family:Arial, Helvetica, sans-serif;font-size:15px;color:#111111;">Livraison</td><td align="right" style="padding:4px 0;font-family:'Courier New', Courier, monospace;font-size:15px;color:#111111;white-space:nowrap;">CHF 9.00</td></tr><tr><td style="padding:8px 0 4px 0;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">Total payé</td><td align="right" style="padding:8px 0 4px 0;font-family:'Courier New', Courier, monospace;font-size:18px;font-weight:bold;color:#111111;white-space:nowrap;">CHF 298.60</td></tr><tr><td colspan="2" style="padding:0 0 4px 0;font-family:Arial, Helvetica, sans-serif;font-size:13px;color:#55534E;">⟦MENTION_TVA⟧</td></tr></table>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;"><strong>Commande mixte :</strong> les articles en stock local partent dès qu'ils sont prêts ; la précommande est expédiée séparément, dès sa réception. La livraison n'est facturée qu'une fois. Nous vous écrivons si une date change.</td></tr></table>
+              <p style="margin:12px 0 12px 0;font-size:14px;line-height:21px;color:#111111;word-break:break-word;"><strong>Livraison</strong> (Suisse uniquement) :<br>Léa Exemple<br>Rue Fictive 1<br>1200 Genève</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="https://exemple.invalid/commande-fictive" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Voir ma commande</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>Conditions de vente : ⟦URL_CGV⟧ · Livraison et retours : ⟦URL_RETOURS⟧<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-07-expedition-suivi"><h2>07-expedition-suivi — Expédition et suivi (notification Shopify)</h2><table class="meta"><tr><th scope="row">Canal</th><td>shopify</td></tr><tr><th scope="row">Déclencheur</th><td>Envoi marqué expédié (notification Shopify « Confirmation d&#x27;expédition »)</td></tr><tr><th scope="row">Segment</th><td>Le client de la commande</td></tr><tr><th scope="row">Base</th><td>Exécution du contrat</td></tr><tr><th scope="row">Fréquence</th><td>Une fois par envoi (une commande mixte = deux envois)</td></tr><tr><th scope="row">Objet</th><td>Commande #1001 (FICTIF) expédiée</td></tr><tr><th scope="row">Pré-en-tête</th><td>Votre numéro de suivi et le contenu de ce colis.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Votre numéro de suivi et le contenu de ce colis.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Votre colis est parti</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Votre colis a été remis au transporteur. Voici ce qu'il contient :</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <ul style="margin:0 0 12px 20px;padding:0;font-size:15px;line-height:22px;color:#111111;"><li>Display 36 boosters — Extension Exemple — FR (FICTIF) × 1</li><li>Protège-cartes ×100 — exemple (FICTIF) × 2</li></ul>
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;"><strong>Suivi :</strong> Transporteur (FICTIF) · n° 99.00.000000.00000000 (FICTIF)</p>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="https://exemple.invalid/suivi-fictif" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Suivre mon colis</a></td></tr></table>
+              <p style="margin:0 0 12px 0;font-size:14px;line-height:21px;color:#55534E;word-break:break-word;">Si votre commande contient une précommande, elle fait l'objet d'un envoi séparé, dès sa réception.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Le suivi peut mettre quelques heures à s'activer. S'il ne bouge plus depuis 5 jours ouvrés ⟦à valider⟧, écrivez-nous : nous ouvrons une recherche.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Colis abîmé à la livraison ? Photographiez le colis et les articles, puis écrivez-nous dans un délai de 5 jours après réception ⟦à valider⟧.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="border:2px solid #111111;border-radius:4px;"><a href="https://exemple.invalid/commande-fictive" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#111111;text-decoration:none;">Voir ma commande</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>Conditions de vente : ⟦URL_CGV⟧ · Livraison et retours : ⟦URL_RETOURS⟧<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-08-precommande-confirmee"><h2>08-precommande-confirmee — Précommande confirmée</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Commande payée contenant une ligne de précommande (en plus de la confirmation de commande)</td></tr><tr><th scope="row">Segment</th><td>Le client de la commande</td></tr><tr><th scope="row">Base</th><td>Exécution du contrat (information sur la précommande)</td></tr><tr><th scope="row">Fréquence</th><td>Une fois par ligne de précommande</td></tr><tr><th scope="row">Objet</th><td>Précommande enregistrée : Coffret — Extension Exemple 2 — FR (FICTIF)</td></tr><tr><th scope="row">Pré-en-tête</th><td>Date de sortie, expédition, et ce qui se passe si la date change.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Date de sortie, expédition, et ce qui se passe si la date change.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Votre précommande est enregistrée</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Votre précommande fait partie de la commande #1001 (FICTIF) ; le paiement est reçu.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;">Coffret — Extension Exemple 2 — FR (FICTIF)</strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E6E9FB;color:#2B3990;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">PRÉCOMMANDE</span> <span style="font-size:13px;color:#55534E;">Sortie estimée au 6.11.2026 (peut changer)</span></div></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <ul style="margin:0 0 12px 20px;padding:0;font-size:15px;line-height:22px;color:#111111;"><li style="margin:0 0 6px 0;">Le prix payé est définitif.</li><li style="margin:0 0 6px 0;">Nous expédions dès réception et contrôle du produit, en principe sous 3 jours ouvrés ⟦à valider⟧ après réception. Nous ne garantissons pas une livraison le jour de la sortie.</li><li style="margin:0 0 6px 0;">Si la date change, nous vous écrivons dans un délai de 2 jours ouvrés après l'information du fournisseur ⟦à valider⟧.</li><li style="margin:0 0 6px 0;">Annulation gratuite jusqu'à 7 jours avant la date de sortie annoncée ⟦à valider⟧ : répondez à cet email avec votre numéro de commande.</li></ul>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Si votre commande contient aussi des articles en stock local, ils partent dès qu'ils sont prêts ; la précommande suit séparément. La livraison n'est facturée qu'une fois.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="border:2px solid #111111;border-radius:4px;"><a href="⟦URL_PRECOMMANDES⟧" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#111111;text-decoration:none;">Nos conditions de précommande</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>Conditions de vente : ⟦URL_CGV⟧ · Livraison et retours : ⟦URL_RETOURS⟧<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-09-precommande-report"><h2>09-precommande-report — Précommande : report de date</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Nouvelle date de sortie reçue (événement « report » du catalogue)</td></tr><tr><th scope="row">Segment</th><td>Clients ayant une précommande ouverte sur ce produit</td></tr><tr><th scope="row">Base</th><td>Exécution du contrat (PRECOMMANDES : information du report)</td></tr><tr><th scope="row">Fréquence</th><td>À chaque report</td></tr><tr><th scope="row">Objet</th><td>Report de sortie : Coffret — Extension Exemple 2 — FR (FICTIF)</td></tr><tr><th scope="row">Pré-en-tête</th><td>Nouvelle date annoncée et vos options.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Nouvelle date annoncée et vos options.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">La date de sortie a changé</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">La sortie de Coffret — Extension Exemple 2 — FR (FICTIF) (commande #1001 (FICTIF)) est reportée. Nous vous transmettons l'information dès que nous la recevons.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 12px 0;"><tr><td style="padding:6px 12px 6px 0;font-family:Arial, Helvetica, sans-serif;font-size:14px;font-weight:bold;color:#111111;vertical-align:top;">Date annoncée lors de votre commande</td><td style="padding:6px 0;font-family:Arial, Helvetica, sans-serif;font-size:14px;color:#111111;">6.11.2026</td></tr><tr><td style="padding:6px 12px 6px 0;font-family:Arial, Helvetica, sans-serif;font-size:14px;font-weight:bold;color:#111111;vertical-align:top;">Nouvelle date annoncée</td><td style="padding:6px 0;font-family:Arial, Helvetica, sans-serif;font-size:14px;color:#111111;">20.11.2026</td></tr><tr><td style="padding:6px 12px 6px 0;font-family:Arial, Helvetica, sans-serif;font-size:14px;font-weight:bold;color:#111111;vertical-align:top;">Information reçue le</td><td style="padding:6px 0;font-family:Arial, Helvetica, sans-serif;font-size:14px;color:#111111;">2.11.2026</td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;"><strong>Garder votre précommande</strong> : vous n'avez rien à faire. Nous expédions dès réception.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Le report dépasse le délai prévu par nos conditions : vous pouvez annuler et être remboursé intégralement. Répondez simplement à cet email.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="border:2px solid #111111;border-radius:4px;"><a href="⟦URL_PRECOMMANDES⟧" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#111111;text-decoration:none;">Nos conditions de précommande</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>Conditions de vente : ⟦URL_CGV⟧ · Livraison et retours : ⟦URL_RETOURS⟧<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-10-precommande-annulee"><h2>10-precommande-annulee — Précommande annulée et remboursée (quantité réduite ou annulée)</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Allocation réduite ou annulée : précommande non servie (ordre de paiement)</td></tr><tr><th scope="row">Segment</th><td>Clients dont la précommande ne peut pas être servie</td></tr><tr><th scope="row">Base</th><td>Exécution du contrat (PRECOMMANDES : remboursement intégral)</td></tr><tr><th scope="row">Fréquence</th><td>Une fois</td></tr><tr><th scope="row">Objet</th><td>Précommande annulée et remboursée : Coffret — Extension Exemple 2 — FR (FICTIF)</td></tr><tr><th scope="row">Pré-en-tête</th><td>Nous ne pouvons pas servir votre précommande : remboursement intégral.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Nous ne pouvons pas servir votre précommande : remboursement intégral.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Votre précommande ne peut pas être servie</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">La quantité qui nous a été attribuée pour Coffret — Extension Exemple 2 — FR (FICTIF) a été réduite ou annulée. Les précommandes sont servies dans l'ordre de leur paiement ; la vôtre (commande #1001 (FICTIF)) ne peut pas l'être. Nous en sommes désolés.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;"><strong>Remboursement intégral</strong> : CHF 59.90 (FICTIF), sur votre carte de paiement, dans un délai de 10 jours ⟦à valider⟧. Le crédit sur votre compte dépend ensuite de votre banque.</td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Les autres articles éventuels de votre commande ne sont pas concernés.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Si vous le souhaitez, nous pouvons vous prévenir quand ce produit arrive en stock local :</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="border:2px solid #111111;border-radius:4px;"><a href="https://exemple.invalid/products/coffret-extension-exemple-2-fr#alerte" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#111111;text-decoration:none;">Demander une alerte</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>Conditions de vente : ⟦URL_CGV⟧ · Livraison et retours : ⟦URL_RETOURS⟧<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-11-demande-avis"><h2>11-demande-avis — Demande d&#x27;avis après livraison</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Livraison confirmée + 7 jours (hypothèse), commande sans réclamation ouverte</td></tr><tr><th scope="row">Segment</th><td>Clients non opposés (case d&#x27;opposition au checkout non cochée)</td></tr><tr><th scope="row">Base</th><td>À valider par le juriste (note C3 : un seul email, avec lien de refus)</td></tr><tr><th scope="row">Fréquence</th><td>Une seule demande par commande</td></tr><tr><th scope="row">Objet</th><td>Votre commande #1001 (FICTIF) est bien arrivée ?</td></tr><tr><th scope="row">Pré-en-tête</th><td>Deux minutes pour nous dire ce qui a marché, ou pas.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Deux minutes pour nous dire ce qui a marché, ou pas.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Tout s'est bien passé ?</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Votre commande #1001 (FICTIF) a été livrée il y a quelques jours. Votre avis nous aide à corriger ce qui ne va pas et aide d'autres personnes à choisir.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="https://exemple.invalid/avis-fictif" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Donner mon avis</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Un problème avec votre commande ? Ne passez pas par l'avis : répondez à cet email, une personne vous répond.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              ⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous avez commandé chez nous et ne vous êtes pas opposé à ce type de message. Une seule demande par commande.<br><a href="https://n8n.exemple.invalid/webhook/avis-refus?jeton=FICTIF" style="color:#B33F00;">Ne plus recevoir de demande d'avis</a> · Confidentialité : ⟦URL_CONFIDENTIALITE⟧
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-12-reachat"><h2>12-reachat — Réachat : suggestion sur extension ou format déjà acheté</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Produit de la même extension ou du même format entré en stock local</td></tr><tr><th scope="row">Segment</th><td>Clients ayant acheté cette extension ou ce format, avec consentement marketing, sans désinscription</td></tr><tr><th scope="row">Base</th><td>Consentement marketing (ou client non opposé : note C2 du juriste)</td></tr><tr><th scope="row">Fréquence</th><td>Au plus une suggestion par mois et par personne (hypothèse)</td></tr><tr><th scope="row">Objet</th><td>ETB — Extension Exemple — FR (FICTIF) : en stock local</td></tr><tr><th scope="row">Pré-en-tête</th><td>Une suite possible à votre dernier achat, sans engagement.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Une suite possible à votre dernier achat, sans engagement.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Une suite à votre collection ?</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Vous avez acheté un produit de l'extension Exemple ; ce coffret de la même extension est en stock local.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;">ETB — Extension Exemple — FR (FICTIF)</strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E3F4E8;color:#0F5A2A;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">STOCK LOCAL</span> <span style="font-size:13px;color:#55534E;">Expédié depuis Genève sous 3 jours ouvrés ⟦à valider⟧</span></div><div style="margin-top:8px;font-family:'Courier New', Courier, monospace;font-size:17px;font-weight:bold;color:#111111;">CHF 69.90 (FICTIF)</div></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="https://exemple.invalid/products/etb-extension-exemple-fr" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Voir la fiche</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Nous ne vous suggérons que des produits réellement en stock local, au plus une fois par mois.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous vous êtes inscrit à nos alertes (confirmé le 14.10.2026).<br><a href="https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF" style="color:#B33F00;">Modifier mes préférences</a> · <a href="https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF" style="color:#B33F00;">Me désinscrire en un clic</a><br>Confidentialité : ⟦URL_CONFIDENTIALITE⟧
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-13-panier-abandonne"><h2>13-panier-abandonne — Panier abandonné (seulement avec consentement marketing)</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Paiement non terminé depuis 4 h (hypothèse) ; articles encore disponibles</td></tr><tr><th scope="row">Segment</th><td>Uniquement les personnes ayant coché le consentement marketing au checkout (note C4 du juriste)</td></tr><tr><th scope="row">Base</th><td>Consentement marketing explicite ; sinon AUCUN envoi</td></tr><tr><th scope="row">Fréquence</th><td>Un seul email par panier ; aucun code promo</td></tr><tr><th scope="row">Objet</th><td>Votre panier est enregistré</td></tr><tr><th scope="row">Pré-en-tête</th><td>Vos articles et leur disponibilité actuelle, sans engagement.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Vos articles et leur disponibilité actuelle, sans engagement.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Votre panier est enregistré</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Vous avez commencé une commande sans la terminer. Voici vos articles, avec leur disponibilité au moment de cet email :</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;"><a href="https://exemple.invalid/products/display-extension-exemple-fr" style="color:#111111;text-decoration:none;">Display 36 boosters — Extension Exemple — FR (FICTIF)</a></strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E3F4E8;color:#0F5A2A;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">STOCK LOCAL</span> <span style="font-size:13px;color:#55534E;">Expédié depuis Genève sous 3 jours ouvrés ⟦à valider⟧</span></div><div style="margin-top:8px;font-family:'Courier New', Courier, monospace;font-size:17px;font-weight:bold;color:#111111;">CHF 209.90 (FICTIF)</div></td></tr></table>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;"><a href="https://exemple.invalid/products/coffret-extension-exemple-2-fr" style="color:#111111;text-decoration:none;">Coffret — Extension Exemple 2 — FR (FICTIF)</a></strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E6E9FB;color:#2B3990;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">PRÉCOMMANDE</span> <span style="font-size:13px;color:#55534E;">Sortie estimée au 6.11.2026 (peut changer) · expédiée dès réception</span></div><div style="margin-top:8px;font-family:'Courier New', Courier, monospace;font-size:17px;font-weight:bold;color:#111111;">CHF 59.90 (FICTIF)</div></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;"></p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Nous ne réservons pas les articles d'un panier : la disponibilité affichée au moment de la commande fait foi.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="https://exemple.invalid/panier-fictif" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Reprendre mon panier</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Une question avant de commander ? Répondez à cet email.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous vous êtes inscrit à nos alertes (confirmé le 14.10.2026).<br><a href="https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF" style="color:#B33F00;">Modifier mes préférences</a> · <a href="https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF" style="color:#B33F00;">Me désinscrire en un clic</a><br>Confidentialité : ⟦URL_CONFIDENTIALITE⟧
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-14-desinscription-confirmee"><h2>14-desinscription-confirmee — Désinscription confirmée (facultatif)</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Clic sur « me désinscrire » (envoi facultatif : décision propriétaire et juriste)</td></tr><tr><th scope="row">Segment</th><td>La personne qui se désinscrit</td></tr><tr><th scope="row">Base</th><td>Information sur l&#x27;exécution de la demande ; aucun contenu promotionnel</td></tr><tr><th scope="row">Fréquence</th><td>Une fois ; jamais de relance</td></tr><tr><th scope="row">Objet</th><td>Désinscription enregistrée</td></tr><tr><th scope="row">Pré-en-tête</th><td>Vous ne recevrez plus nos alertes ni nos récapitulatifs.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Vous ne recevrez plus nos alertes ni nos récapitulatifs.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Désinscription enregistrée</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Votre adresse est retirée de nos alertes et de nos récapitulatifs, dans tous nos outils. Nous la conservons uniquement dans une liste d'exclusion, pour ne plus vous écrire.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Les emails liés à une commande (confirmation, expédition) restent envoyés si vous commandez.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Une erreur ? Vous pouvez vous réinscrire : <a href="https://exemple.invalid/#alertes" style="color:#B33F00;">page d'inscription</a>.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              ⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Confidentialité : ⟦URL_CONFIDENTIALITE⟧
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section>
+    <h2>Validation humaine requise</h2>
+    <p>Relire chaque email (objet, texte, déclencheur, segment) et valider les textes transactionnels avant intégration (RACI L44).</p>
+  </main>
+</body>
+</html>

@@ -1,0 +1,8 @@
+<!-- FICHIER GÉNÉRÉ par docs/06-contenu/outils/generer_emails.py — gabarit de ligne produit (precommande).
+Le workflow n8n le remplit pour chaque produit puis concatène les lignes dans lignes_produits_html
+(et une ligne « titre · statut · CHF prix » par produit dans lignes_produits_texte). Variables :
+  - titre : Titre exact de la fiche
+  - prix : Prix public relu
+  - url : URL de la fiche
+  - date_sortie_libelle : Libellé de date (voir email 08) -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;"><a href="{{ $json.url }}" style="color:#111111;text-decoration:none;">{{ $json.titre }}</a></strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E6E9FB;color:#2B3990;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">PRÉCOMMANDE</span> <span style="font-size:13px;color:#55534E;">Sortie {{ $json.date_sortie_libelle }} · expédiée dès réception</span></div><div style="margin-top:8px;font-family:'Courier New', Courier, monospace;font-size:17px;font-weight:bold;color:#111111;">CHF {{ $json.prix }}</div></td></tr></table>

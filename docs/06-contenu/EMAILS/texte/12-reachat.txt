@@ -1,0 +1,24 @@
+Objet : {{ $json.produit_titre }} : en stock local
+
+UNE SUITE À VOTRE COLLECTION ?
+
+{{ $json.salutation }}
+
+{{ $json.raison_recommandation }}
+
+{{ $json.produit_titre }}
+Stock local · Expédié depuis Genève sous {{DELAI_EXPEDITION}}
+CHF {{ $json.produit_prix }}
+{{ $json.produit_limite }}
+
+Voir la fiche : {{ $json.produit_url }}
+
+Nous ne vous suggérons que des produits réellement en stock local, au plus une fois par mois.
+
+--
+Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que vous vous êtes inscrit à nos alertes (confirmé le {{ $json.date_consentement }}).
+Modifier mes préférences : {{ $json.url_preferences }} · Me désinscrire en un clic : {{ $json.url_desinscription }}
+Confidentialité : {{URL_CONFIDENTIALITE}}

@@ -1,0 +1,26 @@
+Objet : Commande {{ order_name }} expédiée
+
+VOTRE COLIS EST PARTI
+
+Bonjour{% if customer.first_name %} {{ customer.first_name }}{% endif %},
+
+Votre colis a été remis au transporteur. Voici ce qu'il contient :
+
+{% for line in fulfillment.fulfillment_line_items %}- {{ line.line_item.title }} × {{ line.quantity }}
+{% endfor %}{% if fulfillment.tracking_numbers.size > 0 %}Suivi : {{ fulfillment.tracking_company }} · n° {{ fulfillment.tracking_numbers | join: ', ' }}
+Suivre mon colis : {{ fulfillment.tracking_urls.first }}{% endif %}
+
+Si votre commande contient une précommande, elle fait l'objet d'un envoi séparé, dès sa réception.
+
+Le suivi peut mettre quelques heures à s'activer. S'il ne bouge plus depuis {{SEUIL_COLIS_BLOQUE}}, écrivez-nous : nous ouvrons une recherche.
+
+Colis abîmé à la livraison ? Photographiez le colis et les articles, puis écrivez-nous dans un délai de {{DELAI_SIGNALEMENT}}.
+
+Voir ma commande : {{ order_status_url }}
+
+--
+Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
+Conditions de vente : {{URL_CGV}} · Livraison et retours : {{URL_RETOURS}}
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.

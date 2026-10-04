@@ -1,0 +1,25 @@
+Objet : Votre panier est enregistré
+
+VOTRE PANIER EST ENREGISTRÉ
+
+{{ $json.salutation }}
+
+Vous avez commencé une commande sans la terminer. Voici vos articles, avec leur disponibilité au moment de cet email :
+
+{{ $json.lignes_produits_texte }}
+
+{{ $json.note_ruptures }}
+
+Nous ne réservons pas les articles d'un panier : la disponibilité affichée au moment de la commande fait foi.
+
+Reprendre mon panier : {{ $json.url_panier }}
+
+Une question avant de commander ? Répondez à cet email.
+
+--
+Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que vous vous êtes inscrit à nos alertes (confirmé le {{ $json.date_consentement }}).
+Modifier mes préférences : {{ $json.url_preferences }} · Me désinscrire en un clic : {{ $json.url_desinscription }}
+Confidentialité : {{URL_CONFIDENTIALITE}}
