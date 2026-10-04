@@ -1,0 +1,407 @@
+# Source des emails — docs/06-contenu/EMAILS/
+# Généré en HTML (styles en ligne, couleurs de la DA direction A) et en texte par :
+#   python docs/06-contenu/outils/generer_emails.py
+# Ne pas modifier les fichiers html/ et texte/ : modifier ce fichier puis régénérer.
+#
+# Syntaxe des textes :
+#   [[variable]]   valeur fournie à l'envoi : n8n => {{ $json.variable }} ; Shopify (Liquid) => {{ variable }}
+#                  (filtres Liquid autorisés pour Shopify : [[total_price | money]])
+#   {{CHAMP}}      champ fixe du registre docs/04-legal/champs_a_remplir.yaml (ou URL_LOGO_PNG), rempli à l'intégration
+#   **gras**  et  [texte](url)
+# Règles : aucune donnée interne (coût, marge, fournisseur, allocation chiffrée) ; aucun prix sauf prix public
+# relu au moment de l'envoi ; aucune fausse urgence ; produits « stock local » ou « précommande » seulement.
+# Tous les exemples sont FICTIFS.
+
+version: "2026-10-04"
+emails:
+  - id: "01-confirmation-inscription"
+    nom: "Confirmation d'inscription (double opt-in)"
+    canal: n8n
+    categorie: inscription
+    declencheur: "Formulaire d'inscription reçu (landing ou formulaire Shopify), adresse non encore confirmée"
+    segment: "La seule personne inscrite, statut en_attente"
+    base: "Demande explicite de la personne ; email unique, sans contenu promotionnel"
+    frequence: "Une fois par inscription ; pas de relance automatique"
+    objet: "Confirmez votre alerte {{NOM_BOUTIQUE}}"
+    pre_entete: "Un clic pour activer vos alertes. Sans confirmation, nous ne vous écrirons pas."
+    variables:
+      - [salutation, "« Bonjour Léa, » ou « Bonjour, » si le prénom est vide (calculé par le workflow)", "Bonjour Léa,"]
+      - [url_confirmation, "Lien de confirmation à jeton unique", "https://n8n.exemple.invalid/webhook/alertes-confirmer?jeton=FICTIF"]
+      - [duree_validite_lien, "Durée de validité du lien (hypothèse : 7 jours)", "7 jours"]
+    blocs:
+      - titre: "Confirmez votre inscription"
+      - p: "[[salutation]]"
+      - p: "Vous avez demandé à recevoir l'alerte d'ouverture de {{NOM_BOUTIQUE}} et, si vous l'avez choisi, nos alertes de stock et au plus un email récapitulatif par semaine."
+      - bouton: {texte: "Confirmer mon inscription", url: "[[url_confirmation]]"}
+      - p: "Ce lien est valable [[duree_validite_lien]]."
+      - p: "Vous n'êtes pas à l'origine de cette demande ? Ignorez simplement cet email : sans clic de votre part, votre adresse n'est pas inscrite."
+
+  - id: "02-bienvenue-preferences"
+    nom: "Bienvenue et préférences"
+    canal: n8n
+    categorie: marketing
+    declencheur: "Clic sur le lien de confirmation"
+    segment: "La personne qui vient de confirmer"
+    base: "Consentement confirmé (double opt-in)"
+    frequence: "Une fois"
+    objet: "Vos alertes {{NOM_BOUTIQUE}} sont actives"
+    pre_entete: "Ce que vous allez recevoir, et comment changer vos choix."
+    variables:
+      - [salutation, "Salutation calculée par le workflow", "Bonjour Léa,"]
+      - [formats_choisis, "Libellés des formats cochés, ou « tous les formats » si aucun", "Coffrets Dresseur d'élite (ETB), Displays"]
+      - [url_preferences, "Page de préférences à jeton", "https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF"]
+      - [url_guide, "Guide S01 (ETB ou display)", "https://exemple.invalid/blogs/guides/etb-ou-display"]
+      - [url_desinscription, "Désinscription en un clic", "https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF"]
+      - [date_consentement, "Date de confirmation (jj.mm.aaaa)", "14.10.2026"]
+    blocs:
+      - titre: "Vos alertes sont actives"
+      - p: "[[salutation]]"
+      - p: "Merci d'avoir confirmé. Voici ce que vous recevrez :"
+      - liste:
+          - "l'alerte d'ouverture de la boutique, quand les produits sont reçus et contrôlés ;"
+          - "les alertes de stock local pour : [[formats_choisis]] ;"
+          - "au plus un email récapitulatif par semaine, seulement s'il y a quelque chose d'utile."
+      - encadre:
+          - "**Nos règles.** « Stock local » : le produit est chez nous, à Genève. « Précommande » : seulement quand la quantité nous est confirmée par écrit. Aucune fausse urgence, aucune promesse de carte rare ni de valeur."
+      - bouton: {texte: "Modifier mes préférences", url: "[[url_preferences]]", style: secondaire}
+      - p: "Pour commencer : [ETB ou display, lequel choisir ?]([[url_guide]])"
+
+  - id: "03-ouverture-boutique"
+    nom: "Ouverture douce (BL-118)"
+    canal: n8n
+    categorie: marketing
+    declencheur: "GO de l'ouverture douce (C14) : fiches publiées, stock local réel"
+    segment: "Tous les inscrits confirmés"
+    base: "Consentement confirmé (alerte d'ouverture)"
+    frequence: "Une fois"
+    objet: "{{NOM_BOUTIQUE}} est ouverte : ce qui est en stock local"
+    pre_entete: "Produits reçus et contrôlés à Genève. Livraison en Suisse."
+    variables:
+      - [salutation, "Salutation calculée par le workflow", "Bonjour Léa,"]
+      - [lignes_produits_html, "Lignes produits rendues avec les gabarits _ligne-produit-*.html (produits en stock local ou en précommande uniquement, prix relus sur la page publique)", "(voir l'aperçu)"]
+      - [url_stock_local, "Collection « Disponible maintenant »", "https://exemple.invalid/collections/disponible-maintenant"]
+      - [url_preferences, "Page de préférences", "https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF"]
+      - [url_desinscription, "Désinscription en un clic", "https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF"]
+      - [date_consentement, "Date de confirmation", "14.10.2026"]
+    blocs:
+      - titre: "La boutique est ouverte"
+      - p: "[[salutation]]"
+      - p: "Les produits sont arrivés à Genève et ont été contrôlés. Voici ce qui est en stock local aujourd'hui :"
+      - lignes_produits: {variable: lignes_produits_html}
+      - p: "Une limite par commande s'applique à certains produits ; elle figure sur chaque fiche. La disponibilité affichée sur le site au moment de votre commande fait foi."
+      - bouton: {texte: "Voir le stock local", url: "[[url_stock_local]]"}
+      - encadre:
+          - "Livraison en Suisse uniquement · expédition sous {{DELAI_EXPEDITION}} · frais affichés avant le paiement."
+
+  - id: "04-alerte-stock-local"
+    nom: "Alerte : nouveau stock local"
+    canal: n8n
+    categorie: marketing
+    declencheur: "Entrée en stock local réelle (réception contrôlée, fiche publiée) d'un produit suivi"
+    segment: "Inscrits confirmés : alerte sur ce produit, ou préférences correspondant au format"
+    base: "Consentement confirmé (alertes de stock choisies)"
+    frequence: "Au plus une alerte par produit et par personne ; pas d'envoi si le stock repasse à zéro avant l'envoi"
+    objet: "En stock local : [[produit_titre]]"
+    pre_entete: "Le produit que vous suivez est arrivé à Genève."
+    variables:
+      - [salutation, "Salutation calculée par le workflow", "Bonjour Léa,"]
+      - [raison_alerte, "« Vous avez demandé une alerte pour ce produit. » ou « Ce produit correspond aux formats que vous suivez. »", "Vous avez demandé une alerte pour ce produit."]
+      - [produit_titre, "Titre exact de la fiche (format + extension + langue)", "Display 36 boosters — Extension Exemple — FR (FICTIF)"]
+      - [produit_prix, "Prix public relu sur la fiche au moment de l'envoi (CHF, 2 décimales)", "209.90 (FICTIF)"]
+      - [produit_limite, "« Limite : 2 par commande » ou vide", "Limite : 2 par commande"]
+      - [produit_url, "URL de la fiche", "https://exemple.invalid/products/display-extension-exemple-fr"]
+      - [url_preferences, "Page de préférences", "https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF"]
+      - [url_desinscription, "Désinscription en un clic", "https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF"]
+      - [date_consentement, "Date de confirmation", "14.10.2026"]
+    blocs:
+      - titre: "C'est en stock local"
+      - p: "[[salutation]]"
+      - p: "[[raison_alerte]]"
+      - produit: {titre: "[[produit_titre]]", statut: stock_local, detail: "Expédié depuis Genève sous {{DELAI_EXPEDITION}}", prix: "[[produit_prix]]", limite: "[[produit_limite]]"}
+      - bouton: {texte: "Voir la fiche", url: "[[produit_url]]"}
+      - p: "Le prix et la disponibilité affichés sur le site au moment de votre commande font foi. Nous ne réservons pas de produit par email."
+
+  - id: "05-recapitulatif-hebdo"
+    nom: "Récapitulatif hebdomadaire"
+    canal: n8n
+    categorie: marketing
+    declencheur: "Jeudi (calendrier), seulement s'il y a un contenu utile ; sinon pas d'envoi"
+    segment: "Inscrits confirmés ayant choisi le récapitulatif"
+    base: "Consentement confirmé (récapitulatif au plus hebdomadaire)"
+    frequence: "Au plus un par semaine (BP §9)"
+    objet: "Cette semaine chez {{NOM_BOUTIQUE}} : [[titre_semaine]]"
+    pre_entete: "[[pre_entete_semaine]]"
+    variables:
+      - [salutation, "Salutation calculée par le workflow", "Bonjour Léa,"]
+      - [titre_semaine, "Titre court du récapitulatif", "ETB ou display, et ce qui est en stock"]
+      - [pre_entete_semaine, "Une phrase factuelle", "Un guide et les produits réellement en stock cette semaine."]
+      - [introduction, "Une ou deux phrases, sans urgence", "Cette semaine, un guide pour choisir entre ETB et display, et les produits en stock local."]
+      - [lignes_produits_html, "Lignes produits (stock local ou précommande) ; bloc vide si rien", "(voir l'aperçu)"]
+      - [guide_titre, "Titre du guide de la semaine", "ETB ou display : lequel choisir ?"]
+      - [guide_resume, "Résumé en une phrase", "Deux formats, deux usages : on vous aide à choisir."]
+      - [guide_url, "URL du guide", "https://exemple.invalid/blogs/guides/etb-ou-display"]
+      - [url_preferences, "Page de préférences", "https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF"]
+      - [url_desinscription, "Désinscription en un clic", "https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF"]
+      - [date_consentement, "Date de confirmation", "14.10.2026"]
+    blocs:
+      - titre: "[[titre_semaine]]"
+      - p: "[[salutation]]"
+      - p: "[[introduction]]"
+      - lignes_produits: {variable: lignes_produits_html}
+      - sous_titre: "Le guide de la semaine : [[guide_titre]]"
+      - p: "[[guide_resume]]"
+      - bouton: {texte: "Lire le guide", url: "[[guide_url]]", style: secondaire}
+
+  - id: "06-confirmation-commande"
+    nom: "Confirmation de commande (notification Shopify)"
+    canal: shopify
+    categorie: transactionnel
+    declencheur: "Commande payée (notification Shopify « Confirmation de commande »)"
+    segment: "Le client de la commande"
+    base: "Exécution du contrat ; aucun contenu promotionnel"
+    frequence: "Une fois par commande"
+    objet: "Commande [[order_name]] confirmée"
+    pre_entete: "Récapitulatif, statut de chaque article et suite de votre commande."
+    variables:
+      - [order_name, "Numéro de commande (Liquid Shopify)", "#1001 (FICTIF)"]
+      - [customer.first_name, "Prénom du client", "Léa"]
+      - [subtotal_line_items, "Lignes de la commande (line.title, line.quantity, line.final_line_price)", "(voir l'aperçu)"]
+      - [subtotal_price, "Sous-total", "289.60 (FICTIF)"]
+      - [shipping_price, "Frais de livraison facturés", "9.00 (FICTIF)"]
+      - [total_price, "Total payé", "298.60 (FICTIF)"]
+      - [shipping_address, "Adresse de livraison (name, address1, zip, city)", "Léa Exemple, Rue Fictive 1, 1200 Genève"]
+      - [order_status_url, "Page de suivi de la commande", "https://exemple.invalid/commande-fictive"]
+    blocs:
+      - titre: "Merci, votre commande est confirmée"
+      - p: "[[salutation]]"
+      - p: "Nous avons bien reçu votre paiement. Voici exactement ce que vous avez commandé."
+      - commande_shopify: {}
+      - bouton: {texte: "Voir ma commande", url: "[[order_status_url]]"}
+
+  - id: "07-expedition-suivi"
+    nom: "Expédition et suivi (notification Shopify)"
+    canal: shopify
+    categorie: transactionnel
+    declencheur: "Envoi marqué expédié (notification Shopify « Confirmation d'expédition »)"
+    segment: "Le client de la commande"
+    base: "Exécution du contrat"
+    frequence: "Une fois par envoi (une commande mixte = deux envois)"
+    objet: "Commande [[order_name]] expédiée"
+    pre_entete: "Votre numéro de suivi et le contenu de ce colis."
+    variables:
+      - [order_name, "Numéro de commande", "#1001 (FICTIF)"]
+      - [customer.first_name, "Prénom du client", "Léa"]
+      - [fulfillment.fulfillment_line_items, "Articles de cet envoi (line.line_item.title, line.quantity)", "(voir l'aperçu)"]
+      - [fulfillment.tracking_numbers, "Numéros de suivi", "99.00.000000.00000000 (FICTIF)"]
+      - [fulfillment.tracking_urls, "Liens de suivi", "https://exemple.invalid/suivi-fictif"]
+      - [fulfillment.tracking_company, "Transporteur", "Transporteur (FICTIF)"]
+      - [order_status_url, "Page de suivi de la commande", "https://exemple.invalid/commande-fictive"]
+    blocs:
+      - titre: "Votre colis est parti"
+      - p: "[[salutation]]"
+      - p: "Votre colis a été remis au transporteur. Voici ce qu'il contient :"
+      - suivi_shopify: {}
+      - p: "Le suivi peut mettre quelques heures à s'activer. S'il ne bouge plus depuis {{SEUIL_COLIS_BLOQUE}}, écrivez-nous : nous ouvrons une recherche."
+      - p: "Colis abîmé à la livraison ? Photographiez le colis et les articles, puis écrivez-nous dans un délai de {{DELAI_SIGNALEMENT}}."
+      - bouton: {texte: "Voir ma commande", url: "[[order_status_url]]", style: secondaire}
+
+  - id: "08-precommande-confirmee"
+    nom: "Précommande confirmée"
+    canal: n8n
+    categorie: transactionnel
+    declencheur: "Commande payée contenant une ligne de précommande (en plus de la confirmation de commande)"
+    segment: "Le client de la commande"
+    base: "Exécution du contrat (information sur la précommande)"
+    frequence: "Une fois par ligne de précommande"
+    objet: "Précommande enregistrée : [[produit_titre]]"
+    pre_entete: "Date de sortie, expédition, et ce qui se passe si la date change."
+    variables:
+      - [salutation, "Salutation calculée par le workflow", "Bonjour Léa,"]
+      - [numero_commande, "Numéro de commande", "#1001 (FICTIF)"]
+      - [produit_titre, "Titre exact de la fiche", "Coffret — Extension Exemple 2 — FR (FICTIF)"]
+      - [date_sortie_libelle, "« le 6.11.2026 (date confirmée) », « estimée au 6.11.2026 (peut changer) » ou « non confirmée »", "estimée au 6.11.2026 (peut changer)"]
+      - [url_commande, "Page de suivi de la commande", "https://exemple.invalid/commande-fictive"]
+    blocs:
+      - titre: "Votre précommande est enregistrée"
+      - p: "[[salutation]]"
+      - p: "Votre précommande fait partie de la commande [[numero_commande]] ; le paiement est reçu."
+      - produit: {titre: "[[produit_titre]]", statut: precommande, detail: "Sortie [[date_sortie_libelle]]"}
+      - liste:
+          - "Le prix payé est définitif."
+          - "Nous expédions dès réception et contrôle du produit, en principe sous {{DELAI_EXPEDITION}} après réception. Nous ne garantissons pas une livraison le jour de la sortie."
+          - "Si la date change, nous vous écrivons dans un délai de {{DELAI_INFORMATION_REPORT}}."
+          - "Annulation gratuite {{DELAI_ANNULATION_PRECOMMANDE}} : répondez à cet email avec votre numéro de commande."
+      - p: "Si votre commande contient aussi des articles en stock local, ils partent dès qu'ils sont prêts ; la précommande suit séparément. La livraison n'est facturée qu'une fois."
+      - bouton: {texte: "Nos conditions de précommande", url: "{{URL_PRECOMMANDES}}", style: secondaire}
+
+  - id: "09-precommande-report"
+    nom: "Précommande : report de date"
+    canal: n8n
+    categorie: transactionnel
+    declencheur: "Nouvelle date de sortie reçue (événement « report » du catalogue)"
+    segment: "Clients ayant une précommande ouverte sur ce produit"
+    base: "Exécution du contrat (PRECOMMANDES : information du report)"
+    frequence: "À chaque report"
+    objet: "Report de sortie : [[produit_titre]]"
+    pre_entete: "Nouvelle date annoncée et vos options."
+    variables:
+      - [salutation, "Salutation calculée par le workflow", "Bonjour Léa,"]
+      - [numero_commande, "Numéro de commande", "#1001 (FICTIF)"]
+      - [produit_titre, "Titre exact de la fiche", "Coffret — Extension Exemple 2 — FR (FICTIF)"]
+      - [date_initiale, "Date annoncée lors de la commande", "6.11.2026"]
+      - [nouvelle_date, "Nouvelle date annoncée", "20.11.2026"]
+      - [date_information, "Date à laquelle l'information a été reçue", "2.11.2026"]
+      - [texte_option_annulation, "Texte calculé par le workflow selon SEUIL_REPORT_PRECOMMANDE (deux textes possibles, voir README)", "Le report dépasse le délai prévu par nos conditions : vous pouvez annuler et être remboursé intégralement. Répondez simplement à cet email."]
+    blocs:
+      - titre: "La date de sortie a changé"
+      - p: "[[salutation]]"
+      - p: "La sortie de [[produit_titre]] (commande [[numero_commande]]) est reportée. Nous vous transmettons l'information dès que nous la recevons."
+      - faits:
+          - ["Date annoncée lors de votre commande", "[[date_initiale]]"]
+          - ["Nouvelle date annoncée", "[[nouvelle_date]]"]
+          - ["Information reçue le", "[[date_information]]"]
+      - p: "**Garder votre précommande** : vous n'avez rien à faire. Nous expédions dès réception."
+      - p: "[[texte_option_annulation]]"
+      - bouton: {texte: "Nos conditions de précommande", url: "{{URL_PRECOMMANDES}}", style: secondaire}
+
+  - id: "10-precommande-annulee"
+    nom: "Précommande annulée et remboursée (quantité réduite ou annulée)"
+    canal: n8n
+    categorie: transactionnel
+    declencheur: "Allocation réduite ou annulée : précommande non servie (ordre de paiement)"
+    segment: "Clients dont la précommande ne peut pas être servie"
+    base: "Exécution du contrat (PRECOMMANDES : remboursement intégral)"
+    frequence: "Une fois"
+    objet: "Précommande annulée et remboursée : [[produit_titre]]"
+    pre_entete: "Nous ne pouvons pas servir votre précommande : remboursement intégral."
+    variables:
+      - [salutation, "Salutation calculée par le workflow", "Bonjour Léa,"]
+      - [numero_commande, "Numéro de commande", "#1001 (FICTIF)"]
+      - [produit_titre, "Titre exact de la fiche", "Coffret — Extension Exemple 2 — FR (FICTIF)"]
+      - [montant_rembourse, "Montant remboursé (CHF, 2 décimales), lu dans le remboursement Shopify", "59.90 (FICTIF)"]
+      - [moyen_paiement, "Moyen de paiement utilisé", "carte de paiement"]
+      - [url_alerte_produit, "Formulaire d'alerte de la fiche (consentement demandé)", "https://exemple.invalid/products/coffret-extension-exemple-2-fr#alerte"]
+    blocs:
+      - titre: "Votre précommande ne peut pas être servie"
+      - p: "[[salutation]]"
+      - p: "La quantité qui nous a été attribuée pour [[produit_titre]] a été réduite ou annulée. Les précommandes sont servies dans l'ordre de leur paiement ; la vôtre (commande [[numero_commande]]) ne peut pas l'être. Nous en sommes désolés."
+      - encadre:
+          - "**Remboursement intégral** : CHF [[montant_rembourse]], sur votre [[moyen_paiement]], dans un délai de {{DELAI_REMBOURSEMENT}}. Le crédit sur votre compte dépend ensuite de votre banque."
+      - p: "Les autres articles éventuels de votre commande ne sont pas concernés."
+      - p: "Si vous le souhaitez, nous pouvons vous prévenir quand ce produit arrive en stock local :"
+      - bouton: {texte: "Demander une alerte", url: "[[url_alerte_produit]]", style: secondaire}
+
+  - id: "11-demande-avis"
+    nom: "Demande d'avis après livraison"
+    canal: n8n
+    categorie: avis
+    declencheur: "Livraison confirmée + 7 jours (hypothèse), commande sans réclamation ouverte"
+    segment: "Clients non opposés (case d'opposition au checkout non cochée)"
+    base: "À valider par le juriste (note C3 : un seul email, avec lien de refus)"
+    frequence: "Une seule demande par commande"
+    objet: "Votre commande [[numero_commande]] est bien arrivée ?"
+    pre_entete: "Deux minutes pour nous dire ce qui a marché, ou pas."
+    variables:
+      - [salutation, "Salutation calculée par le workflow", "Bonjour Léa,"]
+      - [numero_commande, "Numéro de commande", "#1001 (FICTIF)"]
+      - [url_avis, "Lien vers le formulaire d'avis", "https://exemple.invalid/avis-fictif"]
+      - [url_refus_avis, "Ne plus recevoir de demande d'avis", "https://n8n.exemple.invalid/webhook/avis-refus?jeton=FICTIF"]
+    blocs:
+      - titre: "Tout s'est bien passé ?"
+      - p: "[[salutation]]"
+      - p: "Votre commande [[numero_commande]] a été livrée il y a quelques jours. Votre avis nous aide à corriger ce qui ne va pas et aide d'autres personnes à choisir."
+      - bouton: {texte: "Donner mon avis", url: "[[url_avis]]"}
+      - p: "Un problème avec votre commande ? Ne passez pas par l'avis : répondez à cet email, une personne vous répond."
+
+  - id: "12-reachat"
+    nom: "Réachat : suggestion sur extension ou format déjà acheté"
+    canal: n8n
+    categorie: marketing
+    declencheur: "Produit de la même extension ou du même format entré en stock local"
+    segment: "Clients ayant acheté cette extension ou ce format, avec consentement marketing, sans désinscription"
+    base: "Consentement marketing (ou client non opposé : note C2 du juriste)"
+    frequence: "Au plus une suggestion par mois et par personne (hypothèse)"
+    objet: "[[produit_titre]] : en stock local"
+    pre_entete: "Une suite possible à votre dernier achat, sans engagement."
+    variables:
+      - [salutation, "Salutation calculée par le workflow", "Bonjour Léa,"]
+      - [raison_recommandation, "Phrase factuelle sur le lien avec l'achat précédent", "Vous avez acheté un produit de l'extension Exemple ; ce coffret de la même extension est en stock local."]
+      - [produit_titre, "Titre exact de la fiche", "ETB — Extension Exemple — FR (FICTIF)"]
+      - [produit_prix, "Prix public relu au moment de l'envoi", "69.90 (FICTIF)"]
+      - [produit_limite, "Limite par commande ou vide", ""]
+      - [produit_url, "URL de la fiche", "https://exemple.invalid/products/etb-extension-exemple-fr"]
+      - [url_preferences, "Page de préférences", "https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF"]
+      - [url_desinscription, "Désinscription en un clic", "https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF"]
+      - [date_consentement, "Date du consentement", "14.10.2026"]
+    blocs:
+      - titre: "Une suite à votre collection ?"
+      - p: "[[salutation]]"
+      - p: "[[raison_recommandation]]"
+      - produit: {titre: "[[produit_titre]]", statut: stock_local, detail: "Expédié depuis Genève sous {{DELAI_EXPEDITION}}", prix: "[[produit_prix]]", limite: "[[produit_limite]]"}
+      - bouton: {texte: "Voir la fiche", url: "[[produit_url]]"}
+      - p: "Nous ne vous suggérons que des produits réellement en stock local, au plus une fois par mois."
+
+  - id: "13-panier-abandonne"
+    nom: "Panier abandonné (seulement avec consentement marketing)"
+    canal: n8n
+    categorie: marketing
+    declencheur: "Paiement non terminé depuis 4 h (hypothèse) ; articles encore disponibles"
+    segment: "Uniquement les personnes ayant coché le consentement marketing au checkout (note C4 du juriste)"
+    base: "Consentement marketing explicite ; sinon AUCUN envoi"
+    frequence: "Un seul email par panier ; aucun code promo"
+    objet: "Votre panier est enregistré"
+    pre_entete: "Vos articles et leur disponibilité actuelle, sans engagement."
+    variables:
+      - [salutation, "Salutation calculée par le workflow", "Bonjour Léa,"]
+      - [lignes_produits_html, "Articles encore disponibles (stock local ou précommande), prix relus", "(voir l'aperçu)"]
+      - [note_ruptures, "« Un article de votre panier n'est plus disponible. » ou vide", ""]
+      - [url_panier, "Lien de reprise du panier", "https://exemple.invalid/panier-fictif"]
+      - [url_preferences, "Page de préférences", "https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF"]
+      - [url_desinscription, "Désinscription en un clic", "https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF"]
+      - [date_consentement, "Date du consentement", "14.10.2026"]
+    blocs:
+      - titre: "Votre panier est enregistré"
+      - p: "[[salutation]]"
+      - p: "Vous avez commencé une commande sans la terminer. Voici vos articles, avec leur disponibilité au moment de cet email :"
+      - lignes_produits: {variable: lignes_produits_html}
+      - p: "[[note_ruptures]]"
+      - p: "Nous ne réservons pas les articles d'un panier : la disponibilité affichée au moment de la commande fait foi."
+      - bouton: {texte: "Reprendre mon panier", url: "[[url_panier]]"}
+      - p: "Une question avant de commander ? Répondez à cet email."
+
+  - id: "14-desinscription-confirmee"
+    nom: "Désinscription confirmée (facultatif)"
+    canal: n8n
+    categorie: desinscription
+    declencheur: "Clic sur « me désinscrire » (envoi facultatif : décision propriétaire et juriste)"
+    segment: "La personne qui se désinscrit"
+    base: "Information sur l'exécution de la demande ; aucun contenu promotionnel"
+    frequence: "Une fois ; jamais de relance"
+    objet: "Désinscription enregistrée"
+    pre_entete: "Vous ne recevrez plus nos alertes ni nos récapitulatifs."
+    variables:
+      - [url_reinscription, "Page d'inscription", "https://exemple.invalid/#alertes"]
+    blocs:
+      - titre: "Désinscription enregistrée"
+      - p: "Bonjour,"
+      - p: "Votre adresse est retirée de nos alertes et de nos récapitulatifs, dans tous nos outils. Nous la conservons uniquement dans une liste d'exclusion, pour ne plus vous écrire."
+      - p: "Les emails liés à une commande (confirmation, expédition) restent envoyés si vous commandez."
+      - p: "Une erreur ? Vous pouvez vous réinscrire : [page d'inscription]([[url_reinscription]])."
+
+  # Gabarits partiels utilisés par le workflow pour construire « lignes_produits_html » (un par produit).
+partiels:
+  - id: "_ligne-produit-stock-local"
+    statut: stock_local
+    variables:
+      - [titre, "Titre exact de la fiche", "Display 36 boosters — Extension Exemple — FR (FICTIF)"]
+      - [prix, "Prix public relu (CHF, 2 décimales)", "209.90 (FICTIF)"]
+      - [url, "URL de la fiche", "https://exemple.invalid/products/display-extension-exemple-fr"]
+    detail: "Expédié depuis Genève sous {{DELAI_EXPEDITION}}"
+  - id: "_ligne-produit-precommande"
+    statut: precommande
+    variables:
+      - [titre, "Titre exact de la fiche", "Coffret — Extension Exemple 2 — FR (FICTIF)"]
+      - [prix, "Prix public relu", "59.90 (FICTIF)"]
+      - [url, "URL de la fiche", "https://exemple.invalid/products/coffret-extension-exemple-2-fr"]
+      - [date_sortie_libelle, "Libellé de date (voir email 08)", "estimée au 6.11.2026 (peut changer)"]
+    detail: "Sortie [[date_sortie_libelle]] · expédiée dès réception"

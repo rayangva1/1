@@ -3,10 +3,13 @@
 Principes (BP §5-§7, SPEC §0.2 et §2.6) :
 
 * **Liste blanche stricte** (:data:`PRODUCT_INPUT_SCHEMA`) : titre exact (format + extension +
-  langue), description, images autorisées, prix CHF, SKU boutique, code-barres, tags, statut
-  ``DRAFT`` / ``ACTIVE``, métachamps publics (langue, extension, date de sortie, statut de
-  précommande). Tout autre champ est refusé par :func:`assert_no_sensitive_fields`, appelée à
-  la construction **et** par le client Shopify avant tout envoi.
+  langue), description, images autorisées, prix CHF, SKU boutique, code-barres, statut
+  ``DRAFT`` / ``ACTIVE``, SEO, métachamps ``boutique.*`` et tags miroirs **exactement** comme
+  le contrat du thème (``site/shopify/STRUCTURE_BOUTIQUE.md`` §2 : statut de stock, langue,
+  extension, format, contenu validé, date de sortie et statut, délai, quantité maximale,
+  alerte réassort, fin de série ; tags ``statut:*``, ``ext:<slug>``, ``nouveaute``,
+  ``cadeau``). Tout autre champ est refusé par :func:`assert_no_sensitive_fields`, appelée à la
+  construction **et** par le client Shopify avant tout envoi.
 * Aucune donnée de coût, marge, fournisseur, prix B2B ni donnée personnelle (clés et valeurs
   analysées ; termes internes fournis par l'appelant : identifiants et SKU fournisseurs).
 * Aucun stock dans la fiche : la quantité passe uniquement par ``inventorySetQuantities`` avec
@@ -46,7 +49,7 @@ from .catalog import (
     validate_gtin,
 )
 from .errors import PokeshopError
-from .models import DecisionStatus, FrozenModel, PriceDecision, ProductIdentity
+from .models import AvailabilityPromise, DecisionStatus, FrozenModel, PriceDecision, ProductIdentity, PromiseKind
 from .pricing import is_price_anomaly, q2
 
 __all__ = [
@@ -58,7 +61,9 @@ __all__ = [
     "SensitiveFieldError",
     "ImageRights",
     "PublicImage",
-    "PreorderStatus",
+    "StockStatus",
+    "stock_status_from_promise",
+    "ReleaseDateStatus",
     "ShopStatus",
     "CatalogListing",
     "PriceValidation",
@@ -74,16 +79,22 @@ __all__ = [
     "build_publication",
 ]
 
-PUBLIC_METAFIELD_NAMESPACE = "custom"
-"""Espace de noms des métachamps marchands (définitions et visibilité vitrine à créer sur la boutique)."""
+PUBLIC_METAFIELD_NAMESPACE = "boutique"
+"""Espace de noms lu par le thème (``site/shopify/STRUCTURE_BOUTIQUE.md`` §2)."""
 PUBLIC_METAFIELDS: dict[str, str] = {
+    "statut_stock": "single_line_text_field",
     "langue": "single_line_text_field",
     "extension": "single_line_text_field",
+    "format": "single_line_text_field",
+    "contenu_valide": "multi_line_text_field",
     "date_sortie": "date",
-    "date_sortie_confirmee": "boolean",
-    "statut_precommande": "single_line_text_field",
+    "date_sortie_statut": "single_line_text_field",
+    "delai_expedition": "single_line_text_field",
+    "quantite_max": "number_integer",
+    "alerte_reassort": "boolean",
+    "fin_de_serie": "boolean",
 }
-"""Seuls métachamps publiables (clé -> type Shopify)."""
+"""Seuls métachamps publiables (clé -> type Shopify), contrat du thème."""
 
 _S = "str"
 _B = "bool"
@@ -126,8 +137,8 @@ _PHONE_RE = re.compile(r"(?<!\d)(\+41|0041|0)\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}(?!
 _IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}(?:\s?[A-Z0-9]{1,3})?\b")
 _PRICE_RE = re.compile(r"^\d{1,6}\.\d{2}$")
 _HANDLE_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
-_TAG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,60}$")
-_SKU_RE = re.compile(r"^[A-Z0-9][A-Z0-9-]{2,40}$")
+_TAG_RE = re.compile(r"^(statut:(stock-local|precommande|rupture)|ext:[a-z0-9]+(-[a-z0-9]+)*|nouveaute|cadeau)$")
+_SKU_RE = re.compile(r"^[A-Z0-9][A-Z0-9._-]{2,60}$")
 _UNSAFE_HTML_RE = re.compile(r"<\s*(script|iframe|object|embed|form)|javascript:|\son\w+\s*=", re.IGNORECASE)
 _TAG_STRIP_RE = re.compile(r"<[^>]+>")
 _CLAIMS: tuple[str, ...] = (
@@ -229,12 +240,28 @@ def _walk(obj: Any, schema: Any, path: str, terms: Sequence[str], out: list[str]
     _scan_value(obj, path, terms, out)
 
 
+_METAFIELD_VALUES: dict[str, re.Pattern[str]] = {
+    "statut_stock": re.compile(r"^(stock_local|precommande|rupture)$"),
+    "date_sortie": re.compile(r"^\d{4}-\d{2}-\d{2}$"),
+    "date_sortie_statut": re.compile(r"^(confirmee|estimee|inconnue)$"),
+    "quantite_max": re.compile(r"^[1-9]\d{0,2}$"),
+    "alerte_reassort": re.compile(r"^(true|false)$"),
+    "fin_de_serie": re.compile(r"^(true|false)$"),
+    "langue": re.compile(r"^(FR|DE|IT|EN|JP)$"),
+}
+
+
 def _check_metafield(mf: Mapping[str, Any], path: str, require_owner: bool, out: list[str]) -> None:
     ns, key, typ = mf.get("namespace"), mf.get("key"), mf.get("type")
     if ns != PUBLIC_METAFIELD_NAMESPACE or key not in PUBLIC_METAFIELDS:
         out.append(f"{path} : métachamp non public ({ns}.{key})")
     elif typ != PUBLIC_METAFIELDS[str(key)]:
         out.append(f"{path} : type {typ!r} attendu {PUBLIC_METAFIELDS[str(key)]!r}")
+    else:
+        pattern = _METAFIELD_VALUES.get(str(key))
+        value = mf.get("value")
+        if pattern is not None and (not isinstance(value, str) or not pattern.match(value)):
+            out.append(f"{path} : valeur {value!r} invalide pour {ns}.{key}")
     if require_owner and not re.match(r"^gid://shopify/Product/\d+$", str(mf.get("ownerId", ""))):
         out.append(f"{path}.ownerId : gid://shopify/Product/<n> attendu")
 
@@ -353,12 +380,29 @@ class PublicImage(FrozenModel):
         return self.rights is ImageRights.SUPPLIER_WRITTEN_AUTHORIZATION and bool(self.rights_ref)
 
 
-class PreorderStatus(str, Enum):
-    """Statut public de précommande (jamais sans allocation ferme : contrôle par le moteur stock)."""
+class StockStatus(str, Enum):
+    """Statut public de stock (``boutique.statut_stock``), issu de :func:`pokeshop.stock.availability_promise`."""
 
-    NONE = "AUCUNE"
-    OPEN = "OUVERTE"
-    CLOSED = "FERMEE"
+    STOCK_LOCAL = "stock_local"
+    PRECOMMANDE = "precommande"
+    RUPTURE = "rupture"
+
+
+def stock_status_from_promise(promise: AvailabilityPromise) -> StockStatus:
+    """``LOCAL_STOCK`` -> stock_local ; ``PREORDER`` -> precommande ; ``UNAVAILABLE`` -> rupture (aucun faux stock)."""
+    return {
+        PromiseKind.LOCAL_STOCK: StockStatus.STOCK_LOCAL,
+        PromiseKind.PREORDER: StockStatus.PRECOMMANDE,
+        PromiseKind.UNAVAILABLE: StockStatus.RUPTURE,
+    }[promise.kind]
+
+
+class ReleaseDateStatus(str, Enum):
+    """Statut de la date de sortie (``boutique.date_sortie_statut``)."""
+
+    CONFIRMEE = "confirmee"
+    ESTIMEE = "estimee"
+    INCONNUE = "inconnue"
 
 
 class ShopStatus(str, Enum):
@@ -374,13 +418,21 @@ class CatalogListing(FrozenModel):
     product_key: str = Field(min_length=1)
     identity: ProductIdentity
     public_sku: str
+    """SKU boutique stable (``{FMT}-{CODEEXT}-{LANGUE}[-PRECO]``), jamais un SKU fournisseur."""
     handle: str | None = None
     description_html: str | None = Field(default=None, max_length=20_000)
     images: tuple[PublicImage, ...] = ()
-    tags: tuple[str, ...] = ()
+    stock_status: StockStatus = StockStatus.RUPTURE
+    content_text: str | None = Field(default=None, max_length=2_000)
+    """Contenu confirmé par écrit (``boutique.contenu_valide``)."""
     release_date: date | None = None
-    release_date_confirmed: bool = False
-    preorder_status: PreorderStatus = PreorderStatus.NONE
+    release_date_status: ReleaseDateStatus = ReleaseDateStatus.INCONNUE
+    shipping_delay: str | None = Field(default=None, max_length=60)
+    max_qty: int | None = Field(default=None, ge=1, le=999)
+    restock_alert: bool = False
+    end_of_series: bool = False
+    new_arrival: bool = False
+    gift: bool = False
     approved: bool = False
     """Fiche approuvée par une personne (mises à jour automatiques au niveau 2)."""
     category_rule_validated: bool = False
@@ -409,16 +461,15 @@ class CatalogListing(FrozenModel):
             raise ValueError("handle : minuscules, chiffres et tirets")
         return v
 
-    @field_validator("tags")
-    @classmethod
-    def _tags(cls, v: tuple[str, ...]) -> tuple[str, ...]:
-        for tag in v:
-            if not _TAG_RE.match(tag):
-                raise ValueError(f"étiquette invalide : {tag!r}")
-        return v
-
     @model_validator(mode="after")
     def _shop(self) -> CatalogListing:
+        preco = self.public_sku.endswith("-PRECO")
+        if self.stock_status is StockStatus.PRECOMMANDE and not preco:
+            raise ValueError("fiche de précommande : SKU suffixé -PRECO (fiche distincte du stock local)")
+        if self.stock_status is StockStatus.STOCK_LOCAL and preco:
+            raise ValueError("SKU -PRECO réservé à la fiche de précommande")
+        if self.release_date is None and self.release_date_status is not ReleaseDateStatus.INCONNUE:
+            raise ValueError("statut de date de sortie sans date")
         if self.shopify_product_id is not None and not re.match(r"^gid://shopify/Product/\d+$", self.shopify_product_id):
             raise ValueError("shopify_product_id : gid://shopify/Product/<n>")
         if self.shopify_product_id is None and self.shopify_status is not None:
@@ -466,6 +517,8 @@ class PublishBlocker(str, Enum):
     PRICE_UNKNOWN = "PRICE_UNKNOWN"
     CATEGORY_RULE_NOT_VALIDATED = "CATEGORY_RULE_NOT_VALIDATED"
     CONTENT_NOT_VALIDATED = "CONTENT_NOT_VALIDATED"
+    MAX_QTY_MISSING = "MAX_QTY_MISSING"
+    RELEASE_DATE_MISSING = "RELEASE_DATE_MISSING"
     DESCRIPTION_MISSING = "DESCRIPTION_MISSING"
     NO_AUTHORIZED_IMAGE = "NO_AUTHORIZED_IMAGE"
     IMAGE_RIGHTS_MISSING = "IMAGE_RIGHTS_MISSING"
@@ -492,7 +545,9 @@ BLOCKER_LABELS_FR: dict[PublishBlocker, str] = {
     PublishBlocker.PRICE_ANOMALY: "Nouveau prix ×10 ou ÷10 par rapport à la veille : bloqué.",
     PublishBlocker.PRICE_UNKNOWN: "Aucun prix public connu ni calculé.",
     PublishBlocker.CATEGORY_RULE_NOT_VALIDATED: "Règle de catégorie non validée : nouvelle référence en brouillon.",
-    PublishBlocker.CONTENT_NOT_VALIDATED: "Contenu non confirmé par le fournisseur.",
+    PublishBlocker.CONTENT_NOT_VALIDATED: "Contenu non confirmé par écrit (boutique.contenu_valide).",
+    PublishBlocker.MAX_QTY_MISSING: "Quantité maximale obligatoire pour une nouveauté ou une précommande.",
+    PublishBlocker.RELEASE_DATE_MISSING: "Précommande sans date de sortie confirmée ou estimée.",
     PublishBlocker.DESCRIPTION_MISSING: "Description absente.",
     PublishBlocker.NO_AUTHORIZED_IMAGE: "Aucune image autorisée.",
     PublishBlocker.IMAGE_RIGHTS_MISSING: "Au moins une image sans droit d'usage (exclue de la fiche).",
@@ -509,7 +564,7 @@ _HARD = frozenset(
 _CONTENT = frozenset(
     {
         PublishBlocker.CONTENT_NOT_VALIDATED, PublishBlocker.DESCRIPTION_MISSING, PublishBlocker.NO_AUTHORIZED_IMAGE,
-        PublishBlocker.IMAGE_RIGHTS_MISSING,
+        PublishBlocker.IMAGE_RIGHTS_MISSING, PublishBlocker.MAX_QTY_MISSING, PublishBlocker.RELEASE_DATE_MISSING,
     }
 )  # fmt: skip
 
@@ -568,44 +623,45 @@ def _plain(text: str | None) -> str:
     return " ".join(_TAG_STRIP_RE.sub(" ", text).split())
 
 
-def _metafields(listing: CatalogListing, extension_name: str) -> list[dict[str, str]]:
+def _metafields(listing: CatalogListing, fmt: ProductFormat, extension_name: str | None) -> list[dict[str, str]]:
     ns = PUBLIC_METAFIELD_NAMESPACE
-    out = [
-        {"namespace": ns, "key": "langue", "type": PUBLIC_METAFIELDS["langue"], "value": listing.identity.language or ""},
-        {"namespace": ns, "key": "extension", "type": PUBLIC_METAFIELDS["extension"], "value": extension_name},
-        {
-            "namespace": ns, "key": "date_sortie_confirmee", "type": PUBLIC_METAFIELDS["date_sortie_confirmee"],
-            "value": "true" if listing.release_date_confirmed else "false",
-        },
-        {
-            "namespace": ns, "key": "statut_precommande", "type": PUBLIC_METAFIELDS["statut_precommande"],
-            "value": listing.preorder_status.value,
-        },
-    ]  # fmt: skip
+
+    def mf(key: str, value: str) -> dict[str, str]:
+        return {"namespace": ns, "key": key, "type": PUBLIC_METAFIELDS[key], "value": value}
+
+    out = [mf("statut_stock", listing.stock_status.value), mf("format", FORMAT_LABELS_FR[fmt])]
+    if listing.identity.language and listing.identity.language != "NA":
+        out.append(mf("langue", listing.identity.language))
+    if extension_name:
+        out.append(mf("extension", extension_name))
+    if listing.content_text:
+        out.append(mf("contenu_valide", listing.content_text))
     if listing.release_date is not None:
-        out.append(
-            {"namespace": ns, "key": "date_sortie", "type": PUBLIC_METAFIELDS["date_sortie"],
-             "value": listing.release_date.isoformat()}
-        )  # fmt: skip
+        out.append(mf("date_sortie", listing.release_date.isoformat()))
+    out.append(mf("date_sortie_statut", listing.release_date_status.value))
+    if listing.shipping_delay:
+        out.append(mf("delai_expedition", listing.shipping_delay))
+    if listing.max_qty is not None:
+        out.append(mf("quantite_max", str(listing.max_qty)))
+    out.append(mf("alerte_reassort", "true" if listing.restock_alert else "false"))
+    out.append(mf("fin_de_serie", "true" if listing.end_of_series else "false"))
     return out
 
 
-def _tags(listing: CatalogListing, fmt: ProductFormat) -> list[str]:
-    tags = set(listing.tags)
-    tags.add(f"format-{fmt.value.lower().replace('_', '-')}")
-    ext = listing.identity.extension
-    if ext and ext != NO_EXTENSION:
-        tags.add("extension-" + slugify(ext))
-    if listing.identity.language:
-        tags.add("langue-" + listing.identity.language.lower())
-    if listing.preorder_status is PreorderStatus.OPEN:
-        tags.add("precommande")
+def _tags(listing: CatalogListing, extension_name: str | None, target: ShopStatus) -> list[str]:
+    tags = {"statut:" + listing.stock_status.value.replace("_", "-")}
+    if extension_name:
+        tags.add("ext:" + slugify(extension_name))
+    if listing.new_arrival and target is ShopStatus.ACTIVE and listing.stock_status is not StockStatus.RUPTURE:
+        tags.add("nouveaute")  # posé seulement sur un produit achetable (contrat du thème)
+    if listing.gift:
+        tags.add("cadeau")
     return sorted(t for t in tags if _TAG_RE.match(t))
 
 
-def _extension_name(identity: ProductIdentity, table: ExtensionTable | None) -> str:
+def _extension_name(identity: ProductIdentity, table: ExtensionTable | None) -> str | None:
     if identity.extension in (None, NO_EXTENSION):
-        return "Sans extension"
+        return None
     if table is None:
         from .catalog import load_extension_table
 
@@ -656,7 +712,7 @@ def build_publication(
         blockers.append(PublishBlocker.QUARANTINED)
     if stoploss_blocked:
         blockers.append(PublishBlocker.STOPLOSS_PRODUCT)
-    if forbidden_claims(title, listing.description_html, *(img.alt for img in listing.images)):
+    if forbidden_claims(title, listing.description_html, listing.content_text, *(img.alt for img in listing.images)):
         blockers.append(PublishBlocker.FORBIDDEN_CLAIM)
     if listing.description_html and _UNSAFE_HTML_RE.search(listing.description_html):
         blockers.append(PublishBlocker.UNSAFE_HTML)
@@ -698,8 +754,12 @@ def build_publication(
 
     # -- contenu
     authorized = [img for img in listing.images if img.authorized]
-    if not listing.content_validated:
+    if not listing.content_validated or not (listing.content_text or "").strip():
         content.append(PublishBlocker.CONTENT_NOT_VALIDATED)
+    if listing.max_qty is None and (listing.new_arrival or listing.stock_status is StockStatus.PRECOMMANDE):
+        content.append(PublishBlocker.MAX_QTY_MISSING)
+    if listing.stock_status is StockStatus.PRECOMMANDE and listing.release_date_status is ReleaseDateStatus.INCONNUE:
+        content.append(PublishBlocker.RELEASE_DATE_MISSING)
     if not _plain(listing.description_html):
         content.append(PublishBlocker.DESCRIPTION_MISSING)
     if not authorized:
@@ -751,16 +811,19 @@ def build_publication(
     violations: list[str] = []
     if outcome is not PlanOutcome.NOT_SENT and title is not None and price is not None and target is not None:
         ext_name = _extension_name(ident, table)
+        option, value = (
+            ("Disponibilité", "Précommande") if listing.stock_status is StockStatus.PRECOMMANDE else ("Title", "Default Title")
+        )
         product_input = {
             "title": title,
             "handle": handle,
             "status": target.value,
             "productType": FORMAT_LABELS_FR[fmt],
-            "tags": _tags(listing, fmt),
-            "productOptions": [{"name": "Title", "values": [{"name": "Default Title"}]}],
+            "tags": _tags(listing, ext_name, target),
+            "productOptions": [{"name": option, "values": [{"name": value}]}],
             "variants": [
                 {
-                    "optionValues": [{"optionName": "Title", "name": "Default Title"}],
+                    "optionValues": [{"optionName": option, "name": value}],
                     "price": _price_text(price),
                     "barcode": ident.gtin or "",
                     "inventoryPolicy": "DENY",
@@ -768,7 +831,7 @@ def build_publication(
                 }
             ],
             "files": [{"originalSource": img.url, "alt": img.alt, "contentType": "IMAGE"} for img in authorized],
-            "metafields": _metafields(listing, ext_name),
+            "metafields": _metafields(listing, fmt, ext_name),
             "seo": {"title": title[:70], "description": _plain(listing.description_html)[:320]},
         }
         if listing.description_html:
