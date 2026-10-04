@@ -5,6 +5,7 @@ Offres et quantités FICTIVES.
 
 from __future__ import annotations
 
+import random
 import threading
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal as D
@@ -27,6 +28,7 @@ from pokeshop.models import (
     SupplierOffer,
 )
 from pokeshop.stock import (
+    REORDER_SKIP_REASONS,
     StockRegistry,
     availability_promise,
     is_stale,
@@ -90,7 +92,9 @@ def test_sellable_local_rejects_non_int(bad):
         sellable_local(*bad)
 
 
-@pytest.mark.parametrize("alloc,committed,safety,expected", [(50, 20, 5, 25), (10, 10, 1, 0), (0, 0, 0, 0), (12, 0, 0, 12)])
+@pytest.mark.parametrize(
+    "alloc,committed,safety,expected", [(50, 20, 5, 25), (10, 10, 1, 0), (0, 0, 0, 0), (12, 0, 0, 12)]
+)
 def test_preorder_quota(alloc, committed, safety, expected):
     assert preorder_quota(alloc, committed, safety) == expected
 
@@ -161,7 +165,9 @@ class TestAvailabilityPromise:
 
     def test_preorder_on_firm_allocation(self):
         o = offer(availability_status=AvailabilityStatus.ALLOCATION, available_qty=None, allocation_qty=20)
-        p = availability_promise(local_sellable=0, offers=[o], now=NOW, preorders_enabled=True, committed_preorders=5, preorder_safety=2)
+        p = availability_promise(
+            local_sellable=0, offers=[o], now=NOW, preorders_enabled=True, committed_preorders=5, preorder_safety=2
+        )
         assert p.kind is PromiseKind.PREORDER
         assert p.preorder_qty == 13
         assert p.promisable_qty == 13
@@ -446,7 +452,9 @@ class TestRegistry:
 # ================================================================ réassort
 
 
-@pytest.mark.parametrize("avg,lead,safety,expected", [(D("2"), 7, 3, D("17")), (D("0.5"), 10, 0, D("5")), (D("0"), 30, 2, D("2"))])
+@pytest.mark.parametrize(
+    "avg,lead,safety,expected", [(D("2"), 7, 3, D("17")), (D("0.5"), 10, 0, D("5")), (D("0"), 30, 2, D("2"))]
+)
 def test_reorder_point(avg, lead, safety, expected):
     assert reorder_point(avg, lead, safety) == expected
 
@@ -558,7 +566,11 @@ class TestProposeReorder:
 
     @pytest.mark.parametrize(
         "kw,field",
-        [(dict(carton_qty=None), "carton_qty"), (dict(moq=None), "moq"), (dict(availability_status=AvailabilityStatus.UNKNOWN), "availability_status")],
+        [
+            (dict(carton_qty=None), "carton_qty"),
+            (dict(moq=None), "moq"),
+            (dict(availability_status=AvailabilityStatus.UNKNOWN), "availability_status"),
+        ],
     )
     def test_unknown_fields_skipped(self, kw, field):
         p = propose([cand(offer_kw=kw)])
@@ -620,3 +632,184 @@ class TestProposeReorder:
     def test_duplicate_candidates(self):
         with pytest.raises(StockError):
             propose([cand(), cand()])
+
+
+class TestReorderStopLossAndCash:
+    """Intégration avec le stop-loss (gouvernance) et la réserve de trésorerie du mandat."""
+
+    def test_blocked_extension_skipped_and_budget_left_for_others(self):
+        a = cand("A", ext="Alpha", unit_cost_chf=D("10"))
+        b = cand("B", ext="Beta", unit_cost_chf=D("10"))
+        p = propose([a, b], blocked_extensions={"Alpha"})
+        assert [ln.product_key for ln in p.lines] == ["B"]
+        assert p.skipped[0].reason == "STOP_LOSS_EXTENSION" and p.skipped[0].detail == "Alpha"
+        assert "Alpha" not in p.extension_exposure_after
+
+    def test_blocked_product_skipped(self):
+        p = propose([cand("A", unit_cost_chf=D("10")), cand("B", unit_cost_chf=D("10"))], blocked_products=["A"])
+        assert [ln.product_key for ln in p.lines] == ["B"]
+        assert p.skipped[0].reason == "STOP_LOSS_PRODUCT"
+
+    def test_string_instead_of_collection_rejected(self):
+        with pytest.raises(TypeError):
+            propose([cand()], blocked_extensions="Alpha")  # type: ignore[arg-type]
+
+    def test_cash_reserve_is_never_spent(self):
+        p = propose([cand(offer_kw=dict(carton_qty=6))], budget_available=D("2000"), cash_reserve_chf=D("1600"))
+        # utilisable 400 => 6 unités à 50 = 300 (multiple de carton)
+        assert p.lines[0].qty == 6
+        assert p.total_cost_chf == D("300.00")
+        assert p.budget_remaining_chf == D("100.00")
+        assert p.budget_available_chf == D("2000")
+
+    @pytest.mark.parametrize("budget", [D("1600"), D("1500"), D("0")])
+    def test_budget_at_or_below_reserve_blocks_all_purchases(self, budget):
+        p = propose([cand("A"), cand("B")], budget_available=budget, cash_reserve_chf=D("1600"))
+        assert p.lines == ()
+        assert {s.reason for s in p.skipped} == {"CASH_RESERVE"}
+        assert p.total_cost_chf == D("0") and p.budget_remaining_chf == D("0")
+
+    def test_stop_loss_has_priority_over_other_reasons(self):
+        stale = cand("A", offer_kw=dict(source_ts=NOW - timedelta(days=3)))
+        p = propose([stale], blocked_products={"A"}, budget_available=D("0"), cash_reserve_chf=D("1600"))
+        assert p.skipped[0].reason == "STOP_LOSS_PRODUCT"
+
+    def test_new_parameters_enter_inputs_hash(self):
+        base = propose([cand()])
+        assert propose([cand()], blocked_extensions={"Alpha"}).inputs_hash != base.inputs_hash
+        assert propose([cand()], blocked_products={"X"}).inputs_hash != base.inputs_hash
+        assert propose([cand()], cash_reserve_chf=D("1")).inputs_hash != base.inputs_hash
+        assert (
+            propose([cand()], blocked_extensions=["B", "A"]).inputs_hash
+            == propose([cand()], blocked_extensions=("A", "B")).inputs_hash
+        )
+
+    @pytest.mark.parametrize(
+        "kw",
+        [
+            dict(budget_available=3000.0),
+            dict(stock_budget_total=3000.0),
+            dict(cash_reserve_chf=1600.0),
+            dict(extension_cap_pct=0.25),
+            dict(extension_exposure={"Alpha": 100.0}),
+            dict(cap_exceptions={"Alpha": 0.4}),
+            dict(budget_available=True),
+        ],
+    )
+    def test_float_amounts_rejected(self, kw):
+        with pytest.raises(TypeError):
+            propose([cand()], **kw)
+
+    @pytest.mark.parametrize(
+        "kw", [dict(cash_reserve_chf=D("-1")), dict(budget_available="abc"), dict(budget_available=D("NaN"))]
+    )
+    def test_invalid_amounts(self, kw):
+        with pytest.raises(StockError):
+            propose([cand()], **kw)
+
+    def test_str_and_int_amounts_accepted(self):
+        p = propose(
+            [cand(unit_cost_chf=D("10"))], budget_available="3000", stock_budget_total=3000, extension_cap_pct="0.25"
+        )
+        assert p.lines[0].qty == 20
+
+    def test_every_skip_reason_is_documented(self):
+        cases = [
+            propose([cand(offer_kw=dict(source_ts=NOW - timedelta(days=2)))]),
+            propose([cand(offer_kw=dict(availability_status=AvailabilityStatus.OUT_OF_STOCK))]),
+            propose([cand(offer_kw=dict(moq=None))]),
+            propose([cand(unit_cost_chf=D("0"))]),
+            propose([cand(sellable_qty=50)]),
+            propose([cand(sellable_qty=0, avg_daily_sales=D("0"), safety_stock=0)]),
+            propose([cand(unit_cost_chf=D("10"), offer_kw=dict(available_qty=4, carton_qty=6))]),
+            propose([cand(offer_kw=dict(moq=12, carton_qty=6))], budget_available=D("500")),
+            propose([cand()], extension_exposure={"Alpha": D("750")}),
+            propose([cand()], blocked_products={"ETB-ALPHA"}),
+            propose([cand()], blocked_extensions={"Alpha"}),
+            propose([cand()], budget_available=D("100"), cash_reserve_chf=D("100")),
+        ]
+        seen = {s.reason for p in cases for s in p.skipped}
+        assert seen == set(REORDER_SKIP_REASONS)
+
+    def test_proposal_never_exceeds_usable_budget_or_cap_property(self):
+        rng = random.Random(21)
+        for _ in range(200):
+            cands = [
+                cand(
+                    f"P{i}",
+                    ext=rng.choice(["Alpha", "Beta", "Gamma"]),
+                    unit_cost_chf=D(rng.randint(500, 25_000)) / 100,
+                    sellable_qty=rng.randint(0, 10),
+                    avg_daily_sales=D(rng.randint(0, 40)) / 10,
+                    offer_kw=dict(moq=rng.randint(1, 12), carton_qty=rng.choice([1, 3, 6, 12])),
+                )
+                for i in range(rng.randint(1, 6))
+            ]
+            budget = D(rng.randint(0, 500_000)) / 100
+            reserve = D(rng.choice(["0", "1600"]))
+            p = propose(cands, budget_available=budget, cash_reserve_chf=reserve)
+            assert p.total_cost_chf <= max(budget - reserve, D("0"))
+            assert p.budget_remaining_chf >= 0
+            for value in p.extension_exposure_after.values():
+                assert value <= D("750")
+            for ln in p.lines:
+                c = next(x for x in cands if x.product_key == ln.product_key)
+                assert ln.qty >= c.offer.moq
+                assert ln.qty % c.offer.carton_qty == 0
+            assert len(p.lines) + len(p.skipped) == len(cands)
+
+
+class TestRegistryInvariants:
+    def test_random_operations_preserve_invariants(self):
+        """Modèle aléatoire : vendable ≥ 0, réservé = Σ réservations actives, physique ≥ réservé + endommagé."""
+        rng = random.Random(2026)
+        for run in range(30):
+            reg = StockRegistry(clock=lambda: NOW)
+            sku = "FICTIF-SKU"
+            orders = 0
+            refunds = 0
+            for _ in range(150):
+                op = rng.random()
+                try:
+                    if op < 0.2:
+                        reg.receive(sku, rng.randint(1, 5), "R")
+                    elif op < 0.5:
+                        orders += 1
+                        reg.reserve(sku, rng.randint(1, 3), f"CMD-{run}-{orders}")
+                    elif op < 0.6:
+                        active = [r for r in reg.reservations() if r.status.value == "ACTIVE"]
+                        if active:
+                            reg.cancel(rng.choice(active).reservation_id)
+                    elif op < 0.75:
+                        active = [r for r in reg.reservations() if r.status.value == "ACTIVE"]
+                        if active:
+                            reg.fulfill(rng.choice(active).reservation_id)
+                    elif op < 0.85:
+                        done = [
+                            r for r in reg.reservations() if r.status.value == "FULFILLED" and r.refunded_qty < r.qty
+                        ]
+                        if done:
+                            r = rng.choice(done)
+                            refunds += 1
+                            returned = rng.random() < 0.7
+                            reg.refund(
+                                r.reservation_id,
+                                f"RMB-{refunds}",
+                                1,
+                                returned=returned,
+                                damaged=returned and rng.random() < 0.3,
+                            )
+                    elif op < 0.92:
+                        reg.mark_damaged(sku, 1, "CASSE")
+                    elif op < 0.97:
+                        reg.write_off_damaged(sku, 1, "DESTRUCTION")
+                    else:
+                        reg.set_safety(sku, rng.randint(0, 2))
+                except (InsufficientStockError, InvalidStateError):
+                    pass
+                lvl = reg.level(sku)
+                active_qty = sum(r.qty for r in reg.reservations() if r.status.value == "ACTIVE")
+                assert lvl.reserved == active_qty
+                assert lvl.on_hand >= lvl.reserved + lvl.damaged
+                assert lvl.sellable >= 0
+                assert lvl.version == len(reg.movements(sku))

@@ -1,0 +1,124 @@
+# Brief A-05 — Finance et pricing
+
+| Champ | Valeur |
+|---|---|
+| Agent exécutable | `.claude/agents/finance-pricing.md` (`@agent-finance-pricing`) |
+| BP §11, ligne 5 | Mission : coût rendu, prix plancher, contribution et cash 13 semaines. Limite : calcul testé ; paramètres fiscaux validés. |
+| Modèle d'opération | Tient le **registre du mandat** et l'**étoile polaire** ; seul agent qui **exécute des paiements**, dans le mandat, via la passerelle PayPal. |
+| Socle | `docs/08-agents/BRIEF_COMMUN.md`, `docs/08-agents/MATRICE_AUTONOMIE.md` §3 |
+| Statut | Proposition du 4.10.2026, à valider |
+
+## 1. Objectif
+
+Faire en sorte que **chaque vente contribue** et que **le cash ne manque jamais** : prix rentables calculés par le moteur, contribution réelle suivie par facture, trésorerie à 13 semaines au-dessus de la réserve de 1 600 CHF, et **contribution nette cumulée** (étoile polaire) mesurée chaque semaine. Toute dépense de la flotte passe par son contrôle.
+
+## 2. Périmètre
+
+**Inclus** : coût rendu (BP §4), coût historique par lot et coût de remplacement ; prix plancher, prix recommandé, contribution, panier ; décisions de prix et leur motif ; référence marché (BL-022) ; saisie des devis dans le comparateur (BL-048) ; trésorerie 13 semaines (BL-165) ; étoile polaire hebdomadaire ; **registre du mandat** ; contrôle des demandes d'engagement ; **paiements dans le mandat** ; rapprochements (BL-166) ; CAC (BL-133, avec A-10) ; marge réelle contre estimation (BL-145) ; temps de supervision (BL-171).
+
+**Exclu** : choix du statut TVA (propriétaire + fiduciaire) ; modification d'une version de règles publiée ; paiement hors mandat ; changement du prix d'une commande conclue.
+
+## 3. Entrées autorisées
+
+| Entrée | Accès |
+|---|---|
+| `engine/pokeshop/pricing.py` (`landed_unit_cost`, `floor_price`, `round_up_retail`, `contribution`, `decide_price`, `evaluate_offer`, `basket_contribution`) | Utilisation |
+| `engine/pokeshop/costs.py` (`HistoricalCostLedger`, `ReplacementCostBook`, `PriceHistory`) | Utilisation |
+| `engine/pokeshop/treasury.py` (`plan_from_weekly_inputs`, `build_forecast`, `CASH_STOPLOSS_RESERVE`) | Utilisation |
+| `engine/pokeshop/forecast.py` (`north_star`, `project_north_star`, `break_even`, `verify_against_bp`, `vat_threshold_check`) | Utilisation |
+| `engine/pokeshop/stoploss.py` | Utilisation dès sa livraison |
+| `config/pricing_rules.v1.yaml` | Lecture ; une nouvelle valeur = nouveau fichier `pricing_rules.vN.yaml` proposé à la propriétaire |
+| `docs/03-finance/modele_financier.xlsx`, `docs/03-finance/tresorerie_13_semaines.xlsx`, `docs/03-finance/generer_classeurs.py` | Lecture et écriture (cellules de saisie) |
+| `docs/02-sourcing/COMPARATEUR_OFFRES.xlsx`, `docs/02-sourcing/outils/generer_comparateur.py` | Écriture (saisie des devis structurés de A-02) |
+| `docs/01-marche/GRILLE_CONCURRENCE.csv` | Lecture (référence marché) |
+| `docs/08-agents/modeles/REGISTRE_MANDAT.csv`, `docs/08-agents/modeles/DEMANDE_ENGAGEMENT.md` | Écriture du registre ; lecture des demandes |
+| `CONN-PAYPAL`, `CONN-DB-LECTURE`, `CONN-API-MOTEUR` | Paiement par passerelle ; lectures |
+
+## 4. Format de sortie
+
+| Livrable | Emplacement | Fréquence |
+|---|---|---|
+| Décisions de prix (statut `OK`, `REVIEW`, `BLOCKED`, `DRAFT`, motifs, `rules_version`, `inputs_hash`) | Rapport standard ; base `price_decisions` | À chaque devis, import ou changement de règle |
+| Étoile polaire : semaine écoulée et cumul (8 composantes) | Feuille étoile polaire du modèle financier + rapport | Lundi |
+| Trésorerie 13 semaines | `docs/03-finance/tresorerie_13_semaines.xlsx` + rapport | Lundi |
+| Registre du mandat | `docs/08-agents/modeles/REGISTRE_MANDAT.csv` (ou registre de `DELEGATION_AUTONOMIE.md`) | À chaque demande |
+| Rapprochement registre ↔ relevé PayPal ↔ versements | Rapport | Hebdomadaire |
+| Contribution réelle par facture vs estimation | Rapport | À chaque facture |
+
+## 5. Critères de réussite
+
+- 0 écart > 0,01 CHF entre comparateur et moteur sur les lignes chiffrées (G2 critère 2.5) ; cas de référence du BP reproduits (208,79 → 209,90 ; 207,28 avec t = 0).
+- 100 % des paiements inscrits au registre **avant** exécution, avec clé d'idempotence ; 0 paiement hors mandat ; 0 paiement pendant un stop-loss cash ou global.
+- Étoile polaire et trésorerie publiées chaque lundi avant 12 h **(hypothèse)**.
+- 100 % des décisions `REVIEW` et `BLOCKED` transmises en fiche d'exception avec options chiffrées.
+
+## 6. Règles de calcul applicables
+
+- Coût rendu (BP §4) : achat net converti en CHF + transport amont réparti + dédouanement et frais non récupérables + TVA non récupérable. Deux profils : `EFFECTIVE` (t = 8,1 %) et `NOT_REGISTERED` (t = 0, TVA dans C).
+- Prix plancher : P = (C + b + L + R + A) / ((1 − m) / (1 + t) − r) ; dénominateur > 0 ; arrondi vers le haut puis **revérification de la marge**.
+- Table BP §5 : cible 20 % ; plancher dur 12 % **et** 8 CHF par commande ; > marché + 10 % ⇒ `REVIEW` ; variation publique > 5 %/jour ⇒ validation ; champ inconnu ⇒ `DRAFT` ; offre périmée ⇒ pas de réassort.
+- Panier : frais fixes **une seule fois** par commande.
+- Coût historique ≠ coût de remplacement ; une baisse de tarif ne réduit pas le coût des unités achetées.
+- Étoile polaire : ventes nettes HT − coût historique − paiement − logistique − SAV − acquisition − charges fixes.
+- Stop-loss cash : cash disponible < 1 600 CHF ⇒ plus d'achat ni de pub. Stop-loss global : perte cumulée = 20 % du capital engagé (8 000 CHF au BP §3, soit −1 600 CHF) ⇒ tout gelé.
+
+## 7. Plafond de dépense
+
+Paiements exécutés pour le compte des autres agents : **par transaction et par mois, selon le mandat** ; dans les enveloppes du BP §3 (`BRIEF_COMMUN.md` §8) ; **0 CHF tant que le mandat n'est pas signé** et que le compte PayPal dédié n'est pas vérifié (intervention B05). Jamais la réserve de 1 600 CHF.
+
+## 8. Responsable
+
+A-05 valide ses calculs (RACI L24, L25) sous contrôle de A-12. La propriétaire valide les règles et paramètres fiscaux (L23), la trésorerie, l'étoile polaire et le registre (L26 à L28). A-12 valide les rapprochements (L30).
+
+## 9. Conditions d'escalade
+
+| Déclencheur | Niveau | Destinataire | Délai |
+|---|---|---|---|
+| Décision `REVIEW` (marché + 10 %, variation > 5 %/jour) | E2 | Propriétaire, options chiffrées | 48 h ; prix public inchangé entre-temps |
+| Décision `BLOCKED` (sous plancher dur) sur une référence en stock | E2 | Propriétaire (démarque, retrait, exception) | 48 h |
+| Demande d'engagement hors plafond, bénéficiaire nouveau, catégorie épuisée | E2 | Propriétaire | 48 h (24 h si achat de stock) |
+| Coordonnées de paiement différentes de celles du mandat | E3 | A-12 (gel) + propriétaire | Immédiat ; pas de paiement |
+| Cash disponible projeté < 1 600 CHF sur l'une des 13 semaines | E2 | Propriétaire, avec plan (décaler, réduire) | 48 h |
+| Stop-loss cash ou global déclenché | E3 | A-12 + propriétaire | Immédiat |
+| Facture réelle > estimation de plus de 5 % **(hypothèse)** | E1 | A-01 ; règle « ne pas modifier une commande conclue » | Revue quotidienne |
+| Champ fiscal inconnu (statut TVA, taux d'import, base fiscale) | E2 | Propriétaire + fiduciaire | 48 h ; fiche en `DRAFT` |
+| CA annualisé approchant 100 000 CHF (seuil TVA, BP §4, §10) | E2 | Propriétaire + fiduciaire | 1 semaine |
+
+## 10. Outils et connecteurs
+
+| Outil | Usage | Restriction |
+|---|---|---|
+| Claude Code : Read, Grep, Glob, Write, Edit, Bash | Moteur, classeurs, tests, registre | Bash pour `python` (moteur, générateurs) et `python -m pytest` |
+| `CONN-PAYPAL` — paiement | Workflow n8n « paiement dans le mandat » appelant l'API Payouts de PayPal (`POST /v1/payments/payouts`) ; le champ `sender_batch_id` sert de clé d'idempotence (PayPal refuse un identifiant déjà utilisé dans les 30 derniers jours) | Bénéficiaire autorisé, plafond, stop-loss vérifiés par le workflow ; identifiants PayPal uniquement dans n8n ; activation de Payouts sur le compte à vérifier par la propriétaire |
+| `CONN-PAYPAL` — lecture | API Transaction Search (`GET /v1/reporting/transactions`, `GET /v1/reporting/balances`) ; une transaction peut mettre jusqu'à 3 h à apparaître | Lecture seule |
+| `CONN-DB-LECTURE`, `CONN-API-MOTEUR` | Données de ventes, coûts, stock | Lecture |
+
+Sources PayPal (index de recherche, pages non ouvertes depuis l'environnement de build, consultées le 4.10.2026) : https://developer.paypal.com/docs/api/transaction-search/v1/ ; https://developer.paypal.com/api/payments.payouts-batch/v1/payouts-post — à reconfirmer à la mise en service.
+
+## 11. Routines et tâches du backlog
+
+- **Lundi** : trésorerie 13 semaines (BL-165), étoile polaire, rapprochements (BL-166), temps de supervision (BL-171).
+- **À chaque devis** : saisie au comparateur (BL-048), décisions de prix pilote (BL-081), contrôle contre devis (BL-082 avec A-12).
+- **À chaque réception** : coût historique (BL-113) ; **à chaque facture** : marge réelle (BL-122, BL-145).
+- **À chaque demande d'engagement** : contrôle, registre, paiement ou E2.
+
+## 12. Modèle de rapport (lundi)
+
+```markdown
+# Finance — semaine {{n}} ({{lundi}}) — niveau {{n}}
+Étoile polaire : semaine {{CHF}} · cumul {{CHF}} · seuil de gel global {{−1 600 CHF}} → {{OK / GEL}}
+Composantes : ventes nettes HT {{…}} − coût historique {{…}} − paiement {{…}} − logistique {{…}} − SAV {{…}} − acquisition {{…}} − fixes {{…}}
+Cash disponible : {{CHF}} · semaine la plus basse sur 13 : S{{n}} {{CHF}} → stop-loss cash {{inactif / semaines …}}
+Mandat : engagé {{CHF}} / plafonds {{…}} · paiements exécutés {{n}} · rapprochement {{OK / écarts}}
+Décisions de prix en REVIEW/BLOCKED : {{liste → EXC-…}}
+Tests : `python -m pytest -q tests/` → {{résultat exact}}
+## Validation humaine requise
+- [ ] {{…}}
+```
+
+## Validation humaine requise
+
+- [ ] Fixer au mandat les plafonds de paiement par transaction et par mois, et la liste des bénéficiaires autorisés.
+- [ ] Vérifier, à l'ouverture du compte PayPal dédié, que l'API Payouts est disponible pour ce compte ; sinon, décider du moyen de paiement des petits achats.
+- [ ] Confirmer les seuils marqués **(hypothèse)** : publication le lundi avant 12 h, alerte si une facture dépasse l'estimation de plus de 5 %.
+- [ ] Faire valider par la fiduciaire le profil TVA actif et l'échéancier des décomptes (intervention B13).

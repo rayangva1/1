@@ -1,0 +1,26 @@
+# Champs propres à la landing — même format et mêmes statuts que docs/04-legal/champs_a_remplir.yaml
+# (a_remplir : fait à obtenir ; a_valider : valeur proposée ; valide : validée, avec « valide_par »).
+# Les champs d'identité (NOM_BOUTIQUE, RAISON_SOCIALE, ADRESSE_POSTALE, EMAIL_SUPPORT…) ne sont PAS ici :
+# ils restent dans le registre légal, source unique, et sont lus par site/outils/publication.py.
+# Aucune valeur ci-dessous n'est un fait confirmé. Aucun secret ici (l'URL du webhook n'est pas un secret,
+# mais le workflow n8n doit filtrer et limiter les appels : voir site/landing/README.md §4).
+version: "2026-10-04"
+auteur: "agent site-contenu"
+
+champs:
+  URL_LANDING:
+    description: "Adresse publique complète de la landing, en https et terminée par « / » (sous-domaine de l'hébergeur ou domaine acheté en B08)"
+    statut: a_remplir
+    decideur: "Propriétaire (B08) ; agent 07 Site"
+    source: "site/landing/README.md §3"
+  MOIS_OUVERTURE:
+    description: "Mois d'ouverture annoncé, sans date ferme (protocole landing §2 : pas de date ferme avant réception du stock)"
+    valeur_proposee: "novembre 2026"
+    statut: a_valider
+    decideur: "Propriétaire (C07)"
+    source: "docs/00-pilotage/PLAN_90_JOURS.md (ouverture douce visée à J38 = 11.11.2026, hypothèse, marge jusqu'à J45)"
+  WEBHOOK_INSCRIPTION:
+    description: "URL https du webhook n8n de production « inscription aux alertes » (contrat : site/landing/inscription.schema.json)"
+    statut: a_remplir
+    decideur: "Agent 07 Site, après création du workflow n8n et de l'outil d'envoi (B04)"
+    source: "site/landing/README.md §4"

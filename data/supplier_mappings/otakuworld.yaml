@@ -1,0 +1,101 @@
+# TEMPLATE — à compléter dès réception d'un fichier réel ; aucun format confirmé.
+#
+# Fournisseur : OtakuWorld — piste de priorité 2 (BP §2) — https://b2b.otakuworld.ch/ [S4, consulté le 4.10.2026]
+# Ce qui est visible publiquement : Portail pro suisse ; pas de minimum contraignant annoncé.
+# Aucun compte ouvert, aucun contact envoyé, aucun fichier reçu au 4.10.2026 : ce n'est
+# PAS un partenariat. Les en-têtes ci-dessous sont des PROPOSITIONS génériques à remplacer
+# par les en-têtes exacts du premier fichier réel. Aucun défaut (devise, HT/TTC, unité,
+# langue, scellé, pays) n'est renseigné : ils exigent une confirmation écrite.
+# Format supposé « csv » uniquement pour que le fichier soit chargeable : à confirmer.
+
+supplier_id: otakuworld
+supplier_name: "OtakuWorld"
+mapping_version: "otakuworld-template-2026-10-04"
+status: TEMPLATE
+fictif: false
+description: "TEMPLATE — à compléter dès réception d'un fichier réel ; aucun format confirmé"
+notes:
+  - "À obtenir (BP §2) : FR régulier"
+  - "À obtenir (BP §2) : Accès sans numéro TVA si non assujetti"
+  - "À obtenir (BP §2) : Allocations"
+  - "À obtenir (BP §2) : Flux (le portail visible n'est pas une API)"
+  - "Demander l'exemple de fichier prix/stock (BP §13 « La première action concrète ») et l'archiver hors dépôt."
+  - "Par référence : SKU, EAN/GTIN, langue, extension, conditionnement, unités par carton, prix net HT ou TTC, devise, remises, MOQ, disponibilité, allocation, date de sortie, port, Incoterm, pays d'expédition (BP §2)."
+  - "Automatisation : API documentée ou fichier CSV/XML/Excel, fréquence, identifiants stables, stock quantifié ou statut (BP §2)."
+  - "Aucun accès automatisé sans accord écrit sur l'usage ; pas de lecture de portail (SPEC §0.9)."
+
+file_format: csv          # csv | xlsx | xml
+csv:
+  delimiter: ";"
+  quotechar: '"'
+  encoding: "utf-8-sig"   # « cp1252 » pour un export Excel Windows ancien
+  skip_rows: 0            # lignes de titre avant l'en-tête
+xlsx:
+  sheet: null             # première feuille si null
+  header_row: 1
+  source_ts_cell: null    # ex. "B2" si la date d'export figure dans une cellule
+xml:
+  record_path: ".//offre"
+  source_ts_attribute: null
+  namespaces: {}
+numbers:
+  decimal_separator: ","  # "," (FR/CH romand) ou "." — un nombre ambigu part en quarantaine
+  thousands_separators: [" ", "'", "’", " ", " "]
+dates:
+  formats: ["%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"]
+  timezone: "Europe/Zurich"
+
+columns:
+  supplier_sku: [sku, ref, reference, "référence", code_article, article]
+  gtin: [ean, gtin, ean13, code_barre, "code-barres"]
+  designation: [designation, "désignation", libelle, "libellé", description, produit]
+  language: [langue, language, version]
+  extension: [extension, serie, "série", set]
+  format: [format, type, type_produit]
+  content: [contenu, composition]
+  sealed: [scelle, "scellé", etat, "état"]
+  price: [prix, prix_net, tarif, prix_unitaire]
+  currency: [devise, monnaie, currency]
+  price_basis: [base_prix, ht_ttc, "HT/TTC"]
+  vat_rate: [tva, taux_tva]
+  unit_basis: [unite_prix, "unité de prix", par]
+  units_per_pack: [unites_par_colis, "unités par carton", pcb, conditionnement]
+  carton_qty: [colisage, qte_carton]
+  moq: [moq, minimum, minimum_commande]
+  availability: [disponibilite, "disponibilité", statut]
+  available_qty: [stock, quantite_disponible, qte_dispo]
+  allocation_qty: [allocation, quota]
+  release_date: [date_sortie, sortie]
+  incoterm: [incoterm]
+  ship_from_country: [pays_expedition, origine_expedition]
+  source_ts: [date_maj, maj, mise_a_jour]
+required_fields: [supplier_sku, price]
+
+tiers: []                 # ex. - {min_qty_column: palier1_qte, price_column: palier1_prix}
+quantities:
+  stock: UNIT             # UNIT (unité de vente) ou PACK (cartons)
+  moq: UNIT
+  tiers: UNIT
+  allocation: UNIT
+defaults:
+  currency: null
+  price_basis: null       # HT | TTC
+  unit_basis: null        # UNIT | PACK
+  units_per_pack: null
+  vat_rate: null
+  sealed: null
+  language: null
+  ship_from_country: null
+  vat_country: null
+  stock_pool_id: null
+  incoterm: null
+value_maps: {}            # ex. price_basis: {"prix pro": "HT"} — seulement sur confirmation écrite
+allowed_currencies: [CHF, EUR]
+allocation_is_firm: false # true seulement avec accord écrit (allocation_evidence)
+allocation_evidence: null
+
+
+# Validation humaine requise
+# - [ ] Recevoir un fichier réel de OtakuWorld et remplacer les en-têtes proposés.
+# - [ ] Confirmer par écrit devise, base HT/TTC, base unité/carton, unités par carton, langue, TVA facturée et pays d'expédition.
+# - [ ] Passer au statut VALIDE (validated_by, validated_at, validated_on_sample_sha256) après un import d'essai sans anomalie critique.

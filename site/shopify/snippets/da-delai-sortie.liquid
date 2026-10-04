@@ -1,0 +1,54 @@
+{%- comment -%}
+  Bloc « délai et date de sortie » d'une fiche (BP §7 : délai réaliste, date de sortie confirmée ou statut incertain,
+  conditions des commandes mixtes et précommandes ; quantité autorisée).
+  Paramètre : product (obligatoire). Réglages du thème utilisés : delai_expedition_local, url_page_precommandes.
+  Aucune quantité en stock n'est affichée ; seule la quantité maximale par commande l'est.
+{%- endcomment -%}
+{%- liquid
+  assign statut = product.metafields.boutique.statut_stock.value | default: 'inconnu'
+  if product.available != true
+    assign statut = 'rupture'
+  elsif statut != 'stock_local' and statut != 'precommande'
+    assign statut = 'inconnu'
+  endif
+  assign delai = product.metafields.boutique.delai_expedition.value | default: settings.delai_expedition_local
+  assign date_sortie = product.metafields.boutique.date_sortie.value
+  assign statut_date = product.metafields.boutique.date_sortie_statut.value | default: 'inconnue'
+  assign qmax = product.metafields.boutique.quantite_max.value
+-%}
+<div class="da-panel da-delais" data-statut="{{ statut }}">
+  <dl class="da-facts">
+    <dt>Disponibilité</dt>
+    <dd>{% render 'da-statut-stock', product: product, contexte: 'carte' %}</dd>
+    <dt>Expédition</dt>
+    <dd>
+      {%- case statut -%}
+        {%- when 'stock_local' -%}Depuis Genève{% if delai and delai != '' %}, sous {{ delai | escape }}{% endif %}.
+        {%- when 'precommande' -%}Dès réception du produit{% if delai and delai != '' %}, en principe sous {{ delai | escape }} après réception{% endif %}. Pas de garantie de livraison le jour de la sortie.
+        {%- else -%}Aucune expédition possible pour le moment.
+      {%- endcase -%}
+    </dd>
+    {%- if statut == 'precommande' or date_sortie and date_sortie != '' -%}
+      <dt>Date de sortie</dt>
+      <dd>
+        {%- unless date_sortie and date_sortie != '' -%}Non confirmée
+        {%- else -%}
+          {%- if statut_date == 'confirmee' -%}{{ date_sortie | date: '%d.%m.%Y' }} (confirmée)
+          {%- else -%}{{ date_sortie | date: '%d.%m.%Y' }} (estimée, peut changer)
+          {%- endif -%}
+        {%- endunless -%}
+      </dd>
+    {%- endif -%}
+    {%- if qmax and qmax != '' -%}
+      <dt>Quantité maximale</dt>
+      <dd>{{ qmax }} par commande</dd>
+    {%- endif -%}
+    <dt>Livraison</dt>
+    <dd>En Suisse uniquement.</dd>
+  </dl>
+  {%- if statut == 'precommande' -%}
+    <p class="da-note">Commande mixte&nbsp;: les articles en stock local partent dès qu'ils sont prêts&#8239;; la précommande est expédiée séparément, dès réception. La livraison n'est facturée qu'une fois.
+      {%- if settings.url_page_precommandes and settings.url_page_precommandes != '' %} <a href="{{ settings.url_page_precommandes }}">Comment fonctionnent les précommandes</a>{% endif -%}
+    </p>
+  {%- endif -%}
+</div>

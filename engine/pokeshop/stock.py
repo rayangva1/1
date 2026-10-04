@@ -17,7 +17,7 @@ concurrence) ; il applique le même contrôle compare-and-set que ``inventorySet
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
@@ -49,6 +49,7 @@ __all__ = [
     "availability_promise",
     "StockRegistry",
     "reorder_point",
+    "REORDER_SKIP_REASONS",
     "propose_reorder",
 ]
 
@@ -298,7 +299,9 @@ class StockRegistry:
         return qty
 
     # -- mutations ----------------------------------------------------------
-    def receive(self, sku: str, qty: int, ref: str, *, expected_version: int | None = None, at: datetime | None = None) -> StockLevel:
+    def receive(
+        self, sku: str, qty: int, ref: str, *, expected_version: int | None = None, at: datetime | None = None
+    ) -> StockLevel:
         """Entrée en stock local (réception contrôlée physiquement)."""
         self._positive(qty)
         with self._lock:
@@ -308,7 +311,9 @@ class StockRegistry:
             self._log(sku, slot, MovementKind.RECEIPT, qty, ref, now)
             return self.level(sku)
 
-    def set_safety(self, sku: str, qty: int, *, ref: str = "", expected_version: int | None = None, at: datetime | None = None) -> StockLevel:
+    def set_safety(
+        self, sku: str, qty: int, *, ref: str = "", expected_version: int | None = None, at: datetime | None = None
+    ) -> StockLevel:
         """Fixe le stock de sécurité du SKU."""
         _check_count(qty, "safety")
         with self._lock:
@@ -498,6 +503,35 @@ def _round_up_to(qty: int, multiple: int) -> int:
 
 _UNAVAILABLE_UPSTREAM = (AvailabilityStatus.OUT_OF_STOCK, AvailabilityStatus.DISCONTINUED)
 
+REORDER_SKIP_REASONS: dict[str, str] = {
+    "STOP_LOSS_PRODUCT": "Référence gelée par le stop-loss (gouvernance) : aucun réassort.",
+    "STOP_LOSS_EXTENSION": "Extension gelée par le stop-loss (> 25 % du budget ou 45 j sans vente).",
+    "CASH_RESERVE": "Budget disponible ≤ réserve de trésorerie du mandat : aucun achat.",
+    "STALE_OFFER": "Offre fournisseur > 24 h : inéligible au réassort.",
+    "UPSTREAM_UNAVAILABLE": "Fournisseur en rupture ou référence arrêtée.",
+    "UNKNOWN_FIELDS": "MOQ, carton ou statut de disponibilité inconnu.",
+    "INVALID_COST": "Coût de remplacement ≤ 0 : anomalie.",
+    "ABOVE_REORDER_POINT": "Position (vendable + en commande) au-dessus du point de commande.",
+    "NO_PROBABLE_SALES": "Aucune vente probable sur la période couverte.",
+    "INSUFFICIENT_UPSTREAM": "Quantité amont < MOQ ou < 1 carton.",
+    "BUDGET": "Budget disponible insuffisant pour le MOQ / 1 carton.",
+    "EXTENSION_CAP": "Plafond par extension atteint (25 % du budget stock).",
+}
+"""Codes stables des motifs d'exclusion d'une référence du panier de réassort."""
+
+
+def _decimal_arg(value: Decimal | int | str, name: str) -> Decimal:
+    """Convertit un argument monétaire/taux en Decimal fini ; ``float``/``bool`` refusés."""
+    if isinstance(value, bool) or isinstance(value, float):
+        raise TypeError(f"{name} : {type(value).__name__} interdit, utiliser Decimal ou str")
+    try:
+        result = value if isinstance(value, Decimal) else Decimal(value)
+    except (ArithmeticError, TypeError, ValueError) as exc:
+        raise StockError(f"{name} : valeur décimale invalide {value!r}") from exc
+    if not result.is_finite():
+        raise StockError(f"{name} : valeur non finie")
+    return result
+
 
 def propose_reorder(
     candidates: Sequence[ReorderCandidate],
@@ -510,49 +544,92 @@ def propose_reorder(
     cap_exceptions: Mapping[str, Decimal] | None = None,
     max_age: timedelta = DEFAULT_MAX_AGE,
     rules_version: str = "unversioned",
+    blocked_extensions: Collection[str] = (),
+    blocked_products: Collection[str] = (),
+    cash_reserve_chf: Decimal = ZERO,
 ) -> ReorderProposal:
     """Prépare un **panier fournisseur à valider** (jamais une commande, BP §5).
 
     Pour chaque candidat (le plus urgent d'abord : jours de couverture croissants) :
-    offre périmée / statut indisponible ou inconnu / MOQ ou carton inconnu -> écarté ;
-    position (vendable + en commande) > point de commande -> écarté ; sinon quantité =
-    ventes probables (délai + ``coverage_days``) + sécurité − position, relevée au MOQ,
-    arrondie au carton supérieur, puis réduite (par cartons, sans passer sous le MOQ) par la
-    quantité amont connue, le budget disponible et le plafond par extension
-    (``extension_cap_pct`` × ``stock_budget_total``, 25 % par défaut ; exceptions documentées
-    via ``cap_exceptions``). ``extension_exposure`` = valeur au coût déjà engagée par extension.
+    référence/extension gelée par le stop-loss -> écartée ; offre périmée / statut
+    indisponible ou inconnu / MOQ ou carton inconnu -> écartée ; position (vendable + en
+    commande) > point de commande -> écartée ; sinon quantité = ventes probables (délai +
+    ``coverage_days``) + sécurité − position, relevée au MOQ, arrondie au carton supérieur,
+    puis réduite (par cartons, sans passer sous le MOQ) par la quantité amont connue, le
+    budget utilisable et le plafond par extension (``extension_cap_pct`` ×
+    ``stock_budget_total``, 25 % par défaut ; exceptions documentées via ``cap_exceptions``).
+
+    * ``extension_exposure`` : valeur au coût déjà engagée par extension.
+    * ``blocked_extensions`` / ``blocked_products`` : gels décidés par le stop-loss
+      (``pokeshop.stoploss``, agent gouvernance) ; motif ``STOP_LOSS_*``.
+    * ``cash_reserve_chf`` : réserve de trésorerie du mandat (BP §3 : 1 600 CHF), jamais
+      engagée : budget utilisable = ``budget_available`` − réserve (≤ 0 => motif
+      ``CASH_RESERVE`` pour toutes les références). Défaut 0 = l'appelant a déjà déduit la
+      réserve. Le stop-loss cash de la gouvernance reste l'autorité.
+
+    Motifs d'exclusion : :data:`REORDER_SKIP_REASONS`. Montants : ``Decimal`` ou ``str``
+    (``float`` refusé).
     """
     _require_aware(now, "now")
-    budget = Decimal(budget_available)
-    total_budget = Decimal(stock_budget_total)
+    budget = _decimal_arg(budget_available, "budget_available")
+    total_budget = _decimal_arg(stock_budget_total, "stock_budget_total")
+    reserve = _decimal_arg(cash_reserve_chf, "cash_reserve_chf")
+    cap_pct_default = _decimal_arg(extension_cap_pct, "extension_cap_pct")
     if budget < 0 or total_budget < 0:
         raise StockError("budget négatif")
-    if not Decimal(0) < extension_cap_pct <= 1:
+    if reserve < 0:
+        raise StockError("réserve de trésorerie négative")
+    if not ZERO < cap_pct_default <= 1:
         raise StockError("plafond par extension hors ]0, 1]")
     keys = [c.product_key for c in candidates]
     if len(set(keys)) != len(keys):
         raise StockError("product_key en double dans les candidats")
-    exposure: dict[str, Decimal] = {k: Decimal(v) for k, v in (extension_exposure or {}).items()}
-    exceptions = {k: Decimal(v) for k, v in (cap_exceptions or {}).items()}
+    if isinstance(blocked_extensions, str) or isinstance(blocked_products, str):
+        raise TypeError("blocked_extensions / blocked_products : collection de chaînes attendue")
+    frozen_ext = frozenset(blocked_extensions)
+    frozen_products = frozenset(blocked_products)
+    exposure: dict[str, Decimal] = {
+        k: _decimal_arg(v, f"extension_exposure[{k}]") for k, v in (extension_exposure or {}).items()
+    }
+    exceptions = {k: _decimal_arg(v, f"cap_exceptions[{k}]") for k, v in (cap_exceptions or {}).items()}
     for ext, pct in exceptions.items():
-        if not Decimal(0) < pct <= 1:
+        if not ZERO < pct <= 1:
             raise StockError(f"exception de plafond invalide pour {ext}")
+    exposure_in = dict(exposure)
+    usable = budget - reserve
 
     def cover_days(c: ReorderCandidate) -> Decimal:
         position = Decimal(c.sellable_qty + c.on_order_qty)
         return position / c.avg_daily_sales if c.avg_daily_sales > 0 else Decimal("Infinity")
 
     ordered = sorted(candidates, key=lambda c: (cover_days(c), c.product_key))
-    remaining = budget
+    remaining = usable if usable > 0 else ZERO
     lines: list[ReorderLine] = []
     skipped: list[ReorderSkip] = []
     for c in ordered:
         offer = c.offer
+        if c.product_key in frozen_products:
+            skipped.append(ReorderSkip(product_key=c.product_key, reason="STOP_LOSS_PRODUCT"))
+            continue
+        if c.extension in frozen_ext:
+            skipped.append(ReorderSkip(product_key=c.product_key, reason="STOP_LOSS_EXTENSION", detail=c.extension))
+            continue
+        if usable <= 0:
+            skipped.append(
+                ReorderSkip(
+                    product_key=c.product_key, reason="CASH_RESERVE", detail=f"budget {budget} ≤ réserve {reserve}"
+                )
+            )
+            continue
         if is_stale(offer.source_ts, now, max_age):
             skipped.append(ReorderSkip(product_key=c.product_key, reason="STALE_OFFER", detail="offre > 24 h"))
             continue
         if offer.availability_status in _UNAVAILABLE_UPSTREAM:
-            skipped.append(ReorderSkip(product_key=c.product_key, reason="UPSTREAM_UNAVAILABLE", detail=offer.availability_status.value))
+            skipped.append(
+                ReorderSkip(
+                    product_key=c.product_key, reason="UPSTREAM_UNAVAILABLE", detail=offer.availability_status.value
+                )
+            )
             continue
         missing = [n for n in ("moq", "carton_qty") if getattr(offer, n) is None]
         if offer.availability_status is AvailabilityStatus.UNKNOWN:
@@ -568,9 +645,15 @@ def propose_reorder(
         position = c.sellable_qty + c.on_order_qty
         rp = reorder_point(c.avg_daily_sales, c.lead_time_days, c.safety_stock)
         if Decimal(position) > rp:
-            skipped.append(ReorderSkip(product_key=c.product_key, reason="ABOVE_REORDER_POINT", detail=f"{position} > {rp}"))
+            skipped.append(
+                ReorderSkip(product_key=c.product_key, reason="ABOVE_REORDER_POINT", detail=f"{position} > {rp}")
+            )
             continue
-        target = c.avg_daily_sales * Decimal(c.lead_time_days + c.coverage_days) + Decimal(c.safety_stock) - Decimal(position)
+        target = (
+            c.avg_daily_sales * Decimal(c.lead_time_days + c.coverage_days)
+            + Decimal(c.safety_stock)
+            - Decimal(position)
+        )
         need = int(target.to_integral_value(rounding=ROUND_CEILING))
         if need <= 0:
             skipped.append(ReorderSkip(product_key=c.product_key, reason="NO_PROBABLE_SALES"))
@@ -586,18 +669,30 @@ def propose_reorder(
             qty = _round_down_to(upstream, carton)
             notes.append(f"UPSTREAM_CAPPED à {qty}")
             if qty < moq or qty == 0:
-                skipped.append(ReorderSkip(product_key=c.product_key, reason="INSUFFICIENT_UPSTREAM", detail=f"amont {upstream}"))
+                skipped.append(
+                    ReorderSkip(product_key=c.product_key, reason="INSUFFICIENT_UPSTREAM", detail=f"amont {upstream}")
+                )
                 continue
         unit = c.unit_cost_chf
-        cap_pct = exceptions.get(c.extension, extension_cap_pct)
+        cap_pct = exceptions.get(c.extension, cap_pct_default)
         ext_room = cap_pct * total_budget - exposure.get(c.extension, ZERO)
-        max_budget = _round_down_to(int((remaining / unit).to_integral_value(rounding=ROUND_FLOOR)), carton) if remaining > 0 else 0
-        max_ext = _round_down_to(int((ext_room / unit).to_integral_value(rounding=ROUND_FLOOR)), carton) if ext_room > 0 else 0
+        max_budget = (
+            _round_down_to(int((remaining / unit).to_integral_value(rounding=ROUND_FLOOR)), carton)
+            if remaining > 0
+            else 0
+        )
+        max_ext = (
+            _round_down_to(int((ext_room / unit).to_integral_value(rounding=ROUND_FLOOR)), carton)
+            if ext_room > 0
+            else 0
+        )
         limit = min(max_budget, max_ext)
         if qty > limit:
             binding = "BUDGET" if max_budget <= max_ext else "EXTENSION_CAP"
             if limit < moq or limit == 0:
-                skipped.append(ReorderSkip(product_key=c.product_key, reason=binding, detail=f"max {limit} < MOQ {moq}"))
+                skipped.append(
+                    ReorderSkip(product_key=c.product_key, reason=binding, detail=f"max {limit} < MOQ {moq}")
+                )
                 continue
             qty = limit
             notes.append(f"REDUCED_BY_{binding} à {qty}")
@@ -628,11 +723,14 @@ def propose_reorder(
             "budget_available": budget,
             "stock_budget_total": total_budget,
             "now": now,
-            "extension_exposure": dict(extension_exposure or {}),
-            "extension_cap_pct": extension_cap_pct,
+            "extension_exposure": exposure_in,
+            "extension_cap_pct": cap_pct_default,
             "cap_exceptions": exceptions,
             "max_age": max_age,
             "rules_version": rules_version,
+            "blocked_extensions": sorted(frozen_ext),
+            "blocked_products": sorted(frozen_products),
+            "cash_reserve_chf": reserve,
         }
     )
     return ReorderProposal(

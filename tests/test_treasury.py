@@ -12,8 +12,10 @@ from types import ModuleType
 import pytest
 
 from pokeshop.treasury import (
+    CASH_STOPLOSS_RESERVE,
     HORIZON_WEEKS,
     INITIAL_BUDGET_TOTAL,
+    STOPLOSS_BLOCKED_FLOWS,
     AlertCode,
     CashMovement,
     Flow,
@@ -212,6 +214,81 @@ def test_customer_refund_reduces_balance() -> None:
     assert w2.preorder_reserve == 0
 
 
+# ---------------------------------------------------------------------------
+# Stop-loss cash (réserve 1 600 CHF du budget BP §3)
+# ---------------------------------------------------------------------------
+
+
+def test_cash_stoploss_reserve_is_the_bp_reserve() -> None:
+    assert CASH_STOPLOSS_RESERVE == D(1600)
+    reserve = next(line for line in initial_budget() if line.key == "reserve")
+    assert reserve.amount == CASH_STOPLOSS_RESERVE and "stop-loss" in reserve.nature
+    assert TreasuryPlan(START, D(8000)).minimum_reserve == D(1600)
+    assert STOPLOSS_BLOCKED_FLOWS == (Flow.PURCHASE_PLANNED, Flow.ADVERTISING)
+
+
+def stoploss_plan(enforce: bool) -> TreasuryPlan:
+    """Solde 2 000 ; achat engagé 500 en S1 ⇒ 1 500 < 1 600 : S2 s'ouvre en stop-loss."""
+    return TreasuryPlan(
+        START, D(2000), enforce_cash_stoploss=enforce,
+        movements=(
+            CashMovement(day(1), Flow.PURCHASE_COMMITTED, D(500), "réassort signé"),
+            CashMovement(day(2), Flow.ADVERTISING, D(80), "campagne"),
+            CashMovement(day(2, 3), Flow.PURCHASE_PLANNED, D(300), "réassort prévu"),
+            CashMovement(day(2), Flow.PURCHASE_COMMITTED, D(200), "commande déjà signée"),
+            CashMovement(day(2), Flow.OTHER_INFLOW, D(400), "apport"),
+            CashMovement(day(3), Flow.ADVERTISING, D(50), "campagne"),
+        ),
+    )
+
+
+def test_cash_stoploss_flags_planned_purchases_and_ads() -> None:
+    f = build_forecast(stoploss_plan(enforce=False))
+    w1, w2, w3 = f.weeks[:3]
+    assert not w1.cash_stoploss_at_open and w1.blocked_outflows == 0
+    assert w1.closing_balance == D(1500) and w1.status is AlertCode.BELOW_MINIMUM_RESERVE
+    assert w2.cash_stoploss_at_open
+    assert w2.blocked_outflows == D(380)  # 80 de pub + 300 d'achat prévu ; l'achat engagé reste dû
+    assert w2.flow(Flow.ADVERTISING) == D(80)  # non appliqué : seulement signalé
+    assert w2.closing_balance == D(1500) + D(400) - D(80) - D(300) - D(200)
+    assert w3.cash_stoploss_at_open and w3.blocked_outflows == D(50)
+    assert f.cash_stoploss_weeks == tuple(range(2, 14))
+    assert f.blocked_outflows_total == D(430)
+    assert "stop-loss cash" in f.alerts[0].message
+
+
+def test_cash_stoploss_enforced_removes_blocked_flows_only() -> None:
+    f = build_forecast(stoploss_plan(enforce=True))
+    w2, w3 = f.weeks[1], f.weeks[2]
+    assert w2.flow(Flow.ADVERTISING) == 0 and w2.flow(Flow.PURCHASE_PLANNED) == 0
+    assert w2.flow(Flow.PURCHASE_COMMITTED) == D(200)
+    assert w2.blocked_outflows == D(380)
+    assert w2.closing_balance == D(1700)  # 1 500 + 400 − 200 : la semaine 3 sort du stop-loss
+    assert not w3.cash_stoploss_at_open and w3.flow(Flow.ADVERTISING) == D(50)
+    assert f.cash_stoploss_weeks == (2,)
+    assert f.first_cash_stoploss_week == 2
+
+
+def test_cash_stoploss_counts_preorder_money_as_unavailable() -> None:
+    """Solde au-dessus de 1 600 mais précommandes encaissées non livrées ⇒ stop-loss."""
+    f = build_forecast(
+        TreasuryPlan(
+            START, D(2000), opening_preorder_reserve=D(500),
+            movements=(CashMovement(day(1), Flow.ADVERTISING, D(40)),),
+        )
+    )
+    assert f.weeks[0].cash_stoploss_at_open and f.weeks[0].blocked_outflows == D(40)
+    assert f.weeks[0].status is AlertCode.PREORDER_RESERVE_UNCOVERED
+    clean = build_forecast(TreasuryPlan(START, D(2100), opening_preorder_reserve=D(500)))
+    assert not clean.weeks[0].cash_stoploss_at_open  # 2 100 − 500 = 1 600 : seuil non franchi
+    assert clean.first_cash_stoploss_week is None and clean.blocked_outflows_total == 0
+
+
+def test_enforce_flag_must_be_bool() -> None:
+    with pytest.raises(TreasuryError):
+        TreasuryPlan(START, D(0), enforce_cash_stoploss="oui")  # type: ignore[arg-type]
+
+
 def test_all_flows_aggregate_by_week() -> None:
     movements = tuple(
         CashMovement(day(2, 1), flow, D(10), flow.value) for flow in Flow if flow is not Flow.PSP_PAYOUT
@@ -279,6 +356,7 @@ def test_as_rows_flat_export() -> None:
     assert rows[0]["ventes_ttc"] == "100.01"
     assert rows[1]["versements_psp"] == "97.20"
     assert rows[0]["alerte"] == "OK"
+    assert rows[0]["stop_loss_cash"] == "non" and rows[0]["sorties_bloquees"] == "0.00"
     assert set(Flow._value2member_map_) <= set(rows[0])
     assert f.closing_balance == f.weeks[-1].closing_balance
 
@@ -383,12 +461,18 @@ WEEK_COLS = [chr(ord("C") + i) for i in range(13)]
 
 
 def _load_generator() -> ModuleType:
+    """Charge le générateur sans écrire de __pycache__ dans docs/."""
     path = FINANCE_DIR / "generer_classeurs.py"
     spec = importlib.util.spec_from_file_location("generer_classeurs", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules.setdefault("generer_classeurs", module)
-    spec.loader.exec_module(module)
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
     return module
 
 
@@ -428,8 +512,39 @@ def treasury_values(generator: ModuleType, tmp_path_factory: pytest.TempPathFact
 def test_example_is_fictitious_and_shows_both_alert_types(example_forecast) -> None:
     codes = {a.code for a in example_forecast.alerts}
     assert codes == {AlertCode.BELOW_MINIMUM_RESERVE, AlertCode.PREORDER_RESERVE_UNCOVERED}
+    assert [a.week for a in example_forecast.alerts] == [5, 6, 7, 9]
     assert example_forecast.weeks[-1].status is None
     assert example_forecast.psp_in_transit_end > 0
+    assert example_forecast.plan.minimum_reserve == CASH_STOPLOSS_RESERVE
+
+
+def test_example_shows_budget_gap_and_cash_stoploss(example_forecast) -> None:
+    """Budget BP §3 dépensé + 2 mois de charges fixes ⇒ réserve entamée dès la semaine 5."""
+    w4, w5 = example_forecast.weeks[3], example_forecast.weeks[4]
+    assert w4.closing_balance == D(1700)  # 8 000 − 2 900 lancement − 3 000 stock − 400 charges
+    assert w5.closing_balance == D(1300) and w5.status is AlertCode.BELOW_MINIMUM_RESERVE
+    assert example_forecast.cash_stoploss_weeks == (6, 7, 8, 10)
+    assert example_forecast.first_cash_stoploss_week == 6
+    assert example_forecast.weeks[6].blocked_outflows == D(150)  # test pub semaine 7
+    assert example_forecast.weeks[9].blocked_outflows == D(150)  # pub après précommandes non couvertes
+    assert example_forecast.blocked_outflows_total == D(300)
+    # le réassort engagé de la semaine 11 n'intervient qu'après sortie du stop-loss
+    assert not example_forecast.weeks[10].cash_stoploss_at_open
+
+
+def test_example_with_enforced_stoploss(generator: ModuleType, example_forecast) -> None:
+    params, weeks = generator.fictitious_example()
+    p = plan_from_weekly_inputs(
+        start=params.start, opening_balance=params.opening_balance, minimum_reserve=params.minimum_reserve,
+        weeks=weeks, enforce_cash_stoploss=True,
+    )
+    f = build_forecast(p)
+    assert f.weeks[6].flow(Flow.ADVERTISING) == 0 and f.weeks[6].blocked_outflows == D(150)
+    # sans la pub de la semaine 7, les précommandes de la semaine 9 restent couvertes
+    assert f.weeks[8].status is None
+    assert f.cash_stoploss_weeks == (6, 7, 8)
+    assert f.blocked_outflows_total == D(150)
+    assert f.closing_balance == example_forecast.closing_balance + D(150)
 
 
 def test_workbook_sheets(generator: ModuleType, tmp_path: Path) -> None:
@@ -443,6 +558,8 @@ def test_workbook_sheets(generator: ModuleType, tmp_path: Path) -> None:
     assert "FICTIF" in ex["A1"].value
     assert ex["D24"].value == "=IF(D$14-$B$10>=1,INDEX($C$22:$O$22,D$14-$B$10),0)"
     assert ex["D43"].value == "=D41+D42"
+    assert ex["D50"].value == '=IF($B$6="","à saisir",IF(C48<0,"OUI","non"))'
+    assert ex["D51"].value == '=IF(D50="OUI",D30+D35,0)'
     blank = wb["À remplir"]
     assert blank["B6"].value is None and blank["C17"].value is None
     assert blank["C17"].fill.fgColor.rgb.endswith("FFF2CC")
@@ -450,6 +567,7 @@ def test_workbook_sheets(generator: ModuleType, tmp_path: Path) -> None:
 
 def test_workbook_example_matches_engine(treasury_values, example_forecast) -> None:
     ws = treasury_values["Exemple FICTIF"]
+    assert ws["B7"].value == 1600
     for week, col in zip(example_forecast.weeks, WEEK_COLS):
         assert ws[f"{col}43"].value == pytest.approx(float(week.closing_balance), abs=0.005), week.index
         assert ws[f"{col}24"].value == pytest.approx(float(week.flow(Flow.PSP_PAYOUT)), abs=0.005)
@@ -457,16 +575,23 @@ def test_workbook_example_matches_engine(treasury_values, example_forecast) -> N
         assert (ws[f"{col}46"].value or 0) == pytest.approx(float(week.preorder_reserve), abs=0.005)
         assert ws[f"{col}48"].value == pytest.approx(float(week.available_for_purchases), abs=0.005)
         assert ws[f"{col}49"].value == ALERT_TEXT[week.status], week.index
-    assert ws["B52"].value == pytest.approx(float(example_forecast.lowest_week.closing_balance), abs=0.005)
-    assert ws["B53"].value == example_forecast.lowest_week.index
-    assert ws["B54"].value == len(example_forecast.alerts)
-    assert ws["B55"].value == pytest.approx(float(example_forecast.psp_in_transit_end), abs=0.005)
+        assert ws[f"{col}50"].value == ("OUI" if week.cash_stoploss_at_open else "non"), week.index
+        assert ws[f"{col}51"].value == pytest.approx(float(week.blocked_outflows), abs=0.005), week.index
+    assert ws["B54"].value == pytest.approx(float(example_forecast.lowest_week.closing_balance), abs=0.005)
+    assert ws["B55"].value == example_forecast.lowest_week.index
+    assert ws["B56"].value == len(example_forecast.alerts)
+    assert ws["B57"].value == pytest.approx(float(example_forecast.psp_in_transit_end), abs=0.005)
+    assert ws["B60"].value == len(example_forecast.cash_stoploss_weeks)
+    assert ws["B61"].value == example_forecast.first_cash_stoploss_week
+    assert ws["B62"].value == pytest.approx(float(example_forecast.blocked_outflows_total), abs=0.005)
 
 
 def test_blank_template_is_clean(treasury_values) -> None:
     ws = treasury_values["À remplir"]
-    assert all(ws[f"{c}49"].value == "OK" for c in WEEK_COLS)
-    assert ws["B54"].value == 0
+    assert ws["B7"].value == 1600  # seuil du stop-loss cash prérempli (BP §3)
+    assert all(ws[f"{c}49"].value == "à saisir" for c in WEEK_COLS)
+    assert all(ws[f"{c}50"].value == "à saisir" for c in WEEK_COLS)
+    assert ws["B56"].value == 0 and ws["B60"].value == 0 and ws["B61"].value == "aucune"
     assert ws["C15"].value in (None, "")
 
 
@@ -479,4 +604,5 @@ def test_delivered_treasury_file_is_recalculated() -> None:
     formulas = load_workbook(path)["Exemple FICTIF"]
     assert formulas["O43"].value.startswith("=")
     assert isinstance(values["O43"].value, (int, float))
-    assert values["B54"].value >= 1
+    assert values["B56"].value >= 1
+    assert values["B62"].value == 300

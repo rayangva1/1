@@ -1,0 +1,78 @@
+# MANDAT DE DÉPENSE DES AGENTS — GABARIT À REMPLIR ET SIGNER PAR LA PROPRIÉTAIRE
+# Boutique : {{NOM_BOUTIQUE}} — version du 4 octobre 2026.
+# Lecture humaine : docs/00-pilotage/DELEGATION_AUTONOMIE.md (formulaire §9).
+# Contrôle automatique : engine/pokeshop/mandate.py (check, SpendLedger).
+#
+# TANT QUE CE FICHIER N'EST PAS COMPLET ET SIGNÉ, AUCUNE DÉPENSE N'EST APPROUVÉE PAR LES AGENTS :
+# toute demande part en validation humaine (NEEDS_HUMAN_APPROVAL), les interdits restent refusés.
+#
+# Règles de saisie :
+# - montants entre guillemets, en CHF ("500", "3000") ; jamais de nombre à virgule flottante ;
+# - null = champ à remplir ; la valeur proposée figure en commentaire (hypothèse, pas un devis) ;
+# - aucun secret ici (IBAN, adresse PayPal, mot de passe) : seulement des RÉFÉRENCES au coffre ;
+# - toute modification après signature invalide l'empreinte => mandat inactif jusqu'à nouvelle signature ;
+# - empreinte à recopier dans approval.fingerprint_sha256 ET dans le coffre (POKESHOP_MANDATE_FINGERPRINT) :
+#     cd engine && python -m pokeshop.mandate fingerprint ../config/mandate.v1.yaml
+
+mandate_version: "mandat-v1-2026-10-04"
+status: "GABARIT — à remplir et signer par la propriétaire"
+source: "docs/00-pilotage/DELEGATION_AUTONOMIE.md ; BP §3 (enveloppes) ; contexte propriétaire du 4.10.2026"
+valid_from: null                # AAAA-MM-JJ ; proposé : date de signature
+valid_until: null               # AAAA-MM-JJ ; proposé : fin du pilote (J90), puis renouvellement explicite
+
+limits:
+  per_transaction_chf: null     # proposé : "500" (au-delà : validation humaine)
+  per_month_chf: null           # proposé : "3000" au pilote (dépenses approuvées par les agents seuls)
+  stock_budget_chf: null        # proposé : "3000" (BP §3, stock rendu Suisse) ; base du plafond par extension
+  extension_max_share: "0.25"   # BP §1 ; = stop-loss extension (config/stoploss.v1.yaml) — ne pas modifier ici seul
+  cash_reserve_chf: "1600"      # BP §3 ; = stop-loss cash ; JAMAIS dépensée par un agent
+  ads_daily_cap_chf: null       # proposé : "33" (≈ 500 CHF / 15 j, BP §9 jours 46 à 60) ; = plafond jour du stop-loss pub
+  email_daily_send_quota: null  # proposé : 20 envois par jour depuis la boîte dédiée (modèles approuvés uniquement)
+  snapshot_max_age_minutes: 60  # photo trésorerie / stop-loss plus vieille => demande refusée (à recalculer)
+
+# Catégories déléguées. envelope_chf = budget total de la catégorie, cumulé depuis l'ouverture du registre
+# (toutes approbations et toutes versions du mandat confondues ; pour rouvrir du budget, relever le montant) ; per_month_chf = plafond mensuel de la catégorie (null = seul le plafond mensuel global
+# s'applique) ; min_autonomy_level = niveau BP §13 requis pour que les agents paient seuls.
+# Pour NE PAS déléguer une catégorie : supprimer sa ligne (les demandes iront en validation humaine).
+# Non délégables (toujours propriétaire) : ADMIN (fiduciaire, juriste, contrats), OTHER.
+# Interdites en dur (refusées par le code, non modifiables ici) : SINGLE_CARDS, GRADING,
+# CUSTOMER_BUYBACK, SPECULATIVE, NON_FR_PRODUCTS, FINANCING.
+categories:
+  STOCK:        {envelope_chf: null, per_month_chf: null, min_autonomy_level: 4}  # proposé : "3000" ; réassort auto = niveau 4
+  ACCESSORIES:  {envelope_chf: null, per_month_chf: null, min_autonomy_level: 4}  # proposé : "300" (10 % du stock, BP §1)
+  SAMPLES:      {envelope_chf: null, per_month_chf: null, min_autonomy_level: 1}  # proposé : "100" (échantillons payants)
+  SITE_TOOLS:   {envelope_chf: null, per_month_chf: null, min_autonomy_level: 1}  # proposé : "1500" ; mois : "180" (BP §3)
+  DA_CONTENT:   {envelope_chf: null, per_month_chf: null, min_autonomy_level: 1}  # proposé : "400" (BP §3)
+  PACKAGING:    {envelope_chf: null, per_month_chf: null, min_autonomy_level: 1}  # proposé : "300" (BP §3)
+  SHIPPING:     {envelope_chf: null, per_month_chf: null, min_autonomy_level: 2}  # proposé : "600" ; étiquettes de commandes payées
+  ADVERTISING:  {envelope_chf: null, per_month_chf: null, min_autonomy_level: 3}  # proposé : "500" (BP §3, test pub)
+
+# Coût estimé d'un paiement PayPal, ajouté au montant avant contrôle des plafonds (hypothèses PRUDENTES
+# tirées d'une recherche web du 4.10.2026 sur les tarifs PayPal Suisse : conversion de devise 3 à 4 %
+# au-dessus du taux de base ; transaction commerciale 3,4 % + 0,55 CHF côté bénéficiaire, souvent
+# répercutée). À vérifier sur la page tarifs officielle de PayPal Suisse le jour de la signature.
+paypal:
+  fee_pct: "0.034"              # frais proportionnels supportés (ou répercutés par le fournisseur)
+  fee_fixed_chf: "0.55"         # frais fixes par paiement
+  fx_conversion_pct: "0.04"     # marge de conversion si la facture n'est pas en CHF
+  flag_above_pct: "0.02"        # au-delà de 2 % du montant : signalé, virement recommandé
+
+# Bénéficiaires autorisés : AUCUN tant qu'ils ne sont pas validés par la propriétaire (intervention C08,
+# checklist docs/02-sourcing/CHECKLIST_DUE_DILIGENCE_FOURNISSEUR.md). Modèle de ligne (FICTIF) :
+#  - supplier_id: "FICTIF_EMBALLAGES"
+#    label: "Fournisseur d'emballages (exemple fictif)"
+#    categories: [PACKAGING]
+#    payment_methods: [PAYPAL]
+#    max_per_transaction_chf: "150"     # optionnel, plus strict que le plafond global
+#    validated_on: "2026-10-10"
+#    due_diligence_ref: "docs/02-sourcing/CHECKLIST_DUE_DILIGENCE_FOURNISSEUR.md (FICTIF_EMBALLAGES)"
+#    payee_ref: "coffre:beneficiaires/FICTIF_EMBALLAGES"   # coordonnées de paiement : coffre uniquement
+suppliers: []
+
+extra_forbidden_categories: []  # catégories supplémentaires interdites par la propriétaire
+
+approval:
+  approved_by: null             # nom de la propriétaire
+  approved_at: null             # AAAA-MM-JJTHH:MM:SS+02:00 (date et heure de signature)
+  fingerprint_sha256: null      # empreinte calculée par la commande ci-dessus, après remplissage
+  revoked_at: null              # révocation : renseigner la date (en plus de couper l'accès PayPal)

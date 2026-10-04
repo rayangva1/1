@@ -10,9 +10,10 @@ Règles de calcul (déterministes, versionnées par ``PricingParams.rules_versio
   (0.1656 = 16.56 %).
 * **Exception : l'arrondi retail est toujours vers le haut** (prochain point de la grille
   ≥ prix rentable exact), puis la marge est **revérifiée** (BP §5).
-* Contribution affichée = CA net arrondi − coût produit arrondi − frais variables arrondis
-  (somme des frais de paiement, logistique, SAV, acquisition calculée exactement puis
-  arrondie une fois). Le pourcentage est calculé sur ces montants arrondis.
+* **Contribution additive** : contribution affichée = CA net arrondi − coût produit arrondi
+  − chaque frais arrondi (paiement, logistique, SAV, acquisition). La somme des montants
+  affichés retombe donc exactement sur la contribution (aucun centime inexpliqué dans le
+  tableau de bord). Le pourcentage est calculé sur ces montants arrondis.
 
 Notation BP §4 : P prix public TTC, t TVA ventes, r frais paiement %, b frais paiement fixes,
 L logistique nette, R provision SAV, A acquisition, m contribution cible, C coût rendu.
@@ -69,6 +70,7 @@ __all__ = [
     "contribution_breakdown",
     "contribution",
     "is_price_anomaly",
+    "floor_violations",
     "decide_price",
     "offer_unknown_fields",
     "landed_input_from_offer",
@@ -277,7 +279,7 @@ def allocate_inbound_costs(
     shares = allocate_amount(total_chf, weights)
     return tuple(
         AllocatedCost(key=ln.key, qty=ln.qty, allocated_total=share, per_unit=q4(share / Decimal(ln.qty)))
-        for ln, share in zip(lines, shares)
+        for ln, share in zip(lines, shares, strict=True)
     )
 
 
@@ -345,7 +347,10 @@ def round_up_retail(
     if price <= 0:
         raise PricingError("prix à arrondir ≤ 0")
     if ending is not None:
-        tiers = (RoundingTier(min_price=ZERO, step=ONE, endings=(as_decimal(ending, "ending"),)),)
+        end = as_decimal(ending, "ending")
+        if not ZERO <= end < ONE or end % CENT != 0:
+            raise PricingError(f"terminaison {end} hors de [0, 1[ ou non multiple de 0.01")
+        tiers = (RoundingTier(min_price=ZERO, step=ONE, endings=(end,)),)
     grid = tuple(tiers) if tiers is not None else DEFAULT_ROUNDING_TIERS
     if not grid or grid[0].min_price != 0:
         raise PricingError("grille d'arrondi invalide (doit commencer à 0)")
@@ -384,21 +389,20 @@ def contribution_breakdown(
         raise PricingError("coût rendu négatif")
     net = price / (ONE + params.vat_rate_sales)
     payment = price * params.payment_pct + (params.payment_fixed if per_order_costs else ZERO)
-    other = (
-        params.logistics_cost + params.after_sales_provision + params.acquisition_cost if per_order_costs else ZERO
-    )
+    other = params.logistics_cost + params.after_sales_provision + params.acquisition_cost if per_order_costs else ZERO
     net_q = q2(net)
     cost_q = q2(cost)
-    variable_q = q2(payment + other)
-    contrib = net_q - cost_q - variable_q
+    payment_q = q2(payment)
+    other_q = q2(other)
+    contrib = net_q - cost_q - payment_q - other_q
     pct = q4(contrib / net_q) if net_q > 0 else Decimal("-1")
     return ContributionBreakdown(
         price_ttc=q2(price),
         net_revenue=net_q,
         vat=q2(price) - net_q,
-        payment_fees=q2(payment),
+        payment_fees=payment_q,
         product_cost=cost_q,
-        per_order_costs=q2(other),
+        per_order_costs=other_q,
         contribution_chf=contrib,
         contribution_pct=pct,
     )
@@ -413,7 +417,9 @@ def contribution(
 
 
 @_deterministic
-def _exact_contribution(price: Decimal, cost: Decimal, params: PricingParams, per_order_costs: bool) -> tuple[Decimal, Decimal]:
+def _exact_contribution(
+    price: Decimal, cost: Decimal, params: PricingParams, per_order_costs: bool
+) -> tuple[Decimal, Decimal]:
     net = price / (ONE + params.vat_rate_sales)
     fixed = _fixed_costs(params, per_order_costs)
     return net - price * params.payment_pct - cost - fixed, net
@@ -462,13 +468,31 @@ def _meets_target(price: Decimal, cost: Decimal, params: PricingParams, small: b
     return small or chf >= params.hard_floor_chf_per_order
 
 
-def _floor_violations(chf: Decimal, pct: Decimal, params: PricingParams, small: bool) -> list[Reason]:
+def floor_violations(
+    contribution_chf: Decimal,
+    contribution_pct: Decimal,
+    params: PricingParams,
+    *,
+    small_product: bool = False,
+) -> list[Reason]:
+    """Planchers durs violés (BP §5) : < ``hard_floor_margin`` (12 %) et/ou < 8 CHF par commande.
+
+    Utilisé par :func:`decide_price` (prix candidat/promo), :func:`basket_contribution`
+    (panier) et le stop-loss « produit » (gouvernance). ``small_product=True`` : le plancher
+    en CHF n'est pas contrôlé à l'unité (il l'est sur le panier). Liste vide = conforme.
+    """
+    chf = as_decimal(contribution_chf, "contribution_chf")
+    pct = as_decimal(contribution_pct, "contribution_pct")
     out = []
     if pct < params.hard_floor_margin:
         out.append(Reason.BELOW_HARD_FLOOR)
-    if not small and chf < params.hard_floor_chf_per_order:
+    if not small_product and chf < params.hard_floor_chf_per_order:
         out.append(Reason.BELOW_ORDER_FLOOR_CHF)
     return out
+
+
+def _floor_violations(chf: Decimal, pct: Decimal, params: PricingParams, small: bool) -> list[Reason]:
+    return floor_violations(chf, pct, params, small_product=small)
 
 
 def _is_small(cost: Decimal, params: PricingParams, small_product: bool | None) -> bool:
@@ -589,7 +613,9 @@ def decide_price(
     if candidate is not None:
         violations = _floor_violations(chf, pct, params, small)
         for reason in violations:
-            v.add(reason, DecisionStatus.BLOCKED, note=f"Prix candidat {q2(candidate)} : contribution {chf} CHF ({pct}).")
+            v.add(
+                reason, DecisionStatus.BLOCKED, note=f"Prix candidat {q2(candidate)} : contribution {chf} CHF ({pct})."
+            )
         if not violations and pct < params.target_margin:
             v.add(Reason.BELOW_TARGET_MARGIN, DecisionStatus.REVIEW)
 
@@ -689,12 +715,16 @@ def landed_input_from_offer(
         raise IncompleteDataError(missing)
     assert offer.price is not None and offer.currency is not None and offer.vat_rate is not None
     assert offer.price_includes_vat is not None and offer.units_per_pack is not None
-    is_chf = offer.currency == "CHF"
+    if offer.currency == "CHF":
+        rate, source = ONE, "CHF"
+    else:
+        assert fx_rate_to_chf is not None and fx_source  # garanti par le contrôle ci-dessus
+        rate, source = fx_rate_to_chf, fx_source
     return LandedCostInput(
         purchase_net=offer.price,
         currency=offer.currency,
-        fx_rate_to_chf=ONE if is_chf else fx_rate_to_chf,
-        fx_source="CHF" if is_chf else fx_source,
+        fx_rate_to_chf=rate,
+        fx_source=source,
         fx_date=fx_date if fx_date is not None else offer.source_ts.date(),
         price_includes_vat=offer.price_includes_vat,
         supplier_vat_rate=offer.vat_rate,
@@ -756,15 +786,18 @@ def evaluate_offer(
         unknown.append("fx_rate")
     stale = is_stale(offer.source_ts, now, max_age)
     extra = _Verdict()
+    expected = expected_language.strip().upper()
+    if not expected:
+        raise PricingError("expected_language vide")
     language = offer.language
-    if language not in (None, "UNKNOWN") and language != expected_language.upper():
+    if language not in (None, "UNKNOWN") and language != expected:
         extra.add(
             Reason.LANGUAGE_MISMATCH,
             DecisionStatus.BLOCKED,
-            note=f"Langue offre {language} ≠ {expected_language.upper()}.",
+            note=f"Langue offre {language} ≠ {expected}.",
         )
     if offer.price is not None and offer.price == 0:
-        extra.add(Reason.ZERO_PRICE, DecisionStatus.BLOCKED)
+        extra.add(Reason.ZERO_PRICE, DecisionStatus.BLOCKED, note="Prix fournisseur à 0 : quarantaine de la référence.")
     inputs_hash = canonical_hash(
         {
             "fn": "evaluate_offer",
@@ -803,11 +836,14 @@ def evaluate_offer(
     if cost is None:
         v = _Verdict()
         if unknown:
-            v.add(Reason.UNKNOWN_FIELDS, DecisionStatus.DRAFT, note="Champs inconnus : " + ", ".join(sorted(set(unknown))))
+            v.add(
+                Reason.UNKNOWN_FIELDS, DecisionStatus.DRAFT, note="Champs inconnus : " + ", ".join(sorted(set(unknown)))
+            )
         if stale:
             v.add(Reason.STALE_OFFER)
-        for code, note in zip(extra.reasons, extra.notes + [""] * len(extra.reasons)):
-            v.add(Reason(code), DecisionStatus.BLOCKED, note=note or None)
+        for code in extra.reasons:
+            v.add(Reason(code), extra.status)
+        v.notes.extend(extra.notes)
         return PriceDecision(
             floor_price=None,
             recommended_price=None,
@@ -884,7 +920,11 @@ def basket_contribution(
         disc_obj: Discount | None = None
         disc = ZERO
     else:
-        disc_obj = discount if isinstance(discount, Discount) else Discount(kind="AMOUNT", value=as_decimal(discount, "discount"))
+        disc_obj = (
+            discount
+            if isinstance(discount, Discount)
+            else Discount(kind="AMOUNT", value=as_decimal(discount, "discount"))
+        )
         disc = q2(goods * disc_obj.value) if disc_obj.kind == "PERCENT" else q2(disc_obj.value)
     if disc > goods:
         disc = goods
@@ -900,11 +940,13 @@ def basket_contribution(
         v.add(Reason.SHIPPING_COST_ASSUMED)
     else:
         logistics = actual
-    order_costs = payment + logistics + params.after_sales_provision + params.acquisition_cost
-
     net_q = q2(net)
     product_q = q2(product_cost)
-    order_q = q2(order_costs)
+    payment_q = q2(payment)
+    logistics_q = q2(logistics)
+    after_sales_q = q2(params.after_sales_provision)
+    acquisition_q = q2(params.acquisition_cost)
+    order_q = payment_q + logistics_q + after_sales_q + acquisition_q
     contrib = net_q - product_q - order_q
     pct = q4(contrib / net_q) if net_q > 0 else None
     if net_q <= 0:
@@ -917,7 +959,7 @@ def basket_contribution(
             v.add(Reason.BELOW_TARGET_MARGIN)
 
     disc_lines = allocate_amount(disc, line_goods)
-    after_disc = [g - d for g, d in zip(line_goods, disc_lines)]
+    after_disc = [g - d for g, d in zip(line_goods, disc_lines, strict=True)]
     net_lines = allocate_amount(net_q, after_disc)
     cost_lines = allocate_amount(product_q, [Decimal(ln.qty) * ln.unit_cost for ln in lines])
     order_lines = allocate_amount(order_q, net_lines)
@@ -932,7 +974,7 @@ def basket_contribution(
             allocated_order_costs=o,
             contribution_chf=n - c - o,
         )
-        for ln, g, d, n, c, o in zip(lines, line_goods, disc_lines, net_lines, cost_lines, order_lines)
+        for ln, g, d, n, c, o in zip(lines, line_goods, disc_lines, net_lines, cost_lines, order_lines, strict=True)
     )
     inputs_hash = canonical_hash(
         {
@@ -951,11 +993,11 @@ def basket_contribution(
         total_paid_ttc=q2(total_paid),
         net_revenue=net_q,
         vat=q2(total_paid) - net_q,
-        payment_fees=q2(payment),
+        payment_fees=payment_q,
         product_cost=product_q,
-        logistics_cost=q2(logistics),
-        after_sales=q2(params.after_sales_provision),
-        acquisition=q2(params.acquisition_cost),
+        logistics_cost=logistics_q,
+        after_sales=after_sales_q,
+        acquisition=acquisition_q,
         shipping_gap=q2(ship_net - logistics),
         contribution_chf=contrib,
         contribution_pct=pct,

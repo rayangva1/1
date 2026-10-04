@@ -1,6 +1,12 @@
-"""Prévisions mensuelles, seuil de rentabilité, sensibilité et besoin en stock (BP §3, §4, §10).
+"""Prévisions mensuelles, seuil de rentabilité, sensibilité, besoin en stock et étoile polaire.
 
-Module autonome de l'agent finance : il ne dépend pas de ``pokeshop.pricing``.
+Couvre BP §3, §4, §10 et la métrique unique de pilotage décidée par la propriétaire :
+la **contribution nette cumulée** (ventes nettes HT − coût historique − paiement −
+logistique − SAV − acquisition − charges fixes), suivie chaque semaine, avec le seuil
+du stop-loss global (perte cumulée ≥ 20 % du capital engagé ⇒ tout gelé).
+
+Module autonome de l'agent finance : il ne dépend ni de ``pokeshop.pricing`` ni de
+``pokeshop.stoploss`` (agent gouvernance, qui fait foi pour l'application des stop-loss).
 Tous les montants sont des ``decimal.Decimal`` exacts ; l'arrondi n'intervient
 qu'à la présentation (``round_chf``) ou lorsqu'une convention d'arrondi est
 explicitement demandée (``unit_rounding``), afin de pouvoir reproduire au centime
@@ -18,7 +24,9 @@ from enum import Enum
 from typing import Iterable, Sequence
 
 __all__ = [
+    "BP_AFTER_SALES_PER_ORDER",
     "BP_BASKET_TTC",
+    "BP_CAPITAL_ENGAGED",
     "BP_CONTRIBUTION_RATE",
     "BP_FIXED_COSTS",
     "BP_HARD_FLOOR_CHF_PER_ORDER",
@@ -26,25 +34,36 @@ __all__ = [
     "BP_INITIAL_BUDGET",
     "BP_INITIAL_STOCK",
     "BP_MONTHLY_FIXED",
+    "BP_PAYMENT_FIXED",
+    "BP_PAYMENT_PCT",
     "BP_PRICE_EXAMPLE",
     "BP_PRODUCT_COST_RATIO",
     "BP_REMUNERATION",
+    "BP_SALES_OPENING_WEEK",
+    "BP_VALIDATION_DAYS",
+    "BP_VALIDATION_ORDERS",
     "CENT",
     "CHF",
     "DAYS_PER_MONTH",
+    "GLOBAL_STOPLOSS_PCT",
     "VAT_RATE_CH_STANDARD",
     "VAT_REGISTRATION_THRESHOLD",
     "WEEKS_PER_MONTH",
+    "WEEKS_PER_YEAR",
     "BpCheck",
     "BreakEven",
     "CheckStatus",
     "ForecastError",
+    "NorthStarReport",
+    "NorthStarRow",
+    "NorthStarWeek",
     "PriceCheck",
     "ScenarioAssumptions",
     "ScenarioResult",
     "SensitivityCell",
     "StockNeed",
     "TimeValuation",
+    "ValidationCheck",
     "VatThresholdCheck",
     "WorkingCapitalAssumptions",
     "WorkingCapitalNeed",
@@ -55,6 +74,8 @@ __all__ = [
     "contribution_at_price",
     "floor_price_crosscheck",
     "net_of_vat",
+    "north_star",
+    "project_north_star",
     "round_chf",
     "round_up_to_ending",
     "run_bp_scenarios",
@@ -97,7 +118,21 @@ BP_HARD_FLOOR_PCT = Decimal("0.12")
 BP_HARD_FLOOR_CHF_PER_ORDER = Decimal("8")
 #: Convention de calcul : mois de 30 jours, 52/12 semaines par mois.
 DAYS_PER_MONTH = 30
-WEEKS_PER_MONTH = Decimal(52) / Decimal(12)
+WEEKS_PER_YEAR = 52
+WEEKS_PER_MONTH = Decimal(WEEKS_PER_YEAR) / Decimal(12)
+#: Frais de paiement et provision SAV de l'exemple BP §4 (hypothèses, pas un contrat PSP).
+BP_PAYMENT_PCT = Decimal("0.025")
+BP_PAYMENT_FIXED = Decimal("0.30")
+BP_AFTER_SALES_PER_ORDER = Decimal("1")
+#: Capital engagé de référence du stop-loss global = budget initial BP §3 (hypothèse à confirmer).
+BP_CAPITAL_ENGAGED = Decimal("8000")
+#: Stop-loss global du mandat : perte cumulée ≥ 20 % du capital engagé ⇒ tout gelé.
+GLOBAL_STOPLOSS_PCT = Decimal("0.20")
+#: Plan 90 jours BP §9 : ouverture douce aux jours 31 à 45 ⇒ ventes dès la semaine 5.
+BP_SALES_OPENING_WEEK = 5
+#: Jalons de validation BP §1 : 30 commandes payées sur les 60 premiers jours de vente.
+BP_VALIDATION_DAYS = 60
+BP_VALIDATION_ORDERS = 30
 
 
 class ForecastError(ValueError):
@@ -158,6 +193,11 @@ def _check_rate(value: Decimal, name: str, *, upper_inclusive: bool = True) -> N
 def _check_non_negative(value: Decimal, name: str) -> None:
     if value < 0:
         raise ForecastError(f"{name} ne peut pas être négatif (reçu {value})")
+
+
+def _check_int(value: object, name: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ForecastError(f"{name} doit être un entier")
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +431,10 @@ def sensitivity_grid(
     """Grille seuil de rentabilité ; signale les cases sous le plancher dur BP §5."""
     if not contribution_rates or not cacs:
         raise ForecastError("contribution_rates et cacs ne peuvent pas être vides")
+    amount = to_decimal(fixed_costs, "fixed_costs") + to_decimal(remuneration, "remuneration")
+    _check_non_negative(amount, "fixed_costs + remuneration")
+    floor_chf = to_decimal(hard_floor_chf, "hard_floor_chf")
+    floor_pct = to_decimal(hard_floor_pct, "hard_floor_pct")
     b_ht = basket_ht(basket_ttc, vat_rate)
     cells: list[SensitivityCell] = []
     for raw_rate in contribution_rates:
@@ -403,8 +447,8 @@ def sensitivity_grid(
             after = per_order - cac
             if unit_rounding is not None:
                 after = round_chf(after, unit_rounding)
-            orders = ceil_int((fixed_costs + remuneration) / after) if after > 0 else None
-            below = after < hard_floor_chf or after / b_ht < hard_floor_pct
+            orders = ceil_int(amount / after) if after > 0 else None
+            below = after < floor_chf or after / b_ht < floor_pct
             cells.append(SensitivityCell(rate, cac, per_order, after, orders, below))
     return tuple(cells)
 
@@ -438,6 +482,7 @@ def stock_need(
     days_per_month: int = DAYS_PER_MONTH,
 ) -> StockNeed:
     """100 commandes × 95 TTC, 70 % de coût ⇒ 6 152 CHF HT d'achats consommés / mois."""
+    _check_int(orders_per_month, "orders_per_month")
     if orders_per_month <= 0:
         raise ForecastError("orders_per_month doit être > 0")
     ratio = to_decimal(product_cost_ratio, "product_cost_ratio")
@@ -579,11 +624,256 @@ def time_valuation(
     prep = to_decimal(prep_minutes_per_order, "prep_minutes_per_order")
     _check_non_negative(hours_week, "supervision_hours_per_week")
     _check_non_negative(prep, "prep_minutes_per_order")
+    _check_int(orders_per_month, "orders_per_month")
     if orders_per_month < 0:
         raise ForecastError("orders_per_month ne peut pas être négatif")
     hours = hours_week * WEEKS_PER_MONTH + Decimal(orders_per_month) * prep / Decimal(60)
     rate = to_decimal(monthly_result, "monthly_result") / hours if hours > 0 else None
     return TimeValuation(hours, rate)
+
+
+# ---------------------------------------------------------------------------
+# Étoile polaire : contribution nette cumulée hebdomadaire + stop-loss global
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class NorthStarWeek:
+    """Composantes d'une semaine de la métrique étoile polaire (CHF HT).
+
+    ``net_sales_ht`` (après remises et remboursements) et ``historical_cost``
+    (coût historique des unités vendues, retours remis en stock déduits) peuvent
+    être négatifs une semaine de retours ; les autres composantes sont ≥ 0.
+    ``orders`` est un Decimal pour accepter les volumes fractionnaires d'une projection.
+    """
+
+    week: int
+    orders: Decimal
+    net_sales_ht: Decimal
+    historical_cost: Decimal
+    payment_fees: Decimal
+    logistics: Decimal
+    after_sales: Decimal
+    acquisition: Decimal
+    fixed_costs: Decimal
+
+    def __post_init__(self) -> None:
+        _check_int(self.week, "week")
+        if self.week < 1:
+            raise ForecastError("week doit être ≥ 1")
+        for attr in ("orders", "net_sales_ht", "historical_cost", "payment_fees", "logistics", "after_sales",
+                     "acquisition", "fixed_costs"):
+            object.__setattr__(self, attr, to_decimal(getattr(self, attr), attr))
+        for attr in ("orders", "payment_fees", "logistics", "after_sales", "acquisition", "fixed_costs"):
+            _check_non_negative(getattr(self, attr), attr)
+
+    @property
+    def contribution_before_acquisition(self) -> Decimal:
+        """Ventes nettes HT − coût historique − paiement − logistique − SAV."""
+        return self.net_sales_ht - self.historical_cost - self.payment_fees - self.logistics - self.after_sales
+
+    @property
+    def contribution_after_acquisition(self) -> Decimal:
+        """Contribution après publicité, avant charges fixes (jalon BP §1)."""
+        return self.contribution_before_acquisition - self.acquisition
+
+    @property
+    def net_contribution(self) -> Decimal:
+        """Contribution nette de la semaine = métrique étoile polaire hebdomadaire."""
+        return self.contribution_after_acquisition - self.fixed_costs
+
+
+@dataclass(frozen=True)
+class NorthStarRow:
+    """Une semaine du suivi : contribution nette, cumul et état du stop-loss global."""
+
+    week: NorthStarWeek
+    net_contribution: Decimal
+    cumulative: Decimal
+    global_stoploss: bool
+
+
+@dataclass(frozen=True)
+class ValidationCheck:
+    """Jalons BP §1 sur la fenêtre de validation (semaines pleines après l'ouverture)."""
+
+    first_week: int
+    last_week: int
+    complete: bool
+    orders: Decimal
+    target_orders: int
+    contribution_after_acquisition: Decimal
+
+    @property
+    def orders_ok(self) -> bool:
+        """Vrai si le nombre de commandes payées atteint la cible (30 au BP)."""
+        return self.orders >= self.target_orders
+
+    @property
+    def contribution_ok(self) -> bool:
+        """Vrai si la contribution après publicité est strictement positive."""
+        return self.contribution_after_acquisition > 0
+
+    @property
+    def passed(self) -> bool:
+        """Les deux jalons chiffrés sont atteints (survente et écoulement : hors de ce calcul)."""
+        return self.orders_ok and self.contribution_ok
+
+
+@dataclass(frozen=True)
+class NorthStarReport:
+    """Suivi hebdomadaire de la contribution nette cumulée depuis le lancement."""
+
+    rows: tuple[NorthStarRow, ...]
+    capital_engaged: Decimal
+    global_stoploss_pct: Decimal
+
+    @property
+    def max_cumulative_loss(self) -> Decimal:
+        """Perte cumulée qui déclenche le stop-loss global (20 % × capital = 1 600 CHF au BP)."""
+        return self.capital_engaged * self.global_stoploss_pct
+
+    @property
+    def cumulative(self) -> Decimal:
+        """Contribution nette cumulée à la dernière semaine (la métrique étoile polaire)."""
+        return self.rows[-1].cumulative
+
+    @property
+    def lowest(self) -> NorthStarRow:
+        """Semaine au cumul le plus bas (la première en cas d'égalité)."""
+        return min(self.rows, key=lambda r: (r.cumulative, r.week.week))
+
+    @property
+    def first_global_stoploss_week(self) -> int | None:
+        """Première semaine où la perte cumulée atteint le seuil, ``None`` sinon."""
+        return next((r.week.week for r in self.rows if r.global_stoploss), None)
+
+    @property
+    def frozen(self) -> bool:
+        """Vrai si le stop-loss global a été déclenché (réarmement : propriétaire uniquement)."""
+        return self.first_global_stoploss_week is not None
+
+    @property
+    def recovery_week(self) -> int | None:
+        """Première semaine après le creux où le cumul redevient > 0 (``None`` si jamais)."""
+        trough = self.lowest.week.week
+        return next((r.week.week for r in self.rows if r.week.week > trough and r.cumulative > 0), None)
+
+    def validation(
+        self,
+        opening_week: int = BP_SALES_OPENING_WEEK,
+        *,
+        days: int = BP_VALIDATION_DAYS,
+        target_orders: int = BP_VALIDATION_ORDERS,
+    ) -> ValidationCheck:
+        """Jalons BP §1 sur ``days // 7`` semaines pleines dès l'ouverture (60 j ⇒ 8 sem., prudent)."""
+        _check_int(opening_week, "opening_week")
+        _check_int(days, "days")
+        _check_int(target_orders, "target_orders")
+        if opening_week < 1 or days < 7 or target_orders < 0:
+            raise ForecastError("opening_week ≥ 1, days ≥ 7 et target_orders ≥ 0 requis")
+        first, last = opening_week, opening_week + days // 7 - 1
+        window = [r.week for r in self.rows if first <= r.week.week <= last]
+        return ValidationCheck(
+            first_week=first,
+            last_week=last,
+            complete=self.rows[-1].week.week >= last,
+            orders=sum((w.orders for w in window), Decimal(0)),
+            target_orders=target_orders,
+            contribution_after_acquisition=sum((w.contribution_after_acquisition for w in window), Decimal(0)),
+        )
+
+
+def north_star(
+    weeks: Sequence[NorthStarWeek],
+    *,
+    capital_engaged: Decimal = BP_CAPITAL_ENGAGED,
+    global_stoploss_pct: Decimal = GLOBAL_STOPLOSS_PCT,
+) -> NorthStarReport:
+    """Cumule la contribution nette semaine par semaine depuis la semaine 1 du lancement.
+
+    Le stop-loss global est *collant* : une fois la perte cumulée ≥ seuil, il reste
+    actif même si le cumul remonte (seule la propriétaire peut le réarmer).
+    """
+    if not weeks:
+        raise ForecastError("au moins une semaine est requise")
+    capital = to_decimal(capital_engaged, "capital_engaged")
+    pct = to_decimal(global_stoploss_pct, "global_stoploss_pct")
+    if capital <= 0:
+        raise ForecastError("capital_engaged doit être > 0")
+    _check_rate(pct, "global_stoploss_pct")
+    threshold = -(capital * pct)
+    rows: list[NorthStarRow] = []
+    cumulative = Decimal(0)
+    tripped = False
+    for expected, week in enumerate(weeks, start=1):
+        if not isinstance(week, NorthStarWeek):
+            raise ForecastError("chaque semaine doit être un NorthStarWeek")
+        if week.week != expected:
+            raise ForecastError(f"semaines non consécutives depuis 1 : attendu {expected}, reçu {week.week}")
+        cumulative += week.net_contribution
+        tripped = tripped or cumulative <= threshold
+        rows.append(NorthStarRow(week, week.net_contribution, cumulative, tripped))
+    return NorthStarReport(tuple(rows), capital, pct)
+
+
+def project_north_star(
+    assumptions: ScenarioAssumptions,
+    *,
+    weeks: int = WEEKS_PER_YEAR,
+    opening_week: int = 1,
+    product_cost_ratio: Decimal = BP_PRODUCT_COST_RATIO,
+    payment_pct: Decimal = BP_PAYMENT_PCT,
+    payment_fixed: Decimal = BP_PAYMENT_FIXED,
+    after_sales_per_order: Decimal = BP_AFTER_SALES_PER_ORDER,
+) -> tuple[NorthStarWeek, ...]:
+    """Projette un scénario mensuel en semaines (volumes × 12/52, charges fixes dès la semaine 1).
+
+    Ventilation des 78 % de coûts variables du BP §10 : coût historique = 70 % du CA HT,
+    paiement = r × panier TTC + b par commande, SAV = R par commande ; la logistique nette
+    (emballage, le port étant refacturé) est le solde implicite. Un solde négatif signale
+    des hypothèses incompatibles et lève ``ForecastError``. Le cumul mensuel égale le
+    « résultat avant rémunération » du scénario.
+    """
+    _check_int(weeks, "weeks")
+    _check_int(opening_week, "opening_week")
+    if weeks < 1 or opening_week < 1:
+        raise ForecastError("weeks et opening_week doivent être ≥ 1")
+    a = assumptions
+    ratio = to_decimal(product_cost_ratio, "product_cost_ratio")
+    _check_rate(ratio, "product_cost_ratio")
+    r = to_decimal(payment_pct, "payment_pct")
+    b = to_decimal(payment_fixed, "payment_fixed")
+    sav = to_decimal(after_sales_per_order, "after_sales_per_order")
+    for value, label in ((r, "payment_pct"), (b, "payment_fixed"), (sav, "after_sales_per_order")):
+        _check_non_negative(value, label)
+    per_week = Decimal(12) / Decimal(WEEKS_PER_YEAR)
+    b_ht = net_of_vat(a.basket_ttc, a.vat_rate)
+    implied_logistics_per_order = b_ht * (Decimal(1) - a.contribution_rate - ratio) - (r * a.basket_ttc + b) - sav
+    if implied_logistics_per_order < 0:
+        raise ForecastError(
+            f"hypothèses incompatibles : logistique implicite {round_chf(implied_logistics_per_order)} CHF/commande "
+            "< 0 (contribution + coût produit + paiement + SAV dépassent le CA HT)"
+        )
+    fixed = a.fixed_costs * per_week
+    result: list[NorthStarWeek] = []
+    for n in range(1, weeks + 1):
+        orders = Decimal(a.orders_per_month) * per_week if n >= opening_week else Decimal(0)
+        net = orders * b_ht
+        result.append(
+            NorthStarWeek(
+                week=n,
+                orders=orders,
+                net_sales_ht=net,
+                historical_cost=net * ratio,
+                payment_fees=orders * (r * a.basket_ttc + b),
+                logistics=orders * implied_logistics_per_order,
+                after_sales=orders * sav,
+                acquisition=orders * a.cac,
+                fixed_costs=fixed,
+            )
+        )
+    return tuple(result)
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,11 @@
 # STATUT : hypothèses BP §4-5 (version du 4 octobre 2026), à confirmer par devis
 # (PSP, transporteur, fiduciaire). Aucun de ces montants n'est un tarif contractuel.
 # Montants en chaînes de caractères pour éviter toute conversion flottante.
-# Toute modification => nouveau fichier pricing_rules.vN.yaml + nouveau rules_version.
+# Toute modification d'une VALEUR => nouveau fichier pricing_rules.vN.yaml + nouveau
+# rules_version (recopié dans chaque décision de prix, avec le sha256 du fichier).
+# Chargement/validation : engine/pokeshop/rules.py (load_rules, load_all_profiles).
+# Étoile polaire : contribution nette cumulée. Les planchers durs ci-dessous sont aussi
+# les seuils du stop-loss « produit » (module gouvernance) : les garder identiques.
 
 rules_version: "v1-2026-10-04"
 status: "hypotheses BP §4-5, à confirmer par devis"
@@ -22,11 +26,14 @@ pricing:
   payment_pct: "0.025"              # r — hypothèse BP §4, à confirmer par contrat PSP
   payment_fixed: "0.30"             # b — CHF/commande, hypothèse BP §4
   logistics_cost: "3.00"            # L — coût NET supporté CHF/commande, hypothèse BP §4
+                                    #     (préparation + part du port NON refacturée ; si port
+                                    #     offert, passer le coût réel au panier : à confirmer
+                                    #     par devis transporteur)
   after_sales_provision: "1.00"     # R — provision SAV CHF/commande, hypothèse BP §4
   acquisition_cost: "5.00"          # A — CAC attribué CHF/commande, hypothèse BP §4
   target_margin: "0.20"             # m — contribution cible 20 % du CA net (BP §5)
-  hard_floor_margin: "0.12"         # plancher dur 12 % (BP §5)
-  hard_floor_chf_per_order: "8.00"  # plancher dur 8 CHF par commande (BP §5)
+  hard_floor_margin: "0.12"         # plancher dur 12 % (BP §5) — promo/panier bloqué dessous
+  hard_floor_chf_per_order: "8.00"  # plancher dur 8 CHF par commande (BP §5) — idem
   market_review_threshold: "0.10"   # prix rentable > marché +10 % => REVIEW (BP §5)
   max_daily_price_change: "0.05"    # variation publique > 5 %/jour => validation (BP §5)
   price_anomaly_factor: "10"        # ×10 / ÷10 => quarantaine (BP §13)

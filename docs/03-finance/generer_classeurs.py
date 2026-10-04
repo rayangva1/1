@@ -2,9 +2,11 @@
 
 Produit dans ``docs/03-finance/`` :
 
-* ``modele_financier.xlsx`` — Hypothèses, Budget initial, Charges mensuelles,
-  Scénarios, Seuil & sensibilité, Prix plancher, Stock & BFR ;
-* ``tresorerie_13_semaines.xlsx`` — mode d'emploi, exemple FICTIF, modèle à remplir.
+* ``modele_financier.xlsx`` — Hypothèses, Étoile polaire (contribution nette cumulée
+  hebdomadaire + stop-loss global), Budget initial, Charges mensuelles, Scénarios,
+  Seuil & sensibilité, Prix plancher, Stock & BFR ;
+* ``tresorerie_13_semaines.xlsx`` — mode d'emploi, exemple FICTIF, modèle à remplir
+  (réserve 1 600 CHF = seuil du stop-loss cash).
 
 Les formules sont recalculées par LibreOffice headless (``soffice``) afin que les
 fichiers livrés contiennent aussi les valeurs (lisibles par pandas, aperçus,
@@ -169,6 +171,13 @@ def name(wb: Workbook, label: str, sheet: str, cell: str) -> None:
     wb.defined_names[label] = DefinedName(label, attr_text=f"'{sheet}'!${col}${row}")
 
 
+def mput(ws: Worksheet, cells: str, value: object, **style: object) -> None:
+    """Fusionne la plage ``cells`` et écrit ``value`` dans sa première cellule."""
+    first = cells.split(":")[0]
+    ws.merge_cells(cells)
+    put(ws, first, value, **style)  # type: ignore[arg-type]
+
+
 def page_setup(ws: Worksheet, landscape: bool = True) -> None:
     """Impression A4 ajustée en largeur."""
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
@@ -183,6 +192,7 @@ def page_setup(ws: Worksheet, landscape: bool = True) -> None:
 # ---------------------------------------------------------------------------
 
 S_HYP = "Hypothèses"
+S_NS = "Étoile polaire"
 S_BUD = "Budget initial"
 S_FIX = "Charges mensuelles"
 S_SCN = "Scénarios"
@@ -211,7 +221,7 @@ def _sheet_hypotheses(wb: Workbook) -> None:
 
     section(ws, 5, "Paramètres généraux", 5)
     header(ws, 6, ["Paramètre", "Valeur", "Unité", "Source / statut", "Nom défini"])
-    rows: list[tuple[str, object, str, str, str, str | None, bool]] = [
+    rows: list[tuple[str, object, str, str, str, str, bool]] = [
         # libellé, valeur, format, unité, source, nom, lien?
         ("TVA sur ventes (taux normal)", 0.081, NF_PCT1, "%", "BP §4 [S6] — statut TVA à confirmer avec la fiduciaire",
          "TVA", False),
@@ -295,6 +305,48 @@ def _sheet_hypotheses(wb: Workbook) -> None:
         put(ws, f"E{row}", nm, font=F_SUB, border=BOX)
         name(wb, nm, S_HYP, f"B{row}")
         row += 1
+
+    section(ws, 42, "Étoile polaire et stop-loss du mandat — décisions de la propriétaire", 5)
+    header(ws, 43, ["Paramètre", "Valeur", "Unité", "Source / statut", "Nom défini"])
+    mandate: list[tuple[str, object, str, str, str, str, bool]] = [
+        ("Capital engagé de référence", f"={q(S_BUD, 'B12')}", NF_CHF, "CHF",
+         "Lien Budget initial (BP §3) — HYPOTHÈSE : remplacer par le capital réellement engagé", "Capital_engage", True),
+        ("Stop-loss global : perte cumulée maximale", 0.20, NF_PCT1, "% capital",
+         "Mandat propriétaire — gel total, réarmement par la propriétaire uniquement", "StopLoss_global_pct", False),
+        ("Perte cumulée déclenchant le gel global", "=Capital_engage*StopLoss_global_pct", NF_CHF, "CHF",
+         "Calcul — comparée à la contribution nette cumulée", "Perte_max", False),
+        ("Réserve de trésorerie = seuil du stop-loss cash", f"={q(S_BUD, 'B11')}", NF_CHF, "CHF",
+         "Lien Budget initial (BP §3) — sous ce seuil : plus d'achat ni de pub", "Reserve_cash", True),
+        ("Semaine d'ouverture des ventes", 5, "0", "n° semaine",
+         "BP §9 : ouverture douce aux jours 31 à 45 (semaine 5)", "Semaine_ouverture", False),
+        ("Scénario projeté (1 prudent, 2 central, 3 développement)", 2, "0", "choix",
+         "Feuille Étoile polaire", "Scenario_choisi", False),
+        ("Frais de paiement proportionnels r", 0.025, NF_PCT1, "% du TTC", "BP §4 (hypothèse) — contrat PSP",
+         "Frais_paiement_pct", False),
+        ("Frais de paiement fixes b", 0.30, NF_CHF2, "CHF/commande", "BP §4 (hypothèse) — contrat PSP",
+         "Frais_paiement_fixe", False),
+        ("Provision SAV R", 1, NF_CHF2, "CHF/commande", "BP §4 (hypothèse)", "Provision_SAV", False),
+        ("Fenêtre de validation", 60, "0", "jours",
+         "BP §1 — le classeur retient les semaines pleines (60 j ⇒ 8 semaines, prudent)", "Jours_validation", False),
+        ("Commandes payées visées sur la fenêtre", 30, "0", "commandes", "BP §1 — critère de test, pas une prévision",
+         "Commandes_validation", False),
+    ]
+    row = 44
+    for label, value, fmt, unit, source, nm, link in mandate:
+        put(ws, f"A{row}", label, border=BOX)
+        if isinstance(value, str) and value.startswith("="):
+            put(ws, f"B{row}", value, font=F_LINK if link else F_BASE, fmt=fmt, border=BOX)
+        else:
+            inp(ws, f"B{row}", value, fmt=fmt)
+        put(ws, f"C{row}", unit, border=BOX)
+        put(ws, f"D{row}", source, border=BOX, font=F_WARN if "HYPOTHÈSE" in source else F_BASE)
+        put(ws, f"E{row}", nm, font=F_SUB, border=BOX)
+        name(wb, nm, S_HYP, f"B{row}")
+        row += 1
+    dv = DataValidation(type="whole", operator="between", formula1="1", formula2="3", allow_blank=False,
+                        showErrorMessage=True, errorTitle="Scénario", error="1 = prudent, 2 = central, 3 = développement")
+    ws.add_data_validation(dv)
+    dv.add("B49")
     widths(ws, {"A": 46, "B": 16, "C": 16, "D": 62, "E": 18})
     ws.freeze_panes = "A5"
     page_setup(ws)
@@ -424,6 +476,8 @@ def _sheet_scenarios(wb: Workbook) -> None:
          "=(Heures_min+Heures_max)/2*Semaines_mois+{c}5*Minutes_prep/60", NF_DEC1, "h"),
         (25, "Rémunération implicite du travail", "=IF({c}24>0,{c}15/{c}24,0)", NF_CHF2,
          "CHF/h, avant impôts et charges sociales"),
+        (26, "Stop-loss pub : CAC > contribution / commande ?", '=IF({c}12>{c}18,"OUI — campagne coupée","non")',
+         "@", "Mandat (7 jours glissants en exploitation)"),
     ]
     for row, label, formula, fmt, unit in spec:
         bold = row in (15, 17)
@@ -435,6 +489,7 @@ def _sheet_scenarios(wb: Workbook) -> None:
                 border=BOX, fill=FILL_RESULT if bold else None)
         put(ws, f"E{row}", unit, font=F_SUB, border=BOX)
     ws.conditional_formatting.add("B21:D21", CellIsRule(operator="equal", formula=['"NON"'], fill=FILL_ALERT))
+    ws.conditional_formatting.add("B26:D26", FormulaRule(formula=['LEFT(B26,3)="OUI"'], fill=FILL_ALERT))
     ws.conditional_formatting.add("B15:D17", CellIsRule(operator="lessThan", formula=["0"], fill=FILL_ALERT))
 
     section(ws, 27, "Contrôle vs valeurs publiées au BP §10 (arrondies au franc)", 5)
@@ -716,10 +771,220 @@ def _sheet_stock(wb: Workbook) -> None:
     page_setup(ws)
 
 
+NS_WEEKS = 52
+NS_FIRST = 41  # première ligne de semaine
+NS_LAST = NS_FIRST + NS_WEEKS - 1
+#: Colonnes du tableau hebdomadaire (projection, réel saisi, formules du réel, aides).
+NS_PROJ = ("B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L")
+NS_REAL_INPUTS = ("M", "N", "O", "P", "Q", "R", "S", "T")
+NS_HEADERS = {
+    "A": "Semaine",
+    "B": "Commandes", "C": "Ventes nettes HT", "D": "Coût historique", "E": "Paiement", "F": "Logistique nette",
+    "G": "SAV", "H": "Acquisition", "I": "Contribution après pub", "J": "Charges fixes",
+    "K": "Contribution nette", "L": "Cumul projeté",
+    "M": "Commandes payées", "N": "Ventes nettes HT", "O": "Coût historique", "P": "Paiement",
+    "Q": "Logistique nette", "R": "SAV", "S": "Acquisition", "T": "Charges fixes",
+    "U": "Contribution après pub", "V": "Contribution nette", "W": "CUMUL RÉEL (étoile polaire)",
+    "X": "Écart cumul réel − projeté", "Y": "Statut stop-loss global",
+    "Z": "aide : reprise projetée", "AA": "aide : gel projeté", "AB": "aide : reprise réelle", "AC": "aide : gel réel",
+}
+
+
+def _rng(col: str) -> str:
+    """Plage absolue d'une colonne du tableau hebdomadaire."""
+    return f"${col}${NS_FIRST}:${col}${NS_LAST}"
+
+
+def _sheet_north_star(wb: Workbook) -> None:
+    """Feuille « Étoile polaire » : contribution nette cumulée hebdomadaire, projetée et réelle."""
+    ws = wb.create_sheet(S_NS)
+    title(ws, "Étoile polaire — contribution nette cumulée (métrique unique de pilotage)",
+          "Contribution nette = ventes nettes HT − coût historique − paiement − logistique − SAV − acquisition − "
+          "charges fixes. Ni chiffre d'affaires ni followers.")
+    mput(ws, "A3:Y3", LEGEND + " Colonnes M à T : saisir le réel chaque lundi (montants HT, CHF).", font=F_SUB,
+         align=WRAP)
+    ws.row_dimensions[3].height = 26
+
+    # --- Paramètres -------------------------------------------------------------------------
+    section(ws, 5, "Paramètres (à modifier dans la feuille Hypothèses, lignes 44 à 54)", 25)
+    params: list[tuple[int, str, str, str, str]] = [
+        (6, "Scénario projeté", '=CHOOSE(Scenario_choisi,"Prudent","Central","Développement")', "@",
+         "Choix en Hypothèses!B49 (1, 2 ou 3)"),
+        (7, "Commandes par mois du scénario", f"=INDEX({q(S_HYP, '$B$27:$D$27')},Scenario_choisi)", "0",
+         "BP §10 — simulation, pas une prévision de demande"),
+        (8, "CAC moyen du scénario (CHF/commande)", f"=INDEX({q(S_HYP, '$B$28:$D$28')},Scenario_choisi)", NF_CHF2,
+         "BP §10"),
+        (9, "Commandes par semaine (× 12/52)", "=E7*12/52", NF_DEC2, "Volumes mensuels ramenés à la semaine"),
+        (10, "Semaine d'ouverture des ventes", "=Semaine_ouverture", "0",
+         "BP §9 — charges fixes dues dès la semaine 1"),
+        (11, "Charges fixes par semaine (× 12/52)", "=Charges_fixes*12/52", NF_CHF2, "BP §3 : 400 CHF/mois"),
+        (12, "Logistique nette implicite par commande (emballage)",
+         "=Panier_HT*(1-Taux_contribution-Cout_produit_pct)-(Frais_paiement_pct*Panier_TTC+Frais_paiement_fixe)"
+         "-Provision_SAV", NF_CHF2,
+         "Solde des 8 % de CA HT restant après coût produit 70 % et contribution 22 % (BP §10), moins paiement et SAV"),
+        (13, "Seuil du stop-loss global (contribution nette cumulée)", "=-Perte_max", NF_CHF2_RED,
+         "20 % du capital engagé ⇒ tout gelé, retour au niveau d'autonomie 1"),
+        (14, "Réserve de trésorerie = seuil du stop-loss cash", "=Reserve_cash", NF_CHF,
+         "Suivi dans tresorerie_13_semaines.xlsx (lignes 50-51)"),
+    ]
+    for row, label, formula, fmt, note in params:
+        mput(ws, f"A{row}:D{row}", label, border=BOX)
+        put(ws, f"E{row}", formula, fmt=fmt, border=BOX, font=F_BOLD)
+        mput(ws, f"F{row}:Q{row}", note, font=F_SUB)
+    put(ws, "R12", '=IF(E12<0,"INCOHÉRENT : hypothèses incompatibles","OK — cohérent")', font=F_BOLD)
+
+    # --- Synthèse ---------------------------------------------------------------------------
+    section(ws, 16, "Synthèse", 25)
+    mput(ws, "A17:D17", "Indicateur", font=F_HEADER, fill=FILL_HEADER, border=BOX, align=CENTER)
+    put(ws, "E17", "Projection", font=F_HEADER, fill=FILL_HEADER, border=BOX, align=CENTER)
+    put(ws, "F17", "Réel", font=F_HEADER, fill=FILL_HEADER, border=BOX, align=CENTER)
+    mput(ws, "G17:Q17", "Commentaire / contrôle", font=F_HEADER, fill=FILL_HEADER, border=BOX, align=CENTER)
+    real_none = f'COUNT({_rng("V")})=0'
+    window_last = "Semaine_ouverture+INT(Jours_validation/7)-1"
+
+    def window_sum(col: str) -> str:
+        return f'SUMIFS({_rng(col)},{_rng("A")},">="&Semaine_ouverture,{_rng("A")},"<="&{window_last})'
+
+    summary: list[tuple[int, str, str, str, str, str]] = [
+        (18, "Contribution nette cumulée (fin de période / à date)", f"=L{NS_LAST}",
+         f'=IF({real_none},"pas de saisie",SUM({_rng("V")}))', NF_CHF2_RED,
+         "La métrique étoile polaire : elle doit croître semaine après semaine"),
+        (19, "Semaines couvertes", f"=COUNT({_rng('K')})", f"=COUNT({_rng('V')})", "0", ""),
+        (20, "Cumul le plus bas", f"=MIN({_rng('L')})", f'=IF({real_none},"",MIN({_rng("W")}))', NF_CHF2_RED,
+         "Creux de trésorerie d'exploitation à financer"),
+        (21, "Semaine du cumul le plus bas", f"=INDEX({_rng('A')},MATCH(E20,{_rng('L')},0))",
+         f'=IF({real_none},"",INDEX({_rng("A")},MATCH(F20,{_rng("W")},0)))', "0", ""),
+        (22, "Retour à un cumul positif (semaine)",
+         f'=IF(MIN({_rng("Z")})=0,"au-delà de {NS_WEEKS} sem.",MIN({_rng("Z")}))',
+         f'=IF({real_none},"",IF(MIN({_rng("AB")})=0,"pas encore",MIN({_rng("AB")})))', "0",
+         "Première semaine après le creux où le cumul redevient > 0"),
+        (23, "Stop-loss global déclenché ?",
+         f'=IF(MIN({_rng("AA")})=0,"non","OUI — semaine "&MIN({_rng("AA")}))',
+         f'=IF({real_none},"",IF(MIN({_rng("AC")})=0,"non","OUI — semaine "&MIN({_rng("AC")})&" : TOUT GELER"))',
+         "@", "Perte cumulée ≥ seuil (ligne 13). Réarmement : propriétaire uniquement"),
+        (24, "Équivalent mensuel en régime (dernière semaine × 52/12)", f"=K{NS_LAST}*52/12", '=""', NF_CHF2,
+         ""),
+        (25, "Jalon BP §1 : commandes payées sur la fenêtre de validation", f"={window_sum('B')}",
+         f'=IF({real_none},"",{window_sum("M")})', NF_DEC1, ""),
+        (26, "Jalon commandes atteint ?", '=IF(E25>=Commandes_validation,"oui","NON")',
+         '=IF(F25="","",IF(F25>=Commandes_validation,"oui","NON"))', "@", ""),
+        (27, "Jalon BP §1 : contribution après publicité sur la fenêtre", f"={window_sum('I')}",
+         f'=IF({real_none},"",{window_sum("U")})', NF_CHF2_RED, "Avant charges fixes"),
+        (28, "Jalon contribution positive ?", '=IF(E27>0,"oui","NON")', '=IF(F27="","",IF(F27>0,"oui","NON"))',
+         "@", "Survente et écoulement de 50 % du stock pilote : suivis hors de ce classeur"),
+    ]
+    for row, label, proj, real, fmt, note in summary:
+        mput(ws, f"A{row}:D{row}", label, border=BOX, font=F_BOLD if row == 18 else F_BASE)
+        put(ws, f"E{row}", proj, fmt=fmt, border=BOX, font=F_BOLD, fill=FILL_RESULT if row == 18 else None)
+        put(ws, f"F{row}", real, fmt=fmt, border=BOX, font=F_BOLD, fill=FILL_RESULT if row == 18 else None)
+        mput(ws, f"G{row}:Q{row}", note, font=F_SUB, border=BOX)
+    put(ws, "G24", f'=IF(ROUND(E24-INDEX({q(S_SCN, "$B$15:$D$15")},Scenario_choisi),6)=0,'
+                   '"OK — égal au résultat avant rémunération du scénario (feuille Scénarios)","ÉCART")',
+        font=F_SUB, border=BOX)
+    put(ws, "G25", f'="Semaines "&Semaine_ouverture&" à "&({window_last})&" ("&INT(Jours_validation/7)*7&'
+                   '" jours pleins ≈ 60 j du BP) ; cible : "&Commandes_validation&" commandes"',
+        font=F_SUB, border=BOX)
+    ws.conditional_formatting.add("E23:F23", FormulaRule(formula=['LEFT(E23,3)="OUI"'], fill=FILL_ALERT))
+    ws.conditional_formatting.add("E26:F28", FormulaRule(formula=['E26="NON"'], fill=FILL_ALERT))
+
+    # --- Rappel des stop-loss ---------------------------------------------------------------
+    section(ws, 30, "Stop-loss du mandat — rappel (pokeshop.stoploss, agent gouvernance, fait foi)", 25)
+    for cells, text in (("A31:B31", "Niveau"), ("C31:G31", "Déclencheur"), ("H31:I31", "Seuil"),
+                        ("J31:O31", "Effet automatique"), ("P31:U31", "Où le suivre")):
+        mput(ws, cells, text, font=F_HEADER, fill=FILL_HEADER, border=BOX, align=CENTER)
+    stoploss: list[tuple[str, str, str, str, str, str]] = [
+        ("Produit", "Contribution < 12 % du CA net ou < 8 CHF par commande",
+         '=TEXT(Plancher_pct,"0%")&" / "&TEXT(Plancher_CHF,"0")&" CHF"', "@", "Vente ou promotion bloquée",
+         "Prix plancher l. 35 ; Scénarios l. 21"),
+        ("Extension", "> 25 % du budget stock, ou 45 jours sans vente",
+         f"={q(S_BUD, 'C26')}", NF_CHF, "Plus de réassort + proposition de démarque", "Budget initial l. 26"),
+        ("Publicité", "CAC > contribution par commande sur 7 jours glissants, ou plafond journalier",
+         f"=INDEX({q(S_SCN, '$B$18:$D$18')},Scenario_choisi)", NF_CHF2, "Campagne coupée",
+         "Scénarios l. 26 ; tableau de bord acquisition"),
+        ("Cash", "Cash disponible (solde − précommandes) < réserve", "=Reserve_cash", NF_CHF,
+         "Plus d'achat ni de publicité", "tresorerie_13_semaines.xlsx l. 49 à 51"),
+        ("Global", "Perte cumulée ≥ 20 % du capital engagé", "=-Perte_max", NF_CHF2_RED,
+         "TOUT gelé, retour au niveau d'autonomie 1, alerte ; réarmement par la propriétaire", "Cette feuille, colonne Y"),
+        ("Temps", "60 jours sans atteindre les seuils de validation", '=Jours_validation&" jours"', "@",
+         "Dossier continuer / ajuster / arrêter", "Cette feuille, lignes 25 à 28"),
+    ]
+    for i, (level, trigger, value, fmt, effect, where) in enumerate(stoploss, start=32):
+        mput(ws, f"A{i}:B{i}", level, font=F_BOLD, border=BOX)
+        mput(ws, f"C{i}:G{i}", trigger, border=BOX)
+        mput(ws, f"H{i}:I{i}", value, fmt=fmt, border=BOX, font=F_BOLD)
+        mput(ws, f"J{i}:O{i}", effect, border=BOX)
+        mput(ws, f"P{i}:U{i}", where, font=F_SUB, border=BOX)
+
+    # --- Tableau hebdomadaire ---------------------------------------------------------------
+    mput(ws, "B39:L39", '="PROJECTION — scénario "&E6&" (formules, ne pas saisir)"', font=F_HEADER,
+         fill=FILL_HEADER, align=CENTER, border=BOX)
+    mput(ws, "M39:T39", "RÉEL — à saisir chaque lundi (CHF HT, coûts en positif)", font=F_HEADER,
+         fill=PatternFill("solid", fgColor="7F6000"), align=CENTER, border=BOX)
+    mput(ws, "U39:Y39", "RÉEL — calculé", font=F_HEADER, fill=FILL_HEADER, align=CENTER, border=BOX)
+    mput(ws, "Z39:AC39", "Aides de calcul", font=F_SUB, align=CENTER)
+    header(ws, 40, [NS_HEADERS[c] for c in ("A", *NS_PROJ, *NS_REAL_INPUTS, "U", "V", "W", "X", "Y")])
+    for col in ("Z", "AA", "AB", "AC"):
+        put(ws, f"{col}40", NS_HEADERS[col], font=F_SUB, align=CENTER)
+    ws.row_dimensions[40].height = 42
+    for n in range(1, NS_WEEKS + 1):
+        r = NS_FIRST + n - 1
+        put(ws, f"A{r}", n, fmt="0", border=BOX, align=Alignment(horizontal="center"))
+        proj_cells = {
+            "B": f"=IF(A{r}>=Semaine_ouverture,$E$9,0)",
+            "C": f"=B{r}*Panier_HT",
+            "D": f"=C{r}*Cout_produit_pct",
+            "E": f"=B{r}*(Frais_paiement_pct*Panier_TTC+Frais_paiement_fixe)",
+            "F": f"=B{r}*$E$12",
+            "G": f"=B{r}*Provision_SAV",
+            "H": f"=B{r}*$E$8",
+            "I": f"=C{r}-D{r}-E{r}-F{r}-G{r}-H{r}",
+            "J": "=$E$11",
+            "K": f"=I{r}-J{r}",
+            "L": f"=SUM($K${NS_FIRST}:K{r})",
+        }
+        for col, formula in proj_cells.items():
+            put(ws, f"{col}{r}", formula, fmt=NF_DEC2 if col == "B" else NF_CHF2_RED if col in "IKL" else NF_CHF2,
+                border=BOX, font=F_BOLD if col == "L" else F_BASE)
+        for col in NS_REAL_INPUTS:
+            inp(ws, f"{col}{r}", None, fmt="0" if col == "M" else NF_CHF2)
+        blank = f"COUNT(M{r}:T{r})=0"
+        real_cells = {
+            "U": f'=IF({blank},"",N{r}-O{r}-P{r}-Q{r}-R{r}-S{r})',
+            "V": f'=IF({blank},"",U{r}-T{r})',
+            "W": f'=IF(V{r}="","",SUM($V${NS_FIRST}:V{r}))',
+            "X": f'=IF(W{r}="","",W{r}-L{r})',
+            "Y": (f'=IF(W{r}="","",IF(MIN($W${NS_FIRST}:W{r})<=-Perte_max,"GEL GLOBAL",'
+                  f'IF(V{r}<0,"semaine négative","OK")))'),
+        }
+        for col, formula in real_cells.items():
+            put(ws, f"{col}{r}", formula, fmt=None if col == "Y" else NF_CHF2_RED, border=BOX,
+                font=F_BOLD if col in "WY" else F_BASE, fill=FILL_RESULT if col == "W" else None,
+                align=Alignment(horizontal="center") if col == "Y" else None)
+        helpers = {
+            "Z": f'=IF(AND(A{r}>$E$21,L{r}>0),A{r},"")',
+            "AA": f'=IF(L{r}<=-Perte_max,A{r},"")',
+            "AB": f'=IF(W{r}="","",IF(AND(A{r}>$F$21,W{r}>0),A{r},""))',
+            "AC": f'=IF(W{r}="","",IF(W{r}<=-Perte_max,A{r},""))',
+        }
+        for col, formula in helpers.items():
+            put(ws, f"{col}{r}", formula, font=F_SUB, fmt="0")
+    ws.conditional_formatting.add(f"Y{NS_FIRST}:Y{NS_LAST}",
+                                  CellIsRule(operator="equal", formula=['"GEL GLOBAL"'], fill=FILL_ALERT))
+    ws.conditional_formatting.add(f"Y{NS_FIRST}:Y{NS_LAST}",
+                                  CellIsRule(operator="equal", formula=['"semaine négative"'], fill=FILL_WARN))
+    ws.conditional_formatting.add(f"L{NS_FIRST}:L{NS_LAST}",
+                                  CellIsRule(operator="lessThanOrEqual", formula=["-Perte_max"], fill=FILL_ALERT))
+    widths(ws, {"A": 9, **{c: 12.5 for c in (*NS_PROJ, *NS_REAL_INPUTS, "U", "V", "X")}, "W": 15, "Y": 17,
+                "Z": 8, "AA": 8, "AB": 8, "AC": 8})
+    ws.freeze_panes = f"B{NS_FIRST}"
+    page_setup(ws)
+
+
 def build_financial_model() -> Workbook:
     """Construit le classeur ``modele_financier.xlsx`` (formules vivantes)."""
     wb = Workbook()
     _sheet_hypotheses(wb)
+    _sheet_north_star(wb)
     _sheet_budget(wb)
     _sheet_fixed(wb)
     _sheet_scenarios(wb)
@@ -799,9 +1064,11 @@ ROW_LABELS: dict[int, str] = {
     43: "Solde de clôture",
     45: "Précommandes livrées (réserve libérée, TTC)",
     46: "Réserve précommandes (fin de semaine)",
-    47: "Réserve minimale",
+    47: "Réserve minimale = seuil du stop-loss cash",
     48: "Disponible pour de nouveaux achats",
-    49: "Alerte",
+    49: "Alerte (clôture)",
+    50: "Stop-loss cash actif en début de semaine ?",
+    51: "Achats prévus + publicité à bloquer (mandat)",
 }
 ALERT_TEXT = {
     None: "OK",
@@ -816,37 +1083,42 @@ def _d(value: str) -> Decimal:
 
 
 def fictitious_example() -> tuple[TreasuryParams, list[WeeklyInput]]:
-    """Exemple FICTIF calé sur le plan 90 jours du BP §9 (aucune donnée réelle)."""
+    """Exemple FICTIF calé sur le budget BP §3 et le plan 90 jours BP §9 (aucune donnée réelle).
+
+    Il illustre le constat de la note de vérification : les charges fixes d'avant
+    l'ouverture ne sont pas budgétées, si bien que la réserve de 1 600 CHF (seuil du
+    stop-loss cash) est entamée dès la semaine 5. Le test publicitaire prévu en semaine 7
+    tombe en stop-loss ; en semaine 9, les précommandes encaissées ne sont pas du cash
+    disponible (alerte), ce qui bloque la publicité de la semaine 10.
+    """
     params = TreasuryParams(
         start=date(2026, 10, 5),
         opening_balance=_d("8000"),
-        minimum_reserve=_d("500"),
+        minimum_reserve=_d("1600"),
     )
     w = WeeklyInput
     weeks = [
-        # J1–15 : étude, dossier B2B, page de présentation
+        # J1–15 : étude, dossier B2B, page de présentation (budget BP §3 : site, admin, DA)
         w(fixed_costs=_d("400"), setup_costs=_d("1100")),
         w(setup_costs=_d("1150")),
-        # J16–30 : identité, site test, recette
+        # J16–30 : identité, site test, recette ; stock pilote commandé (3 000 CHF)
         w(setup_costs=_d("650")),
         w(purchases_committed=_d("3000")),
-        # J31–45 : réception stock, ouverture douce
+        # J31–45 : réception du stock, ouverture douce — 2e mois de charges fixes
         w(fixed_costs=_d("400")),
         w(sales_ttc=_d("279.70"), orders=3, shipping=_d("27")),
+        # J46–60 : test publicité prévu… mais la semaine s'ouvre en stop-loss cash
         w(sales_ttc=_d("486.50"), orders=5, shipping=_d("45"), advertising=_d("150")),
-        # J46–60 : test publicité 500 CHF maximum
-        w(sales_ttc=_d("561.40"), orders=6, shipping=_d("54"), advertising=_d("200"),
-          purchases_committed=_d("900")),
-        w(sales_ttc=_d("771.20"), orders=8, preorder_sales_ttc=_d("479.40"), preorder_orders=6, shipping=_d("72"),
-          refunds=_d("94.90"), advertising=_d("150"), fixed_costs=_d("400")),
-        # J61–90 : réassort des ventes prouvées
-        w(sales_ttc=_d("842.60"), orders=9, preorder_sales_ttc=_d("319.60"), preorder_orders=4, shipping=_d("81"),
-          purchases_committed=_d("650")),
-        w(sales_ttc=_d("968.30"), orders=10, shipping=_d("90"), preorder_refunds=_d("79.90"),
-          purchases_planned=_d("1200")),
-        w(sales_ttc=_d("931.80"), orders=10, shipping=_d("90")),
-        w(sales_ttc=_d("1149.50"), orders=12, shipping=_d("108"), vat=_d("150"), fixed_costs=_d("400"),
-          preorders_fulfilled=_d("719.10")),
+        w(sales_ttc=_d("561.40"), orders=6, shipping=_d("54")),
+        w(sales_ttc=_d("771.20"), orders=8, preorder_sales_ttc=_d("639.20"), preorder_orders=8, shipping=_d("72"),
+          refunds=_d("94.90")),
+        # J61–90 : réassort des ventes prouvées, une fois la réserve reconstituée
+        w(sales_ttc=_d("842.60"), orders=9, shipping=_d("81"), advertising=_d("150"), fixed_costs=_d("400")),
+        w(sales_ttc=_d("968.30"), orders=10, shipping=_d("90"), purchases_committed=_d("900"),
+          preorder_refunds=_d("79.90")),
+        w(sales_ttc=_d("931.80"), orders=10, shipping=_d("90"), advertising=_d("200"),
+          purchases_planned=_d("650")),
+        w(sales_ttc=_d("1149.50"), orders=12, shipping=_d("108"), vat=_d("150"), preorders_fulfilled=_d("559.30")),
     ]
     return params, weeks
 
@@ -863,8 +1135,8 @@ def _plan_sheet(ws: Worksheet, params: TreasuryParams, weeks: Sequence[WeeklyInp
     plist: list[tuple[int, str, object, str, str]] = [
         (5, "Lundi de la semaine 1", params.start, NF_DATE, "Date de départ du prévisionnel glissant"),
         (6, "Solde bancaire d'ouverture (CHF)", params.opening_balance, NF_CHF2, "Relevé bancaire du jour"),
-        (7, "Réserve minimale (CHF)", params.minimum_reserve, NF_CHF2,
-         "Plancher à ne pas franchir — décision de la responsable"),
+        (7, "Réserve minimale = seuil du stop-loss cash (CHF)", params.minimum_reserve, NF_CHF2,
+         "BP §3 : réserve 1 600 CHF. Sous ce seuil (solde − précommandes) : plus d'achat prévu ni de pub"),
         (8, "Frais PSP proportionnels", params.psp_pct, NF_PCT2, "BP §4 : 2,5 % (hypothèse) — contrat PSP"),
         (9, "Frais PSP fixes par commande (CHF)", params.psp_fixed, NF_CHF2, "BP §4 : 0,30 (hypothèse)"),
         (10, "Délai de versement PSP (semaines, 0 à 4)", params.payout_delay_weeks, "0",
@@ -892,7 +1164,7 @@ def _plan_sheet(ws: Worksheet, params: TreasuryParams, weeks: Sequence[WeeklyInp
         put(ws, f"{col}15", f"=IF($B$5=\"\",\"\",$B$5+7*({col}$14-1))", fmt=NF_DATE, font=F_SUB)
         put(ws, f"{col}16", f"=IF($B$5=\"\",\"\",{col}15+6)", fmt=NF_DATE, font=F_SUB)
 
-    sections = {23: "ENCAISSEMENTS", 28: "DÉCAISSEMENTS", 40: "SOLDE", 44: "RÉSERVES ET ALERTE"}
+    sections = {23: "ENCAISSEMENTS", 28: "DÉCAISSEMENTS", 40: "SOLDE", 44: "RÉSERVES, ALERTE ET STOP-LOSS CASH"}
     section(ws, 13, "", 16)
     ws["A13"].value = "VENTES (saisie)"
     ws["A13"].font = F_SECTION
@@ -900,7 +1172,7 @@ def _plan_sheet(ws: Worksheet, params: TreasuryParams, weeks: Sequence[WeeklyInp
         section(ws, row, text, 16)
 
     for row, label in ROW_LABELS.items():
-        bold = row in (27, 39, 43, 48, 49)
+        bold = row in (27, 39, 43, 48, 49, 50, 51)
         put(ws, f"A{row}", label, font=F_BOLD if bold else F_BASE, border=BOX)
     first, last = WEEK_COLS[0], WEEK_COLS[-1]
     for idx, col in enumerate(WEEK_COLS):
@@ -908,11 +1180,11 @@ def _plan_sheet(ws: Worksheet, params: TreasuryParams, weeks: Sequence[WeeklyInp
         data = weeks[idx] if weeks is not None and idx < len(weeks) else None
         for row, attr in INPUT_ROWS.items():
             raw = getattr(data, attr) if data is not None else None
-            value: object = None
+            cell_value: object = None
             if raw is not None and raw != 0:
-                value = float(raw) if isinstance(raw, Decimal) else raw
+                cell_value = float(raw) if isinstance(raw, Decimal) else raw
             fmt = "0" if attr in ("orders", "preorder_orders") else NF_CHF2
-            inp(ws, f"{col}{row}", value, fmt=fmt)
+            inp(ws, f"{col}{row}", cell_value, fmt=fmt)
         formulas = {
             21: f"=({col}17+{col}19)*$B$8+({col}18+{col}20)*$B$9",
             22: f"={col}17+{col}19-{col}21",
@@ -926,40 +1198,57 @@ def _plan_sheet(ws: Worksheet, params: TreasuryParams, weeks: Sequence[WeeklyInp
                  else f"=MAX(0,{prev}46+{col}19-{col}45-{col}34)"),
             47: "=$B$7",
             48: f"={col}43-{col}46-{col}47",
-            49: (f'=IF({col}43<0,"SOLDE NÉGATIF",IF({col}43<{col}47,"SOUS RÉSERVE MINI",'
-                 f'IF({col}48<0,"PRÉCOMMANDES NON COUVERTES","OK")))'),
+            49: (f'=IF($B$6="","à saisir",IF({col}43<0,"SOLDE NÉGATIF",IF({col}43<{col}47,"SOUS RÉSERVE MINI",'
+                 f'IF({col}48<0,"PRÉCOMMANDES NON COUVERTES","OK"))))'),
+            50: ('=IF($B$6="","à saisir",IF($B$6-$B$12<$B$7,"OUI","non"))' if prev is None
+                 else f'=IF($B$6="","à saisir",IF({prev}48<0,"OUI","non"))'),
+            51: f'=IF({col}50="OUI",{col}30+{col}35,0)',
         }
         for row, formula in formulas.items():
-            bold = row in (27, 39, 43, 48, 49)
+            bold = row in (27, 39, 43, 48, 49, 50, 51)
             fmt = NF_CHF2_RED if row in (42, 43, 48) else NF_CHF2
-            put(ws, f"{col}{row}", formula, fmt=None if row == 49 else fmt, border=BOX,
+            text_row = row in (49, 50)
+            put(ws, f"{col}{row}", formula, fmt=None if text_row else fmt, border=BOX,
                 font=F_BOLD if bold else F_BASE, fill=FILL_RESULT if row == 43 else None,
-                align=Alignment(horizontal="center") if row == 49 else None)
-    for row in (17, 18, 19, 20, 21, 22, 24, 25, 26, 27, *range(29, 40), 42, 45):
+                align=Alignment(horizontal="center") if text_row else None)
+    for row in (17, 18, 19, 20, 21, 22, 24, 25, 26, 27, *range(29, 40), 42, 45, 51):
         fmt = "0" if row in (18, 20) else NF_CHF2
         put(ws, f"{TOTAL_COL}{row}", f"=SUM({first}{row}:{last}{row})", fmt=fmt, font=F_BOLD, border=BOX)
     put(ws, f"{TOTAL_COL}41", f"={first}41", fmt=NF_CHF2, font=F_BOLD, border=BOX)
     put(ws, f"{TOTAL_COL}43", f"={last}43", fmt=NF_CHF2_RED, font=F_BOLD, border=BOX)
     alert_range = f"{first}49:{last}49"
-    ws.conditional_formatting.add(alert_range, CellIsRule(operator="notEqual", formula=['"OK"'], fill=FILL_ALERT))
-    ws.conditional_formatting.add(f"{first}43:{last}43", FormulaRule(formula=[f"{first}43<{first}47"],
+    ws.conditional_formatting.add(
+        alert_range, FormulaRule(formula=[f'AND({first}49<>"OK",{first}49<>"à saisir")'], fill=FILL_ALERT)
+    )
+    ws.conditional_formatting.add(f"{first}50:{last}50",
+                                  CellIsRule(operator="equal", formula=['"OUI"'], fill=FILL_ALERT))
+    ws.conditional_formatting.add(f"{first}51:{last}51",
+                                  CellIsRule(operator="greaterThan", formula=["0"], fill=FILL_ALERT))
+    ws.conditional_formatting.add(f"{first}43:{last}43", FormulaRule(formula=[f'AND($B$6<>"",{first}43<{first}47)'],
                                                                       fill=FILL_ALERT))
 
-    section(ws, 51, "SYNTHÈSE", 16)
+    section(ws, 53, "SYNTHÈSE", 16)
+    alerts = f'COUNTIF({first}49:{last}49,"<>OK")-COUNTIF({first}49:{last}49,"à saisir")'
     summary = [
-        (52, "Solde de clôture le plus bas", f"=MIN({first}43:{last}43)", NF_CHF2_RED),
-        (53, "Semaine du solde le plus bas", f"=INDEX({first}14:{last}14,MATCH(B52,{first}43:{last}43,0))", "0"),
-        (54, "Nombre de semaines en alerte", f'=COUNTIF({first}49:{last}49,"<>OK")', "0"),
-        (55, "Versements PSP en transit à la fin de l'horizon", f"=SUM({first}22:{last}22)-SUM({first}24:{last}24)",
+        (54, "Solde de clôture le plus bas", f"=MIN({first}43:{last}43)", NF_CHF2_RED),
+        (55, "Semaine du solde le plus bas", f"=INDEX({first}14:{last}14,MATCH(B54,{first}43:{last}43,0))", "0"),
+        (56, "Nombre de semaines en alerte (clôture)", f"={alerts}", "0"),
+        (57, "Versements PSP en transit à la fin de l'horizon", f"=SUM({first}22:{last}22)-SUM({first}24:{last}24)",
          NF_CHF2),
-        (56, "Frais PSP sur 13 semaines", f"={TOTAL_COL}21", NF_CHF2),
-        (57, "TVA contenue dans les ventes encaissées (estimation)",
+        (58, "Frais PSP sur 13 semaines", f"={TOTAL_COL}21", NF_CHF2),
+        (59, "TVA contenue dans les ventes encaissées (estimation)",
          f"=({TOTAL_COL}17+{TOTAL_COL}19)*$B$11/(1+$B$11)", NF_CHF2),
+        (60, "Semaines ouvertes en stop-loss cash", f'=COUNTIF({first}50:{last}50,"OUI")', "0"),
+        (61, "Première semaine en stop-loss cash",
+         f'=IF(B60=0,"aucune",INDEX({first}14:{last}14,MATCH("OUI",{first}50:{last}50,0)))', "0"),
+        (62, "Achats prévus + publicité à bloquer (13 semaines)", f"={TOTAL_COL}51", NF_CHF2),
     ]
     for row, label, formula, fmt in summary:
         put(ws, f"A{row}", label, font=F_BOLD, border=BOX)
         put(ws, f"B{row}", formula, fmt=fmt, font=F_BOLD, border=BOX, fill=FILL_RESULT)
-    put(ws, "C57", "Hors impôt préalable déductible : le décompte réel est établi avec la fiduciaire.", font=F_SUB)
+    put(ws, "C59", "Hors impôt préalable déductible : le décompte réel est établi avec la fiduciaire.", font=F_SUB)
+    put(ws, "C62", "Montants à supprimer ou à décaler : le mandat interdit tout achat prévu et toute publicité "
+                   "tant que le stop-loss cash est actif. Les achats déjà engagés restent dus.", font=F_SUB)
 
     widths(ws, {"A": 52, "B": 14, **{c: 12 for c in WEEK_COLS}, TOTAL_COL: 14})
     ws.freeze_panes = "C17"
@@ -979,33 +1268,39 @@ def _sheet_howto(ws: Worksheet) -> None:
                "délai B10. Saisir en ligne 25 les versements attendus des ventes faites avant la semaine 1."),
         ("4.", "Réserve précommandes = précommandes encaissées − livrées − remboursées. Ce montant n'est pas "
                "disponible pour un nouvel achat (BP §3)."),
-        ("5.", "Alerte (ligne 49) : SOLDE NÉGATIF, SOUS RÉSERVE MINI (solde < B7), PRÉCOMMANDES NON COUVERTES "
-               "(solde − réserve précommandes − réserve mini < 0). Toute alerte bloque les achats « prévus » "
-               "jusqu'à arbitrage."),
-        ("6.", "La feuille « Exemple FICTIF » illustre le plan 90 jours du BP §9 avec des montants inventés : "
-               "ne jamais l'utiliser comme prévision."),
-        ("7.", "Le moteur Python pokeshop.treasury (plan_from_weekly_inputs + build_forecast) reproduit "
-               "exactement ces calculs pour le tableau de bord et les tests."),
+        ("5.", "Alerte de clôture (ligne 49) : SOLDE NÉGATIF, SOUS RÉSERVE MINI (solde < B7), PRÉCOMMANDES NON "
+               "COUVERTES (solde − réserve précommandes − réserve mini < 0)."),
+        ("6.", "STOP-LOSS CASH (lignes 50-51) : la réserve minimale B7 vaut 1 600 CHF, la réserve de trésorerie du "
+               "budget BP §3. Une semaine qui s'ouvre après une clôture en alerte est en stop-loss : plus aucun achat "
+               "prévu ni aucune publicité (ligne 51 = montants à supprimer ou décaler). Les achats engagés restent "
+               "dus. Seule la propriétaire peut modifier B7."),
+        ("7.", "La feuille « Exemple FICTIF » applique le budget BP §3 et le plan 90 jours BP §9 avec des montants "
+               "inventés : ne jamais l'utiliser comme prévision. Elle montre la réserve entamée dès la semaine 5 "
+               "(charges fixes non budgétées)."),
+        ("8.", "Le moteur Python pokeshop.treasury (plan_from_weekly_inputs + build_forecast) reproduit "
+               "exactement ces calculs pour le tableau de bord et les tests ; enforce_cash_stoploss=True y simule "
+               "en plus l'application du blocage."),
     ]
     for i, (num, text) in enumerate(lines, start=4):
         put(ws, f"A{i}", num, font=F_BOLD, align=Alignment(vertical="top"))
         put(ws, f"B{i}", text, align=WRAP)
         ws.row_dimensions[i].height = 42
-    put(ws, "A12", "Légende", font=F_SECTION)
-    inp(ws, "A13", "")
-    put(ws, "B13", "Cellule d'entrée (texte bleu sur fond jaune)")
-    put(ws, "A14", 1234.5, fmt=NF_CHF2)
-    put(ws, "B14", "Formule (texte noir) — ne pas écraser")
-    put(ws, "A15", "", fill=FILL_ALERT)
-    put(ws, "B15", "Alerte de trésorerie")
-    put(ws, "A17", "Validation humaine requise", font=F_SECTION)
+    put(ws, "A13", "Légende", font=F_SECTION)
+    inp(ws, "A14", "")
+    put(ws, "B14", "Cellule d'entrée (texte bleu sur fond jaune)")
+    put(ws, "A15", 1234.5, fmt=NF_CHF2)
+    put(ws, "B15", "Formule (texte noir) — ne pas écraser")
+    put(ws, "A16", "", fill=FILL_ALERT)
+    put(ws, "B16", "Alerte de trésorerie ou stop-loss cash")
+    put(ws, "A18", "Validation humaine requise", font=F_SECTION)
     checks = [
-        "Montant de la réserve minimale (B7) et règle d'arbitrage en cas d'alerte.",
+        "Seuil du stop-loss cash (B7, 1 600 CHF par défaut) : toute modification est une décision de la propriétaire.",
+        "Financement des charges fixes d'avant l'ouverture (≈ 400 à 600 CHF), absentes du budget de 8 000 CHF.",
         "Délai réel de versement et frais du PSP (contrat, paiements tests carte et TWINT).",
         "Périodicité et échéances du décompte TVA (fiduciaire).",
         "Conditions de paiement fournisseur (prépaiement ou terme) avant tout achat engagé.",
     ]
-    for i, text in enumerate(checks, start=18):
+    for i, text in enumerate(checks, start=19):
         put(ws, f"A{i}", "☐", font=F_BOLD)
         put(ws, f"B{i}", text, align=WRAP)
     widths(ws, {"A": 8, "B": 110})
@@ -1020,7 +1315,7 @@ def build_treasury_workbook() -> Workbook:
     _plan_sheet(wb.create_sheet("Exemple FICTIF"), params, weeks,
                 "EXEMPLE FICTIF — trésorerie 13 semaines (aucun chiffre réel)",
                 "Montants inventés pour illustrer le plan 90 jours du BP §9. Ne pas utiliser comme prévision.")
-    blank = TreasuryParams(start=None, opening_balance=None, minimum_reserve=None)
+    blank = TreasuryParams(start=None, opening_balance=None, minimum_reserve=Decimal("1600"))
     _plan_sheet(wb.create_sheet("À remplir"), blank, None,
                 "Trésorerie 13 semaines — {{NOM_BOUTIQUE}}",
                 "Saisir les cellules jaunes chaque lundi. Montants en CHF.")

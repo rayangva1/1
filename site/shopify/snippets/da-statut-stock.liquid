@@ -1,0 +1,75 @@
+{%- comment -%}
+  Statut de stock explicite (BP §7 « état du stock explicite » ; DA : .da-stock--local | --preorder | --out).
+  Trois libellés figés, sans quantité :
+    « Stock local »                         produit à Genève, vendable (stock local après réservations, dommages, sécurité)
+    « Précommande (allocation confirmée) »  quantité attribuée confirmée par écrit (PRECOMMANDES §2.1)
+    « Rupture – alerte »                    plus d'unité vendable ; alerte de réassort proposée
+  Paramètres : product (obligatoire) ; contexte = 'fiche' (défaut, avec détail) | 'carte' (libellé seul).
+  Règle : l'inventaire Shopify décide. Produit non achetable => rupture. Produit achetable sans statut public cohérent
+  => « Disponibilité à confirmer » (data-statut="inconnu") : anomalie que la recette doit faire corriger (fiche en brouillon).
+{%- endcomment -%}
+{%- liquid
+  assign contexte = contexte | default: 'fiche'
+  assign statut = product.metafields.boutique.statut_stock.value | default: 'inconnu'
+  if product.available != true
+    assign statut = 'rupture'
+  elsif statut != 'stock_local' and statut != 'precommande'
+    assign statut = 'inconnu'
+  endif
+  assign delai = product.metafields.boutique.delai_expedition.value | default: settings.delai_expedition_local
+  assign date_sortie = product.metafields.boutique.date_sortie.value
+  assign statut_date = product.metafields.boutique.date_sortie_statut.value | default: 'inconnue'
+  assign alerte = product.metafields.boutique.alerte_reassort.value
+  assign fin_serie = product.metafields.boutique.fin_de_serie.value
+-%}
+{%- case statut -%}
+  {%- when 'stock_local' -%}
+    <p class="da-stock da-stock--local" data-statut="stock_local">
+      {%- render 'da-icone', nom: 'local', taille: 16 -%}
+      <span>Stock local
+        {%- if contexte == 'fiche' -%}
+          <span class="da-stock__detail">
+            {%- if delai and delai != '' -%}Expédié depuis Genève sous {{ delai | escape }}.{%- else -%}Expédié depuis Genève.{%- endif -%}
+          </span>
+        {%- endif -%}
+      </span>
+    </p>
+  {%- when 'precommande' -%}
+    <p class="da-stock da-stock--preorder" data-statut="precommande">
+      {%- render 'da-icone', nom: 'precommande', taille: 16 -%}
+      <span>Précommande (allocation confirmée)
+        {%- if contexte == 'fiche' -%}
+          <span class="da-stock__detail">
+            {%- if date_sortie and date_sortie != '' -%}
+              {%- if statut_date == 'confirmee' -%}Sortie le {{ date_sortie | date: '%d.%m.%Y' }}{%- else -%}Sortie estimée au {{ date_sortie | date: '%d.%m.%Y' }} (peut changer){%- endif -%}
+            {%- else -%}Date de sortie non confirmée{%- endif -%}
+            {{- ' · expédition dès réception.' -}}
+          </span>
+        {%- endif -%}
+      </span>
+    </p>
+  {%- when 'rupture' -%}
+    <p class="da-stock da-stock--out" data-statut="rupture">
+      {%- render 'da-icone', nom: 'rupture', taille: 16 -%}
+      {%- if fin_serie == true -%}
+        <span>Rupture
+          {%- if contexte == 'fiche' -%}<span class="da-stock__detail">Fin de série&nbsp;: pas de réassort prévu.</span>{%- endif -%}
+        </span>
+      {%- elsif alerte == true -%}
+        <span>Rupture – alerte
+          {%- if contexte == 'fiche' -%}<span class="da-stock__detail">Plus d'unité disponible. Demandez une alerte&nbsp;: nous vous écrivons dès le retour en stock local, sans date promise.</span>{%- endif -%}
+        </span>
+      {%- else -%}
+        <span>Rupture
+          {%- if contexte == 'fiche' -%}<span class="da-stock__detail">Plus d'unité disponible.</span>{%- endif -%}
+        </span>
+      {%- endif -%}
+    </p>
+  {%- else -%}
+    <p class="da-stock da-stock--out" data-statut="inconnu">
+      {%- render 'da-icone', nom: 'info', taille: 16 -%}
+      <span>Disponibilité à confirmer
+        {%- if contexte == 'fiche' -%}<span class="da-stock__detail">Écrivez-nous avant de commander.</span>{%- endif -%}
+      </span>
+    </p>
+{%- endcase -%}

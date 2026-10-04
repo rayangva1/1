@@ -1,0 +1,6 @@
+sku;ean;designation;langue;extension;format;contenu;scelle;prix;devise;base_prix;taux_tva;unite_prix;unites_par_colis;colisage;moq;disponibilite;stock;allocation;palier1_qte;palier1_prix;palier2_qte;palier2_remise;date_sortie;pays_expedition;date_maj;fictif
+FICTIF-A-001;2000000001012;Display 36 boosters Extension Fictive Alpha;Français;Fictive Alpha;Display;36 boosters;oui;95,00;EUR;HT;0;unité;;6;6;en stock;24;;12;92,00;24;5 %;17.07.2026;FR;2026-10-04T06:00:00+02:00;true
+FICTIF-A-002;2000000001029;Coffret Dresseur d'Élite Fictive Alpha;Français;Fictive Alpha;ETB;9 boosters + accessoires;oui;38,50;EUR;HT;0;unité;;10;10;en stock;40;;;;;;;FR;2026-10-04T06:00:00+02:00;true
+FICTIF-A-003;2000000001036;Bundle 6 boosters Fictive Alpha;Français;Fictive Alpha;Bundle;6 boosters;oui;21,00;EUR;HT;0;unité;;12;12;en stock;36;;;;;;;FR;2026-10-04T06:00:00+02:00;true
+FICTIF-A-005;2000000001050;Coffret collection Fictive Bêta;Français;Fictive Bêta;Coffret;4 boosters + promo;oui;18,90;EUR;HT;0;unité;;6;6;en stock;18;;;;;;;FR;2026-10-04T06:00:00+02:00;true
+FICTIF-A-040;2000000001401;ETB Fictive Gamma;Français;Fictive Gamma;ETB;9 boosters;oui;38,90;EUR;HT;0;unité;;10;10;en stock;15;;;;;;;FR;2026-10-04T06:00:00+02:00;true

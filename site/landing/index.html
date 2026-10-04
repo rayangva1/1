@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="fr-CH" data-da="a">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!--
+    Landing de validation (BP §1, §9 J1-15) — source : site/landing/README.md.
+    Nom de travail NON VALIDÉ : « Quai des Cartes » (docs/05-da/NAMING.md). Il est remplacé par le nom
+    validé (champ NOM_BOUTIQUE du registre docs/04-legal/champs_a_remplir.yaml) par site/outils/publication.py.
+    Règles : aucun prix, aucun stock, aucune précommande, aucune donnée interne (SPEC §0.2-0.3).
+  -->
+  <!-- APERCU:DEBUT -->
+  <meta name="robots" content="noindex, nofollow">
+  <!-- APERCU:FIN -->
+  <title>Quai des Cartes — Pokémon JCC en français, expédié depuis la Suisse</title>
+  <meta name="description" content="Boutique indépendante en préparation à Genève : produits scellés du JCC Pokémon en français, stock affiché tel qu'il est, livraison en Suisse. Inscrivez-vous à l'alerte d'ouverture.">
+  <link rel="canonical" href="{{URL_LANDING}}">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="fr_CH">
+  <meta property="og:site_name" content="Quai des Cartes">
+  <meta property="og:title" content="Quai des Cartes — Pokémon JCC en français, expédié depuis la Suisse">
+  <meta property="og:description" content="Produits scellés en français, stock réel, livraison en Suisse. Inscrivez-vous à l'alerte d'ouverture.">
+  <meta property="og:url" content="{{URL_LANDING}}">
+  <meta property="og:image" content="{{URL_LANDING}}assets/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Quai des Cartes — Pokémon JCC en français, expédié depuis la Suisse">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F6F5F1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="assets/da/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/da/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/da/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&amp;family=Inter:opsz,wght@14..32,400..700&amp;family=IBM+Plex+Mono:wght@500;600&amp;display=swap">
+  <link rel="stylesheet" href="assets/da/tokens.css">
+  <link rel="stylesheet" href="assets/da/components.css">
+  <link rel="stylesheet" href="css/landing.css">
+  <script src="js/theme.js"></script>
+  <script src="js/config.js" defer></script>
+  <script src="js/landing.js" defer></script>
+</head>
+<body class="da-root">
+  <a class="lp-evitement" href="#contenu">Aller au contenu</a>
+  <!-- APERCU:DEBUT -->
+  <div class="lp-apercu" role="note">
+    <p><strong>Aperçu interne, ne pas diffuser.</strong> Nom de travail provisoire « Quai des Cartes » (non validé). Coordonnées et mois d'ouverture à compléter. Le formulaire reste désactivé tant que l'adresse d'envoi n'est pas configurée.</p>
+  </div>
+  <!-- APERCU:FIN -->
+  <header class="lp-entete">
+    <div class="da-container lp-entete__inner">
+      <a class="lp-logo" href="./">
+        <img class="lp-logo__img lp-logo__img--clair" src="assets/da/logo-horizontal.svg" alt="Quai des Cartes" width="1083" height="140">
+        <img class="lp-logo__img lp-logo__img--sombre" src="assets/da/logo-horizontal-fond-sombre.svg" alt="Quai des Cartes" width="1083" height="140">
+      </a>
+      <button type="button" class="lp-theme" id="lp-theme" hidden>Thème : automatique</button>
+    </div>
+  </header>
+
+  <main id="contenu">
+    <section class="da-banner lp-hero" aria-labelledby="titre-principal">
+      <div class="lp-hero__texte">
+        <p class="lp-surtitre">Boutique en préparation à Genève · ouverture prévue en {{MOIS_OUVERTURE}}</p>
+        <h1 id="titre-principal" class="da-title da-banner__title">Pokémon JCC en français, expédié depuis la Suisse.</h1>
+        <p class="da-banner__text">Displays, coffrets Dresseur d'élite, bundles, coffrets et accessoires, neufs et scellés. Le stock affiché sera celui que nous avons réellement en main, et une personne répond à vos questions.</p>
+        <div class="da-banner__actions">
+          <a class="da-btn da-btn--primary" href="#alertes">Recevoir l'alerte d'ouverture</a>
+          <a class="da-btn da-btn--secondary" href="#promesse">Notre façon de travailler</a>
+        </div>
+        <ul class="lp-preuves">
+          <li>Produits neufs et scellés, en français</li>
+          <li>Stock réel, aucune fausse urgence</li>
+          <li>Expédition depuis Genève, livraison en Suisse</li>
+        </ul>
+      </div>
+      <div class="da-banner__media lp-hero__media" aria-hidden="true">
+        <span class="lp-forme lp-forme--1"></span>
+        <span class="lp-forme lp-forme--2"></span>
+        <span class="lp-forme lp-forme--3"></span>
+      </div>
+    </section>
+
+    <section class="lp-section" id="promesse" aria-labelledby="titre-promesse">
+      <div class="da-container">
+        <h2 id="titre-promesse" class="da-title lp-h2">Notre promesse</h2>
+        <ul class="lp-grille lp-grille--4">
+          <li class="lp-carte">
+            <h3 class="lp-h3">En français, bien identifié</h3>
+            <p>Chaque titre indique le format, l'extension et la langue. Le contenu de chaque boîte est vérifié avant la mise en vente. En cas de doute, le produit n'est pas publié.</p>
+          </li>
+          <li class="lp-carte">
+            <h3 class="lp-h3">Une disponibilité lisible</h3>
+            <p>Un produit marqué « Stock local » est chez nous, prêt à partir. Rien n'est affiché comme disponible s'il ne l'est pas.</p>
+          </li>
+          <li class="lp-carte">
+            <h3 class="lp-h3">Expédié depuis la Suisse</h3>
+            <p>Préparé à Genève et livré en Suisse uniquement. Prix en francs suisses ; frais de livraison affichés avant le paiement.</p>
+          </li>
+          <li class="lp-carte">
+            <h3 class="lp-h3">Un service qui répond</h3>
+            <p>Une adresse email où une personne vous répond. Une politique de retour et une garantie écrites noir sur blanc.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="lp-section lp-section--alt" id="statuts" aria-labelledby="titre-statuts">
+      <div class="da-container">
+        <h2 id="titre-statuts" class="da-title lp-h2">Trois statuts, pas de flou</h2>
+        <p class="lp-intro">Sur chaque fiche, la disponibilité est écrite en toutes lettres. Voici ce que chaque mention voudra dire.</p>
+        <dl class="lp-statuts">
+          <div class="lp-statuts__ligne">
+            <dt><span class="da-badge da-badge--local"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 15l2 2 4-4"/></svg>Stock local</span></dt>
+            <dd>Le produit est à Genève, contrôlé, prêt à être expédié.</dd>
+          </div>
+          <div class="lp-statuts__ligne">
+            <dt><span class="da-badge da-badge--preorder"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Précommande</span></dt>
+            <dd>Ouverte seulement quand la quantité qui nous est attribuée est confirmée par écrit. La date de sortie est affichée telle qu'elle nous est communiquée : estimée ou confirmée.</dd>
+          </div>
+          <div class="lp-statuts__ligne">
+            <dt><span class="da-badge da-badge--out"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M7 17L17 7"/></svg>Rupture</span></dt>
+            <dd>Plus d'unité disponible. Vous pouvez demander une alerte de réassort ; nous n'inventons pas de date de retour.</dd>
+          </div>
+        </dl>
+        <div class="lp-encadre">
+          <h3 class="lp-h3">Ce que vous ne verrez pas chez nous</h3>
+          <ul class="lp-liste">
+            <li>Un compte à rebours ou des « dernières pièces » pour vous presser.</li>
+            <li>Une promesse de carte rare ou de valeur future : le contenu des boosters est aléatoire.</li>
+            <li>Une précommande sans quantité confirmée, ou un acompte demandé sur cette page.</li>
+            <li>Un produit annoncé « en stock » alors qu'il n'est pas encore chez nous.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="lp-section" id="formats" aria-labelledby="titre-formats">
+      <div class="da-container">
+        <h2 id="titre-formats" class="da-title lp-h2">Les formats prévus à l'ouverture</h2>
+        <p class="lp-intro">La sélection exacte dépendra des produits réellement reçus et sera annoncée aux inscrits. Aucun prix n'est encore fixé.</p>
+        <ul class="lp-grille lp-grille--3">
+          <li class="lp-carte">
+            <p class="lp-carte__badge"><span class="da-badge da-badge--fr">FR</span></p>
+            <h3 class="lp-h3">Displays</h3>
+            <p>Une boîte de boosters d'une même extension.</p>
+          </li>
+          <li class="lp-carte">
+            <p class="lp-carte__badge"><span class="da-badge da-badge--fr">FR</span></p>
+            <h3 class="lp-h3">Coffrets Dresseur d'élite (ETB)</h3>
+            <p>Des boosters et des accessoires de jeu réunis dans un coffret.</p>
+          </li>
+          <li class="lp-carte">
+            <p class="lp-carte__badge"><span class="da-badge da-badge--fr">FR</span></p>
+            <h3 class="lp-h3">Bundles et tripacks</h3>
+            <p>Quelques boosters, parfois avec un bonus. Le contenu exact figure sur chaque fiche.</p>
+          </li>
+          <li class="lp-carte">
+            <p class="lp-carte__badge"><span class="da-badge da-badge--fr">FR</span></p>
+            <h3 class="lp-h3">Coffrets</h3>
+            <p>Des boosters accompagnés d'objets de collection, souvent choisis pour offrir.</p>
+          </li>
+          <li class="lp-carte">
+            <h3 class="lp-h3">Accessoires</h3>
+            <p>Protège-cartes, classeurs et boîtes de rangement pour protéger et ranger vos cartes.</p>
+          </li>
+          <li class="lp-carte lp-carte--note">
+            <h3 class="lp-h3">Pas au lancement</h3>
+            <p>Cartes à l'unité, cartes gradées, rachat de cartes et autres langues que le français.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="lp-section lp-section--alt" id="alertes" aria-labelledby="titre-alertes">
+      <div class="da-container lp-formulaire-zone">
+        <div class="lp-formulaire-intro">
+          <h2 id="titre-alertes" class="da-title lp-h2">Recevoir l'alerte d'ouverture</h2>
+          <p>Un email quand la boutique ouvre, puis, si vous le souhaitez, les alertes de stock qui correspondent à vos choix.</p>
+          <p class="lp-note">Aucun paiement, aucune réservation : cette inscription ne réserve aucun produit.</p>
+        </div>
+        <form class="lp-formulaire" id="lp-formulaire" method="post" action="" novalidate>
+          <div class="lp-champ">
+            <label for="lp-email">Adresse email <span class="lp-requis">(obligatoire)</span></label>
+            <input id="lp-email" name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" required aria-describedby="lp-email-erreur">
+            <p class="lp-erreur" id="lp-email-erreur" hidden></p>
+          </div>
+          <div class="lp-champ">
+            <label for="lp-prenom">Prénom <span class="lp-facultatif">(facultatif)</span></label>
+            <input id="lp-prenom" name="prenom" type="text" autocomplete="given-name" maxlength="60">
+          </div>
+          <fieldset class="lp-groupe">
+            <legend>Ce qui vous intéresse <span class="lp-facultatif">(facultatif)</span></legend>
+            <div class="lp-options">
+              <label class="lp-option"><input type="checkbox" name="formats" value="displays"> Displays</label>
+              <label class="lp-option"><input type="checkbox" name="formats" value="etb"> Coffrets Dresseur d'élite (ETB)</label>
+              <label class="lp-option"><input type="checkbox" name="formats" value="bundles-tripacks"> Bundles et tripacks</label>
+              <label class="lp-option"><input type="checkbox" name="formats" value="coffrets"> Coffrets cadeaux</label>
+              <label class="lp-option"><input type="checkbox" name="formats" value="accessoires"> Accessoires</label>
+              <label class="lp-option"><input type="checkbox" name="formats" value="nouveautes"> Nouvelles extensions</label>
+            </div>
+          </fieldset>
+          <fieldset class="lp-groupe">
+            <legend>Budget habituel par achat <span class="lp-facultatif">(facultatif)</span></legend>
+            <div class="lp-options">
+              <label class="lp-option"><input type="radio" name="budget" value="moins-30"> Moins de 30 CHF</label>
+              <label class="lp-option"><input type="radio" name="budget" value="30-60"> De 30 à 60 CHF</label>
+              <label class="lp-option"><input type="radio" name="budget" value="60-120"> De 60 à 120 CHF</label>
+              <label class="lp-option"><input type="radio" name="budget" value="120-250"> De 120 à 250 CHF</label>
+              <label class="lp-option"><input type="radio" name="budget" value="plus-250"> Plus de 250 CHF</label>
+            </div>
+          </fieldset>
+          <div class="lp-champ">
+            <label for="lp-pour-qui">Pour qui achetez-vous ? <span class="lp-facultatif">(facultatif)</span></label>
+            <select id="lp-pour-qui" name="pour_qui">
+              <option value="">Je préfère ne pas le dire</option>
+              <option value="collection">Pour ma collection</option>
+              <option value="jeu">Pour jouer</option>
+              <option value="cadeau">Pour offrir (enfant, cadeau)</option>
+            </select>
+          </div>
+          <div class="lp-champ">
+            <label for="lp-canton">Canton <span class="lp-facultatif">(facultatif)</span></label>
+            <select id="lp-canton" name="canton" aria-describedby="lp-canton-aide">
+              <option value="">Je préfère ne pas le dire</option>
+              <option value="AG">Argovie</option>
+              <option value="AI">Appenzell Rhodes-Intérieures</option>
+              <option value="AR">Appenzell Rhodes-Extérieures</option>
+              <option value="BE">Berne</option>
+              <option value="BL">Bâle-Campagne</option>
+              <option value="BS">Bâle-Ville</option>
+              <option value="FR">Fribourg</option>
+              <option value="GE">Genève</option>
+              <option value="GL">Glaris</option>
+              <option value="GR">Grisons</option>
+              <option value="JU">Jura</option>
+              <option value="LU">Lucerne</option>
+              <option value="NE">Neuchâtel</option>
+              <option value="NW">Nidwald</option>
+              <option value="OW">Obwald</option>
+              <option value="SG">Saint-Gall</option>
+              <option value="SH">Schaffhouse</option>
+              <option value="SO">Soleure</option>
+              <option value="SZ">Schwytz</option>
+              <option value="TG">Thurgovie</option>
+              <option value="TI">Tessin</option>
+              <option value="UR">Uri</option>
+              <option value="VD">Vaud</option>
+              <option value="VS">Valais</option>
+              <option value="ZG">Zoug</option>
+              <option value="ZH">Zurich</option>
+              <option value="hors-suisse">Hors de Suisse</option>
+            </select>
+            <p class="lp-aide" id="lp-canton-aide">Nous livrons uniquement en Suisse.</p>
+          </div>
+          <div class="lp-champ lp-champ--consentement">
+            <div class="lp-option lp-option--consentement">
+              <input id="lp-consentement" name="consentement" type="checkbox" value="oui" required aria-describedby="lp-consentement-aide lp-consentement-erreur">
+              <label for="lp-consentement" id="lp-consentement-texte">J'accepte de recevoir l'alerte d'ouverture, les alertes de stock correspondant à mes choix et, au plus, un email récapitulatif par semaine. Je peux me désinscrire en un clic dans chaque email.</label>
+            </div>
+            <p class="lp-aide" id="lp-consentement-aide">Vos données servent uniquement à ces envois et ne sont jamais vendues. Détails : <a href="confidentialite.html">déclaration de confidentialité</a>.</p>
+            <p class="lp-erreur" id="lp-consentement-erreur" hidden></p>
+          </div>
+          <div class="lp-piege" aria-hidden="true">
+            <label for="lp-site-web">Ne pas remplir ce champ</label>
+            <input id="lp-site-web" name="site_web" type="text" tabindex="-1" autocomplete="off">
+          </div>
+          <input type="hidden" name="consentement_version" value="alertes-v1-2026-10-04">
+          <input type="hidden" name="source" value="landing">
+          <input type="hidden" name="utm_source" value="">
+          <input type="hidden" name="utm_medium" value="">
+          <input type="hidden" name="utm_campaign" value="">
+          <div class="lp-actions">
+            <button class="da-btn da-btn--primary" type="submit" id="lp-envoyer" disabled>M'inscrire aux alertes</button>
+          </div>
+          <p class="lp-statut" id="lp-statut" role="status" aria-live="polite"></p>
+          <noscript><p class="lp-statut lp-statut--info">Le formulaire nécessite JavaScript. Vous pouvez aussi écrire à {{EMAIL_SUPPORT}} pour recevoir l'alerte d'ouverture.</p></noscript>
+          <p class="lp-note">Après l'envoi, vous recevrez un email de confirmation. Tant que vous n'avez pas cliqué sur son lien, nous ne vous écrirons pas.</p>
+        </form>
+      </div>
+    </section>
+
+    <section class="lp-section" id="faq" aria-labelledby="titre-faq">
+      <div class="da-container lp-faq">
+        <h2 id="titre-faq" class="da-title lp-h2">Questions fréquentes</h2>
+        <details>
+          <summary>Quand la boutique ouvre-t-elle ?</summary>
+          <p>L'ouverture est prévue en {{MOIS_OUVERTURE}}. Nous l'annoncerons aux inscrits lorsque les produits seront reçus et contrôlés, pas avant.</p>
+        </details>
+        <details>
+          <summary>Puis-je précommander ou réserver dès maintenant ?</summary>
+          <p>Non. Cette page ne permet aucune précommande, réservation ou paiement. Une précommande ne sera ouverte que lorsque la quantité qui nous est attribuée sera confirmée par écrit.</p>
+        </details>
+        <details>
+          <summary>Êtes-vous une boutique officielle Pokémon ?</summary>
+          <p>Non. Quai des Cartes est une boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus. Nous utilisons le nom « Pokémon » uniquement pour désigner les produits que nous revendons.</p>
+        </details>
+        <details>
+          <summary>Les produits seront-ils authentiques et en français ?</summary>
+          <p>Oui : des produits neufs et scellés, en langue française. Chaque livraison est contrôlée à réception (langue, emballage, scellé) avant la mise en vente.</p>
+        </details>
+        <details>
+          <summary>Pouvez-vous garantir une carte rare ?</summary>
+          <p>Non. Le contenu des boosters est aléatoire et décidé par le fabricant. Personne ne peut garantir une carte précise, une rareté ou une valeur future.</p>
+        </details>
+        <details>
+          <summary>Livrez-vous hors de Suisse ?</summary>
+          <p>Non. Nous livrons uniquement en Suisse.</p>
+        </details>
+        <details>
+          <summary>Que faites-vous de mon adresse email ?</summary>
+          <p>Nous l'utilisons uniquement pour les envois que vous avez choisis, après votre confirmation. Chaque email contient un lien de désinscription en un clic. Détails : <a href="confidentialite.html">déclaration de confidentialité</a>.</p>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer class="lp-pied">
+    <div class="da-container">
+      <p class="lp-pied__mention" id="mention-independance">Quai des Cartes est une boutique indépendante. Elle n'est ni affiliée, ni sponsorisée, ni approuvée par The Pokémon Company, Nintendo, Creatures Inc. ou GAME FREAK inc. Pokémon et les noms associés sont des marques de leurs titulaires respectifs ; nous les utilisons uniquement pour désigner les produits authentiques que nous revendons.</p>
+      <p>Exploitant : {{RAISON_SOCIALE}}, {{ADRESSE_POSTALE}}, Suisse. Contact : <a href="mailto:{{EMAIL_SUPPORT}}">{{EMAIL_SUPPORT}}</a></p>
+      <p><a href="confidentialite.html">Déclaration de confidentialité</a></p>
+    </div>
+  </footer>
+</body>
+</html>

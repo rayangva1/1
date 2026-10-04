@@ -1,0 +1,51 @@
+# Seuils du stop-loss multi-niveaux — {{NOM_BOUTIQUE}}
+# STATUT : HYPOTHÈSES À CONFIRMER par la propriétaire (modèle d'opération du 4 octobre 2026).
+# Aucun de ces montants n'est un devis ni un engagement.
+# Chargement et validation : engine/pokeshop/stoploss.py (load_stoploss_config).
+# Toute modification d'une VALEUR => nouveau fichier stoploss.vN.yaml + nouveau stoploss_version.
+# Montants entre guillemets (jamais de nombre à virgule flottante).
+#
+# Une règle = une seule valeur dans tout le dépôt (contrôlé par les tests) :
+#   product.*            = planchers durs de config/pricing_rules.v1.yaml (hard_floor_*)
+#   extension.max_share  = stock.extension_budget_cap de pricing_rules et limits.extension_max_share du mandat
+#   cash.reserve_chf     = pokeshop.treasury.CASH_STOPLOSS_RESERVE et limits.cash_reserve_chf du mandat
+#   plafond jour pub     = limits.ads_daily_cap_chf du MANDAT SIGNÉ (pas ici : c'est un montant délégué)
+
+stoploss_version: "stoploss-v1-2026-10-04"
+status: "hypothèses à confirmer par la propriétaire"
+source: "Contexte propriétaire (stop-loss multi-niveaux, 4.10.2026) ; BP §1, §3, §5, §9, §13"
+effective_date: "2026-10-04"
+timezone: "Europe/Zurich"     # jours civils du plafond pub et de la fenêtre de 7 jours
+state_max_age_hours: 24       # photo plus vieille => évaluation refusée (BP §5 : donnée > 24 h)
+
+product:                      # contribution < 12 % OU < 8 CHF par commande => vente/promo bloquée
+  min_contribution_pct: "0.12"            # BP §5 plancher dur ; 12,00 % exactement = conforme
+  min_contribution_chf_per_order: "8.00"  # BP §5 plancher dur ; 8,00 CHF exactement = conforme
+
+extension:                    # > 25 % du budget stock OU 45 j sans vente => plus de réassort + démarque proposée
+  max_share_of_stock_budget: "0.25"       # BP §1 ; 25 % exactement = conforme
+  max_days_without_sale: 45               # contexte propriétaire ; 45 j exactement = déclenché
+
+ads:                          # CAC > contribution (7 j glissants) OU plafond jour => campagne coupée
+  window_days: 7                          # 7 derniers jours civils, aujourd'hui compris
+  min_spend_to_judge_chf: "20.00"         # hypothèse : ≈ contribution d'une commande au scénario
+                                          # central BP §10 (19,33 CHF) ; sans commande nette, coupure
+                                          # dès 20 CHF dépensés sur la fenêtre
+
+cash:                         # cash disponible < réserve => plus d'achat ni de pub
+  reserve_chf: "1600"                     # BP §3 réserve de trésorerie ; 1 600,00 exactement = conforme
+
+global:                       # perte >= 20 % du capital engagé => TOUT gelé, autonomie niveau 1, alerte
+  max_loss_share_of_capital: "0.20"       # 20 % exactement = déclenché ; réarmement propriétaire seule
+  default_liquidation_ratio: "0.70"       # hypothèse prudente : stock sans estimation valorisé à 70 %
+                                          # de son coût historique (scellé FR revendu au rabais, frais
+                                          # de vente déduits) ; à confirmer par la propriétaire
+  autonomy_level_on_freeze: 1             # BP §13 : niveau 1 = tout en simulation et brouillons
+
+time:                         # 60 j sans les seuils de validation => dossier continuer / ajuster / arrêter
+  validation_days: 60                     # BP §1 « 60 premiers jours de vente » ; 60 j exactement = évalué
+  prelaunch_max_days: 60                  # hypothèse : 60 j après le premier apport sans ouverture
+  min_paid_orders: 30                     # BP §1 : 30 commandes payées (nettes d'annulations)
+  min_contribution_after_ads_chf: "0"     # BP §1 : contribution positive après publicité (> 0 strict)
+  max_oversells: 0                        # BP §1 : absence de survente
+  min_sell_through_share_at_cost: "0.50"  # BP §1 : ≥ 50 % du stock pilote écoulé en valeur de coût

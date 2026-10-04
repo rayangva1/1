@@ -1,0 +1,201 @@
+# Conditions générales de vente (CGV) — {{NOM_BOUTIQUE}}
+
+> **À FAIRE REVOIR PAR UN JURISTE AVANT PUBLICATION**
+> Brouillon v0.1 du 4.10.2026, rédigé par l'agent legal-ops. Ce texte n'est pas un avis juridique.
+> Sources : BP §1, §3, §5, §7 ; références légales [L1] à [L17] listées dans `README.md` (consultées le 4.10.2026 par index de recherche, pages officielles non ouvertes : accès bloqué par le proxy de l'environnement de build).
+> Champs `{{…}}` : un seul registre, `champs_a_remplir.yaml`. Aperçu avec les valeurs proposées : `apercu/CGV.md` (généré).
+> Seul le bloc entre les balises `TEXTE_PUBLIC` est destiné au site. Les notes et la validation qui suivent restent internes.
+
+<!-- TEXTE_PUBLIC:DEBUT -->
+## Conditions générales de vente
+
+Version en vigueur depuis le {{DATE_VERSION}}.
+
+### 1. Champ d'application et vendeur
+
+1.1 Les présentes conditions générales de vente (CGV) s'appliquent à toute commande passée sur la boutique en ligne {{URL_SITE}} (la « boutique »). Les conditions de précommande ({{URL_PRECOMMANDES}}) et la page Livraison et retours ({{URL_RETOURS}}) en font partie intégrante.
+
+1.2 Le vendeur est {{RAISON_SOCIALE}}, {{FORME_JURIDIQUE}}, {{ADRESSE_POSTALE}}, Suisse (« nous »). Email : {{EMAIL_SUPPORT}}. Numéro IDE : {{NUMERO_IDE}}. {{INSCRIPTION_RC}}.
+
+1.3 La version des CGV applicable est celle en vigueur au moment de votre commande. Le lien vers cette version figure dans l'email de confirmation de commande ; vous pouvez l'enregistrer ou l'imprimer.
+
+1.4 {{NOM_BOUTIQUE}} est une boutique indépendante. Elle n'est ni affiliée, ni sponsorisée, ni approuvée par The Pokémon Company, Nintendo, Creatures Inc. ou GAME FREAK inc. Le nom « Pokémon » sert uniquement à désigner les produits authentiques que nous revendons.
+
+### 2. Produits
+
+2.1 Nous vendons des produits officiels du jeu de cartes à collectionner Pokémon en langue française, neufs et scellés, ainsi que des accessoires. Chaque fiche indique le format, l'extension, la langue, le contenu annoncé par le fabricant, l'état du stock (stock local ou précommande) et la quantité autorisée.
+
+2.2 Les photos sont des photos réelles des produits ou des photos dont l'usage nous a été autorisé. L'aspect de l'emballage peut varier légèrement d'une série d'impression à l'autre. Le contenu décrit sur la fiche fait foi.
+
+2.3 **Contenu aléatoire.** Les boosters, et les produits qui en contiennent, ont un contenu aléatoire déterminé par le fabricant. Nous ne garantissons ni la présence d'une carte précise, ni un niveau de rareté, ni une valeur de revente. Nous n'ouvrons, ne pesons et ne trions aucun produit scellé.
+
+2.4 **Aucune promesse de valeur.** Nos produits sont des produits de jeu et de collection. Ils ne sont pas vendus comme un placement : nous ne faisons aucune promesse sur leur rareté future ni sur l'évolution de leur prix.
+
+2.5 Les produits sont livrés dans leur emballage d'origine, scellés tels que nous les avons reçus et contrôlés. Les avertissements de sécurité (par exemple l'âge minimum) figurent sur l'emballage et sur la fiche produit : merci de les lire avant l'usage.
+
+### 3. Prix
+
+3.1 Les prix sont indiqués en francs suisses (CHF). Le prix affiché est le prix final de l'article, toutes taxes comprises. {{MENTION_TVA}}
+
+3.2 Les frais de livraison sont indiqués sur la page Livraison et retours et dans le panier, **avant** le paiement. Ils s'ajoutent au prix des articles, sauf si la livraison est offerte (seuil : {{SEUIL_PORT_OFFERT}}).
+
+3.3 Le prix applicable est celui affiché au moment de votre commande. Le prix d'une commande conclue ne change plus, ni à la hausse ni à la baisse.
+
+3.4 Lorsqu'un prix barré est affiché, il correspond au prix que nous avons nous-mêmes pratiqué auparavant pour ce produit.
+
+3.5 **Erreur de prix manifeste.** En cas d'erreur de prix ou de description manifeste (par exemple une faute de frappe ou un prix sans rapport évident avec la valeur habituelle du produit), nous vous en informons dans les 2 jours ouvrés. Vous choisissez alors de confirmer la commande au prix correct ou de l'annuler ; en cas d'annulation, le montant payé est remboursé intégralement dans un délai de {{DELAI_REMBOURSEMENT}}.
+
+3.6 Un code de réduction s'applique selon les conditions annoncées avec le code (durée, produits, montant minimal). Sauf mention contraire, un seul code par commande, sans cumul, sans valeur en espèces et sans application rétroactive à une commande déjà passée.
+
+### 4. Commande et conclusion du contrat
+
+4.1 **Étapes de la commande.**
+
+1. Vous choisissez un produit et l'ajoutez au panier.
+2. Dans le panier, vous vérifiez chaque article, sa quantité et son statut (stock local ou précommande). Vous pouvez modifier les quantités ou supprimer un article.
+3. À la caisse, vous indiquez votre adresse email et votre adresse de livraison en Suisse, puis vous choisissez le mode de livraison.
+4. Un récapitulatif affiche les articles, les prix, les frais de livraison et le total à payer. Vous pouvez à tout moment revenir en arrière pour corriger une saisie.
+5. Vous choisissez le moyen de paiement et confirmez la commande avec le bouton de paiement : ce clic vous engage à payer.
+6. Une page de confirmation s'affiche et un email de confirmation vous est envoyé immédiatement. Il récapitule exactement les articles commandés, leur statut, les prix, les frais et le total payé.
+
+4.2 **Conclusion du contrat.** Le contrat est conclu lorsque nous vous envoyons l'email de confirmation de commande, après la validation de votre paiement. Si vous ne recevez pas cet email dans l'heure, vérifiez vos courriers indésirables puis écrivez-nous.
+
+4.3 La langue du contrat est le français. Les données de votre commande sont conservées par nous et accessibles dans l'email de confirmation et, le cas échéant, dans votre compte client.
+
+4.4 **Quantités limitées.** La quantité autorisée est indiquée sur chaque fiche. Pour les nouveautés et les produits marqués « quantité limitée », la limite est de {{LIMITE_PAR_CLIENT}}. Un foyer regroupe les commandes passées au même nom, à la même adresse de livraison, avec la même adresse email ou le même moyen de paiement. Une commande qui dépasse la limite, y compris par plusieurs commandes successives, peut être réduite à la quantité autorisée ; l'excédent est remboursé dans un délai de {{DELAI_REMBOURSEMENT}}. Cette règle permet au plus grand nombre de collectionneurs d'acheter les nouveautés.
+
+4.5 **Annulation de notre part.** Avant l'expédition, nous ne pouvons annuler tout ou partie d'une commande que dans les cas suivants : erreur de prix ou de description manifeste (ch. 3.5) ; paiement refusé, contesté ou annulé ; soupçon fondé de fraude ou contournement de la limite de quantité (ch. 4.4) ; indisponibilité exceptionnelle (produit endommagé ou non conforme constaté lors de la préparation, ou allocation de précommande réduite par notre fournisseur). Nous vous en informons sans délai et remboursons intégralement les montants payés pour les articles annulés dans un délai de {{DELAI_REMBOURSEMENT}}. Vos autres droits découlant de la loi sont réservés.
+
+4.6 La création d'un compte client est facultative.
+
+### 5. Paiement
+
+5.1 Moyens de paiement acceptés : {{MOYENS_PAIEMENT}}. Les paiements sont traités par notre prestataire de paiement ({{PSP_NOM}}). Nous n'avons pas accès aux données complètes de votre carte et ne les conservons pas.
+
+5.2 Le montant total est débité lors de la commande, précommandes comprises (voir ch. 7). Toutes les transactions sont en CHF.
+
+5.3 Si le paiement échoue, la commande n'est pas conclue et aucun article ne vous est réservé.
+
+5.4 Si un même achat a été débité deux fois, le paiement en double est remboursé dès sa détection, sans démarche de votre part.
+
+5.5 Les remboursements sont effectués sur le moyen de paiement utilisé lors de la commande. Le délai de crédit sur votre compte dépend de votre banque ou de votre émetteur de carte.
+
+5.6 Pour prévenir la fraude, certaines commandes sont vérifiées par une personne avant l'expédition. Nous pouvons alors vous demander une confirmation.
+
+### 6. Livraison
+
+6.1 Nous livrons uniquement à des adresses en Suisse. Nous ne livrons pas vers l'étranger ni vers des services de réexpédition à l'étranger.
+
+6.2 Les articles en stock local sont remis au transporteur dans un délai de {{DELAI_EXPEDITION}} après la validation du paiement (jours de dépôt : {{JOURS_EXPEDITION}}). Le délai d'acheminement indicatif du transporteur est ensuite de {{DELAI_ACHEMINEMENT}}. Les dates de livraison sont des estimations ; nous vous prévenons de tout retard dont nous avons connaissance.
+
+6.3 Vous recevez un email avec le numéro de suivi lors de l'expédition.
+
+6.4 **Commande mixte.** Si votre commande contient des articles en stock local et des articles en précommande, ils sont expédiés séparément : les articles en stock d'abord, la précommande dès sa réception. Les frais de livraison ne sont facturés qu'une fois.
+
+6.5 **Risque de transport.** Nous supportons le risque de perte et d'endommagement pendant le transport jusqu'à la remise du colis à l'adresse de livraison indiquée.
+
+6.6 Si un colis nous revient parce qu'il n'a pas été retiré, qu'il a été refusé ou que l'adresse indiquée était incomplète ou erronée, nous vous contactons. Vous choisissez un nouvel envoi, aux frais de livraison en vigueur, ou le remboursement des articles, déduction faite des frais d'envoi et de retour effectivement supportés.
+
+6.7 Le détail figure sur la page Livraison et retours ({{URL_RETOURS}}).
+
+### 7. Précommandes
+
+7.1 Nous ouvrons une précommande uniquement lorsque notre fournisseur nous a confirmé par écrit une quantité ferme. Le nombre de précommandes est limité à cette quantité. La date de sortie affichée est une date estimée.
+
+7.2 Le prix d'une précommande est fixé au moment de la commande et débité immédiatement.
+
+7.3 En cas de report de la date de sortie, nous vous informons dans un délai de {{DELAI_INFORMATION_REPORT}}. Si le report dépasse {{SEUIL_REPORT_PRECOMMANDE}} par rapport à la date annoncée lors de votre commande, vous pouvez annuler et être remboursé intégralement.
+
+7.4 Si notre fournisseur nous livre moins que la quantité confirmée, les précommandes sont servies dans l'ordre de leur paiement. Les précommandes non servies sont annulées et remboursées intégralement dans un délai de {{DELAI_REMBOURSEMENT}}.
+
+7.5 Vous pouvez annuler gratuitement une précommande {{DELAI_ANNULATION_PRECOMMANDE}}.
+
+7.6 Les règles complètes figurent sur la page Précommandes ({{URL_PRECOMMANDES}}).
+
+### 8. Contrôle à réception
+
+8.1 À réception, merci de vérifier l'état du colis, puis la langue, l'extension, le format, la quantité et l'intégrité du scellé de chaque article.
+
+8.2 Un colis endommagé, un article manquant, un article endommagé ou une erreur de produit doivent nous être signalés dans un délai de {{DELAI_SIGNALEMENT}}, à {{EMAIL_SUPPORT}}, avec le numéro de commande et des photos du colis et des articles. Conservez l'emballage jusqu'à la fin du traitement.
+
+8.3 Un défaut qui n'est pas visible à réception doit nous être signalé dès sa découverte. Le délai de signalement du ch. 8.2 ne restreint pas la garantie légale prévue au ch. 9.
+
+### 9. Garantie pour les défauts
+
+9.1 La garantie légale pour les défauts de la chose vendue s'applique (art. 197 ss du Code des obligations). Les présentes CGV ne l'excluent pas et ne la restreignent pas.
+
+9.2 En cas de défaut, vous disposez des droits prévus par la loi : annulation de l'achat avec remboursement contre restitution du produit, réduction du prix ou remplacement par un produit identique (art. 205 et 206 CO). Lorsque c'est possible, nous vous proposons en priorité un remplacement par un produit identique en stock.
+
+9.3 Les droits de garantie se prescrivent par deux ans à compter de la livraison (art. 210 CO).
+
+9.4 Ne constituent pas un défaut : le contenu aléatoire d'un booster (ch. 2.3) et de légères marques de fabrication ou de manipulation qui n'atteignent ni le scellé ni le contenu. Nos produits sont des produits de jeu ; ils ne sont pas vendus comme des pièces de collection à l'état parfait. Un enfoncement net, un film déchiré ou un scellé ouvert sont traités comme un dommage (ch. 8.2).
+
+9.5 Si un produit scellé présente un défaut de fabrication constaté à l'ouverture (par exemple un contenu incomplet par rapport au contenu annoncé), écrivez-nous sans délai avec des photos et, si vous en avez une, la vidéo d'ouverture. Nous traitons la demande selon la garantie légale, le cas échéant avec le fabricant.
+
+### 10. Politique de retour volontaire
+
+10.1 Le droit suisse ne prévoit pas de droit général de rétractation pour les achats en ligne. Nous offrons néanmoins, de manière volontaire, la possibilité de retourner un article dans un délai de {{DELAI_RETOUR_VOLONTAIRE}}, aux conditions suivantes : l'article est complet, dans son emballage d'origine, **non ouvert**, avec un film et un scellé intacts.
+
+10.2 Sont exclus du retour volontaire : les articles ouverts ou dont le film ou le scellé est endommagé ; les accessoires sortis de leur emballage ; les articles endommagés après la livraison.
+
+10.3 Pour retourner un article, écrivez-nous d'abord à {{EMAIL_SUPPORT}} avec le numéro de commande : nous vous envoyons les instructions et l'adresse de retour. Le retour est à vos frais et à vos risques ; nous recommandons un envoi avec suivi.
+
+10.4 Après réception et contrôle de l'article, nous remboursons le prix de l'article dans un délai de {{DELAI_REMBOURSEMENT}}. Les frais de livraison initiaux ne sont pas remboursés, sauf si le retour fait suite à une erreur de notre part.
+
+10.5 Cette politique volontaire s'ajoute à la garantie légale (ch. 9) ; elle ne la remplace pas.
+
+### 11. Responsabilité
+
+11.1 Notre responsabilité est engagée conformément à la loi. Elle est exclue pour la négligence légère dans la mesure permise par la loi ; elle n'est jamais exclue en cas de dol, de faute grave ou d'atteinte à la vie ou à l'intégrité corporelle.
+
+11.2 Nous ne répondons pas de l'évolution des prix sur le marché ni de la valeur de revente des produits (ch. 2.4).
+
+### 12. Données personnelles
+
+Le traitement de vos données personnelles est décrit dans notre déclaration de confidentialité ({{URL_CONFIDENTIALITE}}).
+
+### 13. Marques et propriété intellectuelle
+
+Pokémon et les noms associés sont des marques de leurs titulaires respectifs. Les textes, photos propres et éléments graphiques de la boutique nous appartiennent ou sont utilisés avec autorisation ; toute reproduction sans accord écrit est interdite.
+
+### 14. Modification des CGV
+
+Nous pouvons modifier les présentes CGV. La nouvelle version s'applique aux commandes passées après sa publication ; une commande déjà conclue reste soumise à la version acceptée lors de la commande.
+
+### 15. Droit applicable et for
+
+15.1 Le droit suisse s'applique. La Convention des Nations unies sur les contrats de vente internationale de marchandises (CVIM) est exclue.
+
+15.2 Le for est à Genève. Si vous agissez en tant que consommatrice ou consommateur, les fors impératifs prévus par la loi sont réservés : vous pouvez agir devant le tribunal de votre domicile ou de notre siège, et nous ne pouvons agir contre vous que devant le tribunal de votre domicile (art. 32 et 35 du Code de procédure civile).
+
+### 16. Contact
+
+{{RAISON_SOCIALE}}, {{ADRESSE_POSTALE}}, Suisse — {{EMAIL_SUPPORT}}. Nous répondons dans un délai de {{DELAI_REPONSE_SUPPORT}}.
+<!-- TEXTE_PUBLIC:FIN -->
+
+## Notes pour le juriste (ne pas publier)
+
+| # | Clause | Choix fait dans le brouillon | Alternative / question | Base |
+|---|---|---|---|---|
+| J1 | 4.2 Conclusion du contrat | Contrat conclu à l'email de confirmation envoyé après paiement validé (cohérent avec la règle BP §5 « ne jamais changer le prix d'une commande déjà conclue » et l'email DA « commande confirmée »). | Option B : email immédiat = simple accusé de réception (LCD art. 3 al. 1 let. s ch. 4), contrat conclu à l'expédition. Plus protecteur en cas d'erreur de prix ou de survente, moins lisible pour le client et incompatible avec le texte actuel de l'email DA. | CO art. 1 ss, 7 ; LCD art. 3 al. 1 let. s [L3] |
+| J2 | 3.5 Erreur de prix manifeste | Information sous 2 jours ouvrés ; le client choisit prix correct ou annulation. | Invoquer l'erreur essentielle (art. 23-24 CO) sans offrir le prix correct ? Délai d'invocation (art. 31 CO). | CO art. 23-31 [L4] |
+| J3 | 4.4 Limite par foyer | Réduction de la quantité excédentaire et remboursement. | Peut-on refuser les commandes « manifestement destinées à la revente commerciale » ? La clause est-elle insolite (art. 8 LCD) ? | LCD art. 8 [L3] |
+| J4 | 6.5 Risque de transport | La boutique supporte le risque jusqu'à la remise (dérogation favorable au client). | Par défaut, le risque passe à l'acheteur (art. 185 CO). Le choix a un coût (provision SAV R du BP §4 = 1 CHF/commande, hypothèse) : décision de la propriétaire. | CO art. 185 [L4] |
+| J5 | 6.6 Colis non retiré | Remboursement des articles moins les frais d'envoi et de retour effectifs. | Validité de la déduction ; information préalable suffisante ? | CO art. 107 ss |
+| J6 | 8.2 Délai de signalement | Délai contractuel {{DELAI_SIGNALEMENT}} pour les défauts apparents, sans restreindre la garantie (ch. 8.3). | Conformité avec art. 201 CO (avis « sans délai »). La révision du CO au 1.1.2026 (avis de 60 jours) ne vise que les constructions et ventes immobilières, pas ces produits [L15]. | CO art. 201 [L4] |
+| J7 | 9.4 Marques légères | Définition de ce qui n'est pas un défaut pour un produit scellé. | Risque de clause insolite pour un public de collectionneurs attentif à l'état des boîtes. | CO art. 197 ; LCD art. 8 |
+| J8 | 10 Retour volontaire | 14 jours proposés, scellé intact, frais de retour au client, frais initiaux non remboursés. | Exclure les nouveautés (risque de retours spéculatifs) ? La politique crée-t-elle un engagement contractuel opposable ? | BP §7 [S11] |
+| J9 | 11.1 Responsabilité | Exclusion de la négligence légère dans la mesure permise. | Validité au regard de l'art. 100 CO et de l'art. 8 LCD. | CO art. 100 |
+| J10 | 15.2 For | Genève, avec réserve des fors impératifs pour les consommateurs. | Rédaction suffisante ? | CPC art. 32, 35 [L11] |
+| J11 | 2.5 Avertissements | Avertissements lus sur l'emballage et repris sur la fiche. | Produits FR vendus dans toute la Suisse : l'ordonnance sur la sécurité des jouets (OSJo) exige-t-elle les avertissements dans la langue officielle du lieu de vente (allemand, italien) ? Non vérifié (pages officielles inaccessibles) ; les fiches doivent afficher les avertissements avant l'achat en ligne. | OSJo [L13] |
+| J12 | 1.2 et 3.1 Mention TVA | Champ `MENTION_TVA` à deux variantes. | Une entité non inscrite au registre TVA ne doit jamais faire figurer la TVA (art. 27 LTVA). | LTVA art. 27 [L10] |
+| J13 | Mineurs | Pas de clause. | Ajouter « les personnes mineures commandent avec l'accord de leur représentant légal » (art. 19 CC) ? | CC art. 19 |
+
+## Validation humaine requise
+
+- [ ] Juriste : relire le texte public et trancher les points J1 à J13 (BL-096).
+- [ ] Propriétaire : décider qui supporte le risque de transport (J4) et la politique de retour volontaire (J8) ; ces deux choix ont un coût SAV.
+- [ ] Propriétaire : valider les champs « à valider » de `champs_a_remplir.yaml` (délais, limite par foyer, précommandes).
+- [ ] Fiduciaire : fixer `MENTION_TVA` selon le statut TVA décidé (B10).
+- [ ] Propriétaire : remplir les champs d'identité (raison sociale, adresse, IDE, RC, email) puis dater la version publiée (`DATE_VERSION`).
+- [ ] Agent 09 Communication : aligner l'email de confirmation sur le ch. 4.2 retenu (le texte DA actuel dit « commande confirmée »).

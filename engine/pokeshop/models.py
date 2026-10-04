@@ -25,7 +25,8 @@ from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Literal
+from itertools import pairwise
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -89,7 +90,7 @@ class FrozenModel(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
-    def replace(self, **changes: Any) -> Any:
+    def replace(self, **changes: Any) -> Self:
         """Copie **revalidée** avec modifications (``model_copy`` ne revalide pas)."""
         data = {name: getattr(self, name) for name in type(self).model_fields}
         data.update(changes)
@@ -339,8 +340,15 @@ class PricingParams(FrozenModel):
     @classmethod
     def _infer_mode(cls, data: Any) -> Any:
         if isinstance(data, Mapping) and data.get("vat_mode") is None and "vat_rate_sales" in data:
-            rate = Decimal(str(data["vat_rate_sales"]))
-            data = {**data, "vat_mode": VatMode.NOT_REGISTERED if rate == 0 else VatMode.EFFECTIVE}
+            raw = data["vat_rate_sales"]
+            if raw is None or isinstance(raw, bool):
+                return data  # la validation du champ produira l'erreur
+            try:
+                rate = Decimal(str(raw).strip())
+            except (ArithmeticError, ValueError):
+                return data  # valeur non décimale : erreur pydantic standard sur le champ
+            if rate.is_finite():
+                data = {**data, "vat_mode": VatMode.NOT_REGISTERED if rate == 0 else VatMode.EFFECTIVE}
         return data
 
     @model_validator(mode="after")
@@ -361,16 +369,16 @@ class PricingParams(FrozenModel):
         tiers = self.rounding_tiers
         if not tiers or tiers[0].min_price != 0:
             raise ValueError("la grille d'arrondi doit commencer à 0")
-        for a, b in zip(tiers, tiers[1:]):
+        for a, b in pairwise(tiers):
             if b.min_price <= a.min_price:
                 raise ValueError("paliers d'arrondi non strictement croissants")
         return self
 
-    def replace(self, **changes: Any) -> PricingParams:
+    def replace(self, **changes: Any) -> Self:
         """Copie revalidée ; si t change sans ``vat_mode`` explicite, le mode est re-déduit."""
         if "vat_rate_sales" in changes and "vat_mode" not in changes:
             changes["vat_mode"] = None
-        return super().replace(**changes)  # type: ignore[no-any-return]
+        return super().replace(**changes)
 
     @property
     def mode(self) -> VatMode:
@@ -915,7 +923,7 @@ class ReorderLine(FrozenModel):
 
 
 class ReorderSkip(FrozenModel):
-    """Référence écartée de la proposition, avec motif."""
+    """Référence écartée de la proposition, avec motif (code stable, voir :mod:`pokeshop.stock`)."""
 
     product_key: str
     reason: str
@@ -930,6 +938,7 @@ class ReorderProposal(FrozenModel):
     total_cost_chf: Decimal
     budget_available_chf: Decimal
     budget_remaining_chf: Decimal
+    """Budget **utilisable** restant après la proposition (réserve de trésorerie exclue)."""
     extension_exposure_after: dict[str, Decimal]
     status: Literal["PROPOSAL_TO_VALIDATE"] = "PROPOSAL_TO_VALIDATE"
     requires_human_validation: Literal[True] = True

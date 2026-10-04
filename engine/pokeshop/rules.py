@@ -16,6 +16,7 @@ import hashlib
 import os
 import re
 from collections.abc import Mapping
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -82,6 +83,10 @@ class RuleSet(FrozenModel):
     stock: StockParams
     source_path: str
     content_sha256: str
+    """sha256 du fichier brut (vide si chargé depuis la mémoire) : preuve de la version appliquée."""
+    effective_date: date | None = None
+    source_ref: str = ""
+    """Référence documentaire des valeurs (ex. « BP §4-5 »)."""
 
 
 def default_rules_path() -> Path:
@@ -201,6 +206,17 @@ def validate_rules_data(data: Any) -> list[str]:
         errors.append("rules_version : chaîne non vide sans espace obligatoire")
     if not isinstance(data.get("status"), str) or not data.get("status"):
         errors.append("status : mention d'hypothèse obligatoire")
+    if "source" in data and not isinstance(data["source"], str):
+        errors.append("source : chaîne attendue")
+    if "effective_date" in data:
+        eff = data["effective_date"]
+        if isinstance(eff, str):
+            try:
+                date.fromisoformat(eff)
+            except ValueError:
+                errors.append(f"effective_date : date ISO AAAA-MM-JJ attendue (reçu {eff!r})")
+        elif not isinstance(eff, date) or isinstance(eff, datetime):
+            errors.append(f"effective_date : date ISO AAAA-MM-JJ attendue (reçu {eff!r})")
     pricing = data.get("pricing")
     if not isinstance(pricing, Mapping):
         errors.append("pricing : section manquante")
@@ -233,6 +249,9 @@ def validate_rules_data(data: Any) -> list[str]:
         unknown_stock = set(stock) - _STOCK_KEYS
         if unknown_stock:
             errors.append(f"stock : clés inconnues {', '.join(sorted(map(str, unknown_stock)))}")
+        for key, value in stock.items():
+            if isinstance(value, bool) or value is None:
+                errors.append(f"stock.{key} : valeur numérique attendue (reçu {value!r})")
         try:
             StockParams(**{k: v for k, v in stock.items() if k in _STOCK_KEYS})
         except ValidationError as exc:
@@ -268,7 +287,17 @@ def parse_rules(
         stock=StockParams(**dict(data.get("stock") or {})),
         source_path=source,
         content_sha256=content_sha256,
+        effective_date=_as_date(data.get("effective_date")),
+        source_ref=str(data.get("source") or ""),
     )
+
+
+def _as_date(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value))
 
 
 def _read(path: str | Path | None) -> tuple[Mapping[str, Any], Path, str]:

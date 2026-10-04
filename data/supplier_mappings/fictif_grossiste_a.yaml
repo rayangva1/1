@@ -1,0 +1,69 @@
+# FICTIF — dictionnaire de champs du jeu d'essai CSV « grossiste A » (aucun fournisseur réel).
+# Fichiers : data/samples/FICTIF_offres_grossiste_a*.csv (générés par data/samples/generate_samples.py).
+# Profil imité : grossiste français, export CSV « ; », virgule décimale, EUR, prix HT,
+# base unité/carton par ligne, deux paliers (prix au palier, remise en %).
+
+supplier_id: fictif_grossiste_a
+supplier_name: "FICTIF Grossiste A (jeu d'essai CSV)"
+mapping_version: "fictif_grossiste_a-v1"
+status: FICTIF
+fictif: true
+description: "FICTIF — jeux d'essai uniquement, simulation"
+notes:
+  - "Les valeurs par défaut ci-dessous sont FICTIVES : un vrai fournisseur exige une confirmation écrite."
+
+file_format: csv
+csv:
+  delimiter: ";"
+  encoding: "utf-8-sig"
+numbers:
+  decimal_separator: ","
+  thousands_separators: [" ", " ", " "]
+dates:
+  formats: ["%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"]
+  timezone: "Europe/Zurich"
+
+columns:
+  supplier_sku: [sku]
+  gtin: [ean]
+  designation: [designation]
+  language: [langue]
+  extension: [extension]
+  format: [format]
+  content: [contenu]
+  sealed: [scelle]
+  price: [prix]
+  currency: [devise]
+  price_basis: [base_prix]
+  vat_rate: [taux_tva]
+  unit_basis: [unite_prix]
+  units_per_pack: [unites_par_colis]
+  carton_qty: [colisage]
+  moq: [moq]
+  availability: [disponibilite]
+  available_qty: [stock]
+  allocation_qty: [allocation]
+  release_date: [date_sortie]
+  ship_from_country: [pays_expedition]
+  source_ts: [date_maj]
+  fictif: [fictif]
+required_fields: [supplier_sku, price, currency, price_basis, unit_basis, language]
+
+tiers:
+  - {min_qty_column: palier1_qte, price_column: palier1_prix}
+  - {min_qty_column: palier2_qte, discount_pct_column: palier2_remise}
+quantities:
+  stock: UNIT
+  moq: UNIT
+  tiers: UNIT
+  allocation: UNIT
+defaults:
+  sealed: true            # FICTIF
+  vat_country: FR         # FICTIF
+allowed_currencies: [CHF, EUR]
+allocation_is_firm: false
+extension_tables: ["data/samples/FICTIF_extensions_aliases.yaml"]
+
+# Validation humaine requise
+# - [ ] Aucune : dictionnaire d'essai. Ne jamais le copier pour un fournisseur réel sans
+#       remplacer chaque valeur par défaut par une information confirmée par écrit.

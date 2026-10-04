@@ -45,6 +45,7 @@ from pokeshop.pricing import (
     evaluate_offer,
     floor_price,
     floor_price_exact,
+    floor_violations,
     is_price_anomaly,
     landed_cost_breakdown,
     landed_input_from_offer,
@@ -149,6 +150,9 @@ class TestModels:
                 )
             ),
             dict(vat_rate_sales="nan"),
+            dict(vat_rate_sales="abc"),
+            dict(vat_rate_sales=None),
+            dict(vat_rate_sales=True),
             dict(unknown_field=1),
         ],
     )
@@ -278,7 +282,11 @@ class TestLandedCost:
 
     @pytest.mark.parametrize(
         "currency,price,fx,expected",
-        [("EUR", D("100"), D("0.9400"), D("94.00")), ("EUR", D("100"), D("0.93125"), D("93.13")), ("CHF", D("100"), D("1"), D("100.00"))],
+        [
+            ("EUR", D("100"), D("0.9400"), D("94.00")),
+            ("EUR", D("100"), D("0.93125"), D("93.13")),
+            ("CHF", D("100"), D("1"), D("100.00")),
+        ],
     )
     def test_eur_versus_chf(self, currency, price, fx, expected):
         inp = lci(purchase_net=price, currency=currency, fx_rate_to_chf=fx, fx_source="FICTIF_BNS")
@@ -313,7 +321,12 @@ class TestLandedCost:
 
     def test_breakdown_reports_recoverable_vat(self):
         b = landed_cost_breakdown(
-            lci(purchase_net=D("108.10"), price_includes_vat=True, supplier_vat_rate=D("0.081"), supplier_vat_country="CH")
+            lci(
+                purchase_net=D("108.10"),
+                price_includes_vat=True,
+                supplier_vat_rate=D("0.081"),
+                supplier_vat_country="CH",
+            )
         )
         assert b.supplier_vat_recoverable is True
         assert b.supplier_vat_unit_chf == D("8.1000")
@@ -337,7 +350,10 @@ class TestLandedCost:
         assert b.import_vat_in_cost_unit_chf == (D("0") if mode is VatMode.EFFECTIVE else D("8.1"))
         assert b.recoverable_vat_unit_chf == (D("8.1") if mode is VatMode.EFFECTIVE else D("0"))
 
-    @pytest.mark.parametrize("pack_price,units,expected", [(D("600"), 6, D("100.00")), (D("100"), 1, D("100.00")), (D("100"), 3, D("33.33")), (D("200"), 3, D("66.67"))])
+    @pytest.mark.parametrize(
+        "pack_price,units,expected",
+        [(D("600"), 6, D("100.00")), (D("100"), 1, D("100.00")), (D("100"), 3, D("33.33")), (D("200"), 3, D("66.67"))],
+    )
     def test_carton_versus_unit(self, pack_price, units, expected):
         assert landed_unit_cost(lci(purchase_net=pack_price, units_per_pack=units)) == expected
 
@@ -345,7 +361,15 @@ class TestLandedCost:
 
     @pytest.mark.parametrize(
         "qty,expected",
-        [(None, D("100")), (1, D("100")), (5, D("100")), (6, D("95.00")), (11, D("95.00")), (12, D("90.00")), (100, D("90.00"))],
+        [
+            (None, D("100")),
+            (1, D("100")),
+            (5, D("100")),
+            (6, D("95.00")),
+            (11, D("95.00")),
+            (12, D("90.00")),
+            (100, D("90.00")),
+        ],
     )
     def test_tier_discounts(self, qty, expected):
         assert apply_tier_discount(D("100"), self.TIERS, qty) == expected
@@ -518,7 +542,8 @@ class TestRounding:
         assert round_up_retail(D(p)) == D(expected)
 
     @pytest.mark.parametrize(
-        "p,ending,expected", [("208.79", "0.90", "208.90"), ("208.95", "0.90", "209.90"), ("5", "0.95", "5.95"), ("7.00", "0.00", "7.00")]
+        "p,ending,expected",
+        [("208.79", "0.90", "208.90"), ("208.95", "0.90", "209.90"), ("5", "0.95", "5.95"), ("7.00", "0.00", "7.00")],
     )
     def test_simple_ending_rule(self, p, ending, expected):
         assert round_up_retail(D(p), D(ending)) == D(expected)
@@ -531,6 +556,11 @@ class TestRounding:
     def test_non_positive_rejected(self, p):
         with pytest.raises(PricingError):
             round_up_retail(D(p))
+
+    @pytest.mark.parametrize("ending", ["1.00", "-0.10", "0.905", "abc"])
+    def test_invalid_ending_is_pricing_error(self, ending):
+        with pytest.raises(PricingError):
+            round_up_retail(D("5"), D(ending) if ending != "abc" else ending)
 
     def test_invalid_grid(self):
         with pytest.raises(PricingError):
@@ -671,7 +701,14 @@ class TestDecidePrice:
 
     @pytest.mark.parametrize(
         "prev,blocked",
-        [(D("14"), True), (D("13.99"), True), (D("14.01"), False), (D("140"), False), (D("1399.99"), False), (D("1400"), True)],
+        [
+            (D("14"), True),
+            (D("13.99"), True),
+            (D("14.01"), False),
+            (D("140"), False),
+            (D("1399.99"), False),
+            (D("1400"), True),
+        ],
     )
     def test_cost_x10_anomaly(self, prev, blocked):
         d = decide_price(D("140"), EFF, previous_cost=prev)
@@ -853,7 +890,20 @@ class TestEvaluateOffer:
         assert d.status is DecisionStatus.DRAFT
         assert d.recommended_price is None
 
-    @pytest.mark.parametrize("field", ["units_per_pack", "currency", "price_includes_vat", "vat_rate", "extension", "format", "content", "sealed", "ship_from_country"])
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "units_per_pack",
+            "currency",
+            "price_includes_vat",
+            "vat_rate",
+            "extension",
+            "format",
+            "content",
+            "sealed",
+            "ship_from_country",
+        ],
+    )
     def test_any_missing_critical_field_is_draft(self, field):
         d = evaluate_offer(offer(**{field: None}), EFF, **self.kwargs())
         assert d.status is DecisionStatus.DRAFT
@@ -926,13 +976,30 @@ class TestEvaluateOffer:
         assert d.status is DecisionStatus.BLOCKED
         assert d.has(Reason.UNKNOWN_FIELDS) and d.has(Reason.LANGUAGE_MISMATCH)
 
+    def test_zero_price_and_foreign_language_both_reported(self):
+        d = evaluate_offer(offer(price=D("0"), language="EN"), EFF, **self.kwargs())
+        assert d.status is DecisionStatus.BLOCKED
+        assert d.has(Reason.ZERO_PRICE) and d.has(Reason.LANGUAGE_MISMATCH)
+        assert len(d.notes) == 2
+        assert any("EN" in n for n in d.notes) and any("quarantaine" in n for n in d.notes)
+
+    def test_empty_expected_language_rejected(self):
+        with pytest.raises(PricingError):
+            evaluate_offer(offer(), EFF, **self.kwargs(expected_language=" "))
+
     def test_blocked_without_cost(self):
         d = evaluate_offer(offer(language="JP", price=None), EFF, **self.kwargs())
         assert d.status is DecisionStatus.BLOCKED
         assert d.recommended_price is None
 
     def test_landed_input_from_offer(self):
-        inp = landed_input_from_offer(offer(currency="EUR"), vat_mode=VatMode.EFFECTIVE, fx_rate_to_chf=D("0.94"), fx_source="FICTIF", fx_date=date(2026, 10, 3))
+        inp = landed_input_from_offer(
+            offer(currency="EUR"),
+            vat_mode=VatMode.EFFECTIVE,
+            fx_rate_to_chf=D("0.94"),
+            fx_source="FICTIF",
+            fx_date=date(2026, 10, 3),
+        )
         assert inp.fx_rate_to_chf == D("0.94")
         assert inp.supplier_vat_country == "CH"
         chf = landed_input_from_offer(offer(), vat_mode=VatMode.EFFECTIVE)
@@ -962,7 +1029,9 @@ class TestBasket:
     def test_fixed_fees_charged_once_per_order(self):
         a = basket_contribution([line("A", price="209.90")], EFF, shipping_cost_actual=D("3"))
         b = basket_contribution([line("B", price="41.90", cost="20")], EFF, shipping_cost_actual=D("3"))
-        both = basket_contribution([line("A", price="209.90"), line("B", price="41.90", cost="20")], EFF, shipping_cost_actual=D("3"))
+        both = basket_contribution(
+            [line("A", price="209.90"), line("B", price="41.90", cost="20")], EFF, shipping_cost_actual=D("3")
+        )
         expected_payment = ((D("209.90") + D("41.90")) * D("0.025") + D("0.30")).quantize(D("0.01"))
         assert both.payment_fees == expected_payment
         saved = both.contribution_chf - (a.contribution_chf + b.contribution_chf)
@@ -1012,7 +1081,9 @@ class TestBasket:
         assert r.discount_ttc == expected
 
     def test_unprofitable_promo_blocked(self):
-        r = basket_contribution([line(price="209.90")], EFF, D("0"), Discount(kind="PERCENT", value=D("0.20")), shipping_cost_actual=D("3"))
+        r = basket_contribution(
+            [line(price="209.90")], EFF, D("0"), Discount(kind="PERCENT", value=D("0.20")), shipping_cost_actual=D("3")
+        )
         assert r.status is DecisionStatus.BLOCKED
         assert Reason.BELOW_HARD_FLOOR.value in r.reasons
         assert not r.is_allowed
@@ -1025,7 +1096,13 @@ class TestBasket:
         assert r.status is DecisionStatus.BLOCKED
 
     def test_full_discount_without_shipping(self):
-        r = basket_contribution([line(price="10.90", cost="5")], EFF, D("0"), Discount(kind="PERCENT", value=D("1")), shipping_cost_actual=D("8"))
+        r = basket_contribution(
+            [line(price="10.90", cost="5")],
+            EFF,
+            D("0"),
+            Discount(kind="PERCENT", value=D("1")),
+            shipping_cost_actual=D("8"),
+        )
         assert r.status is DecisionStatus.BLOCKED
         assert r.contribution_pct is None
         assert r.payment_fees == D("0.00")
@@ -1035,7 +1112,10 @@ class TestBasket:
         alone = basket_contribution([line("BOOSTER", 1, "4.90", "3.50")], EFF, D("0"), shipping_cost_actual=D("3"))
         assert alone.status is DecisionStatus.BLOCKED
         mixed = basket_contribution(
-            [line("ETB", 1, "209.90", "140"), line("BOOSTER", 2, "4.90", "3.50")], EFF, D("0"), shipping_cost_actual=D("3")
+            [line("ETB", 1, "209.90", "140"), line("BOOSTER", 2, "4.90", "3.50")],
+            EFF,
+            D("0"),
+            shipping_cost_actual=D("3"),
         )
         assert mixed.status is DecisionStatus.OK
         assert mixed.contribution_chf > D("8")
@@ -1065,3 +1145,143 @@ class TestBasket:
         c = basket_contribution([line()], EFF, D("0"), D("6"))
         assert a.inputs_hash == b.inputs_hash != c.inputs_hash
         assert a.rules_version == "test-v1"
+
+
+# ======================================================== planchers durs
+
+
+class TestFloorViolations:
+    @pytest.mark.parametrize(
+        "chf,pct,small,expected",
+        [
+            (D("30.62"), D("0.1656"), False, []),
+            (D("8.00"), D("0.12"), False, []),
+            (D("7.99"), D("0.20"), False, [Reason.BELOW_ORDER_FLOOR_CHF]),
+            (D("20"), D("0.1199"), False, [Reason.BELOW_HARD_FLOOR]),
+            (D("2"), D("0.05"), False, [Reason.BELOW_HARD_FLOOR, Reason.BELOW_ORDER_FLOOR_CHF]),
+            (D("0.91"), D("0.2009"), True, []),
+            (D("0.10"), D("0.05"), True, [Reason.BELOW_HARD_FLOOR]),
+        ],
+    )
+    def test_hard_floors(self, chf, pct, small, expected):
+        assert floor_violations(chf, pct, EFF, small_product=small) == expected
+
+    def test_float_rejected(self):
+        with pytest.raises(TypeError):
+            floor_violations(8.0, D("0.2"), EFF)  # type: ignore[arg-type]
+
+    def test_consistent_with_decide_price_and_basket(self):
+        for candidate in (D("160"), D("180"), D("199.90"), D("219.90")):
+            d = decide_price(D("140"), EFF, candidate_price=candidate)
+            v = floor_violations(d.contribution_chf, d.contribution_pct, EFF)
+            assert (d.status is DecisionStatus.BLOCKED) == bool(v)
+            b = basket_contribution([line(price=str(candidate))], EFF, shipping_cost_actual=D("3"))
+            assert b.contribution_chf == d.contribution_chf
+            assert (b.status is DecisionStatus.BLOCKED) == bool(
+                floor_violations(b.contribution_chf, b.contribution_pct, EFF)
+            )
+
+
+# ================================================= propriétés du panier
+
+
+class TestBasketProperties:
+    def random_lines(self, rng: random.Random, n: int) -> list[BasketLine]:
+        lines = []
+        for i in range(n):
+            cost = D(rng.randint(100, 30_000)) / 100
+            price = round_up_retail(floor_price_exact(cost, EFF, per_order_costs=False) + D(rng.randint(0, 3000)) / 100)
+            lines.append(BasketLine(sku=f"FICTIF-{i}", qty=rng.randint(1, 4), unit_price_ttc=price, unit_cost=cost))
+        return lines
+
+    @pytest.mark.parametrize("p", [EFF, NREG])
+    def test_lines_always_sum_to_order_totals(self, p):
+        rng = random.Random(77)
+        for _ in range(300):
+            lines = self.random_lines(rng, rng.randint(1, 6))
+            disc = Discount(kind="PERCENT", value=D(rng.randint(0, 30)) / 100) if rng.random() < 0.5 else None
+            ship = D(rng.choice(["0", "7.90", "9.50"]))
+            r = basket_contribution(lines, p, ship, disc, shipping_cost_actual=D(rng.randint(300, 1200)) / 100)
+            assert sum(ln.net_revenue for ln in r.lines) == r.net_revenue
+            assert sum(ln.discount_ttc for ln in r.lines) == r.discount_ttc
+            assert sum(ln.product_cost for ln in r.lines) == r.product_cost
+            assert (
+                sum(ln.allocated_order_costs for ln in r.lines)
+                == r.payment_fees + r.logistics_cost + r.after_sales + r.acquisition
+            )
+            assert sum(ln.contribution_chf for ln in r.lines) == r.contribution_chf
+            assert r.vat + r.net_revenue == r.total_paid_ttc
+            assert r.total_paid_ttc == r.goods_ttc - r.discount_ttc + r.shipping_charged_ttc
+            # additivité stricte des montants affichés (aucun centime inexpliqué)
+            assert r.contribution_chf == (
+                r.net_revenue - r.product_cost - r.payment_fees - r.logistics_cost - r.after_sales - r.acquisition
+            )
+
+    @pytest.mark.parametrize("p", [EFF, NREG])
+    def test_additivity_with_assumed_shipping_cost(self, p):
+        """Coût logistique supposé (L + port HT, non arrondi) : l'additivité tient quand même."""
+        rng = random.Random(3)
+        for _ in range(300):
+            lines = self.random_lines(rng, rng.randint(1, 4))
+            ship = D(rng.randint(0, 1500)) / 100
+            r = basket_contribution(lines, p, ship)
+            assert Reason.SHIPPING_COST_ASSUMED.value in r.reasons
+            parts = r.net_revenue - r.product_cost - r.payment_fees - r.logistics_cost - r.after_sales - r.acquisition
+            assert r.contribution_chf == parts
+            assert sum(ln.allocated_order_costs for ln in r.lines) == (
+                r.payment_fees + r.logistics_cost + r.after_sales + r.acquisition
+            )
+
+    @pytest.mark.parametrize("p", [EFF, NREG])
+    def test_unit_contribution_is_additive(self, p):
+        rng = random.Random(8)
+        for _ in range(500):
+            cost = D(rng.randint(100, 50_000)) / 100
+            price = D(rng.randint(100, 90_000)) / 100
+            b = contribution_breakdown(price, cost, p)
+            assert b.contribution_chf == b.net_revenue - b.product_cost - b.payment_fees - b.per_order_costs
+            assert b.vat + b.net_revenue == b.price_ttc
+
+    def test_fixed_costs_counted_once_whatever_the_number_of_lines(self):
+        """Fusionner n commandes d'une ligne en un panier économise (n − 1) × (b + R + A + logistique)."""
+        rng = random.Random(5)
+        per_order = EFF.payment_fixed + EFF.after_sales_provision + EFF.acquisition_cost + D("3")
+        for _ in range(200):
+            lines = self.random_lines(rng, rng.randint(2, 6))
+            merged = basket_contribution(lines, EFF, D("0"), shipping_cost_actual=D("3"))
+            separate = sum(
+                (basket_contribution([ln], EFF, D("0"), shipping_cost_actual=D("3")).contribution_chf for ln in lines),
+                D("0"),
+            )
+            saved = merged.contribution_chf - separate
+            expected = per_order * (len(lines) - 1)
+            assert abs(saved - expected) <= D("0.01") * (2 * len(lines) + 1), (saved, expected)
+
+    def test_discount_monotonic(self):
+        """Plus de remise => jamais plus de contribution (même moteur pour toutes les promos)."""
+        lines = [line("A", 1, "209.90", "140"), line("B", 2, "41.90", "20")]
+        prev = None
+        for pct in range(0, 41, 2):
+            r = basket_contribution(
+                lines, EFF, D("0"), Discount(kind="PERCENT", value=D(pct) / 100), shipping_cost_actual=D("3")
+            )
+            if prev is not None:
+                assert r.contribution_chf <= prev
+            prev = r.contribution_chf
+
+    def test_status_matches_hard_floors(self):
+        rng = random.Random(11)
+        for _ in range(300):
+            lines = self.random_lines(rng, rng.randint(1, 3))
+            r = basket_contribution(
+                lines,
+                EFF,
+                D("0"),
+                Discount(kind="PERCENT", value=D(rng.randint(0, 50)) / 100),
+                shipping_cost_actual=D("8"),
+            )
+            if r.contribution_pct is None:
+                assert r.status is DecisionStatus.BLOCKED
+                continue
+            violated = bool(floor_violations(r.contribution_chf, r.contribution_pct, EFF))
+            assert (r.status is DecisionStatus.BLOCKED) == violated

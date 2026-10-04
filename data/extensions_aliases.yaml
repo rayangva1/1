@@ -1,0 +1,132 @@
+# Table d'alias des extensions JCC Pokémon (FR) — {{NOM_BOUTIQUE}}
+# Propriété : agent data-pipeline. Chargée par engine/pokeshop/catalog.py
+# (load_extension_table, normalize_extension). Variable d'environnement :
+# POKESHOP_EXTENSIONS_PATH (plusieurs fichiers séparés par « : » pour fusionner).
+#
+# RÈGLES
+# - Aucune extension inventée : chaque entrée réelle cite au moins une source datée.
+#   Les sources viennent de docs/01-marche/ASSORTIMENT_PILOTE.md (agent marché) et
+#   d'une recherche web de contrôle faite le 4.10.2026 par l'agent data-pipeline.
+# - Une extension absente de cette table => extension inconnue => fiche en BROUILLON
+#   (BP §5). On ajoute l'alias après vérification, on ne devine jamais.
+# - Le préfixe de série « Méga-Évolution » seul NE désigne PAS une extension précise
+#   (c'est aussi le nom de la première extension du bloc, non listée ici faute de
+#   vérification) : il n'est donc jamais un alias.
+# - Les codes « officiel: false » sont des codes INTERNES (pas de code public vérifié).
+# - Les entrées FICTIVES des jeux d'essai vivent dans
+#   data/samples/FICTIF_extensions_aliases.yaml, jamais ici.
+# - Les alias sont comparés après normalisation (minuscules, sans accents, ponctuation
+#   remplacée par des espaces) : « Nuit-Noire », « nuit noire », « NUIT NOIRE » = même alias.
+
+version: "2026-10-04"
+statut: "Liste partielle (extensions du panier pilote), vérifiée le 4.10.2026 — à reconfirmer sur pokemon.com/fr et auprès des fournisseurs"
+
+extensions:
+  - code: "ME02.5"
+    officiel: true
+    name_fr: "Méga-Évolution – Héros Transcendants"
+    release_date_fr: "2026-01-30"
+    aliases:
+      - "Héros Transcendants"
+      - "Méga-Évolution Héros Transcendants"
+      - "Méga-Évolution – Héros Transcendants"
+    verification: "Nom FR : sources indexées ; code ME02.5 : source secondaire uniquement, à reconfirmer"
+    sources:
+      - url: "https://www.pokemon.com/us/pokemon-news/get-the-new-pokemon-tcg-expansion-mega-evolution-ascended-heroes-on-january-30-2026"
+        consulte_le: "2026-10-04"
+      - url: "https://leblogdewilly.fr/calendrier-sorties-jcc-pokemon-2026-30-ans-mega-evolutions/"
+        consulte_le: "2026-10-04"
+      - url: "https://blog.cardzia.fr/chaos-ascendant-me04-tout-savoir/"
+        consulte_le: "2026-10-04"
+
+  - code: "ME03"
+    officiel: true
+    name_fr: "Méga-Évolution – Équilibre Parfait"
+    release_date_fr: "2026-03-27"
+    aliases:
+      - "Équilibre Parfait"
+      - "Méga-Évolution Équilibre Parfait"
+      - "Méga-Évolution – Équilibre Parfait"
+    verification: "Nom et date : sources indexées ; code ME03 : source secondaire uniquement, à reconfirmer"
+    sources:
+      - url: "https://lecoindesbarons.com/calendrier-des-sorties-de-cartes-jcc-pokemon-2026-2027/"
+        consulte_le: "2026-10-04"
+      - url: "https://icv2.com/articles/news/view/61079/pokemon-tcg-2026-product-calendar"
+        consulte_le: "2026-10-04"
+      - url: "https://blog.cardzia.fr/chaos-ascendant-me04-tout-savoir/"
+        consulte_le: "2026-10-04"
+
+  - code: "ME04"
+    officiel: true
+    name_fr: "Méga-Évolution – Chaos Ascendant"
+    release_date_fr: "2026-05-22"
+    aliases:
+      - "Chaos Ascendant"
+      - "Méga-Évolution Chaos Ascendant"
+      - "Méga-Évolution – Chaos Ascendant"
+      - "Chaos Rising"   # nom anglais, visible dans l'URL officielle tcg.pokemon.com/fr-fr/.../chaos-rising
+    verification: "Page officielle FR + revendeurs (code ME04 affiché)"
+    sources:
+      - url: "https://tcg.pokemon.com/fr-fr/expansions/chaos-rising/"
+        consulte_le: "2026-10-04"
+      - url: "https://www.pokebip.com/news/7257/jcc-pokemon-nouvelle-extension-mega-evolution-chaos-ascendant"
+        consulte_le: "2026-10-04"
+
+  - code: "ME05"
+    officiel: true
+    name_fr: "Méga-Évolution – Nuit Noire"
+    release_date_fr: "2026-07-17"
+    aliases:
+      - "Nuit Noire"
+      - "Méga-Évolution Nuit Noire"
+      - "Méga-Évolution – Nuit Noire"
+    verification: "Annonce officielle FR + presse spécialisée (code ME05)"
+    sources:
+      - url: "https://www.pokemon.com/fr/actualites/produits-mega-evolution-nuit-noire-du-jcc-pokemon"
+        consulte_le: "2026-10-04"
+      - url: "https://www.pokekalos.fr/news/actualites-nouvelle-extension-du-jcc-annoncee-me05-nuit-noire-2727.html"
+        consulte_le: "2026-10-04"
+      - url: "https://www.play-in.com/fr/articles/3-pokemon/tout-savoir-sur-l-extension-me05-mega-evolution-nuit-noire"
+        consulte_le: "2026-10-04"
+
+  - code: "ME06"
+    officiel: true
+    name_fr: "Méga-Évolution – Règne Delta"
+    release_date_fr: "2026-11-06"
+    aliases:
+      - "Règne Delta"
+      - "Méga-Évolution Règne Delta"
+      - "Méga-Évolution – Règne Delta"
+    verification: "Annonce officielle FR (avant-premières dès le 24.10.2026) ; sortie à venir au 4.10.2026"
+    sources:
+      - url: "https://www.pokebip.com/news/7489/jcc-pokemon-nouvelle-extension-mega-evolution-regne-delta"
+        consulte_le: "2026-10-04"
+      - url: "https://www.pokemon.com/fr/actualites/participez-a-un-evenement-davant-premiere-pour-lextension-mega-evolution-regne-delta-du-jcc-pokemon"
+        consulte_le: "2026-10-04"
+      - url: "https://www.play-in.com/fr/articles/3-pokemon/tout-savoir-sur-l-extension-pokemon-me06-mega-evolution-regne-delta"
+        consulte_le: "2026-10-04"
+
+  - code: "ANNIV30"
+    officiel: false   # code INTERNE : aucun code public vérifié au 4.10.2026
+    name_fr: "30ᵉ Anniversaire"
+    release_date_fr: "2026-09-16"
+    aliases:
+      - "30ᵉ Anniversaire"
+      - "30e Anniversaire"
+      - "30ème Anniversaire"
+      - "30eme Anniversaire"
+      - "Extension 30ᵉ Anniversaire"
+    verification: "Annonces officielles FR + presse (sortie mondiale simultanée le 16.9.2026)"
+    sources:
+      - url: "https://www.pokemon.com/fr/actualites/jcc-pokemon-produits-30-anniversaire"
+        consulte_le: "2026-10-04"
+      - url: "https://www.pokemon.com/fr/actualites/decouvrez-tous-les-produits-du-jcc-pokemon-qui-sortiront-en-septembre-2026"
+        consulte_le: "2026-10-04"
+      - url: "https://www.nintendo-town.fr/2026/09/16/la-nouvelle-extension-du-jcc-30%E1%B5%89-anniversaire-sort-aujourdhui-pour-celebrer-30-ans-de-pokemon/"
+        consulte_le: "2026-10-04"
+
+# Validation humaine requise
+# - [ ] Reconfirmer les codes ME02.5 et ME03 (source secondaire uniquement) sur une source officielle.
+# - [ ] Reconfirmer les dates de sortie FR auprès des fournisseurs avant toute promesse client.
+# - [ ] Ajouter les extensions antérieures (bloc Écarlate et Violet, Méga-Évolution ME01, ME02)
+#       seulement si l'assortiment les inclut, avec source datée.

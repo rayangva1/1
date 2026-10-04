@@ -1,0 +1,362 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- FICTIF : flux de démonstration, aucune donnée réelle (data/samples/README.md) -->
+<catalogue fournisseur="FICTIF_GROSSISTE_C" exporte_le="2026-10-04T05:30:00+02:00" fictif="true">
+  <offre sku="FICTIF-C-001">
+    <ean>2000000003016</ean>
+    <designation>Display 36 boosters Extension Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Display</format>
+    <contenu>36 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">96.40</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <paliers>
+      <palier qte="12" prix="94.00"/>
+      <palier qte="24" prix="92.50"/>
+    </paliers>
+    <sortie>2026-07-17</sortie>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-002">
+    <ean>2000000003023</ean>
+    <designation>ETB Fictive Bêta</designation>
+    <langue>Français</langue>
+    <extension>Fictive Bêta</extension>
+    <format>ETB</format>
+    <contenu>9 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">37.90</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="10"/>
+    <moq>10</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-003">
+    <ean>2000000003030</ean>
+    <designation>Bundle Fictive Gamma</designation>
+    <langue>Français</langue>
+    <extension>Fictive Gamma</extension>
+    <format>Bundle</format>
+    <contenu>6 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">20.80</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="12"/>
+    <moq>12</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-004">
+    <ean>2000000003047</ean>
+    <designation>Tripack Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Tripack</format>
+    <contenu>3 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">11.10</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="24"/>
+    <moq>24</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-005">
+    <ean>2000000003054</ean>
+    <designation>Coffret Fictive Bêta</designation>
+    <langue>Français</langue>
+    <extension>Fictive Bêta</extension>
+    <format>Coffret</format>
+    <contenu>4 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">18.70</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-006">
+    <ean>2000000003061</ean>
+    <designation>Booster Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Booster</format>
+    <contenu>1 booster</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">3.85</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="36"/>
+    <moq>36</moq>
+    <stock statut="allocation"></stock>
+    <allocation>72</allocation>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-007">
+    <ean>2000000003078</ean>
+    <designation>Protège-cartes x65</designation>
+    <langue>multilingue</langue>
+    <extension></extension>
+    <format>Sleeves</format>
+    <contenu>65 protège-cartes</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">4.05</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="20"/>
+    <moq>20</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-008">
+    <ean>2000000003085</ean>
+    <designation>Display Fictive Gamma EN</designation>
+    <langue>Anglais</langue>
+    <extension>Fictive Gamma</extension>
+    <format>Display</format>
+    <contenu>36 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">89.00</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-009">
+    <ean>2000000003092</ean>
+    <designation>Display Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Display</format>
+    <contenu>36 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="GBP" base="HT">96.40</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-010">
+    <ean>2000000003108</ean>
+    <designation>Display Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Display</format>
+    <contenu>36 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="">96.40</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-011">
+    <ean>2000000003115</ean>
+    <designation>Display Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Display</format>
+    <contenu>36 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">0.00</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-012">
+    <ean>2000000003122</ean>
+    <designation>ETB Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>ETB</format>
+    <contenu>9 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">37.50</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-012">
+    <ean>2000000003122</ean>
+    <designation>ETB Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>ETB</format>
+    <contenu>9 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">36.90</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-013">
+    <ean>2000000003130</ean>
+    <designation>Display Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Display</format>
+    <contenu>36 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">96.40</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-014">
+    <ean>2000000003146</ean>
+    <designation>Display Fictive Alpha</designation>
+    <langue>multilingue</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Display</format>
+    <contenu>36 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">96.40</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-015">
+    <ean>2000000003153</ean>
+    <designation>Display Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Display</format>
+    <contenu>36 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">96.40</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <paliers>
+      <palier qte="12" prix="95.00"/>
+      <palier qte="24" prix="97.00"/>
+    </paliers>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-016">
+    <ean>2000000003160</ean>
+    <designation>Display Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Display</format>
+    <contenu>36 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">96.40</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <paliers>
+      <palier qte="" prix="90.00"/>
+    </paliers>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-017">
+    <ean>2000000003177</ean>
+    <designation>Display Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Display</format>
+    <contenu>36 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">abc</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-018">
+    <ean>2000000003184</ean>
+    <designation>Display Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Display</format>
+    <contenu>36 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">96.40</prix>
+    <tva>0</tva>
+    <conditionnement unite="carton" unites="" carton=""/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre>
+    <ean>2000000003191</ean>
+    <designation>Display Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Display</format>
+    <contenu>36 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">96.40</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-020">
+    <ean>2000000003207</ean>
+    <designation>Carton 6 displays Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Display</format>
+    <contenu>36 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">570.00</prix>
+    <tva>0</tva>
+    <conditionnement unite="carton" unites="6" carton="6"/>
+    <moq>1</moq>
+    <stock statut="en stock">3</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-021">
+    <ean>2000000003214</ean>
+    <designation>Collection Classeur Fictive Alpha</designation>
+    <langue>Français</langue>
+    <extension>Fictive Alpha</extension>
+    <format>Collection Classeur</format>
+    <contenu>classeur + 5 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">27.40</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="en stock">30</stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+  <offre sku="FICTIF-C-022">
+    <ean>2000000003221</ean>
+    <designation>Coffret ETB Fictive Gamma</designation>
+    <langue>Français</langue>
+    <extension>Fictive Gamma</extension>
+    <format>Coffret ETB</format>
+    <contenu>9 boosters</contenu>
+    <scelle>oui</scelle>
+    <prix devise="EUR" base="HT">38.20</prix>
+    <tva>0</tva>
+    <conditionnement unite="unité" unites="1" carton="6"/>
+    <moq>6</moq>
+    <stock statut="rupture"></stock>
+    <expedition pays="FR" incoterm="DAP"/>
+  </offre>
+</catalogue>

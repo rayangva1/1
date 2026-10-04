@@ -7,7 +7,13 @@ avec une réserve pour les précommandes. Ce module calcule semaine par semaine 
 * les versements PSP (ventes TTC − frais), décalés du délai de versement ;
 * les décaissements par nature (achats engagés / prévus, TVA, livraisons, ...) ;
 * la réserve précommandes (encaissé non livré), qui n'est pas disponible pour acheter ;
-* une alerte dès que le solde passe sous la réserve minimale.
+* une alerte dès que le solde passe sous la réserve minimale ;
+* le **stop-loss cash** du mandat : la réserve minimale vaut par défaut la réserve de
+  trésorerie du budget initial (1 600 CHF, BP §3). Dès qu'en début de semaine le cash
+  disponible (solde − précommandes encaissées non livrées) est sous ce seuil, plus aucun
+  achat de stock prévu ni aucune dépense publicitaire n'est autorisé. Les achats déjà
+  engagés (commande ferme signée) restent dus. ``pokeshop.stoploss`` (agent gouvernance)
+  fait foi pour l'application ; ce module en donne la projection sur 13 semaines.
 
 Module autonome (Decimal uniquement, aucune écriture externe). Les valeurs par
 défaut des frais PSP reprennent l'exemple du BP §4 ; le délai de versement est
@@ -23,8 +29,10 @@ from enum import Enum
 from typing import Mapping, Sequence
 
 __all__ = [
+    "CASH_STOPLOSS_RESERVE",
     "HORIZON_WEEKS",
     "INITIAL_BUDGET_TOTAL",
+    "STOPLOSS_BLOCKED_FLOWS",
     "Alert",
     "AlertCode",
     "BudgetLine",
@@ -48,6 +56,8 @@ __all__ = [
 HORIZON_WEEKS = 13
 _ZERO = Decimal(0)
 _CENT = Decimal("0.01")
+#: Réserve de trésorerie du budget initial (BP §3) = seuil du stop-loss cash du mandat.
+CASH_STOPLOSS_RESERVE = Decimal("1600")
 
 
 class TreasuryError(ValueError):
@@ -116,6 +126,9 @@ class Flow(str, Enum):
         """Libellé français pour tableaux et tableaux de bord."""
         return _FLOW_LABELS[self]
 
+
+#: Flux interdits tant que le stop-loss cash est actif (« plus d'achat ni de pub »).
+STOPLOSS_BLOCKED_FLOWS: tuple[Flow, ...] = (Flow.PURCHASE_PLANNED, Flow.ADVERTISING)
 
 _FLOW_LABELS: dict[Flow, str] = {
     Flow.PSP_PAYOUT: "Versements PSP (carte, TWINT)",
@@ -208,19 +221,28 @@ class PreorderFulfilment:
 
 @dataclass(frozen=True)
 class TreasuryPlan:
-    """Entrées du prévisionnel. ``start`` = premier jour de la semaine 1."""
+    """Entrées du prévisionnel. ``start`` = premier jour de la semaine 1.
+
+    ``minimum_reserve`` = seuil du stop-loss cash (1 600 CHF par défaut, BP §3).
+    ``enforce_cash_stoploss`` : si vrai, les achats prévus et la publicité d'une semaine
+    ouverte en stop-loss sont retirés de la projection (montants dans ``blocked_outflows``) ;
+    sinon ils restent projetés et sont signalés comme à bloquer.
+    """
 
     start: date
     opening_balance: Decimal
-    minimum_reserve: Decimal
+    minimum_reserve: Decimal = CASH_STOPLOSS_RESERVE
     psp: PspTerms = field(default_factory=PspTerms)
     sales: tuple[SaleBatch, ...] = ()
     movements: tuple[CashMovement, ...] = ()
     fulfilments: tuple[PreorderFulfilment, ...] = ()
     opening_preorder_reserve: Decimal = _ZERO
     weeks: int = HORIZON_WEEKS
+    enforce_cash_stoploss: bool = False
 
     def __post_init__(self) -> None:
+        if not isinstance(self.enforce_cash_stoploss, bool):
+            raise TreasuryError("enforce_cash_stoploss doit être un booléen")
         object.__setattr__(self, "opening_balance", _dec(self.opening_balance, "opening_balance"))
         object.__setattr__(self, "minimum_reserve", _non_negative(self.minimum_reserve, "minimum_reserve"))
         object.__setattr__(
@@ -257,10 +279,13 @@ class AlertCode(str, Enum):
     PREORDER_RESERVE_UNCOVERED = "PRECOMMANDES_NON_COUVERTES"
 
 
+_STOPLOSS_SUFFIX = " — stop-loss cash : plus d'achat prévu ni de publicité"
 _ALERT_MESSAGES: dict[AlertCode, str] = {
-    AlertCode.NEGATIVE_BALANCE: "Solde bancaire négatif",
-    AlertCode.BELOW_MINIMUM_RESERVE: "Solde sous la réserve minimale",
-    AlertCode.PREORDER_RESERVE_UNCOVERED: "Solde insuffisant pour couvrir réserve minimale + précommandes encaissées",
+    AlertCode.NEGATIVE_BALANCE: "Solde bancaire négatif" + _STOPLOSS_SUFFIX,
+    AlertCode.BELOW_MINIMUM_RESERVE: "Solde sous la réserve minimale" + _STOPLOSS_SUFFIX,
+    AlertCode.PREORDER_RESERVE_UNCOVERED: (
+        "Solde insuffisant pour couvrir réserve minimale + précommandes encaissées" + _STOPLOSS_SUFFIX
+    ),
 }
 
 
@@ -295,6 +320,8 @@ class WeekRow:
     minimum_reserve: Decimal
     available_for_purchases: Decimal
     status: AlertCode | None
+    cash_stoploss_at_open: bool = False
+    blocked_outflows: Decimal = _ZERO
 
     def flow(self, flow: Flow) -> Decimal:
         """Montant de la semaine pour une nature de flux."""
@@ -326,6 +353,22 @@ class TreasuryForecast:
         """Vrai si au moins une semaine est en alerte."""
         return bool(self.alerts)
 
+    @property
+    def cash_stoploss_weeks(self) -> tuple[int, ...]:
+        """Semaines ouvertes en stop-loss cash (achats prévus et publicité interdits)."""
+        return tuple(w.index for w in self.weeks if w.cash_stoploss_at_open)
+
+    @property
+    def first_cash_stoploss_week(self) -> int | None:
+        """Première semaine ouverte en stop-loss cash, ``None`` sinon."""
+        weeks = self.cash_stoploss_weeks
+        return weeks[0] if weeks else None
+
+    @property
+    def blocked_outflows_total(self) -> Decimal:
+        """Total des achats prévus et de la publicité tombant en semaine de stop-loss."""
+        return sum((w.blocked_outflows for w in self.weeks), _ZERO)
+
     def as_rows(self) -> list[dict[str, str]]:
         """Lignes à plat (montants arrondis au centime, en texte) pour CSV ou tableau de bord."""
         rows: list[dict[str, str]] = []
@@ -351,6 +394,8 @@ class TreasuryForecast:
                     "reserve_minimale": _fmt(w.minimum_reserve),
                     "disponible_achats": _fmt(w.available_for_purchases),
                     "alerte": w.status.value if w.status else "OK",
+                    "stop_loss_cash": "OUI" if w.cash_stoploss_at_open else "non",
+                    "sorties_bloquees": _fmt(w.blocked_outflows),
                 }
             )
             rows.append(row)
@@ -385,7 +430,11 @@ def build_forecast(plan: TreasuryPlan) -> TreasuryForecast:
     * une vente antérieure à ``start`` n'apporte que son versement PSP s'il tombe dans
       l'horizon (une précommande antérieure passe par ``opening_preorder_reserve``) ;
     * les versements de ventes de l'horizon tombant après la fin sont « en transit » ;
-    * réserve précommandes = ouverture + précommandes encaissées − livrées − remboursées (≥ 0).
+    * réserve précommandes = ouverture + précommandes encaissées − livrées − remboursées (≥ 0) ;
+    * stop-loss cash : évalué en début de semaine sur la clôture précédente
+      (solde − réserve précommandes < réserve minimale). Une dépense prévue qui fait
+      passer sous le seuil en cours de semaine apparaît en alerte de clôture et bloque
+      la semaine suivante (granularité hebdomadaire).
     """
     n = plan.weeks
     flows: list[dict[Flow, Decimal]] = [{f: _ZERO for f in Flow} for _ in range(n)]
@@ -445,6 +494,13 @@ def build_forecast(plan: TreasuryPlan) -> TreasuryForecast:
     reserve = plan.opening_preorder_reserve
     for i in range(n):
         week_flows = flows[i]
+        stoploss_at_open = balance - reserve < plan.minimum_reserve
+        blocked = _ZERO
+        if stoploss_at_open:
+            blocked = sum((week_flows[f] for f in STOPLOSS_BLOCKED_FLOWS), _ZERO)
+            if plan.enforce_cash_stoploss:
+                for f in STOPLOSS_BLOCKED_FLOWS:
+                    week_flows[f] = _ZERO
         inflows = sum((v for f, v in week_flows.items() if f.is_inflow), _ZERO)
         outflows = sum((v for f, v in week_flows.items() if not f.is_inflow), _ZERO)
         opening = balance
@@ -471,6 +527,8 @@ def build_forecast(plan: TreasuryPlan) -> TreasuryForecast:
                 minimum_reserve=plan.minimum_reserve,
                 available_for_purchases=available,
                 status=status,
+                cash_stoploss_at_open=stoploss_at_open,
+                blocked_outflows=blocked,
             )
         )
         if status is not None:
@@ -539,12 +597,13 @@ def plan_from_weekly_inputs(
     *,
     start: date,
     opening_balance: Decimal,
-    minimum_reserve: Decimal,
     weeks: Sequence[WeeklyInput],
+    minimum_reserve: Decimal = CASH_STOPLOSS_RESERVE,
     psp_pct_fee: Decimal = Decimal("0.025"),
     psp_fixed_fee: Decimal = Decimal("0.30"),
     payout_delay_weeks: int = 1,
     opening_preorder_reserve: Decimal = _ZERO,
+    enforce_cash_stoploss: bool = False,
 ) -> TreasuryPlan:
     """Construit un plan à partir de saisies hebdomadaires (chaque flux daté du 1er jour de sa semaine)."""
     if not weeks:
@@ -579,6 +638,7 @@ def plan_from_weekly_inputs(
         fulfilments=tuple(fulfilments),
         opening_preorder_reserve=opening_preorder_reserve,
         weeks=len(weeks),
+        enforce_cash_stoploss=enforce_cash_stoploss,
     )
 
 
@@ -615,8 +675,8 @@ def initial_budget() -> tuple[BudgetLine, ...]:
         BudgetLine("emballages", "Emballages et matériel", Decimal("300"), "Provision", Flow.SETUP),
         BudgetLine("acquisition", "Test acquisition", Decimal("500"), "Plafond avant validation CAC",
                    Flow.ADVERTISING),
-        BudgetLine("reserve", "Réserve de trésorerie", Decimal("1600"),
-                   "Réassort, versements différés, remboursement", None),
+        BudgetLine("reserve", "Réserve de trésorerie", CASH_STOPLOSS_RESERVE,
+                   "Réassort, versements différés, remboursement ; seuil du stop-loss cash", None),
     )
 
 

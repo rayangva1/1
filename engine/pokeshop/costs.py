@@ -38,9 +38,11 @@ from .models import (
     PriceEventKind,
     ReplacementCost,
 )
+from .pricing import as_decimal
 from .stock import DEFAULT_MAX_AGE, is_stale
 
 __all__ = [
+    "CostEntryKind",
     "CostEntry",
     "HistoricalCostLedger",
     "ReplacementCostBook",
@@ -56,16 +58,30 @@ def _q2(value: Decimal) -> Decimal:
 
 
 def _aware(ts: datetime, name: str) -> datetime:
-    if ts.tzinfo is None or ts.utcoffset() is None:
-        raise CostError(f"{name} doit porter un fuseau horaire")
+    if not isinstance(ts, datetime) or ts.tzinfo is None or ts.utcoffset() is None:
+        raise CostError(f"{name} doit être un datetime avec fuseau horaire")
     return ts
+
+
+def _money(value: Decimal | int | str, name: str) -> Decimal:
+    """Montant fini > 0 converti par :func:`pokeshop.pricing.as_decimal` (``float``/``bool`` : TypeError)."""
+    try:
+        result = as_decimal(value, name)
+    except PricingError as exc:
+        raise CostError(str(exc)) from exc
+    if result <= 0:
+        raise CostError(f"{name} doit être un montant fini > 0 (reçu {result})")
+    return result
+
+
+CostEntryKind = Literal["RECEIPT", "ISSUE", "RETURN", "WRITE_OFF", "INVOICE_ADJUSTMENT"]
 
 
 class CostEntry(FrozenModel):
     """Écriture du journal de coût historique (append-only)."""
 
     seq: int
-    kind: Literal["RECEIPT", "ISSUE", "RETURN", "WRITE_OFF", "INVOICE_ADJUSTMENT"]
+    kind: CostEntryKind
     qty: int
     amount: Decimal = Field(description="Montant CHF signé porté sur la valeur du stock")
     cogs: Decimal = ZERO
@@ -111,9 +127,10 @@ class HistoricalCostLedger:
     @property
     def average_unit_cost(self) -> Decimal | None:
         """CMP courant à 0.0001 (None si stock nul)."""
-        if self._qty == 0:
-            return None
-        return (self._value / Decimal(self._qty)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        with self._lock:
+            if self._qty == 0:
+                return None
+            return (self._value / Decimal(self._qty)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
     def valuation(self) -> InventoryValuation:
         """Photo de la valorisation courante."""
@@ -145,9 +162,11 @@ class HistoricalCostLedger:
         return tuple(self._journal)
 
     # -- interne ------------------------------------------------------------
-    def _book(self, kind: str, qty: int, amount: Decimal, ref: str, at: datetime, cogs: Decimal = ZERO) -> None:
+    def _book(
+        self, kind: CostEntryKind, qty: int, amount: Decimal, ref: str, at: datetime, cogs: Decimal = ZERO
+    ) -> None:
         self._journal.append(
-            CostEntry(seq=len(self._journal) + 1, kind=kind, qty=qty, amount=amount, cogs=cogs, ref=ref, at=at)  # type: ignore[arg-type]
+            CostEntry(seq=len(self._journal) + 1, kind=kind, qty=qty, amount=amount, cogs=cogs, ref=ref, at=at)
         )
 
     def _take_out(self, qty: int) -> Decimal:
@@ -189,8 +208,7 @@ class HistoricalCostLedger:
         _aware(at, "at")
         if isinstance(qty, bool) or not isinstance(qty, int) or qty <= 0:
             raise CostError("quantité de retour invalide")
-        if unit_cost <= 0:
-            raise CostError("coût unitaire de retour ≤ 0")
+        unit_cost = _money(unit_cost, "unit_cost")
         with self._lock:
             amount = _q2(Decimal(qty) * unit_cost)
             self._qty += qty
@@ -216,8 +234,7 @@ class HistoricalCostLedger:
         remplacement / la décision de prix. Ne modifie aucune commande conclue.
         """
         _aware(at, "at")
-        if actual_unit_cost <= 0:
-            raise CostError("coût facturé ≤ 0")
+        actual_unit_cost = _money(actual_unit_cost, "actual_unit_cost")
         if not invoice_ref:
             raise CostError("référence de facture obligatoire")
         with self._lock:
@@ -292,9 +309,7 @@ class ReplacementCostBook:
             ]
         return max(items, key=lambda rc: rc.source_ts) if items else None
 
-    def current(
-        self, product_key: str, now: datetime, max_age: timedelta = DEFAULT_MAX_AGE
-    ) -> ReplacementCost | None:
+    def current(self, product_key: str, now: datetime, max_age: timedelta = DEFAULT_MAX_AGE) -> ReplacementCost | None:
         """Coût de remplacement **valide** : la moins chère des dernières offres fraîches (None sinon)."""
         with self._lock:
             fresh = [
@@ -325,13 +340,38 @@ class PriceHistory:
         self._events: list[PriceEvent] = []
         self._stacks: dict[str, list[tuple[Decimal, bool]]] = {}
 
-    def _append(self, product_key: str, kind: PriceEventKind, price: Decimal | None, at: datetime, actor: str, **kw: object) -> PriceEvent:
+    def _append(
+        self,
+        product_key: str,
+        kind: PriceEventKind,
+        price: Decimal | None,
+        at: datetime,
+        actor: str,
+        *,
+        status: DecisionStatus | None = None,
+        inputs_hash: str | None = None,
+        rules_version: str | None = None,
+        note: str = "",
+    ) -> PriceEvent:
         _aware(at, "at")
-        event = PriceEvent(seq=len(self._events) + 1, product_key=product_key, kind=kind, price=price, at=at, actor=actor, **kw)  # type: ignore[arg-type]
+        event = PriceEvent(
+            seq=len(self._events) + 1,
+            product_key=product_key,
+            kind=kind,
+            price=price,
+            at=at,
+            actor=actor,
+            status=status,
+            inputs_hash=inputs_hash,
+            rules_version=rules_version,
+            note=note,
+        )
         self._events.append(event)
         return event
 
-    def record_decision(self, product_key: str, decision: PriceDecision, at: datetime, actor: str = "engine") -> PriceEvent:
+    def record_decision(
+        self, product_key: str, decision: PriceDecision, at: datetime, actor: str = "engine"
+    ) -> PriceEvent:
         """Trace une décision du moteur (tous statuts) sans rien publier."""
         with self._lock:
             return self._append(
@@ -357,14 +397,24 @@ class PriceHistory:
         decision: PriceDecision | None = None,
         note: str = "",
     ) -> PriceEvent:
-        """Publie un prix public. DRAFT/BLOCKED interdits ; REVIEW exige ``validated=True`` (humain)."""
+        """Publie un prix public. DRAFT/BLOCKED interdits ; REVIEW exige ``validated=True`` (humain).
+
+        Sans validation humaine, le prix publié doit être exactement celui évalué par la
+        décision du moteur (pas de prix « à la main » hors moteur, BP §5).
+        """
+        price = as_decimal(price, "price")
         if price <= 0:
             raise PricingError("prix public ≤ 0")
+        if not product_key:
+            raise PricingError("product_key vide")
         if decision is not None:
             if decision.status in (DecisionStatus.DRAFT, DecisionStatus.BLOCKED):
                 raise PricingError(f"décision {decision.status.value} : publication interdite")
             if decision.status is DecisionStatus.REVIEW and not validated:
                 raise PricingError("décision REVIEW : validation humaine requise avant publication")
+            engine_price = decision.evaluated_price or decision.recommended_price
+            if not validated and engine_price is not None and price != engine_price:
+                raise PricingError(f"prix {price} ≠ prix de la décision {engine_price} : validation humaine requise")
         with self._lock:
             self._stacks.setdefault(product_key, []).append((price, validated))
             return self._append(

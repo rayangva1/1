@@ -1,0 +1,39 @@
+{
+  "avertissement": "Copies générées par site/outils/da_sync.py depuis docs/05-da : ne pas modifier ici.",
+  "direction": "a",
+  "google_fonts": "https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Inter:opsz,wght@14..32,400..700&family=IBM+Plex+Mono:wght@500;600&display=swap",
+  "fichiers": {
+    "apple-touch-icon.png": {
+      "source": "docs/05-da/logo/png/favicon-a-180.png",
+      "sha256": "d9c661f9740fa322c47fc7c52dc609be9138b1b9d3cd7c4a32d7a893c51059de"
+    },
+    "components.css": {
+      "source": "docs/05-da/components/components.css",
+      "sha256": "31c957f666d645bce0568f230e296fb4a79e3510508de0894f9f304def43cba4"
+    },
+    "favicon-32.png": {
+      "source": "docs/05-da/logo/png/favicon-a-32.png",
+      "sha256": "59ef5422cacb9b1d17d8a320006bc622ae6d2d2a3f67ce8d6fd8d150d250c9f6"
+    },
+    "favicon.svg": {
+      "source": "docs/05-da/logo/a/favicon.svg",
+      "sha256": "c463f8f90f3f4bac3c9d5730fd53dcf44141907f7416ad9916dd34422b03c36b"
+    },
+    "logo-1200.png": {
+      "source": "docs/05-da/logo/png/logo-a-principal-1200.png",
+      "sha256": "881a1bce00ac9a8a96fa99fe90bc192b54688c1e3eb755ce2bb81c8b89d4d87b"
+    },
+    "logo-horizontal-fond-sombre.svg": {
+      "source": "docs/05-da/logo/a/logo-a-horizontal-fond-sombre.svg",
+      "sha256": "ef0589f02b2430233dd0c1cc90d709b497ff558f0b124ad53c84704aca010505"
+    },
+    "logo-horizontal.svg": {
+      "source": "docs/05-da/logo/a/logo-a-horizontal.svg",
+      "sha256": "3ad41f684cd9819d731ce0e3c80fac8c159955d243ae6b38e1ae9b32eed91894"
+    },
+    "tokens.css": {
+      "source": "docs/05-da/tokens/tokens.css",
+      "sha256": "58b8094f358ed061da7915f555041ef8bd42d3ebcfcc628ccfaef0caf4a6b417"
+    }
+  }
+}

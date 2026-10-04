@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="fr-CH" data-da="a">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Badges — composants DA</title>
+  <meta name="description" content="Badges de statut produit : FR, Stock local, Précommande, Nouveauté, Rupture, Alerte réassort.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&amp;family=Inter:opsz,wght@14..32,400..700&amp;family=IBM+Plex+Mono:wght@500;600&amp;family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Space+Grotesk:wght@500;700&amp;display=swap">
+  <link rel="stylesheet" href="../tokens/tokens.css">
+  <link rel="stylesheet" href="components.css">
+  <link rel="icon" href="../logo/a/favicon.svg" type="image/svg+xml">
+  <script src="apercu.js" defer></script>
+</head>
+<body class="da-root">
+  <div class="da-preview-bar" role="toolbar" aria-label="Options d'aperçu">
+    <strong>Aperçu</strong>
+    <button type="button" data-set-da="a" aria-pressed="true">Direction A — Quai</button>
+    <button type="button" data-set-da="b" aria-pressed="false">Direction B — Pochette</button>
+    <span aria-hidden="true">·</span>
+    <button type="button" data-set-theme="auto" aria-pressed="true">Auto</button>
+    <button type="button" data-set-theme="light" aria-pressed="false">Clair</button>
+    <button type="button" data-set-theme="dark" aria-pressed="false">Sombre</button>
+  </div>
+  <main class="da-container">
+    <h1 class="da-title" style="font-size:var(--da-text-2xl);margin:var(--da-space-6) 0 var(--da-space-2)">Badges de statut</h1>
+    <p class="da-muted" style="max-width:40rem">Un badge dit un fait vérifiable (langue, stock, date). Il est toujours écrit en toutes lettres et accompagné d'une icône : la couleur seule ne porte jamais l'information. Maximum 3 badges par carte, dans l'ordre ci-dessous.</p>
+
+    <h2 class="da-title" style="font-size:var(--da-text-xl);margin:var(--da-space-6) 0 var(--da-space-3)">Les 6 badges</h2>
+    <div class="da-badges" role="list">
+      <span class="da-badge da-badge--fr" role="listitem"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M7 9v6M7 9h3M7 12h2.5M13 15V9h2.5a1.5 1.5 0 0 1 0 3H13M15.5 12l1.5 3"/></svg>FR</span>
+      <span class="da-badge da-badge--local" role="listitem"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 15l2 2 4-4"/></svg>Stock local</span>
+      <span class="da-badge da-badge--preorder" role="listitem"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Précommande</span>
+      <span class="da-badge da-badge--new" role="listitem"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><path d="M12 9l3 3-3 3-3-3z"/></svg>Nouveauté</span>
+      <span class="da-badge da-badge--out" role="listitem"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M7 17L17 7"/></svg>Rupture</span>
+      <span class="da-badge da-badge--restock" role="listitem"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg>Alerte réassort</span>
+    </div>
+
+    <h2 class="da-title" style="font-size:var(--da-text-xl);margin:var(--da-space-6) 0 var(--da-space-3)">Règles d'attribution (automatiques, depuis le catalogue validé)</h2>
+    <div style="overflow-x:auto">
+    <table style="border-collapse:collapse;width:100%;min-width:560px;font-size:var(--da-text-sm)">
+      <thead><tr style="text-align:left;border-bottom:2px solid var(--da-color-ink)"><th style="padding:8px">Badge</th><th style="padding:8px">Condition d'affichage</th><th style="padding:8px">Ne jamais l'afficher si…</th></tr></thead>
+      <tbody>
+        <tr style="border-bottom:1px solid var(--da-color-line)"><td style="padding:8px"><span class="da-badge da-badge--fr"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M7 9v6M7 9h3M7 12h2.5M13 15V9h2.5a1.5 1.5 0 0 1 0 3H13M15.5 12l1.5 3"/></svg>FR</span></td><td style="padding:8px">Langue du produit = FR, vérifiée sur la fiche technique ET à réception.</td><td style="padding:8px">Langue inconnue ou ambiguë (la fiche reste en brouillon).</td></tr>
+        <tr style="border-bottom:1px solid var(--da-color-line)"><td style="padding:8px"><span class="da-badge da-badge--local"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 15l2 2 4-4"/></svg>Stock local</span></td><td style="padding:8px">Stock vendable local &gt; 0 (après réservations, dommages et stock de sécurité).</td><td style="padding:8px">La quantité n'existe que chez un tiers ou n'est pas encore réceptionnée.</td></tr>
+        <tr style="border-bottom:1px solid var(--da-color-line)"><td style="padding:8px"><span class="da-badge da-badge--preorder"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Précommande</span></td><td style="padding:8px">Allocation ferme confirmée par écrit et quota de précommande &gt; 0.</td><td style="padding:8px">Allocation non confirmée, ou date de sortie inconnue sans mention « date à confirmer ».</td></tr>
+        <tr style="border-bottom:1px solid var(--da-color-line)"><td style="padding:8px"><span class="da-badge da-badge--new"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><path d="M12 9l3 3-3 3-3-3z"/></svg>Nouveauté</span></td><td style="padding:8px">Mise en vente depuis moins de {{N_JOURS_NOUVEAUTE}} jours ET achetable (stock local ou précommande).</td><td style="padding:8px">Produit en rupture : « Nouveauté » ne sert pas d'appât.</td></tr>
+        <tr style="border-bottom:1px solid var(--da-color-line)"><td style="padding:8px"><span class="da-badge da-badge--out"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M7 17L17 7"/></svg>Rupture</span></td><td style="padding:8px">Stock vendable local = 0 et aucun quota de précommande.</td><td style="padding:8px">—</td></tr>
+        <tr><td style="padding:8px"><span class="da-badge da-badge--restock"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg>Alerte réassort</span></td><td style="padding:8px">Produit en rupture pour lequel l'inscription à une alerte est ouverte.</td><td style="padding:8px">Un réassort est déjà exclu (fin de série confirmée).</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h2 class="da-title" style="font-size:var(--da-text-xl);margin:var(--da-space-6) 0 var(--da-space-3)">Combinaisons autorisées</h2>
+    <ul style="display:grid;gap:var(--da-space-3);padding:0;list-style:none">
+      <li class="da-badges"><span class="da-badge da-badge--fr"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M7 9v6M7 9h3M7 12h2.5M13 15V9h2.5a1.5 1.5 0 0 1 0 3H13M15.5 12l1.5 3"/></svg>FR</span><span class="da-badge da-badge--local"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 15l2 2 4-4"/></svg>Stock local</span><span class="da-badge da-badge--new"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><path d="M12 9l3 3-3 3-3-3z"/></svg>Nouveauté</span></li>
+      <li class="da-badges"><span class="da-badge da-badge--fr"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M7 9v6M7 9h3M7 12h2.5M13 15V9h2.5a1.5 1.5 0 0 1 0 3H13M15.5 12l1.5 3"/></svg>FR</span><span class="da-badge da-badge--preorder"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Précommande</span></li>
+      <li class="da-badges"><span class="da-badge da-badge--fr"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M7 9v6M7 9h3M7 12h2.5M13 15V9h2.5a1.5 1.5 0 0 1 0 3H13M15.5 12l1.5 3"/></svg>FR</span><span class="da-badge da-badge--out"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M7 17L17 7"/></svg>Rupture</span><span class="da-badge da-badge--restock"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg>Alerte réassort</span></li>
+    </ul>
+    <p class="da-note"><svg class="da-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg><span>Interdit : « Stock local » + « Précommande » sur le même produit (deux promesses différentes = deux variantes ou deux fiches), « Dernières pièces », « Bientôt épuisé », compteurs ou minuteurs.</span></p>
+
+    <h2 class="da-title" style="font-size:var(--da-text-xl);margin:var(--da-space-6) 0 var(--da-space-3)">Code (Shopify / thème)</h2>
+    <pre style="overflow-x:auto;padding:var(--da-space-3);background:var(--da-color-surface);border:1px solid var(--da-color-line);font-size:var(--da-text-sm)"><code>&lt;span class="da-badge da-badge--local"&gt;&lt;svg class="da-icon" …&gt;…&lt;/svg&gt;Stock local&lt;/span&gt;
+Modificateurs : --fr · --local · --preorder · --new · --out · --restock
+Dépendances : tokens/tokens.css + components/components.css</code></pre>
+    <footer class="da-footer">
+      <p>{{NOM_BOUTIQUE}} — boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus. Pokémon est une marque de ses détenteurs respectifs (mention à faire valider par le juriste).</p>
+      <p>Page de démonstration DA — données d'exemple : FICTIF — <a href="../CHARTE.html">retour à la charte</a>.</p>
+    </footer>
+  </main>
+</body>
+</html>

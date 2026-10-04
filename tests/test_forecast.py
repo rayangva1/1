@@ -1,4 +1,4 @@
-"""Tests du module pokeshop.forecast et du classeur modele_financier.xlsx (BP §3, §4, §10)."""
+"""Tests du module pokeshop.forecast et du classeur modele_financier.xlsx (BP §3, §4, §10, étoile polaire)."""
 
 from __future__ import annotations
 
@@ -407,6 +407,140 @@ def test_contribution_at_rounded_price_meets_target() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Étoile polaire : contribution nette cumulée hebdomadaire + stop-loss global
+# ---------------------------------------------------------------------------
+
+
+def nsw(week: int, net: str = "0", cost: str = "0", acq: str = "0", fixed: str = "0", orders: str = "0",
+        pay: str = "0", log: str = "0", sav: str = "0") -> fc.NorthStarWeek:
+    """Semaine FICTIVE de suivi étoile polaire."""
+    return fc.NorthStarWeek(week, D(orders), D(net), D(cost), D(pay), D(log), D(sav), D(acq), D(fixed))
+
+
+def test_north_star_week_components() -> None:
+    w = nsw(1, net="1000", cost="700", pay="30", log="35", sav="10", acq="60", fixed="92", orders="11")
+    assert w.contribution_before_acquisition == D(225)
+    assert w.contribution_after_acquisition == D(165)
+    assert w.net_contribution == D(73)
+
+
+@pytest.mark.parametrize("name", list(BP_TABLE))
+def test_projection_over_a_year_equals_twelve_monthly_results(name: str) -> None:
+    a = next(s for s in fc.bp_scenarios() if s.name == name)
+    weeks = fc.project_north_star(a)
+    assert len(weeks) == fc.WEEKS_PER_YEAR == 52
+    report = fc.north_star(weeks)
+    assert r2(report.cumulative) == r2(fc.run_scenario(a).result_before_remuneration * 12)
+    # contribution avant acquisition projetée = 22 % du CA HT (ventilation cohérente)
+    w = weeks[0]
+    assert r2(w.contribution_before_acquisition) == r2(w.net_sales_ht * D("0.22"))
+    assert r2(w.logistics / w.orders) == D("3.36")  # emballage implicite (port refacturé)
+    assert r2(w.payment_fees / w.orders) == D("2.68")  # 2,5 % × 95 + 0,30
+
+
+def test_projection_central_with_opening_week_5() -> None:
+    central = fc.bp_scenarios()[1]
+    report = fc.north_star(fc.project_north_star(central, opening_week=fc.BP_SALES_OPENING_WEEK))
+    assert report.rows[0].week.orders == 0 and r2(report.rows[0].net_contribution) == D("-92.31")
+    assert r2(report.lowest.cumulative) == D("-369.23") and report.lowest.week.week == 4
+    assert report.recovery_week == 6
+    assert r2(report.rows[4].net_contribution) == D("215.40")
+    assert r2(report.rows[4].net_contribution * fc.WEEKS_PER_MONTH) == D("933.40")
+    assert not report.frozen and report.first_global_stoploss_week is None
+    assert report.max_cumulative_loss == D(1600)
+    check = report.validation()
+    assert (check.first_week, check.last_week, check.complete) == (5, 12, True)
+    assert r2(check.orders) == D("184.62") and check.passed
+
+
+def test_projection_prudent_and_development_recovery() -> None:
+    prudent, _, dev = fc.bp_scenarios()
+    rp = fc.north_star(fc.project_north_star(prudent, opening_week=5))
+    assert rp.recovery_week == 34
+    assert r2(rp.rows[4].net_contribution) == D("12.31")
+    rd = fc.north_star(fc.project_north_star(dev, opening_week=5))
+    assert rd.recovery_week == 5
+
+
+def test_pilot_pace_triggers_global_stoploss() -> None:
+    """Au rythme du jalon BP §1 (≈ 15 commandes/mois, CAC 8), le gel global tombe en semaine 28."""
+    pilot = ScenarioAssumptions("pilote_validation", 15, D(8))
+    report = fc.north_star(fc.project_north_star(pilot, weeks=104, opening_week=5))
+    assert report.first_global_stoploss_week == 28
+    assert report.rows[26].cumulative > D(-1600) >= report.rows[27].cumulative
+    assert r2(report.rows[10].net_contribution) == D("-53.07")
+    assert report.frozen and report.recovery_week is None
+    assert not report.validation().orders_ok  # 27,7 commandes sur 8 semaines < 30
+
+
+def test_global_stoploss_is_sticky_and_threshold_inclusive() -> None:
+    weeks = [nsw(1, fixed="1000"), nsw(2, fixed="600"), nsw(3, net="5000", cost="2000")]
+    report = fc.north_star(weeks)
+    assert [r.cumulative for r in report.rows] == [D(-1000), D(-1600), D(1400)]
+    assert [r.global_stoploss for r in report.rows] == [False, True, True]  # −1 600 = seuil ⇒ gel
+    assert report.first_global_stoploss_week == 2 and report.frozen
+    assert report.recovery_week == 3
+    lenient = fc.north_star(weeks, capital_engaged=D(10000), global_stoploss_pct=D("0.25"))
+    assert not lenient.frozen and lenient.max_cumulative_loss == D(2500)
+
+
+def test_return_week_with_negative_sales_is_accepted() -> None:
+    """Une semaine de retours peut avoir des ventes nettes et un coût historique négatifs."""
+    report = fc.north_star([nsw(1, net="-95", cost="-66.5", log="5")])
+    assert report.cumulative == D("-33.5")
+
+
+def test_validation_window_and_incomplete_data() -> None:
+    weeks = [nsw(n, net="400", cost="280", acq="10", orders="4") for n in range(1, 8)]
+    report = fc.north_star(weeks)
+    check = report.validation(opening_week=2)
+    assert (check.first_week, check.last_week) == (2, 9)
+    assert not check.complete
+    assert check.orders == D(24) and not check.orders_ok
+    assert check.contribution_after_acquisition == D(6 * 110) and check.contribution_ok
+    assert not check.passed
+    assert report.validation(opening_week=1, days=14, target_orders=8).passed
+    with pytest.raises(ForecastError):
+        report.validation(opening_week=0)
+    with pytest.raises(ForecastError):
+        report.validation(days=6)
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda: nsw(0),
+        lambda: fc.NorthStarWeek(1.0, D(0), D(0), D(0), D(0), D(0), D(0), D(0), D(0)),  # type: ignore[arg-type]
+        lambda: nsw(1, fixed="-1"),
+        lambda: nsw(1, acq="-1"),
+        lambda: nsw(1, orders="-1"),
+        lambda: fc.NorthStarWeek(1, D(0), 10.5, D(0), D(0), D(0), D(0), D(0), D(0)),  # type: ignore[arg-type]
+        lambda: fc.north_star([]),
+        lambda: fc.north_star([nsw(2)]),
+        lambda: fc.north_star([nsw(1), nsw(3)]),
+        lambda: fc.north_star(["semaine"]),  # type: ignore[list-item]
+        lambda: fc.north_star([nsw(1)], capital_engaged=D(0)),
+        lambda: fc.north_star([nsw(1)], global_stoploss_pct=D("1.5")),
+        lambda: fc.project_north_star(fc.bp_scenarios()[1], weeks=0),
+        lambda: fc.project_north_star(fc.bp_scenarios()[1], opening_week=0),
+        lambda: fc.project_north_star(fc.bp_scenarios()[1], payment_pct=D(-1)),
+        # 22 % de contribution + 76 % de coût produit ne laissent rien pour paiement et SAV
+        lambda: fc.project_north_star(fc.bp_scenarios()[1], product_cost_ratio=D("0.76")),
+    ],
+)
+def test_north_star_validation(factory) -> None:
+    with pytest.raises(ForecastError):
+        factory()
+
+
+def test_stock_need_and_time_valuation_reject_non_int_orders() -> None:
+    with pytest.raises(ForecastError):
+        fc.stock_need(100.0)  # type: ignore[arg-type]
+    with pytest.raises(ForecastError):
+        fc.time_valuation(D(1), supervision_hours_per_week=D(1), orders_per_month=True)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
 # Vérification globale
 # ---------------------------------------------------------------------------
 
@@ -437,12 +571,18 @@ def test_initial_budget_and_fixed_costs_constants() -> None:
 
 
 def _load_generator() -> ModuleType:
+    """Charge le générateur sans écrire de __pycache__ dans docs/."""
     path = FINANCE_DIR / "generer_classeurs.py"
     spec = importlib.util.spec_from_file_location("generer_classeurs", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules.setdefault("generer_classeurs", module)
-    spec.loader.exec_module(module)
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
     return module
 
 
@@ -474,7 +614,7 @@ def test_model_workbook_structure(generator: ModuleType, tmp_path: Path) -> None
     path = tmp_path / "m.xlsx"
     generator.build_financial_model().save(path)
     wb = load_workbook(path)
-    assert wb.sheetnames == ["Hypothèses", "Budget initial", "Charges mensuelles", "Scénarios",
+    assert wb.sheetnames == ["Hypothèses", "Étoile polaire", "Budget initial", "Charges mensuelles", "Scénarios",
                              "Seuil & sensibilité", "Prix plancher", "Stock & BFR"]
     formulas = sum(
         1 for ws in wb.worksheets for row in ws.iter_rows() for c in row
@@ -485,8 +625,14 @@ def test_model_workbook_structure(generator: ModuleType, tmp_path: Path) -> None
     assert wb["Scénarios"]["C15"].value == "=C11-C13-C14"
     assert wb["Prix plancher"]["B17"].value.startswith("=IF(B16>0,B15/B16")
     assert wb["Hypothèses"]["B9"].fill.fgColor.rgb.endswith("FFF2CC")
-    for required in ("TVA", "Panier_TTC", "Panier_HT", "Taux_contribution", "Charges_fixes", "Remuneration"):
+    for required in ("TVA", "Panier_TTC", "Panier_HT", "Taux_contribution", "Charges_fixes", "Remuneration",
+                     "Capital_engage", "Perte_max", "Reserve_cash", "Scenario_choisi", "Semaine_ouverture"):
         assert required in wb.defined_names
+    ns = wb["Étoile polaire"]
+    assert ns["K45"].value == "=I45-J45"
+    assert ns["L45"].value == "=SUM($K$41:K45)"
+    assert ns["V45"].value == '=IF(COUNT(M45:T45)=0,"",U45-T45)'
+    assert ns["M45"].fill.fgColor.rgb.endswith("FFF2CC") and ns["M45"].value is None
 
 
 def test_model_scenarios_match_bp(model_values) -> None:
@@ -567,6 +713,122 @@ def test_model_budget_stock_and_bfr(model_values) -> None:
     assert stock["C25"].value > 0  # le BFR central dépasse stock + réserve
 
 
+def test_model_pub_stoploss_row(model_values) -> None:
+    ws = model_values["Scénarios"]
+    assert [ws[f"{c}26"].value for c in "BCD"] == ["non", "non", "non"]
+
+
+def test_model_north_star_projection_matches_engine(model_values) -> None:
+    ws = model_values["Étoile polaire"]
+    assert ws["E6"].value == "Central" and ws["E7"].value == 100 and ws["E8"].value == 6
+    assert ws["E13"].value == -1600 and ws["E14"].value == 1600
+    assert ws["R12"].value == "OK — cohérent"
+    central = fc.bp_scenarios()[1]
+    report = fc.north_star(fc.project_north_star(central, opening_week=5))
+    for row in report.rows:
+        r = 40 + row.week.week
+        assert ws[f"A{r}"].value == row.week.week
+        assert ws[f"B{r}"].value == pytest.approx(float(row.week.orders), abs=1e-9)
+        assert ws[f"F{r}"].value == pytest.approx(float(row.week.logistics), abs=1e-6)
+        assert ws[f"K{r}"].value == pytest.approx(float(row.net_contribution), abs=1e-6)
+        assert ws[f"L{r}"].value == pytest.approx(float(row.cumulative), abs=1e-6)
+        assert ws[f"V{r}"].value in (None, "")
+    assert ws["E18"].value == pytest.approx(float(report.cumulative), abs=1e-6)
+    assert ws["F18"].value == "pas de saisie" and ws["F19"].value == 0
+    assert ws["E20"].value == pytest.approx(-369.23, abs=0.005) and ws["E21"].value == 4
+    assert ws["E22"].value == report.recovery_week == 6
+    assert ws["E23"].value == "non"
+    assert ws["E24"].value == pytest.approx(float(fc.run_bp_scenarios()["central"].result_before_remuneration))
+    assert ws["G24"].value.startswith("OK")
+    check = report.validation()
+    assert ws["E25"].value == pytest.approx(float(check.orders), abs=1e-9)
+    assert ws["E26"].value == "oui" and ws["E28"].value == "oui"
+    assert ws["E27"].value == pytest.approx(float(check.contribution_after_acquisition), abs=1e-6)
+    assert ws["G25"].value.startswith("Semaines 5 à 12 (56 jours")
+    assert [ws[f"H{r}"].value for r in (33, 35, 36, 37)] == [750, 1600, -1600, "60 jours"]
+
+
+#: Saisie FICTIVE du réel (semaines 1 à 10) : colonnes M à T de la feuille Étoile polaire.
+FICTIVE_ACTUALS: list[tuple[int, str, str, str, str, str, str, str]] = [
+    # commandes, ventes nettes HT, coût historique, paiement, logistique, SAV, acquisition, charges fixes
+    (0, "0", "0", "0", "0", "0", "0", "400"),
+    (0, "0", "0", "0", "0", "0", "0", "0"),
+    (0, "0", "0", "0", "0", "0", "0", "0"),
+    (0, "0", "0", "0", "0", "0", "0", "0"),
+    (0, "0", "0", "0", "0", "0", "0", "400"),
+    (3, "258.74", "181.10", "7.89", "10.50", "3", "0", "0"),
+    (5, "450.05", "320.40", "13.66", "17.50", "5", "150", "0"),
+    (6, "519.33", "362.80", "15.84", "21", "6", "200", "0"),
+    (8, "713.41", "500.10", "21.68", "28", "8", "150", "400"),
+    (9, "779.46", "548.70", "23.77", "31.50", "9", "0", "0"),
+]
+
+
+def test_model_north_star_actuals_match_engine(generator: ModuleType, tmp_path: Path) -> None:
+    """Les formules du réel (colonnes U à Y, synthèse) reproduisent pokeshop.forecast.north_star."""
+    from openpyxl import load_workbook
+
+    wb = generator.build_financial_model()
+    ws = wb["Étoile polaire"]
+    weeks = []
+    for n, (orders, *amounts) in enumerate(FICTIVE_ACTUALS, start=1):
+        r = 40 + n
+        ws[f"M{r}"] = orders
+        for col, amount in zip("NOPQRST", amounts):
+            ws[f"{col}{r}"] = float(amount)
+        net, cost, pay, log, sav, acq, fixed = (D(a) for a in amounts)
+        weeks.append(fc.NorthStarWeek(n, D(orders), net, cost, pay, log, sav, acq, fixed))
+    src = tmp_path / "ns.xlsx"
+    wb.save(src)
+    try:
+        recalculated = generator.recalculate(src, tmp_path / "recalc")
+    except generator.RecalcError as exc:
+        pytest.skip(f"LibreOffice Calc indisponible : {exc}")
+    assert generator.formula_errors(recalculated) == []
+    values = load_workbook(recalculated, data_only=True)["Étoile polaire"]
+    report = fc.north_star(weeks)
+    for row in report.rows:
+        r = 40 + row.week.week
+        assert values[f"V{r}"].value == pytest.approx(float(row.net_contribution), abs=1e-6)
+        assert values[f"W{r}"].value == pytest.approx(float(row.cumulative), abs=1e-6)
+        expected = "GEL GLOBAL" if row.global_stoploss else ("semaine négative" if row.net_contribution < 0 else "OK")
+        assert values[f"Y{r}"].value == expected
+    assert values["W51"].value in (None, "")
+    assert values["F18"].value == pytest.approx(float(report.cumulative), abs=1e-6)
+    assert values["F19"].value == 10
+    assert values["F20"].value == pytest.approx(float(report.lowest.cumulative), abs=1e-6)
+    assert values["F21"].value == report.lowest.week.week
+    assert values["F22"].value == "pas encore"
+    assert values["F23"].value == "non"
+    check = report.validation()
+    assert not check.complete  # 6 semaines saisies sur 8 : jalon provisoire
+    assert values["F25"].value == float(check.orders) == 31
+    assert values["F26"].value == "oui"
+    assert values["F27"].value == pytest.approx(float(check.contribution_after_acquisition), abs=1e-6)
+    assert values["F28"].value == ("oui" if check.contribution_ok else "NON")
+
+
+def test_model_north_star_global_freeze(generator: ModuleType, tmp_path: Path) -> None:
+    """Une perte cumulée de 1 600 CHF déclenche le gel global, qui reste actif ensuite."""
+    from openpyxl import load_workbook
+
+    wb = generator.build_financial_model()
+    ws = wb["Étoile polaire"]
+    for r, fixed in ((41, 1000), (42, 700), (43, 0)):
+        ws[f"T{r}"] = fixed
+    ws["N43"] = 2000
+    src = tmp_path / "gel.xlsx"
+    wb.save(src)
+    try:
+        recalculated = generator.recalculate(src, tmp_path / "recalc")
+    except generator.RecalcError as exc:
+        pytest.skip(f"LibreOffice Calc indisponible : {exc}")
+    values = load_workbook(recalculated, data_only=True)["Étoile polaire"]
+    assert [values[f"Y{r}"].value for r in (41, 42, 43)] == ["semaine négative", "GEL GLOBAL", "GEL GLOBAL"]
+    assert values["F23"].value == "OUI — semaine 2 : TOUT GELER"
+    assert values["F22"].value == 3
+
+
 def test_delivered_model_file_is_recalculated() -> None:
     """Le fichier livré contient formules ET valeurs (recalcul LibreOffice)."""
     from openpyxl import load_workbook
@@ -578,3 +840,6 @@ def test_delivered_model_file_is_recalculated() -> None:
     assert formulas["Scénarios"]["C15"].value.startswith("=")
     assert round(values["Scénarios"]["C15"].value) == 933
     assert values["Seuil & sensibilité"]["C11"].value == 31
+    assert formulas["Étoile polaire"]["L92"].value == "=SUM($K$41:K92)"
+    assert values["Étoile polaire"]["L92"].value == pytest.approx(9969.91, abs=0.005)
+    assert values["Étoile polaire"]["F18"].value == "pas de saisie"
