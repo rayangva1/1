@@ -980,6 +980,22 @@ class CostRegister:
                     return m.unit_cost
         return None
 
+    def order_cogs(self, sale_ref: str) -> Decimal:
+        """Coût des ventes **net** d'une commande : Σ coût des sorties (ISSUE ``sale_ref``) − Σ retours en stock au coût.
+
+        Revue R6 (R5-NEW-01) : base du plafond de contribution d'une commande attribuée (jamais une valeur déclarée).
+        """
+        with self._lock:
+            total = ZERO
+            for ledger in self._ledgers.values():
+                total += sum((e.cogs for e in ledger.journal() if e.kind == "ISSUE" and e.ref == sale_ref), ZERO)
+            returns = {(m.product_key, m.ref) for m in self._movements if m.kind == "RETURN" and m.sale_ref == sale_ref}
+            for key, ref in sorted(returns):
+                ledger = self._ledgers.get(key)
+                if ledger is not None:  # écriture RETURN : cogs = −montant remis en stock
+                    total += sum((e.cogs for e in ledger.journal() if e.kind == "RETURN" and e.ref == ref), ZERO)
+            return total
+
 
 # ------------------------------------------------------------------- commandes enregistrées
 
@@ -1336,11 +1352,41 @@ class OrderRegister:
         return "REFUNDED" if self.refunded(order_id) >= order.net_sales_ht else "PAID"
 
     def contribution_bound(self, order_id: str, cogs: Decimal = ZERO) -> Decimal | None:
-        """Contribution avant acquisition **maximale** que les données de la commande justifient.
+        """Plafond **hors coût des ventes** : ventes nettes − avoirs − frais de paiement − logistique réelle − ``cogs``.
 
-        Ventes nettes − avoirs − frais de paiement − logistique réelle − coût historique connu (≥ 0 non imposé).
+        Revue R6 (R5-NEW-01) : seul, ce plafond ignore le coût des ventes ; le stop-loss pub utilise
+        :meth:`derived_contribution` (coût des ventes du registre de coûts du moteur).
         """
         order = self.get(order_id)
         if order is None:
             return None
         return order.net_sales_ht - self.refunded(order_id) - order.payment_fees - order.shipping_cost_actual - cogs
+
+    def order_cogs(self, order_id: str, costs: CostRegister | None) -> Decimal | None:
+        """Coût des ventes net de la commande tiré du registre de coûts du moteur ; None s'il n'est pas connu.
+
+        Inconnu (fermé par défaut) : registre de coûts absent, commande sans lignes, coût des ventes en attente
+        (:meth:`pending_cogs`) ou ligne non résolue (revue R6, R5-NEW-02).
+        """
+        order = self.get(order_id)
+        if order is None or costs is None or not order.lines:
+            return None
+        with self._lock:
+            if order_id in self._pending:
+                return None
+        if any(line.product_key.startswith(UNRESOLVED_KEY_PREFIX) for line in order.lines):
+            return None
+        return costs.order_cogs(order.sale_ref)
+
+    def derived_contribution(self, order_id: str, costs: CostRegister | None) -> Decimal | None:
+        """Contribution avant acquisition **dérivée du registre** (revue R6, R5-NEW-01) ; None si commande inconnue.
+
+        Ventes nettes − avoirs − frais de paiement − logistique réelle − coût des ventes net (ISSUE ``order:<id>``
+        − RETURN). Coût des ventes inconnu (en attente, sans lignes, ligne non résolue) : **0** (fermé par défaut ;
+        l'étoile polaire et la photo sont alors signalées incomplètes).
+        """
+        ceiling = self.contribution_bound(order_id)
+        if ceiling is None:
+            return None
+        cogs = self.order_cogs(order_id, costs)
+        return ZERO if cogs is None else min(ceiling - cogs, ceiling)
