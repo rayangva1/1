@@ -6,7 +6,7 @@
 
 ## 1. Règles communes
 
-**Métrique de décision : l'étoile polaire.** La contribution nette cumulée = ventes nettes HT − coût historique − paiement − logistique − SAV − acquisition − charges fixes. Le chiffre d'affaires et les followers ne servent jamais de critère. Les indicateurs du BP §1, comme « contribution positive après publicité » (avant charges fixes), sont suivis **en plus** (écart EC-12).
+**Métrique de décision : l'étoile polaire.** La contribution nette cumulée = ventes nettes HT − coût historique − paiement − logistique − SAV − acquisition − charges fixes. Le chiffre d'affaires et les followers ne servent jamais de critère. Les indicateurs du BP §1, comme « contribution positive après publicité » (avant charges fixes), sont suivis **en plus** (écart EC-12). Étoile polaire **incomplète** (`GET /northstar` : `incomplete: true`, écriture dérivée d'une commande impossible, détail dans `derivation_errors`) : tout critère qui la lit est ROUGE tant que la propriétaire n'a pas corrigé l'écriture (fermé par défaut, `ETOILE_POLAIRE.md` §2).
 
 **Les stop-loss priment sur les gates.** Un stop-loss déclenché (produit, extension, pub, cash, global, temps) s'applique immédiatement, quel que soit le résultat du dernier gate. Les règles et leur calcul appartiennent à l'agent gouvernance : `docs/00-pilotage/STOP_LOSS.md` et `engine/pokeshop/stoploss.py`. Rappel des seuils :
 

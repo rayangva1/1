@@ -14,6 +14,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import jetons_roles as R
+import test_orchestration_f4 as F
 import pytest
 import yaml
 from fastapi.testclient import TestClient
@@ -213,7 +214,7 @@ def test_reorder_proposal_is_a_proposal_to_validate(client: TestClient) -> None:
     # MOT-24 : sans photo stop-loss, les gels sont inconnus => aucune proposition (fermé par défaut)
     unknown = client.post("/stock/reorder-proposal", headers=HF, json={"candidates": [candidate()], "budget_available": "5000"})
     assert unknown.status_code == 409 and "stop-loss" in body(unknown)["erreur"]
-    assert client.post("/stoploss/state", headers=HPHOTO, json=state_payload()).status_code == 200
+    assert client.post("/stoploss/state", headers=HO, json=state_payload()).status_code == 200
     resp = client.post("/stock/reorder-proposal", headers=HF, json={"candidates": [candidate()], "budget_available": "5000"})
     data = body(resp)
     assert resp.status_code == 200
@@ -224,10 +225,10 @@ def test_reorder_proposal_is_a_proposal_to_validate(client: TestClient) -> None:
 
 
 def test_reorder_proposal_respects_stoploss(client: TestClient) -> None:
-    assert client.post("/stoploss/state", headers=HPHOTO, json=state_payload(available="1000")).status_code == 200
+    assert client.post("/stoploss/state", headers=HO, json=state_payload(available="1000")).status_code == 200
     cash = body(client.post("/stock/reorder-proposal", headers=HF, json={"candidates": [candidate()], "budget_available": "5000"}))
     assert cash["proposal"]["lines"] == [] and cash["proposal"]["skipped"][0]["reason"] == "CASH_RESERVE"
-    client.post("/stoploss/state", headers=HPHOTO, json=state_payload(cash="5000"))
+    client.post("/stoploss/state", headers=HO, json=state_payload(cash="5000"))
     frozen = client.post("/stock/reorder-proposal", headers=HF, json={"candidates": [candidate()], "budget_available": "5000"})
     assert frozen.status_code == 423 and "global" in body(frozen)["erreur"]
 
@@ -325,7 +326,11 @@ def test_sync_run_real_mode_with_fictif_data_is_refused_safely(client: TestClien
     assert first.status_code == 409 and "simulation" in body(first)["erreur"]
     client.post("/imports/fictif_grossiste_a/run", headers=HDATA, json={"source_path": "FICTIF_offres_grossiste_a.csv"})
     assert client.post("/sync/run", headers=HSYNC, json=real).status_code == 409  # E2E-07 : catalogue requis
-    data = body(client.post("/sync/run", headers=HSYNC, json=dict(real, catalog=[{"product_id": "FICTIF-P1", "listing": LISTING}])))
+    # Revue R4 (R3-NEW-01) : catalogue du corps refusé en écriture réelle (registre seulement).
+    in_body = client.post("/sync/run", headers=HSYNC, json=dict(real, catalog=[{"product_id": "FICTIF-P1", "listing": LISTING}]))
+    assert in_body.status_code == 409 and "simulation seulement" in body(in_body)["erreur"]
+    assert client.post("/catalog/items", headers=HCAT, json={"items": [{"product_id": "FICTIF-P1", "listing": LISTING}]}).status_code == 200
+    data = body(client.post("/sync/run", headers=HSYNC, json=real))
     # Écriture réelle refusée dès l'étape 1 : rien n'est évalué, le cycle est VIDE (jamais compté propre).
     assert data["report"]["steps"][0]["status"] == "ECHEC" and data["cycle_status"] == "VIDE" and data["clean"] is False
     assert svc.client.requests_sent == 0
@@ -427,11 +432,11 @@ def test_stoploss_status_without_state(client: TestClient) -> None:
 
 
 def test_stoploss_state_status_freeze_and_owner_rearm(client: TestClient, svc: Services) -> None:
-    ok = body(client.post("/stoploss/state", headers=HPHOTO, json=state_payload()))
+    ok = body(client.post("/stoploss/state", headers=HO, json=state_payload()))
     assert ok["status"]["global_frozen"] is False
-    stale = client.post("/stoploss/state", headers=HPHOTO, json=state_payload(at=NOW - timedelta(days=3)))
+    stale = client.post("/stoploss/state", headers=HO, json=state_payload(at=NOW - timedelta(days=3)))
     assert stale.status_code == 409
-    client.post("/stoploss/state", headers=HPHOTO, json=state_payload())
+    client.post("/stoploss/state", headers=HO, json=state_payload())
     frozen = body(client.post("/stoploss/freeze", headers=HQA, json={"actor": "agent-12", "reason": "débit inconnu FICTIF"}))
     assert frozen["latch"]["frozen"] is True and frozen["incident_id"] is not None
     assert svc.incidents.get(frozen["incident_id"]).code.value == "INC-09" and svc.autonomy.level == 1
@@ -462,7 +467,7 @@ def test_stoploss_state_status_freeze_and_owner_rearm(client: TestClient, svc: S
 
 def test_global_loss_state_is_reported(client: TestClient, svc: Services) -> None:
     svc.autonomy.raise_level(2, owner_token=OWNER_TOKEN, reason="C14 FICTIF")
-    data = body(client.post("/stoploss/state", headers=HPHOTO, json=state_payload(cash="6000")))
+    data = body(client.post("/stoploss/state", headers=HO, json=state_payload(cash="6000")))
     assert data["status"]["global_frozen"] is True and data["status"]["autonomy_level"] == 1
     assert svc.stoploss_engine.frozen and svc.autonomy.level == 1
     incident = svc.incidents.get(data["incident_id"])
@@ -485,7 +490,7 @@ def test_mandate_check_needs_stoploss_state_then_applies_unsigned_mandate(client
     assert client.post("/mandate/check", headers=H, json=spend_payload()).status_code == 403  # jeton commun : jamais
     unavailable = client.post("/mandate/check", headers=HF, json=spend_payload())
     assert unavailable.status_code == 503
-    client.post("/stoploss/state", headers=HPHOTO, json=state_payload())
+    client.post("/stoploss/state", headers=HO, json=state_payload())
     data = body(client.post("/mandate/check", headers=HF, json={**spend_payload(), "record": True}))
     assert data["decision"]["outcome"] == "NEEDS_HUMAN_APPROVAL" and "MANDATE_NOT_SIGNED" in data["decision"]["reasons"]
     assert data["recorded"] is True and svc.spend_ledger.get("FICTIF-SPEND-API-1") is not None
@@ -497,12 +502,23 @@ def test_mandate_check_needs_stoploss_state_then_applies_unsigned_mandate(client
 # ----------------------------------------------------------------------------- étoile polaire
 
 
-def test_northstar_report(client: TestClient) -> None:
+def test_northstar_report(client: TestClient, svc: Services) -> None:
     empty = body(client.get("/northstar", headers=H))
     assert empty["cumulative"] == "0.00" and empty["rows"] == []
-    # Ventes dérivées d'une commande enregistrée, avec le coût réel du transporteur (revue R3, MOT-18).
+    # coût historique : registre interne uniquement (réception adossée à POST /stock/receive, bornée par une
+    # référence du moteur — revue R4 — puis sortie au CMP dérivée de la commande)
+    item = {"product_id": "FICTIF-P1", "listing": LISTING}
+    assert client.post("/catalog/items", headers=HCAT, json={"items": [item]}).status_code == 200
+    receive_stock(client, qty=2)
+    F.engine_offer(svc, "140.00")
+    receipt = {"kind": "RECEIPT", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "FICTIF-LOT-1",
+               "qty": 2, "unit_cost": "140.00", "stock_ref": "FICTIF-BL-0001", "invoice_ref": "FICTIF-FACT-1"}
+    assert body(client.post("/costs/movements", headers=HF, json=receipt))["northstar_added"] == 0
+    # Ventes dérivées d'une commande enregistrée, avec le coût réel du transporteur (revue R3, MOT-18) et ses lignes
+    # (revue R4, R3-NEW-05 : sortie au CMP dérivée par le moteur, jamais déclarée par l'agent finance).
     order = {"order_id": "FICTIF-O1", "paid_at": NOW.isoformat(), "net_sales_ht": "184.92", "payment_fees": "5.30",
-             "shipping_cost_actual": "3.00", "shipping_label_ref": "FICTIF-ETIQ-1", "source": "Shopify FICTIF"}
+             "shipping_cost_actual": "3.00", "shipping_label_ref": "FICTIF-ETIQ-1", "source": "Shopify FICTIF",
+             "lines": [{"public_sku": "DSP-FICTIF_ALPHA-FR", "qty": 1}]}
     created = client.post("/orders/shipped", headers=HORDERS, json=order)
     assert created.status_code == 201, created.text
     assert client.post("/orders/shipped", headers=HORDERS, json=order).status_code == 200  # idempotent
@@ -510,15 +526,8 @@ def test_northstar_report(client: TestClient) -> None:
     assert body(client.post("/northstar/entries", headers=HORDERS, json={"entries": fees})) == {"added": 1, "received": 1}
     again = body(client.post("/northstar/entries", headers=HORDERS, json={"entries": fees}))
     assert again["added"] == 0
-    # coût historique : registre interne uniquement (réception adossée à POST /stock/receive, vente au CMP)
-    item = {"product_id": "FICTIF-P1", "listing": LISTING}
-    assert client.post("/catalog/items", headers=HCAT, json={"items": [item]}).status_code == 200
-    receive_stock(client, qty=2)
-    receipt = {"kind": "RECEIPT", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "FICTIF-LOT-1",
-               "qty": 2, "unit_cost": "140.00", "stock_ref": "FICTIF-BL-0001", "invoice_ref": "FICTIF-FACT-1"}
-    assert body(client.post("/costs/movements", headers=HF, json=receipt))["northstar_added"] == 0
     sale = {"kind": "ISSUE", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "FICTIF-O1", "qty": 1}
-    assert body(client.post("/costs/movements", headers=HF, json=sale))["northstar_added"] == 1
+    assert client.post("/costs/movements", headers=HF, json=sale).status_code == 403  # sortie dérivée, jamais déclarée
     report = body(client.get("/northstar", headers=H))
     # 184.92 − 5.30 − 3.00 (transporteur réel) − 0.50 (PSP) − 140.00 (coût historique) = 36.12
     assert report["cumulative"] == "36.12" and report["rows"][0]["orders"] == 1 and "Contribution nette" in report["markdown"]

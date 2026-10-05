@@ -129,7 +129,8 @@ def test_e2e07_cycle_without_evaluated_offer_is_empty_and_never_counted(tmp_path
     register_catalog(client, fx=False)  # aucun taux de la propriétaire : coût rendu incomplet (EUR)
     data = body(client.post("/sync/run", headers=HSYNC, json=N8N_SYNC_BODY))
     assert data["cycle_status"] == "VIDE" and data["clean"] is False and data["offers_costed"] == 0
-    unmatched = dict(LISTING, identity=dict(IDENTITY, gtin="2000000009998"), public_sku="DSP-FICTIF_ALPHA-FR")
+    unmatched = dict(LISTING, product_key="FICTIF-AUTRE", identity=dict(IDENTITY, gtin="2000000009998"),
+                     public_sku="DSP-FICTIF_ALPHA-FR")  # clé produit unique (revue R4, R3-NEW-01)
     other = body(client.post("/sync/run", headers=HSYNC, json=dict(N8N_SYNC_BODY, catalog=[{"product_id": "FICTIF-AUTRE",
                                                                                          "listing": unmatched}])))
     assert other["cycle_status"] == "VIDE" and other["clean"] is False
@@ -163,6 +164,15 @@ def test_e2e07_streak_counts_clean_runs_ignores_empty_and_resets_on_anomaly() ->
 # =============================================================================== E2E-08
 
 
+def engine_offer(svc: Services, unit_cost: str, product_key: str = "FICTIF-P1") -> None:
+    """Coût rendu d'une offre évaluée par le moteur (comme après un ``/sync/run``) : référence du coût de réception."""
+    from pokeshop.models import ReplacementCost
+
+    svc.sync.replacement_costs.update(ReplacementCost(product_key=product_key, supplier_id="fictif_grossiste_a",
+                                                      unit_cost=D(unit_cost), source_ts=NOW - timedelta(days=2),
+                                                      offer_ref="FICTIF-OFFRE-1"))  # fmt: skip
+
+
 def feed_registers(client: TestClient, svc: Services) -> None:
     movement = {"movement_id": "FICTIF-APPORT-1", "at": (NOW - timedelta(days=30)).isoformat(), "kind": "CONTRIBUTION",
                 "amount": "4200", "ref": "virement FICTIF"}
@@ -174,15 +184,26 @@ def feed_registers(client: TestClient, svc: Services) -> None:
     balances = {"as_of": (NOW - timedelta(minutes=15)).isoformat(), "preorders_collected_chf": "0", "debts": [],
                 "receivables": [], "source": "agent finance FICTIF : aucune précommande ni facture en attente"}
     assert client.post("/treasury/balance-items", headers=HCONN, json=balances).status_code == 200
+    seed_stock(client, svc)
+    svc.price_history.publish("FICTIF-P1", D("154.90"), NOW - timedelta(days=1), "engine", validated=True)
+
+
+ORDER_LINES = [{"public_sku": "DSP-FICTIF_ALPHA-FR", "qty": 1}]
+"""Lignes d'une commande FICTIVE d'un display (revue R4, R3-NEW-05 : lignes obligatoires)."""
+
+
+def seed_stock(client: TestClient, svc: Services, *, qty: int = 6, unit_cost: str = "101.2345") -> None:
+    """Fiche FICTIF-P1, réception physique (operations-sav) et coût de réception adossé (finance-pricing)."""
     assert client.post("/catalog/items", headers=HCAT, json={"items": [{"product_id": "FICTIF-P1", "listing": LISTING}]}).status_code == 200
     # Revue R3 : coût de réception adossé à la réception physique (operations-sav), déposé par finance-pricing.
-    assert client.post("/stock/receive", headers=HOPS, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": 6,
+    assert client.post("/stock/receive", headers=HOPS, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": qty,
                                                              "ref": "FICTIF-BL-1"}).status_code == 200
+    # Revue R4 (R2-NEW-01) : coût de réception borné par une référence du moteur (coût rendu de l'offre évaluée).
+    engine_offer(svc, unit_cost)
     receipt = {"kind": "RECEIPT", "product_key": "FICTIF-P1", "at": (NOW - timedelta(days=2)).isoformat(), "ref": "FICTIF-LOT-1",
-               "qty": 6, "unit_cost": "101.2345", "stock_ref": "FICTIF-BL-1", "invoice_ref": "FICTIF-FACT-1"}
+               "qty": qty, "unit_cost": unit_cost, "stock_ref": "FICTIF-BL-1", "invoice_ref": "FICTIF-FACT-1"}
     assert client.post("/costs/movements", headers=HCONN, json=receipt).status_code == 403  # connecteur : pas son rôle
     assert client.post("/costs/movements", headers=HF, json=receipt).status_code == 200
-    svc.price_history.publish("FICTIF-P1", D("154.90"), NOW - timedelta(days=1), "engine", validated=True)
 
 
 def test_e2e08_refresh_without_registers_lists_what_is_missing(tmp_path: Path) -> None:
@@ -344,12 +365,14 @@ def test_e2e08_declared_debts_reduce_cash_and_net_worth_and_are_never_assumed_ze
     statement = {"as_of": (NOW - timedelta(minutes=5)).isoformat(), "preorders_collected_chf": "500",
                  "debts": [{"label": "Facture FICTIVE non payée", "amount": "300"}],
                  "receivables": [{"label": "Versement PSP en transit", "amount": "100"}], "source": "agent finance FICTIF"}
-    assert client.post("/treasury/balance-items", headers=HCONN, json=statement).status_code == 200
+    # Revue R4 (R3-NEW-02) : une créance n'est relevée que par la propriétaire (un rôle : 403).
+    assert client.post("/treasury/balance-items", headers=HCONN, json=statement).status_code == 403
+    assert client.post("/treasury/balance-items", headers=HO, json=statement).status_code == 200
     data = body(client.post("/stoploss/state/refresh", headers=HPHOTO))
     assert data["cash_available_chf"] == "3000.00"  # 1500 + 2000 − 500 de précommandes encaissées non livrées
     worth = svc.stoploss_state.net_worth
     assert sum(d.amount for d in worth.debts) == D("800") and sum(r.amount for r in worth.receivables) == D("100")
-    older = dict(statement, as_of=(NOW - timedelta(hours=1)).isoformat())
+    older = dict(statement, as_of=(NOW - timedelta(hours=1)).isoformat(), receivables=[])
     assert client.post("/treasury/balance-items", headers=HCONN, json=older).status_code == 409
     # Redémarrage : la déclaration (mémoire) doit être refaite ; sans elle, aucune photo.
     client2, svc2, _ = boot(tmp_path)

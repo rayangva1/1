@@ -31,6 +31,18 @@ Conventions :
   **positif** (paiement, SAV, acquisition, charges fixes) ; seule la propriétaire écrit manuellement les
   autres postes, et un montant négatif doit annuler (en tout ou partie) une écriture positive existante
   du même poste (``ref`` = son ``entry_id``).
+* **Espace de noms du moteur** (revue R4, R3-NEW-04) : les identifiants ``order:``, ``refund:``, ``cost:``,
+  ``expense:``, ``fixed:`` et les sources ``commande``, ``remboursement`` sont réservés aux écritures
+  **dérivées** par le moteur ; une écriture externe qui les emprunte est refusée (422). Une commande est
+  enregistrée **atomiquement** : ses écritures dérivées et sa sortie de stock sont contrôlées avant
+  l'écriture de la commande ; au redémarrage, un conflit sur une écriture dérivée est signalé (étoile polaire
+  « incomplète ») sans bloquer le registre.
+* **Coût des ventes dérivé** (revue R4, R3-NEW-05) : une commande expédiée porte ses lignes (SKU × quantité) ;
+  le moteur en dérive la sortie au CMP (``ISSUE`` du registre de coûts, référence ``order:<id>``), jamais
+  une déclaration de l'agent finance.
+* **Frais de paiement comptés une fois** (revue R4, R3-DOC-03) : un PAYMENT externe portant l'``order_id``
+  d'une commande enregistrée est refusé ; une commande enregistrée après des frais externes de la même
+  commande n'en dérive que le complément.
 """
 
 from __future__ import annotations
@@ -57,7 +69,10 @@ from .pricing import allocate_amount, as_decimal
 
 __all__ = [
     "COST_LEDGER_SOURCE",
+    "RESERVED_ENTRY_PREFIXES",
+    "RESERVED_SOURCES",
     "ROLE_POSTS",
+    "OrderLine",
     "OrderRegister",
     "ShippedOrder",
     "OrderRefund",
@@ -123,6 +138,11 @@ _FIELD = {
     Post.FIXED_COSTS: "fixed_costs",
 }
 _EXPENSE_POSTS = frozenset({Post.PAYMENT, Post.LOGISTICS, Post.AFTER_SALES, Post.ACQUISITION, Post.FIXED_COSTS})
+RESERVED_ENTRY_PREFIXES: tuple[str, ...] = ("order:", "refund:", "cost:", "expense:", "fixed:")
+"""Identifiants des écritures **dérivées** par le moteur : jamais acceptés d'une écriture externe (R3-NEW-04)."""
+RESERVED_SOURCES: frozenset[str] = frozenset({"commande", "remboursement", "depense", "charges_fixes", COST_LEDGER_SOURCE.lower()})
+"""Sources des écritures dérivées : jamais déclarables par une écriture externe."""
+ORDER_SOURCE = "commande"
 ROLE_POSTS: frozenset[Post] = frozenset({Post.PAYMENT, Post.AFTER_SALES, Post.ACQUISITION, Post.FIXED_COSTS})
 """Postes qu'un rôle nommé peut déclarer (``POST /northstar/entries``), en montant **positif** seulement :
 ventes et logistique viennent des commandes enregistrées (``POST /orders/shipped``)."""
@@ -412,6 +432,14 @@ class NorthStarLedger:
             self._check_external(e)
         with self._lock:
             fresh = [e for e in entries if self._entries.get(e.entry_id) != e]
+            for e in fresh:  # rejouer à l'identique une écriture existante reste sans effet (idempotence)
+                self._check_namespace(e)
+            for e in fresh:
+                if e.post is Post.PAYMENT and e.order_id and self._order_recorded(e.order_id):
+                    raise NorthStarError(
+                        f"écriture {e.entry_id} : frais de paiement de la commande {e.order_id} déjà inscrits par la "
+                        "commande enregistrée (POST /orders/shipped) — jamais comptés deux fois"
+                    )
             if owner:
                 self._check_owner_batch(fresh)
             else:
@@ -423,6 +451,41 @@ class NorthStarLedger:
                             "enregistrées (POST /orders/shipped, /orders/{id}/refunds) ; écriture manuelle : propriétaire"
                         )
             return self._add(entries)
+
+    @staticmethod
+    def _check_namespace(entry: ContributionEntry) -> None:
+        """Écriture externe : identifiants et sources des écritures dérivées réservés au moteur (revue R4)."""
+        entry_id = entry.entry_id.strip().lower()
+        if any(entry_id.startswith(prefix) for prefix in RESERVED_ENTRY_PREFIXES):
+            raise NorthStarError(
+                f"écriture {entry.entry_id} : identifiant réservé au moteur ({', '.join(RESERVED_ENTRY_PREFIXES)} : "
+                "écritures dérivées des commandes, avoirs et coûts) — choisir un autre entry_id (ex. psp:<transaction>)"
+            )
+        if entry.source.strip().lower() in RESERVED_SOURCES:
+            raise NorthStarError(f"écriture {entry.entry_id} : source « {entry.source} » réservée au moteur")
+
+    def _order_recorded(self, order_id: str) -> bool:
+        with self._lock:
+            return any(e.source == ORDER_SOURCE and e.order_id == order_id for e in self._entries.values())
+
+    def external_payment(self, order_id: str) -> Decimal:
+        """Frais de paiement **externes** (rapprochement PSP) déjà inscrits pour une commande."""
+        with self._lock:
+            return sum(
+                (e.amount for e in self._entries.values()
+                 if e.post is Post.PAYMENT and e.order_id == order_id and e.source not in (ORDER_SOURCE, "remboursement")),
+                ZERO,
+            )  # fmt: skip
+
+    def check_new(self, entries: Sequence[ContributionEntry]) -> None:
+        """Contrôle à blanc : lève :class:`NorthStarError` si une écriture contredit une écriture existante."""
+        with self._lock:
+            seen: dict[str, ContributionEntry] = {}
+            for e in entries:
+                existing = self._entries.get(e.entry_id) or seen.get(e.entry_id)
+                if existing is not None and existing != e:
+                    raise NorthStarError(f"écriture {e.entry_id} déjà enregistrée avec un autre contenu")
+                seen[e.entry_id] = e
 
     def _check_owner_batch(self, fresh: Sequence[ContributionEntry]) -> None:
         """Écriture manuelle de la propriétaire : aucune valeur négative arbitraire, aucune vente sans logistique réelle."""
@@ -485,25 +548,47 @@ class NorthStarLedger:
         ``logistics`` : coût **réel** du transporteur, obligatoire et > 0 (:func:`require_actual_logistics`).
         Le coût des unités vient du coût historique (:meth:`sync_cost_ledger`), pas d'ici.
         """
+        entries = self.order_entries(
+            order_id, at, net_sales_ht=net_sales_ht, payment_fees=payment_fees, logistics=logistics,
+            after_sales=after_sales, label_ref=label_ref,
+        )  # fmt: skip
+        self._add(entries)
+        return tuple(entries)
+
+    def order_entries(
+        self,
+        order_id: str,
+        at: datetime,
+        *,
+        net_sales_ht: Decimal | int | str,
+        payment_fees: Decimal | int | str,
+        logistics: Decimal | int | str | None,
+        after_sales: Decimal | int | str = ZERO,
+        label_ref: str | None = None,
+    ) -> list[ContributionEntry]:
+        """Écritures dérivées d'une commande, **sans les enregistrer** (contrôle à blanc, :meth:`check_new`).
+
+        Frais de paiement : seulement le complément des frais externes déjà inscrits pour la même commande
+        (rapprochement PSP du workflow 02) — jamais comptés deux fois (revue R4, R3-DOC-03).
+        """
         sales = _cents(net_sales_ht, "net_sales_ht")
         if sales <= 0:
             raise NorthStarError("ventes nettes d'une commande ≤ 0")
         fees = _cents(payment_fees, "payment_fees")
         if fees < 0:
             raise NorthStarError("frais de paiement négatifs")
+        fees = max(ZERO, fees - self.external_payment(order_id))
         items = [(Post.NET_SALES, sales), (Post.PAYMENT, fees)]
         items.append((Post.LOGISTICS, require_actual_logistics(order_id, logistics, label_ref)))
         items.append((Post.AFTER_SALES, _cents(after_sales, "after_sales")))
-        entries = [
+        return [
             ContributionEntry(
                 entry_id=f"order:{order_id}:{post.value}", at=at, post=post, amount=amount, ref=order_id,
-                source="commande", order_id=order_id,
+                source=ORDER_SOURCE, order_id=order_id,
             )
             for post, amount in items
             if amount != 0 or post is Post.NET_SALES
         ]  # fmt: skip
-        self._add(entries)
-        return tuple(entries)
 
     def record_basket(self, order_id: str, at: datetime, basket: BasketResult) -> tuple[ContributionEntry, ...]:
         """Commande à partir d'un :class:`~pokeshop.models.BasketResult` du moteur de prix.
@@ -814,6 +899,29 @@ class CostRegister:
                 raise NorthStarError("facture : lot_id et unit_cost obligatoires")
             ledger.apply_invoice(movement.lot_id, movement.unit_cost, movement.ref, movement.at)
 
+    def check(self, movements: Sequence[CostMovement]) -> None:
+        """Contrôle **à blanc** d'une suite de mouvements (rien n'est écrit) ; lève l'erreur du premier refus.
+
+        Erreurs du registre (stock valorisé insuffisant, lot inconnu…) converties en :class:`NorthStarError`.
+        """
+        with self._lock:
+            keys = {m.product_key for m in movements}
+            trial: dict[str, HistoricalCostLedger] = {}
+            trial_returned: dict[tuple[str, str], int] = {}
+            try:
+                for m in self._movements:
+                    if m.product_key in keys:
+                        self._apply(trial, trial_returned, m)
+                for m in movements:
+                    self._apply(trial, trial_returned, m)
+            except CostError as exc:
+                raise NorthStarError(str(exc)) from exc
+
+    def has_issue(self, product_key: str, ref: str) -> bool:
+        """Vrai si une sortie (ISSUE) de référence ``ref`` existe déjà pour le produit."""
+        with self._lock:
+            return any(m.kind == "ISSUE" and m.product_key == product_key and m.ref == ref for m in self._movements)
+
     def apply(self, movement: CostMovement) -> int:
         """Contrôle, enregistre puis applique un mouvement ; renvoie le nombre d'écritures ajoutées à l'étoile polaire."""
         with self._lock:
@@ -867,8 +975,20 @@ class CostRegister:
 # ------------------------------------------------------------------- commandes enregistrées
 
 
+class OrderLine(FrozenModel):
+    """Ligne expédiée d'une commande : SKU boutique, clé produit canonique (résolue par le moteur), quantité."""
+
+    public_sku: str = Field(min_length=3, max_length=64)
+    product_key: str = Field(min_length=1, max_length=120)
+    qty: int = Field(ge=1, le=10_000)
+
+
 class ShippedOrder(FrozenModel):
-    """Commande payée et expédiée, enregistrée par le moteur (seule source des ventes de l'étoile polaire)."""
+    """Commande payée et expédiée, enregistrée par le moteur (seule source des ventes de l'étoile polaire).
+
+    Revue R4 (R3-NEW-05) : ``lines`` (SKU × quantité) — le moteur en dérive la sortie de stock et le coût des
+    ventes au CMP ; une commande ancienne sans lignes reste lisible (coût des ventes non dérivé : signalé).
+    """
 
     order_id: str = Field(min_length=1, max_length=120)
     paid_at: datetime
@@ -880,6 +1000,7 @@ class ShippedOrder(FrozenModel):
     source: str = Field(min_length=3, max_length=200)
     recorded_by: str = Field(min_length=2)
     recorded_at: datetime
+    lines: tuple[OrderLine, ...] = ()
 
     @field_validator("paid_at", "recorded_at")
     @classmethod
@@ -891,6 +1012,21 @@ class ShippedOrder(FrozenModel):
     def content(self) -> dict[str, Any]:
         """Contenu comparé pour l'idempotence (hors acteur et date d'enregistrement)."""
         return self.model_dump(mode="json", exclude={"recorded_by", "recorded_at"})
+
+    @property
+    def sale_ref(self) -> str:
+        """Référence des sorties de stock dérivées de la commande (``sale_ref`` d'un retour)."""
+        return f"order:{self.order_id}"
+
+    def issue_movements(self) -> tuple[CostMovement, ...]:
+        """Sorties au CMP dérivées des lignes (une par référence ; quantités cumulées)."""
+        qty: dict[str, int] = {}
+        for line in self.lines:
+            qty[line.product_key] = qty.get(line.product_key, 0) + line.qty
+        return tuple(
+            CostMovement(kind="ISSUE", product_key=key, at=self.paid_at, ref=self.sale_ref, qty=n, recorded_by="moteur")
+            for key, n in sorted(qty.items())
+        )
 
 
 class OrderRefund(FrozenModel):
@@ -931,6 +1067,8 @@ class OrderRegister:
         self._orders: dict[str, ShippedOrder] = {}
         self._refunds: dict[str, OrderRefund] = {}
         self._store = store
+        self.derivation_errors: dict[str, str] = {}
+        """Commande ou avoir -> motif d'une écriture dérivée impossible au rattrapage (étoile polaire incomplète)."""
 
     @classmethod
     def restore(cls, store: StateJournal) -> OrderRegister:
@@ -961,8 +1099,15 @@ class OrderRegister:
         except StateStoreError as exc:
             raise NorthStarPersistenceError(f"commande non enregistrée ({exc})") from exc
 
-    def record_shipped(self, order: ShippedOrder, northstar: NorthStarLedger | None) -> tuple[ShippedOrder, bool]:
-        """Enregistre une commande expédiée puis dérive ses écritures ; (commande, nouvelle ?)."""
+    def record_shipped(
+        self, order: ShippedOrder, northstar: NorthStarLedger | None, costs: CostRegister | None = None
+    ) -> tuple[ShippedOrder, bool]:
+        """Enregistre une commande expédiée puis dérive ses écritures ; (commande, nouvelle ?).
+
+        **Atomique** (revue R4, R3-NEW-04) : écritures dérivées de l'étoile polaire et sorties de stock au CMP
+        (``costs``, revue R3-NEW-05) sont contrôlées à blanc **avant** l'écriture de la commande ; un conflit
+        (identifiant déjà pris, stock valorisé insuffisant) refuse la commande sans rien écrire.
+        """
         require_actual_logistics(order.order_id, order.shipping_cost_actual, order.shipping_label_ref)
         for value, name in ((order.net_sales_ht, "net_sales_ht"), (order.payment_fees, "payment_fees")):
             _cents(value, name)
@@ -972,10 +1117,33 @@ class OrderRegister:
                 if current.content() != order.content():
                     raise NorthStarError(f"commande {order.order_id} déjà enregistrée avec un autre contenu")
                 return current, False
+            entries = self._order_entries(order, northstar)
+            if northstar is not None:
+                northstar.check_new(entries)
+            issues = [m for m in order.issue_movements() if costs is None or not costs.has_issue(m.product_key, m.ref)]
+            if costs is not None and issues:
+                costs.check(issues)
             self._append({"order": order.model_dump(mode="json")})
             self._orders[order.order_id] = order
-        self._derive_order(order, northstar)
+        if costs is not None:
+            for movement in issues:
+                costs.apply(movement)
+        if northstar is not None:
+            northstar._add(entries)
         return order, True
+
+    @staticmethod
+    def _order_entries(order: ShippedOrder, northstar: NorthStarLedger | None) -> list[ContributionEntry]:
+        if northstar is None:
+            return []
+        return northstar.order_entries(
+            order.order_id,
+            order.paid_at,
+            net_sales_ht=order.net_sales_ht,
+            payment_fees=order.payment_fees,
+            logistics=order.shipping_cost_actual,
+            label_ref=order.shipping_label_ref,
+        )
 
     def record_refund(self, refund: OrderRefund, northstar: NorthStarLedger | None) -> tuple[OrderRefund, bool]:
         """Enregistre un avoir sur une commande connue (cumul ≤ ventes de la commande) ; (avoir, nouveau ?)."""
@@ -1026,15 +1194,40 @@ class OrderRegister:
                 order_id=refund.order_id,
             )
 
-    def sync(self, northstar: NorthStarLedger) -> None:
-        """Rattrape les écritures dérivées absentes de l'étoile polaire (idempotent)."""
+    def sync(self, northstar: NorthStarLedger, costs: CostRegister | None = None) -> dict[str, str]:
+        """Rattrape les écritures dérivées absentes (étoile polaire, sorties de stock), idempotent.
+
+        Revue R4 (R3-NEW-04) : un conflit sur une écriture dérivée (identifiant déjà pris par une écriture
+        ancienne) ne bloque **pas** le registre : il est relevé dans :attr:`derivation_errors` (étoile polaire
+        « incomplète ») et les autres commandes sont rattrapées. Renvoie ces motifs.
+        """
         with self._lock:
             orders = list(self._orders.values())
             refunds = list(self._refunds.values())
+        errors: dict[str, str] = {}
         for order in orders:
-            self._derive_order(order, northstar)
+            try:
+                if costs is not None:
+                    for movement in order.issue_movements():
+                        if not costs.has_issue(movement.product_key, movement.ref):
+                            costs.check([movement])
+                            costs.apply(movement)
+                if not order.lines:
+                    errors[f"commande {order.order_id}"] = "commande sans lignes : coût des ventes non dérivé"
+                self._derive_order(order, northstar)
+            except NorthStarPersistenceError:
+                raise
+            except (NorthStarError, CostError) as exc:
+                errors[f"commande {order.order_id}"] = str(exc)
         for refund in refunds:
-            self._derive_refund(refund, northstar)
+            try:
+                self._derive_refund(refund, northstar)
+            except NorthStarPersistenceError:
+                raise
+            except NorthStarError as exc:
+                errors[f"avoir {refund.refund_id}"] = str(exc)
+        self.derivation_errors = errors
+        return errors
 
     def get(self, order_id: str) -> ShippedOrder | None:
         """Commande enregistrée (None si inconnue)."""

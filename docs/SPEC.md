@@ -27,7 +27,8 @@
     des registres du moteur, d'un autre jeton nommé, ou de la propriétaire avec son jeton. L'acteur est déduit du jeton.
 12. **Secrets hors de portée de la flotte.** Les secrets vivent au coffre et dans l'environnement des conteneurs, hors de
     l'arborescence où travaillent les agents ; `.claude/settings.json` ne contient que des règles `deny` qui les rendent
-    illisibles (aucune règle `allow`). Seules des empreintes sha256 des jetons sont configurées.
+    illisibles (aucune règle `allow`). Seules des empreintes sha256 des jetons sont configurées ; les secrets des passerelles
+    n8n (un par webhook et par agent appelant) ne vivent que dans n8n et au coffre, et l'administration de n8n reste à la propriétaire.
 
 ## 1. Stack
 
@@ -116,45 +117,49 @@ Jetons (empreintes sha256 seulement dans l'environnement ; acteur journalisé **
 - **RÔLE** = jeton nommé, nom = rôle de la matrice (agents de `.claude/agents/` et connecteurs n8n) :
   `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` (une variable par rôle) ou `POKESHOP_AGENT_TOKENS_SHA256=rôle:empreinte,…` ;
   un nom inconnu de la matrice fait échouer le démarrage. Rôle non admis : 403 (`….role_refused`).
-- **PROPRIO** = `X-Pokeshop-Owner-Token` valide (`POKESHOP_OWNER_TOKEN_SHA256`), distinct du jeton d'API ; admis sur
-  toutes les écritures sauf `POST /mandate/check` (la propriétaire ne dépense pas via le mandat des agents).
-- Aucune empreinte configurée : 503 ; jeton absent ou faux : 401. Les documents `/docs` et `/openapi.json` sont fermés.
+- **PROPRIO** = `X-Pokeshop-Owner-Token` valide (`POKESHOP_OWNER_TOKEN_SHA256`), distinct du jeton d'API, **suffisant
+  seul** (aucun `X-Pokeshop-Token` requis, revue R4 R3-DOC-01) ; admis sur toutes les lectures et toutes les écritures
+  sauf `POST /mandate/check` (la propriétaire ne dépense pas via le mandat des agents).
+- Aucune empreinte de jeton d'API configurée : 503 (sauf jeton propriétaire valide, qui suffit seul) ; jeton absent ou faux : 401. Les documents `/docs` et `/openapi.json` sont fermés.
 
 | Route | Rôles admis (en plus de PROPRIO, sauf mention) | Règles décisives |
 |---|---|---|
 | `GET /health` | public, sans secret | workflow 05 |
 | `POST /pricing/quote`, `POST /pricing/basket`, `POST /stock/sellable`, `POST /publish/preview` | COMMUN (aperçu) | prix, publication : valeurs du moteur et des registres ; champs de validation ou d'identifiant Shopify dans la fiche : 422 |
-| `GET /pricing/approvals`, `GET /catalog`, `GET /catalog/approvals`, `GET /sync/history`, `GET /incidents`, `GET /autonomy`, `GET /stoploss/status`, `GET /capital/movements`, `GET /northstar` | COMMUN (lecture) | `consecutive_clean_runs` : cycles réels distincts ; journal illisible : 503 |
+| `GET /pricing/approvals`, `GET /catalog`, `GET /catalog/approvals`, `GET /sync/history`, `GET /incidents`, `GET /autonomy`, `GET /stoploss/status`, `GET /capital/movements`, `GET /northstar` | COMMUN (lecture) | `consecutive_clean_runs` : cycles réels distincts ; `GET /northstar` : `incomplete` et `derivation_errors` quand une écriture dérivée d'une commande est impossible (gates : critère ROUGE) ; journal illisible : 503 |
 | `GET /dashboard/daily`, `GET /dashboard/weekly`, `GET /dashboard/monthly` | COMMUN (lecture) | journal non relu : KPI indisponibles, statut CRITIQUE |
 | `POST /pricing/approvals` | PROPRIO seul | motif ≥ 10 caractères, `valid_hours` 1-168 ; `floor_exception_ref` sous plancher (C27) |
 | `POST /pricing/approvals/{approval_id}/revoke` | `finance-pricing`, `qa-conformite`, `chef-de-projet` | acte protecteur |
 | `POST /stock/receive` | `operations-sav` | réceptionnaire journalisé (`by`), base des coûts historiques |
 | `POST /stock/reorder-proposal` | `finance-pricing`, `operations-sav` | `cap_exceptions` non vide : PROPRIO (C18) |
 | `POST /imports/{supplier}/run` | `donnees-fournisseurs`, `n8n-01-sync` | toujours en simulation |
-| `POST /catalog/items` | `catalogue` | `approved`, `content_validated`, `category_rule_validated`, identifiants Shopify, prix publié : 422 |
+| `POST /catalog/items` | `catalogue` | `approved`, `content_validated`, `category_rule_validated`, identifiants Shopify, prix publié : 422 ; **clé unique** `product_id` = `listing.product_key` (422) ; SKU ou handle en double : 409 ; nouvel identifiant qui reprend le SKU ou le handle d'une fiche existante, ou l'identité d'une référence en quarantaine, bloquée par le stop-loss produit ou d'état inconnu : 409 (PROPRIO seule) |
 | `POST /catalog/approvals` | PROPRIO seul | validation humaine liée au contenu (`listing_sha256`) ; fiche modifiée : `VALIDATION_OUTDATED` |
 | `POST /catalog/cost-inputs` | `finance-pricing` | aucun champ `fx_*` : 422 |
-| `POST /sync/run` | `n8n-01-sync`, `site-integrations` | validations lues au registre ; `dry_run:false` : porte de gouvernance + `POKESHOP_DRY_RUN=false` ; prix de repli = dernier prix publié du registre, sinon brouillon |
-| `POST /incidents` | tous les rôles nommés | fournisseur ou fiche FICTIF : déduit du catalogue, jamais déclaré |
-| `POST /incidents/{incident_id}/test` | tous les rôles nommés | `passed:true` : `qa-conformite` (≠ ouvreur) ou PROPRIO ; `test_ref` = `run_id` d'un cycle PROPRE en simulation, catalogue du registre, postérieur à l'ouverture, lancé par un autre principal, sur le fournisseur et la référence de l'incident, sans source FICTIVE |
+| `POST /sync/run` | `n8n-01-sync`, `site-integrations` | validations lues au registre par clé canonique ; catalogue du corps : simulation seulement (`dry_run:false` : 409) ; quarantaine et stop-loss produit sur toutes les clés de la référence ; `dry_run:false` : porte de gouvernance + `POKESHOP_DRY_RUN=false` ; prix de repli = dernier prix publié du registre, sinon brouillon |
+| `POST /incidents` | tous les rôles nommés | fournisseur ou fiche FICTIF : déduit du catalogue, jamais déclaré ; `simulation` admis seulement si le moteur est en simulation (`POKESHOP_DRY_RUN`), sinon incident réel |
+| `POST /incidents/{incident_id}/test` | tous les rôles nommés | `passed:true` : `qa-conformite` (≠ ouvreur) ou PROPRIO ; `test_ref` = `run_id` d'un cycle PROPRE en simulation, catalogue du registre, postérieur à l'ouverture, lancé par un autre principal, sur le fournisseur et la référence de l'incident, sans source FICTIVE — sauf incident sur données FICTIVES ou ouvert moteur en simulation |
 | `POST /incidents/{incident_id}/resume`, `POST /incidents/{incident_id}/close` | `qa-conformite`, `chef-de-projet`, `n8n-04-incidents` | incident critique : PROPRIO |
 | `POST /autonomy` | tous les rôles nommés | hausse de niveau : PROPRIO |
-| `POST /stoploss/state`, `POST /stoploss/state/refresh` | `n8n-07-stoploss` | photo construite par le moteur ; publicité = MAX(déclaration, paiements pub exécutés du mandat) ; `capital_movements` du corps : 422 |
+| `POST /stoploss/state/refresh` | `n8n-07-stoploss` | photo construite par le moteur ; dettes = déclarées + factures enregistrées non payées ; créances : relevé PROPRIO seulement ; publicité = MAX(déclaration, paiements pub **engagés** — approuvés ou exécutés — du mandat) |
+| `POST /stoploss/state` | PROPRIO seul | photo déposée (relevé de la propriétaire) : cash ≠ relevés du connecteur de trésorerie : 409 ; `capital_movements` du corps : 422 |
 | `POST /stoploss/freeze` | tous les rôles nommés | acte protecteur |
 | `POST /stoploss/rearm` | PROPRIO seul | `reference_chf` attestée (C18) |
 | `POST /stoploss/baseline` | PROPRIO seul | `with_photo:true` : premier point zéro posé atomiquement avec la première photo (C19) ; sinon photo acceptée requise |
 | `POST /stoploss/capital-memory/reset` | PROPRIO seul | C23 |
-| `POST /mandate/check` | `chef-de-projet`, `sourcing`, `finance-pricing`, `direction-artistique`, `site-integrations`, `communication`, `acquisition`, `operations-sav`, `n8n-08-mandat` (PROPRIO **non**) | `requested_by` = nom du jeton ; relais `n8n-08-mandat` : trésorerie non vérifiée ; tout poste du stop-loss non attesté par son rôle : `TREASURY_UNVERIFIED` |
+| `POST /mandate/check` | `chef-de-projet`, `sourcing`, `finance-pricing`, `direction-artistique`, `site-integrations`, `communication`, `acquisition`, `operations-sav`, `n8n-08-mandat` (PROPRIO **non**) | `requested_by` = nom du jeton ; relais `n8n-08-mandat` : `requested_by` parmi les agents qui dépensent (sinon 403), trésorerie non vérifiée ; tout poste du stop-loss non attesté par son rôle : `TREASURY_UNVERIFIED` ; dépense pub sans relevé de `connecteur-publicite` de moins de 24 h : `TREASURY_UNVERIFIED` |
 | `POST /mandate/revoke` | tous les rôles nommés | acte protecteur |
 | `POST /treasury/paypal-balance`, `POST /treasury/bank-balance` | `connecteur-tresorerie` | connecteurs en lecture seule (B26) |
-| `POST /treasury/balance-items` | `finance-pricing`, `connecteur-tresorerie` | |
+| `POST /treasury/balance-items` | `finance-pricing`, `connecteur-tresorerie` | créances : PROPRIO seule (rôle : 403) ; `finance-pricing` ne baisse jamais dettes ni précommandes (403) |
 | `POST /capital/movements` | PROPRIO seul | seule source des apports et retraits (B25) |
 | `POST /ads/activity` | `connecteur-publicite` (jamais `acquisition`) | registre en ajout seul (baisse : 409) ; commandes attribuées : existantes au registre des commandes |
 | `POST /fx/rates` | PROPRIO seul | seule source des taux (C23) |
-| `POST /orders/shipped` | `n8n-02-commandes` | coût transporteur réel > 0 et référence d'étiquette ; écrit ventes, frais, logistique de la commande |
+| `POST /orders/shipped` | `n8n-02-commandes` | coût transporteur réel > 0 et référence d'étiquette ; **lignes** (SKU × quantité) obligatoires ; écrit ventes, frais (complément des frais externes de la commande), logistique, et la sortie au CMP (coût des ventes) ; atomique (conflit ou stock au coût insuffisant : 409, rien d'écrit) |
 | `POST /orders/{order_id}/refunds` | `n8n-02-commandes`, `operations-sav` | avoir cumulé ≤ ventes de la commande enregistrée |
-| `POST /northstar/entries` | `n8n-02-commandes`, `finance-pricing` | rôle : montants positifs sur paiement, SAV, acquisition, frais fixes ; ventes, avoirs et montants négatifs (référencés) : PROPRIO |
-| `POST /costs/movements` | `finance-pricing` | réception adossée à `POST /stock/receive` (autre jeton) et facture ; écart de facture > 2 % : PROPRIO |
+| `POST /northstar/entries` | `n8n-02-commandes`, `finance-pricing` | rôle : montants positifs sur paiement, SAV, acquisition, frais fixes ; ventes, avoirs et montants négatifs (référencés) : PROPRIO ; identifiants `order:`, `refund:`, `cost:`, `expense:`, `fixed:` réservés au moteur (422) ; PAYMENT portant l'`order_id` d'une commande enregistrée : 422 |
+| `POST /costs/movements` | `finance-pricing` | réception adossée à `POST /stock/receive` (autre jeton), une fois par réception, coût unitaire à ± 2 % de la ligne de facture enregistrée ou du coût rendu de l'offre évaluée (sinon, ou sans référence : PROPRIO) ; sortie de vente (ISSUE) : dérivée des commandes (rôle : 403) ; retour : commande enregistrée avec avoir ; écart de facture > 2 % : PROPRIO |
+| `POST /costs/invoices` | `n8n-03-factures` | facture validée par la propriétaire (workflow 03) : lignes au coût rendu ventilé sur clés canoniques ; dette de la photo jusqu'au paiement ; idempotente (autre contenu : 409) |
+| `POST /costs/invoices/{invoice_ref}/payments` | `connecteur-tresorerie` | paiement relevé (cumul ≤ montant) : seule baisse de la dette d'une facture |
 
 Tout refus est journalisé (jamais le jeton). Écritures propres à chaque rôle : section « Écritures par rôle » de
 `docs/08-agents/MATRICE_API.md` (générée) ; qui détient quel jeton (17 rôles émis : 10 connecteurs n8n, 7 agents ayant

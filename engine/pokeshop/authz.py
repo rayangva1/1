@@ -15,14 +15,18 @@ Principes (``docs/08-agents/MATRICE_API.md`` est généré depuis ce module) :
   est son **rôle** — un des 12 agents de ``.claude/agents/`` ou un connecteur/workflow n8n — et devient
   l'acteur journalisé. Un nom inconnu de cette matrice est refusé au démarrage.
 * **Propriétaire** : en-tête ``X-Pokeshop-Owner-Token`` valide (distinct du jeton d'API) ; seule voie
-  des actes ``OWNER`` (approbations, capital, taux, réarmement, point zéro…).
+  des actes ``OWNER`` (approbations, capital, taux, réarmement, point zéro, photo déposée…). Revue R4
+  (R3-DOC-01) : le jeton propriétaire **seul** suffit sur toute route qui l'admet (aucun jeton d'API requis).
 * **Séparation des rôles** : l'agent qui bénéficie d'une valeur ne la déclare pas. Exemples :
   ``acquisition`` (qui dépense en publicité) ne déclare pas l'activité publicitaire (connecteur
   ``connecteur-publicite`` ; et le moteur retient le MAX entre la déclaration et les paiements pub
-  exécutés du registre du mandat) ; ``catalogue`` dépose les fiches mais ne les approuve pas
-  (propriétaire, ``POST /catalog/approvals``) ; les relevés de cash viennent du
-  ``connecteur-tresorerie``, la photo du stop-loss de ``n8n-07-stoploss`` ; les coûts historiques de
-  ``finance-pricing`` adossés à une réception physique déclarée par ``operations-sav``.
+  **engagés** — approuvés ou exécutés — du registre du mandat) ; ``catalogue`` dépose les fiches mais ne
+  les approuve pas (propriétaire, ``POST /catalog/approvals``) ; les relevés de cash viennent du
+  ``connecteur-tresorerie``, la photo du stop-loss est **construite par le moteur** (``n8n-07-stoploss``
+  ne fait que la demander ; une photo déposée : propriétaire seule) ; les coûts historiques de
+  ``finance-pricing`` adossés à une réception physique déclarée par ``operations-sav`` et bornés par une
+  référence du moteur (facture enregistrée par ``n8n-03-factures`` ou coût rendu de l'offre) ; les créances
+  de la photo : propriétaire seule ; les dettes : plancher des factures enregistrées non payées.
 
 Les contrôles fins restent dans les routes (ex. test d'incident réussi : ``qa-conformite`` ou
 propriétaire ; hausse d'autonomie : propriétaire) : la matrice dit **qui peut appeler** la route.
@@ -43,6 +47,8 @@ __all__ = [
     "KNOWN_ROLES",
     "INCIDENT_TEST_ATTESTERS",
     "RELAY_ROLES",
+    "RELAYED_SPENDERS",
+    "SPENDING_ROLES",
     "Kind",
     "RouteRule",
     "ROUTE_MATRIX",
@@ -51,7 +57,7 @@ __all__ = [
     "matrix_markdown",
 ]
 
-AUTHZ_VERSION = "2026-10-05.r3"
+AUTHZ_VERSION = "2026-10-05.r4"
 """Version de la matrice (à changer à chaque modification ; citée par ``/health`` et la doc générée)."""
 
 OWNER = "propriétaire"
@@ -64,7 +70,7 @@ AGENT_ROLES: dict[str, str] = {
     "sourcing": "Agent 02 — sourcing (fournisseurs, devis)",
     "donnees-fournisseurs": "Agent 03 — données fournisseurs (imports en simulation)",
     "catalogue": "Agent 04 — catalogue (fiches en brouillon, jamais approuvées par lui)",
-    "finance-pricing": "Agent 05 — finance et pricing (coûts, frais, dettes et créances)",
+    "finance-pricing": "Agent 05 — finance et pricing (coûts bornés par une référence du moteur, frais, dettes)",
     "direction-artistique": "Agent 06 — direction artistique",
     "site-integrations": "Agent 07 — site et intégrations (cycles de synchronisation)",
     "seo-redaction": "Agent 08 — SEO et rédaction",
@@ -78,13 +84,13 @@ AGENT_ROLES: dict[str, str] = {
 CONNECTOR_ROLES: dict[str, str] = {
     "n8n-01-sync": "Workflow n8n 01 — fournisseur vers site (imports, cycles en simulation)",
     "n8n-02-commandes": "Workflow n8n 02 — commandes (frais PSP réels, commandes expédiées)",
-    "n8n-03-factures": "Workflow n8n 03 — factures (signalement d'écarts)",
+    "n8n-03-factures": "Workflow n8n 03 — factures fournisseur validées par la propriétaire (registre, écarts)",
     "n8n-04-incidents": "Workflow n8n 04 — incidents (ouverture, reprise après test attesté)",
     "n8n-05-digest": "Workflow n8n 05 — digest quotidien (lecture)",
     "n8n-06-marketing": "Workflow n8n 06 — automatisations marketing (incidents)",
-    "n8n-07-stoploss": "Workflow n8n 07 — photo du stop-loss construite par le moteur, gel",
-    "n8n-08-mandat": "Workflow n8n 08 — passerelle du mandat de dépense (relais : trésorerie jamais vérifiable)",
-    "connecteur-tresorerie": "Connecteur banque et PayPal en lecture seule (soldes relevés)",
+    "n8n-07-stoploss": "Workflow n8n 07 — demande la photo du stop-loss construite par le moteur, gel",
+    "n8n-08-mandat": "Workflow n8n 08 — passerelle du mandat (relais d'un rôle qui dépense : jamais vérifiable)",
+    "connecteur-tresorerie": "Connecteur banque et PayPal en lecture seule (soldes, paiements de factures)",
     "connecteur-publicite": "Connecteur de la plateforme publicitaire (dépenses, commandes attribuées)",
 }
 """Connecteurs et workflows : jamais un agent qui bénéficie de la valeur qu'il dépose."""
@@ -105,6 +111,9 @@ SPENDING_ROLES: frozenset[str] = frozenset(
      "acquisition", "operations-sav", "n8n-08-mandat"}
 )  # fmt: skip
 """Rôles qui peuvent soumettre une demande de dépense au mandat (jamais ``qa-conformite`` ni ``catalogue``)."""
+
+RELAYED_SPENDERS: frozenset[str] = (SPENDING_ROLES & frozenset(AGENT_ROLES)) - RELAY_ROLES
+"""Demandeurs qu'un relais (``n8n-08-mandat``) peut porter : agents qui dépensent (revue R4, R3-NEW-06)."""
 
 
 class Kind(str, Enum):
@@ -211,7 +220,8 @@ ROUTE_MATRIX: dict[tuple[str, str], RouteRule] = {
     ("GET", "/autonomy"): _read("autonomy"),
     ("POST", "/autonomy"): _write("autonomy", ALL_NAMED, note="baisser : tout rôle ; relever : propriétaire"),
     # -- stop-loss
-    ("POST", "/stoploss/state"): _write("stoploss.state", {"n8n-07-stoploss"}, note="photo déposée (valeurs décisives)"),
+    ("POST", "/stoploss/state"): _owner(
+        "stoploss.state", "photo déposée (relevé propriétaire) : cash recoupé avec les relevés du connecteur, écart => 409"),
     ("POST", "/stoploss/state/refresh"): _write(
         "stoploss.refresh", {"n8n-07-stoploss"}, note="photo construite par le moteur depuis ses registres"),
     ("GET", "/stoploss/status"): _read("stoploss.status", "évalue le stop-loss (verrouillage protecteur possible)"),
@@ -222,12 +232,15 @@ ROUTE_MATRIX: dict[tuple[str, str], RouteRule] = {
     # -- mandat et trésorerie
     ("POST", "/mandate/check"): _write(
         "mandate.check", SPENDING_ROLES, owner=False,
-        note="requested_by = rôle du jeton ; relais n8n-08-mandat : trésorerie non vérifiable (validation humaine)"),
+        note="requested_by = rôle du jeton ; relais n8n-08-mandat : requested_by parmi les agents qui dépensent, "
+        "trésorerie non vérifiable (validation humaine)"),
     ("POST", "/mandate/revoke"): _write("mandate.revoke", ALL_NAMED, note="acte protecteur"),
     ("POST", "/treasury/paypal-balance"): _write("treasury.paypal_balance", {"connecteur-tresorerie"}),
     ("POST", "/treasury/bank-balance"): _write("treasury.bank_balance", {"connecteur-tresorerie"}),
     ("POST", "/treasury/balance-items"): _write(
-        "treasury.balance_items", {"finance-pricing", "connecteur-tresorerie"}, note="dettes et créances à date"),
+        "treasury.balance_items", {"finance-pricing", "connecteur-tresorerie"},
+        note="dettes à date (finance-pricing : hausse seulement) ; créances : propriétaire seule ; "
+        "plancher : factures enregistrées non payées"),
     ("POST", "/capital/movements"): _owner("capital.movement"),
     ("GET", "/capital/movements"): _read("capital.movements"),
     ("POST", "/ads/activity"): _write(
@@ -238,14 +251,24 @@ ROUTE_MATRIX: dict[tuple[str, str], RouteRule] = {
     ("GET", "/northstar"): _read("northstar"),
     ("POST", "/northstar/entries"): _write(
         "northstar.entries", {"n8n-02-commandes", "finance-pricing"},
-        note="rôles : coûts positifs (PAYMENT, SAV, acquisition, charges fixes) ; propriétaire : écriture manuelle"),
+        note="rôles : coûts positifs (PAYMENT, SAV, acquisition, charges fixes) ; propriétaire : écriture manuelle ; "
+        "identifiants order:/refund:/cost: réservés au moteur ; frais d'une commande enregistrée : jamais deux fois"),
     ("POST", "/orders/shipped"): _write(
-        "orders.shipped", {"n8n-02-commandes"}, note="vente dérivée d'une commande, coût transporteur réel exigé"),
+        "orders.shipped", {"n8n-02-commandes"},
+        note="vente dérivée d'une commande (lignes SKU × quantité), coût transporteur réel ; sortie de stock et coût "
+        "des ventes dérivés au CMP ; enregistrement atomique"),
     ("POST", "/orders/{order_id}/refunds"): _write(
         "orders.refund", {"n8n-02-commandes", "operations-sav"}, note="avoir sur une commande enregistrée"),
     ("POST", "/costs/movements"): _write(
         "costs.movement", {"finance-pricing"},
-        note="réception adossée à /stock/receive ; écart de facture > 2 % : propriétaire"),
+        note="réception adossée à /stock/receive (autre jeton), coût ≤ 2 % d'une référence du moteur (facture "
+        "enregistrée ou offre) sinon propriétaire ; sortie de vente (ISSUE) : dérivée des commandes ; retour : avoir enregistré"),
+    ("POST", "/costs/invoices"): _write(
+        "costs.invoice", {"n8n-03-factures"},
+        note="facture fournisseur validée par la propriétaire (workflow 03) : lignes au coût rendu, dette jusqu'au paiement"),
+    ("POST", "/costs/invoices/{invoice_ref}/payments"): _write(
+        "costs.invoice_payment", {"connecteur-tresorerie"},
+        note="paiement relevé sur le compte (cumul ≤ montant de la facture) : seule baisse de la dette d'une facture"),
     # -- tableau de bord (lecture)
     ("GET", "/dashboard/daily"): _read("dashboard.daily"),
     ("GET", "/dashboard/weekly"): _read("dashboard.weekly"),
@@ -284,7 +307,8 @@ def matrix_markdown(matrix: Mapping[tuple[str, str], RouteRule] | None = None) -
         "> de la matrice est refusée (403). Le **jeton commun** n'a que la lecture et les aperçus en simulation.",
         "> Nom d'un jeton nommé = rôle ; son empreinte sha256 va dans `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` (une variable",
         "> par rôle, ex. `POKESHOP_ROLE_TOKEN_SHA256_N8N_07_STOPLOSS`) ou dans la liste `POKESHOP_AGENT_TOKENS_SHA256=rôle:empreinte,…` ;",
-        "> propriétaire = en-tête `X-Pokeshop-Owner-Token` valide, distinct du jeton d'API.",
+        "> propriétaire = en-tête `X-Pokeshop-Owner-Token` valide, distinct du jeton d'API, **suffisant seul** sur toute",
+        "> route qui admet la propriétaire (aucun jeton d'API requis : revue R4, R3-DOC-01).",
         "",
         "| Méthode | Route | Nature | Jeton commun | Rôles nommés admis | Propriétaire | Note |",
         "|---|---|---|---|---|---|---|",
@@ -328,20 +352,37 @@ def matrix_markdown(matrix: Mapping[tuple[str, str], RouteRule] | None = None) -
         "## Séparation des rôles (aucune valeur décisive déclarée par son bénéficiaire)",
         "",
         "- Activité publicitaire : `connecteur-publicite`, jamais `acquisition` ; dépense retenue par (campagne, jour) =",
-        "  MAX(déclaration, paiements pub exécutés du registre du mandat) ; registre en ajout seul (baisse refusée).",
+        "  MAX(déclaration, paiements pub **engagés** du registre du mandat : approuvés à leur date de décision, exécutés à",
+        "  leur date d'exécution) ; registre en ajout seul (baisse refusée) ; demande de dépense pub sans relevé du",
+        "  connecteur de moins de 24 h : non vérifiable (validation humaine). Sans connecteur, une pub payée hors du mandat",
+        "  (moyen de paiement du compte publicitaire) reste invisible : aucune campagne sans connecteur.",
         "- Fiches : `catalogue` les dépose ; `approved`, `content_validated`, `category_rule_validated` : propriétaire",
         "  (`POST /catalog/approvals`, liée au contenu de la fiche).",
-        "- Coûts historiques : `finance-pricing`, réception adossée à `POST /stock/receive` (`operations-sav`, autre jeton) ;",
-        "  écart de facture > 2 % : propriétaire.",
-        "- Étoile polaire : ventes et avoirs dérivés de commandes enregistrées (`POST /orders/shipped`, coût transporteur",
-        "  réel) ; écritures manuelles et montants négatifs (référencés) : propriétaire.",
-        "- Test d'incident réussi : `qa-conformite` (≠ ouvreur, cycle réel lancé par un autre principal) ou propriétaire.",
+        "- Coûts historiques : `finance-pricing`, réception adossée à `POST /stock/receive` (`operations-sav`, autre jeton),",
+        "  coût unitaire à ± 2 % d'une référence du moteur (ligne de la facture enregistrée par `n8n-03-factures`, sinon coût",
+        "  rendu de la dernière offre évaluée) ; sans référence ou au-delà : propriétaire ; une réception n'est valorisée",
+        "  qu'une fois (clé produit canonique) ; écart de facture > 2 % : propriétaire.",
+        "- Clé produit unique : `product_id` = `listing.product_key` (422 sinon) ; SKU ou handle en double : 409 ; un nouvel",
+        "  identifiant ne reprend jamais le SKU ou le handle d'une fiche existante, ni l'identité produit (GTIN, langue, scellé,",
+        "  extension, format, contenu) d'une référence en quarantaine, bloquée ou d'état stop-loss inconnu (409, sauf propriétaire).",
+        "- Photo du stop-loss : construite par le moteur (`POST /stoploss/state/refresh`) ; photo déposée : propriétaire",
+        "  seule, cash recoupé avec les relevés du connecteur ; créances : propriétaire seule ; dettes : plancher des",
+        "  factures enregistrées non payées (paiement relevé par `connecteur-tresorerie`).",
+        "- Étoile polaire : ventes, avoirs, coût des ventes et sortie de stock dérivés de commandes enregistrées",
+        "  (`POST /orders/shipped` avec lignes, coût transporteur réel) ; identifiants `order:`/`refund:`/`cost:`/`expense:`/",
+        "  `fixed:` réservés au moteur ; frais PSP d'une commande comptés une fois ; écritures manuelles et montants négatifs",
+        "  (référencés) : propriétaire.",
+        "- Test d'incident réussi : `qa-conformite` (≠ ouvreur, cycle réel lancé par un autre principal ; cycle FICTIF admis",
+        "  seulement pour un incident sur données FICTIVES ou ouvert alors que le moteur est en simulation) ou propriétaire.",
+        "- Relais `n8n-08-mandat` : `requested_by` parmi les agents qui dépensent (jamais `qa-conformite` ni `catalogue`).",
         "",
         "## Validation humaine requise",
         "",
-        "- [ ] Générer un jeton par rôle (`openssl rand -hex 32`), en reporter l'empreinte SHA-256 dans",
-        "      `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` de `/etc/pokeshop/api.env` et le jeton en clair dans l'identifiant",
-        "      n8n du même nom (jamais dans le dépôt) ; le jeton propriétaire reste hors de n8n et des agents.",
+        "- [ ] Générer un jeton par rôle (`openssl rand -hex 32`, sur l'ordinateur de la propriétaire :",
+        "      `docs/00-pilotage/DELEGATION_AUTONOMIE.md` §10 étape 6), en reporter l'empreinte SHA-256 dans",
+        "      `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` de `/etc/pokeshop/api.env` (copie `scp`, contrôle, ajout, `shred -u`) et le",
+        "      jeton en clair dans l'identifiant n8n du même nom (jamais dans le dépôt) ; le jeton propriétaire reste hors",
+        "      de n8n et des agents.",
         "- [ ] Relire cette matrice avant chaque nouvelle route d'écriture : une route absente est refusée.",
         "",
     ]

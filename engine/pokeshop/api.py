@@ -16,15 +16,23 @@
   et lit les registres du moteur (photo stop-loss acceptée, solde PayPal relevé, taux de référence,
   propositions de réassort enregistrées) ; une photo déposée par le jeton qui demande la dépense
   n'est pas vérifiable (``TREASURY_UNVERIFIED`` => validation humaine). Séparation des rôles :
-  dépense pub = MAX(déclaration de ``connecteur-publicite``, paiements pub exécutés du mandat) ; coût
-  historique adossé à une réception d'un autre jeton et à une facture ; ventes et avoirs de l'étoile
-  polaire dérivés des commandes enregistrées (``/orders/shipped``, coût transporteur réel) ; un test de
+  dépense pub = MAX(déclaration de ``connecteur-publicite``, paiements pub engagés du mandat) ; coût
+  historique adossé à une réception d'un autre jeton et borné par une référence du moteur ; ventes et
+  avoirs de l'étoile polaire dérivés des commandes enregistrées (``/orders/shipped``, coût transporteur réel) ; un test de
   correction **réussi** d'incident : ``qa-conformite`` (≠ ouvreur, cycle réel lancé par un autre
   principal) ou la propriétaire ; validations humaines des fiches : propriétaire seule.
   ``/stoploss/state`` remplace plafond jour pub et budget stock de la photo par ceux du mandat
   signé et des règles, et **refuse tout mouvement de capital** (422) : apports et retraits viennent
   uniquement du registre de la propriétaire (``POST /capital/movements``). ``/northstar/entries``
   refuse tout coût historique (registre interne ``/costs/movements`` uniquement) ; un lot est atomique.
+* **Revue R4** : jeton propriétaire **suffisant seul** (R3-DOC-01) ; clé produit unique ``product_id`` =
+  ``listing.product_key`` (R3-NEW-01) ; photo déposée ``/stoploss/state`` : propriétaire seule, cash recoupé
+  avec les relevés du connecteur (R3-NEW-03) ; créances : propriétaire seule, dettes : plancher des factures
+  enregistrées non payées (R3-NEW-02, ``POST /costs/invoices``) ; coût unitaire d'une réception à ± 2 % d'une
+  référence du moteur (R2-NEW-01) ; paiements pub **engagés** dans le stop-loss pub (R2-NEW-03) ; identifiants
+  ``order:``/``refund:``/``cost:`` réservés, commande atomique avec lignes et sortie au CMP dérivée
+  (R3-NEW-04/05) ; frais PSP d'une commande comptés une fois (R3-DOC-03) ; relais 08 limité aux agents qui
+  dépensent (R3-NEW-06) ; « simulation » d'un incident admis seulement moteur en simulation (R3-DOC-04).
 * **Taux de change** : uniquement le registre de la propriétaire (``POST /fx/rates``) ; aucun champ
   ``fx_*`` accepté dans ``/sync/run`` ni ``/catalog/cost-inputs`` (422) ; sans taux : coût incomplet,
   fiche en brouillon. ``/mandate/check`` ne retient jamais le taux déclaré (contrôle à ± 1 % contre la
@@ -146,6 +154,7 @@ from .catalogue_sync import (
 from .costs import PriceHistory
 from .errors import PokeshopError
 from .importers import ImporterError, MappingError, extension_table_for, load_mapping, run_import
+from .invoices import InvoiceError, InvoiceLine, InvoicePayment, InvoicePersistenceError, SupplierInvoice, SupplierInvoiceBook
 from .incidents import (
     IncidentCode,
     IncidentError,
@@ -184,6 +193,7 @@ from .northstar import (
     NorthStarError,
     NorthStarLedger,
     NorthStarPersistenceError,
+    OrderLine,
     OrderRefund,
     OrderRegister,
     ShippedOrder,
@@ -235,7 +245,7 @@ from .stoploss_snapshot import (
     CapitalRegister,
     PhotoSourcesError,
     build_activity_photo,
-    executed_ad_payments,
+    committed_ad_payments,
     merge_ad_spends,
 )
 from .sync import (
@@ -552,6 +562,9 @@ class Services:
     ``approved``, ``content_validated`` et ``category_rule_validated`` (revue R3, R2-NEW-05)."""
     orders: OrderRegister = field(default_factory=OrderRegister)
     """Commandes expédiées et avoirs (journal ``orders``) : seule source des ventes de l'étoile polaire."""
+    invoices: SupplierInvoiceBook = field(default_factory=SupplierInvoiceBook)
+    """Factures fournisseur enregistrées et paiements (journal ``supplier_invoices``, revue R4) : référence du coût
+    d'une réception et plancher des dettes de la photo du stop-loss."""
 
     def authoritative_photo(self, state: StopLossState, now: datetime) -> tuple[StopLossState, list[str]]:
         """Photo avec plafond pub et budget stock du moteur (mandat signé actif, règles), jamais ceux postés."""
@@ -788,11 +801,23 @@ class Services:
         except CatalogApprovalPersistenceError as exc:
             catalog_approvals = CatalogApprovalBook(store=failed(CatalogApprovalBook.STREAM, exc))
         try:
+            invoices = SupplierInvoiceBook.restore(journal_for(SupplierInvoiceBook.STREAM))
+        except InvoicePersistenceError as exc:
+            invoices = SupplierInvoiceBook(store=failed(SupplierInvoiceBook.STREAM, exc))
+        try:
             orders = OrderRegister.restore(journal_for(OrderRegister.STREAM))
-            if NorthStarLedger.STREAM not in restore_errors:
-                orders.sync(northstar)  # rattrape une vente enregistrée mais pas encore dans l'étoile polaire
         except NorthStarError as exc:
             orders = OrderRegister(store=failed(OrderRegister.STREAM, exc))
+        if NorthStarLedger.STREAM not in restore_errors and OrderRegister.STREAM not in restore_errors:
+            # Rattrape une vente (et sa sortie de stock) enregistrée mais pas encore dérivée. Revue R4 (R3-NEW-04) :
+            # un conflit sur une écriture dérivée ne gèle plus le registre : étoile polaire signalée incomplète.
+            try:
+                derivation = orders.sync(northstar, costs if CostRegister.STREAM not in restore_errors else None)
+            except NorthStarPersistenceError as exc:
+                orders = OrderRegister(store=failed(OrderRegister.STREAM, exc))
+            else:
+                if derivation:
+                    errors["northstar.derivation"] = " ; ".join(f"{k} : {v}" for k, v in sorted(derivation.items()))
         if restore_errors:
             reason = " ; ".join(f"{k} : {v}" for k, v in sorted(restore_errors.items()))
             for stream, message in restore_errors.items():
@@ -879,6 +904,7 @@ class Services:
             publications=publications,
             catalog_approvals=catalog_approvals,
             orders=orders,
+            invoices=invoices,
         )
         if photo is not None:  # plafond pub et budget stock du moteur, jamais ceux de la photo relue
             svc.stoploss_state, _ = svc.authoritative_photo(photo, now())
@@ -1018,9 +1044,20 @@ class PublishPreviewIn(_In):
 
 
 class CatalogItemIn(_In):
-    product_id: str
+    """Produit du catalogue : **une seule clé** (revue R4, R3-NEW-01) — ``product_id`` = ``listing.product_key``."""
+
+    product_id: str = Field(min_length=1, max_length=120)
     supplier_links: list[SupplierLink] = Field(default_factory=list)
     listing: DeclaredListing
+
+    @model_validator(mode="after")
+    def _canonical(self) -> CatalogItemIn:
+        if self.product_id != self.listing.product_key:
+            raise ValueError(
+                f"clé produit incohérente : product_id {self.product_id!r} ≠ listing.product_key "
+                f"{self.listing.product_key!r} (quarantaine, stop-loss, publication et coûts portent sur une seule clé)"
+            )
+        return self
 
 
 class CatalogApprovalIn(_In):
@@ -1038,10 +1075,22 @@ class CatalogApprovalIn(_In):
     """Empreinte de la fiche examinée (``GET /catalog/approvals``) : refus si la fiche a changé depuis."""
 
 
+class ShippedOrderLineIn(_In):
+    """Ligne expédiée : SKU boutique du catalogue validé et quantité (unités vendues)."""
+
+    public_sku: str = Field(min_length=3, max_length=64)
+    qty: int = Field(ge=1, le=10_000)
+
+
 class ShippedOrderIn(_In):
-    """Commande payée **et expédiée** (workflow 02) : coût réel du transporteur obligatoire (revue MOT-18)."""
+    """Commande payée **et expédiée** (workflow 02) : coût réel du transporteur obligatoire (revue MOT-18).
+
+    Revue R4 (R3-NEW-05) : ``lines`` obligatoires (SKU × quantité) — sortie de stock et coût des ventes au CMP
+    dérivés par le moteur, jamais déclarés par l'agent finance.
+    """
 
     order_id: str = Field(min_length=1, max_length=120)
+    lines: list[ShippedOrderLineIn] = Field(min_length=1, max_length=200)
     paid_at: datetime
     net_sales_ht: PositiveMoney
     payment_fees: NonNegativeMoney
@@ -1259,6 +1308,33 @@ class NorthStarEntriesIn(_In):
     entries: list[ContributionEntry] = Field(min_length=1)
 
 
+class InvoiceLineIn(_In):
+    """Ligne de facture : clé produit canonique, quantité, coût rendu unitaire ventilé (CHF)."""
+
+    product_key: str = Field(min_length=1, max_length=120)
+    qty: int = Field(ge=1, le=100_000)
+    unit_cost_chf: PositiveMoney
+
+
+class SupplierInvoiceIn(_In):
+    """Facture fournisseur validée par la propriétaire (workflow 03) : montant dû en CHF, lignes au coût rendu."""
+
+    invoice_ref: str = Field(min_length=3, max_length=120)
+    supplier_id: str = Field(min_length=2, max_length=64)
+    issued_at: datetime
+    total_chf: PositiveMoney
+    lines: list[InvoiceLineIn] = Field(min_length=1, max_length=500)
+    source: str = Field(min_length=3, max_length=300)
+
+
+class InvoicePaymentIn(_In):
+    """Paiement d'une facture relevé sur le compte (référence de la transaction)."""
+
+    payment_ref: str = Field(min_length=3, max_length=120)
+    paid_at: datetime
+    amount_chf: PositiveMoney
+
+
 # --------------------------------------------------------------------------- application
 
 
@@ -1310,6 +1386,10 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
         Route absente de la matrice : 403. Jeton commun : lecture et aperçus seulement. Écriture : rôle du
         jeton nommé listé, ou propriétaire (jeton propriétaire vérifié). Tout refus est journalisé.
+
+        Revue R4 (R3-DOC-01) : un jeton propriétaire **valide suffit seul** sur toute route qui admet la
+        propriétaire (actes réservés, lectures, aperçus) : aucun ``X-Pokeshop-Token`` n'est exigé en plus (le
+        jeton commun est facultatif et n'est jamais remis à la propriétaire pour ses actes).
         """
         route = request.scope.get("route")
         path = getattr(route, "path", None)
@@ -1326,8 +1406,11 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         if rule.kind is authz.Kind.PUBLIC:
             request.state.principal = None
             return
-        principal = api_principal(request)
         motif = owner_check(request)
+        if motif is None and rule.owner:
+            request.state.principal = Principal(authz.OWNER, True, owner=True)
+            return
+        principal = api_principal(request)
         if rule.owner_only:
             if motif is not None:
                 svc.audit.append(
@@ -1345,10 +1428,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                         "identique au jeton d'API": "jeton propriétaire identique au jeton d'API : jetons distincts exigés",
                     }.get(motif, "acte réservé à la propriétaire : jeton propriétaire invalide"),
                 )
-            request.state.principal = Principal(authz.OWNER, True, owner=True)
-            return
-        if motif is None and rule.owner:
-            request.state.principal = Principal(authz.OWNER, True, owner=True)
+            request.state.principal = Principal(authz.OWNER, True, owner=True)  # pragma: no cover - traité plus haut
             return
         if not authz.allowed(rule, role=principal.role, owner=False):
             kind = "common_token_refused" if not principal.named else "role_refused"
@@ -1415,6 +1495,8 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         (StockPersistenceError, 503),
         (SyncRegistryPersistenceError, 503),
         (ActivityRegisterPersistenceError, 503),
+        (InvoicePersistenceError, 503),
+        (InvoiceError, 409),
         (SyncRegistryError, 409),
         (ActivityRegisterError, 409),
         (PhotoSourcesError, 409),
@@ -1927,10 +2009,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         blocked = body.stoploss_blocked or (status is not None and listing.product_key in status.blocked_products)
         _persistence_guard(CatalogApprovalBook.STREAM, "registre des validations de fiches")
         _persistence_guard(ShopPublicationBook.STREAM, "registre des fiches publiées")
-        pid = next(
-            (e.product_id for e in svc.catalog.entries() if e.listing.product_key == listing.product_key),
-            listing.product_key,
-        )
+        pid = listing.product_key  # clé canonique (revue R4, R3-NEW-01 : product_id = listing.product_key)
         known = svc.publications.get(pid)
         plan = build_publication(
             listing,
@@ -1958,6 +2037,18 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         _persistence_guard(CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation")
         body = await _body(request, CatalogItemsIn)
         now = svc.clock()
+        takeover = _catalog_takeover(body.items)
+        if takeover and not principal.owner:
+            svc.audit.append(
+                actor=principal.name, actor_kind=ActorKind.AGENT, action="catalog.items.takeover_refused",
+                entity="catalog", entity_id=",".join(sorted(takeover)), dry_run=False, payload={"motifs": takeover},
+            )  # fmt: skip
+            raise HTTPProblem(
+                409,
+                "nouvel identifiant qui reprend une référence existante : " + " ; ".join(takeover.values())
+                + " — ré-identifier une référence est un acte de la propriétaire (jeton propriétaire)",
+                takeover=takeover,
+            )
         entries = [
             CatalogEntry(
                 product_id=i.product_id,
@@ -1979,6 +2070,37 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             payload={"product_ids": [e.product_id for e in entries], "changed": changed},
         )
         return _ok({"received": len(entries), "changed": changed, "total": len(svc.catalog.entries())})
+
+    def _catalog_takeover(items: list[CatalogItemIn]) -> dict[str, str]:
+        """Nouveaux identifiants qui reprendraient une référence existante (revue R4, R3-NEW-01) : pid -> motif.
+
+        Un nouveau ``product_id`` ne reprend jamais le SKU boutique ni le handle d'une fiche déjà enregistrée
+        (même déplacée dans le même lot), ni l'identité produit d'une référence en quarantaine, bloquée par le
+        stop-loss produit, ou dont l'état du stop-loss est inconnu (fermé par défaut) : sinon quarantaine et
+        validation de la propriétaire ne la suivraient pas.
+        """
+        existing = {e.product_id: e for e in svc.catalog.entries()}
+        status, _ = svc.gate.stoploss_status()
+        blocked = set(status.blocked_products) if status is not None else None
+        out: dict[str, str] = {}
+        for item in items:
+            if item.product_id in existing:
+                continue
+            listing = item.listing
+            for pid, entry in sorted(existing.items()):
+                held = svc.incidents.is_quarantined(pid) or blocked is None or bool(entry.keys & blocked)
+                if entry.listing.public_sku == listing.public_sku:
+                    out[item.product_id] = f"{item.product_id} reprend le SKU {listing.public_sku} de {pid}"
+                elif entry.listing.handle is not None and entry.listing.handle == listing.handle:
+                    out[item.product_id] = f"{item.product_id} reprend le handle {listing.handle} de {pid}"
+                elif held and entry.listing.identity == listing.identity:
+                    out[item.product_id] = (
+                        f"{item.product_id} reprend l'identité de {pid} (en quarantaine, bloquée ou état du stop-loss inconnu)"
+                    )
+                else:
+                    continue
+                break
+        return out
 
     @app.post("/catalog/cost-inputs")
     async def catalog_cost_inputs(request: Request) -> PokeshopJSONResponse:
@@ -2167,6 +2289,13 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         items: list[tuple[str, tuple[SupplierLink, ...], CatalogListing]]
         catalog_source: Literal["corps", "registre"]
         if body.catalog:
+            if not body.dry_run:
+                # Revue R4 (R3-NEW-01) : une écriture réelle lit toujours le catalogue du registre (clé, validations).
+                raise HTTPProblem(
+                    409,
+                    "catalogue fourni dans le corps : simulation seulement ; une écriture réelle lit le catalogue du "
+                    "registre (POST /catalog/items) et les validations de la propriétaire",
+                )
             items = [(i.product_id, tuple(i.supplier_links), i.listing) for i in body.catalog]
             catalog_source = "corps"
         else:
@@ -2203,11 +2332,12 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             cost_inputs=cost_inputs,
             market_refs=body.market_refs,
             price_validations=svc.price_approvals.active(now),
-            # Validations humaines : registre de la propriétaire seulement, appliquées au contenu exact validé.
+            # Validations humaines : registre de la propriétaire seulement, appliquées au contenu exact validé,
+            # par clé canonique uniquement (revue R4, R3-NEW-01 : aucun repli sur listing.product_key).
             validations={
                 pid: a
                 for pid, _, listing in items
-                if (a := svc.catalog_approvals.get(pid) or svc.catalog_approvals.get(listing.product_key)) is not None
+                if pid == listing.product_key and (a := svc.catalog_approvals.get(pid)) is not None
             },
         )
         try:
@@ -2287,6 +2417,15 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         principal = require_api(request)
         body = await _body(request, IncidentIn)
         actor = actor_of(principal, body.actor, request, route="incidents.open")
+        # Revue R4 (R3-DOC-04) : « simulation » n'est admis que si le moteur est lui-même en simulation
+        # (POKESHOP_DRY_RUN) ; écritures réelles activées => incident réel (confinement, test sur cycle réel).
+        simulation = body.simulation and not cfg.real_writes_enabled
+        if body.simulation and not simulation:
+            svc.audit.append(
+                actor=actor, actor_kind=ActorKind.AGENT, action="incidents.simulation_ignored", entity="incident",
+                entity_id=body.product_key or body.supplier_id or body.workflow or "*", dry_run=False,
+                payload={"motif": "écritures réelles activées : un incident déclaré en simulation est traité comme réel"},
+            )  # fmt: skip
         # Données FICTIVES : déduit par le moteur (fiche du catalogue, dictionnaire du fournisseur), jamais déclaré.
         fictif = False
         if body.product_key is not None:
@@ -2310,7 +2449,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             details=body.details,
             actor=actor,
             actor_kind=ActorKind.PROPRIETAIRE if principal.owner else ActorKind.AGENT,
-            simulation=body.simulation,
+            simulation=simulation,
             fictif=fictif,
         )
         svc.gate.invalidate()
@@ -2476,7 +2615,12 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
     @app.post("/stoploss/state")
     async def stoploss_state(request: Request) -> PokeshopJSONResponse:
-        """Dépose la photo d'activité (construite par les workflows) puis l'évalue — **jeton nommé** (403 sinon).
+        """Dépose une photo d'activité (relevé de la propriétaire) puis l'évalue — **propriétaire seule**.
+
+        Revue R4 (R3-NEW-03) : plus aucune photo déclarée par un rôle d'automatisation (``n8n-07-stoploss`` ne
+        fait que demander la photo **construite par le moteur**, ``POST /stoploss/state/refresh``). Le cash
+        déposé est **recoupé** avec les derniers relevés du connecteur de trésorerie (PayPal + banque) : écart
+        => 409, photo non vérifiable, la précédente reste en vigueur (fermé par défaut).
 
         La photo ne déclare **jamais** de mouvements de capital (``capital_movements`` non vide : 422) :
         apports et retraits sont ceux du registre de la propriétaire (``POST /capital/movements``) à la date
@@ -2487,9 +2631,22 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         (journal d'état ``stoploss_photo``, avec l'acteur déduit du jeton) avant de devenir la photo en vigueur.
         """
         principal = require_api(request)
-        require_named(principal, request, route="stoploss.state", what="photo du stop-loss")
         engine = _require_engine()
         posted = await _body(request, StopLossState)
+        if svc.paypal_balance is not None and svc.bank_balance is not None:
+            readings = svc.paypal_balance.balance_chf + svc.bank_balance.balance_chf
+            if posted.net_worth.cash_chf != readings:
+                svc.audit.append(
+                    actor=principal.name, actor_kind=ActorKind.PROPRIETAIRE if principal.owner else ActorKind.AGENT,
+                    action="stoploss.state.cash_mismatch_refused", entity="stoploss", entity_id="photo", dry_run=False,
+                    payload={"posted_cash_chf": posted.net_worth.cash_chf, "readings_chf": readings},
+                )  # fmt: skip
+                raise HTTPProblem(
+                    409,
+                    f"photo non vérifiable : cash déposé {posted.net_worth.cash_chf} CHF ≠ relevés du connecteur de "
+                    f"trésorerie {readings} CHF (PayPal + banque) — utiliser POST /stoploss/state/refresh",
+                    previous_photo_kept=svc.stoploss_state is not None,
+                )
         if posted.capital_movements:
             # Revue SEC-06 : un faux retrait réduisait le capital de référence et taisait le gel global.
             svc.audit.append(
@@ -2522,7 +2679,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
         Apports et retraits : **toujours** ceux du registre de la propriétaire à la date de la photo,
         jamais ceux d'une photo (revue SEC-06). Publicité : par (campagne, jour), le MAX entre la dépense
-        de la photo et les paiements pub **exécutés** du registre du mandat (revue R3, R2-NEW-03).
+        de la photo et les paiements pub **engagés** (approuvés ou exécutés) du registre du mandat (revue R4, R2-NEW-03).
         """
         now = svc.clock()
         body, overridden = _authoritative_photo(engine, posted, now)
@@ -2580,13 +2737,14 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         return _accept_photo(principal, engine, state, origin="registres du moteur", sources=sources)
 
     def _authoritative_photo(engine: StopLossEngine, posted: StopLossState, now: datetime) -> tuple[StopLossState, list[str]]:
-        """Photo avec les valeurs du moteur : apports du registre, publicité ≥ paiements exécutés, plafonds signés."""
+        """Photo avec les valeurs du moteur : apports du registre, publicité ≥ paiements engagés, plafonds signés."""
         _persistence_guard(CapitalRegister.STREAM, "registre des apports")
         _persistence_guard(SpendLedger.STREAM, "registre du mandat")
-        executed = executed_ad_payments(svc.spend_ledger.entries(), engine.config.tz)
+        # Revue R4 (R2-NEW-03) : paiements pub approuvés (à leur date de décision) ET exécutés.
+        committed = committed_ad_payments(svc.spend_ledger.entries(), engine.config.tz)
         posted = posted.replace(
             capital_movements=svc.capital.movements(until=posted.as_of),
-            ad_spends=merge_ad_spends(posted.ad_spends, executed, until=posted.as_of.astimezone(engine.config.tz).date()),
+            ad_spends=merge_ad_spends(posted.ad_spends, committed, until=posted.as_of.astimezone(engine.config.tz).date()),
         )
         return svc.authoritative_photo(posted, now)
 
@@ -2598,6 +2756,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             (CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation"),
             (AdsActivityRegister.STREAM, "registre de l'activité publicitaire"),
             (PersistentPriceHistory.STREAM, "historique des prix"),
+            (SupplierInvoiceBook.STREAM, "registre des factures fournisseur"),
         ):
             _persistence_guard(stream, what)
         now = svc.clock()
@@ -2617,6 +2776,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 ads_daily_cap_chf=None,
                 ads=svc.ads,
                 max_age=timedelta(hours=engine.config.state_max_age_hours),
+                invoices=svc.invoices,
             )
         except PhotoSourcesError as exc:
             svc.audit.append(
@@ -2920,8 +3080,18 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         relay = principal.role in authz.RELAY_ROLES
         if relay:
             # Passerelle n8n 08 : relaie la demande d'un agent ; le demandeur déclaré n'est pas authentifié.
-            if requester not in authz.AGENT_ROLES:
-                raise HTTPProblem(403, f"requested_by « {requester} » : rôle d'agent attendu (matrice authz)")
+            # Revue R4 (R3-NEW-06) : seulement un agent qui dépense (jamais qa-conformite ni catalogue).
+            if requester not in authz.RELAYED_SPENDERS:
+                svc.audit.append(
+                    actor=principal.name, actor_kind=ActorKind.AGENT, action="mandate.check.relay_requester_refused",
+                    entity="spend_request", entity_id=body.request.idempotency_key, dry_run=True,
+                    payload={"requested_by": requester, "authz_version": authz.AUTHZ_VERSION},
+                )  # fmt: skip
+                raise HTTPProblem(
+                    403,
+                    f"requested_by « {requester} » : relais réservé aux agents qui dépensent "
+                    f"({', '.join(sorted(authz.RELAYED_SPENDERS))}) — matrice authz",
+                )
         elif requester != principal.name:
             raise HTTPProblem(403, f"requested_by « {requester} » ≠ rôle du jeton « {principal.name} »")
         suspended_now = svc.incidents.suspended()
@@ -2964,12 +3134,19 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         # Revue R3 (R2-NEW-01, SEC-16) : déposants des coûts historiques (stock de la photo) et de la publicité.
         posters.extend(("Stock au coût historique", poster) for poster in sorted(svc.costs.posters()))
         posters.extend(("Activité publicitaire", poster) for poster in sorted(svc.ads.posters()))
+        posters.extend(("Factures fournisseur", poster) for poster in sorted(svc.invoices.posters()))
         for label, poster in posters:
             # Vérifiable seulement si demande et dépôt viennent de deux jetons nommés distincts ; un relais
             # (passerelle 08) n'authentifie pas le demandeur : jamais vérifiable.
             if relay or poster is None or poster in (authz.COMMON, "inconnu") or poster in (principal.name, requester):
                 if label not in unverified:
                     unverified.append(label)
+        if body.request.category.value == "ADVERTISING":
+            # Revue R4 (R2-NEW-03) : sans relevé récent du connecteur publicitaire, le stop-loss pub ne voit pas la
+            # dépense réelle de la plateforme : toute dépense pub demande une validation humaine (fermé par défaut).
+            last = svc.ads.last_recorded_at("connecteur-publicite")
+            if last is None or svc.clock() - last > timedelta(hours=24):
+                unverified.append("Activité publicitaire (aucun relevé de connecteur-publicite de moins de 24 h)")
         decision = check(
             body.request,
             svc.mandate,
@@ -3095,9 +3272,16 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
     @app.post("/treasury/balance-items")
     async def treasury_balance_items(request: Request) -> PokeshopJSONResponse:
-        """Déclare les dettes et créances à date (précommandes encaissées, factures non payées, TVA, transit).
+        """Déclare les dettes et créances à date (précommandes encaissées, TVA due, remboursements promis…).
 
-        Jeton nommé obligatoire (agent finance ou connecteur) : valeur décisive de la photo du stop-loss.
+        Valeur décisive de la photo du stop-loss (revue R4, R3-NEW-02) :
+
+        * **créances** (elles augmentent la valeur nette) : relevé de la **propriétaire** seulement (jeton
+          propriétaire) ; un rôle qui en déclare : 403 ;
+        * **dettes et précommandes** : l'agent finance peut les **relever**, jamais les abaisser sous la
+          déclaration en vigueur (403 : baisse par la propriétaire ou le connecteur de trésorerie, qui voit les
+          paiements) ; les factures fournisseur enregistrées non payées (``POST /costs/invoices``) s'y ajoutent
+          toujours dans la photo (plancher du moteur) : ne pas les redéclarer ici.
         """
         principal = require_api(request)
         require_named(principal, request, route="treasury.balance_items", what="dettes et créances")
@@ -3107,6 +3291,28 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             raise HTTPProblem(409, "déclaration datée du futur : horloge non fiable")
         if svc.balance_statement is not None and body.as_of < svc.balance_statement.as_of:
             raise HTTPProblem(409, "déclaration plus ancienne que celle en vigueur : refusée (jamais de retour en arrière)")
+        refusal: str | None = None
+        if body.receivables and not principal.owner:
+            refusal = (
+                "créances : relevé de la propriétaire seulement (jeton propriétaire) — une créance déclarée par un "
+                "rôle augmenterait la valeur nette sans justificatif vérifiable"
+            )
+        current = svc.balance_statement
+        if refusal is None and current is not None and not principal.owner and principal.role != "connecteur-tresorerie":
+            declared = sum((d.amount for d in body.debts), Decimal("0"))
+            in_force = sum((d.amount for d in current.debts), Decimal("0"))
+            if declared < in_force or body.preorders_collected_chf < current.preorders_collected_chf:
+                refusal = (
+                    f"baisse des dettes ({in_force} → {declared} CHF) ou des précommandes "
+                    f"({current.preorders_collected_chf} → {body.preorders_collected_chf} CHF) : réservée à la propriétaire "
+                    "ou au connecteur de trésorerie (paiement relevé) ; l'agent finance ne peut que les relever"
+                )
+        if refusal is not None:
+            svc.audit.append(
+                actor=principal.name, actor_kind=ActorKind.AGENT, action="treasury.balance_items_refused",
+                entity="treasury", entity_id="dettes_creances", dry_run=False, payload={"motif": refusal},
+            )  # fmt: skip
+            raise HTTPProblem(403, refusal)
         statement = BalanceStatement(
             as_of=body.as_of,
             preorders_collected_chf=body.preorders_collected_chf,
@@ -3183,7 +3389,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         Registre en ajout seul : une dépense déjà relevée pour (campagne, jour) ne baisse jamais (409) ; une
         commande attribuée doit être enregistrée par le moteur (``POST /orders/shipped``), sa contribution
         est plafonnée par ses données (revue R3, R2-NEW-03). Le stop-loss pub retient en plus, par
-        (campagne, jour), le MAX entre cette déclaration et les paiements pub exécutés du registre du mandat.
+        (campagne, jour), le MAX entre cette déclaration et les paiements pub engagés (approuvés ou exécutés) du mandat.
         """
         principal = require_api(request)
         _persistence_guard(AdsActivityRegister.STREAM, "registre de l'activité publicitaire")
@@ -3197,6 +3403,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             today=now.astimezone(tz).date(),
             recorded_by=principal.name,
             order_book=svc.orders,
+            recorded_at=now,
         )
         svc.audit.append(
             actor=principal.name,
@@ -3256,8 +3463,10 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         """Contribution nette cumulée par semaine (étoile polaire)."""
         require_api(request)
         _persistence_guard(NorthStarLedger.STREAM, "journal de l'étoile polaire")
+        incomplete = dict(svc.orders.derivation_errors)
         if not svc.northstar.entries() and (start is None or end is None):
-            return _ok({"cumulative": Decimal("0.00"), "rows": [], "markdown": "", "note": "aucune écriture"})
+            return _ok({"cumulative": Decimal("0.00"), "rows": [], "markdown": "", "note": "aucune écriture",
+                        "incomplete": bool(incomplete), "derivation_errors": incomplete})  # fmt: skip
         try:
             report = svc.northstar.weekly_report(start, end)
         except NorthStarError as exc:
@@ -3269,6 +3478,9 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 "rows": report.rows,
                 "total": report.total,
                 "markdown": report.render_markdown(),
+                # Revue R4 (R3-NEW-04/05) : écriture dérivée impossible (conflit, commande sans lignes) => incomplète.
+                "incomplete": bool(incomplete),
+                "derivation_errors": incomplete,
             }
         )
 
@@ -3308,18 +3520,32 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         principal = require_api(request)
         _persistence_guard(OrderRegister.STREAM, "registre des commandes")
         _persistence_guard(NorthStarLedger.STREAM, "journal de l'étoile polaire")
+        _persistence_guard(CostRegister.STREAM, "registre de coûts historiques")
+        _persistence_guard(CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation")
         body = await _body(request, ShippedOrderIn)
         now = svc.clock()
         if body.paid_at - now > timedelta(minutes=5):
             raise HTTPProblem(409, "commande datée du futur : horloge non fiable")
+        lines: list[OrderLine] = []
+        for line in body.lines:
+            entry = svc.catalog.by_sku(line.public_sku)
+            if entry is None or not entry.canonical:
+                raise HTTPProblem(
+                    409, f"ligne {line.public_sku} : SKU inconnu du catalogue validé (clé produit canonique) — commande refusée"
+                )
+            lines.append(OrderLine(public_sku=line.public_sku, product_key=entry.product_id, qty=line.qty))
+        data = body.model_dump(exclude={"lines"})
         try:
             order, created = svc.orders.record_shipped(
-                ShippedOrder(**body.model_dump(), recorded_by=principal.name, recorded_at=now), svc.northstar
+                ShippedOrder(**data, lines=tuple(lines), recorded_by=principal.name, recorded_at=now),
+                svc.northstar,
+                svc.costs,
             )
         except NorthStarPersistenceError:
             raise
         except NorthStarError as exc:
-            raise HTTPProblem(409 if "déjà enregistrée" in str(exc) else 422, str(exc)) from None
+            status = 422 if any(w in str(exc) for w in ("transporteur", "centime", "négatif", "≤ 0", "étiquette")) else 409
+            raise HTTPProblem(status, str(exc)) from None
         if created:
             svc.audit.append(
                 actor=principal.name,
@@ -3329,7 +3555,8 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 entity_id=order.order_id,
                 dry_run=False,
                 payload={"net_sales_ht": order.net_sales_ht, "shipping_cost_actual": order.shipping_cost_actual,
-                         "shipping_label_ref": order.shipping_label_ref},
+                         "shipping_label_ref": order.shipping_label_ref,
+                         "lines": [(ln.public_sku, ln.qty) for ln in order.lines]},
             )  # fmt: skip
         return _ok({"order": order, "created": created}, 201 if created else 200)
 
@@ -3365,22 +3592,42 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         return _ok({"refund": refund, "created": created}, 201 if created else 200)
 
     INVOICE_GAP_OWNER = Decimal("0.02")
-    """Écart de facture au-delà duquel seule la propriétaire inscrit l'ajustement (workflow 03 : > 2 %)."""
+    """Écart (facture, coût de réception) au-delà duquel seule la propriétaire inscrit le coût (workflow 03 : > 2 %)."""
+
+    def _receipt_reference(product_key: str, invoice_ref: str | None) -> tuple[Decimal, str] | None:
+        """Référence **du moteur** du coût unitaire d'une réception (revue R4, R2-NEW-01 / R3-DOC-02).
+
+        1. ligne de la facture enregistrée ``invoice_ref`` (``POST /costs/invoices``, workflow 03 après validation
+           de la propriétaire) pour la même référence ;
+        2. sinon, coût rendu de la dernière offre évaluée par le moteur pour la référence (``/sync/run`` : prix
+           fournisseur importé, taux de la propriétaire, frais du registre).
+        Aucune des deux : None (la propriétaire inscrit le coût).
+        """
+        invoice = svc.invoices.get(invoice_ref) if invoice_ref else None
+        line = invoice.line_for(product_key) if invoice is not None else None
+        if line is not None:
+            return line.unit_cost_chf, f"facture enregistrée {invoice_ref}"
+        offer = svc.sync.replacement_costs.latest(product_key)
+        if offer is not None:
+            return offer.unit_cost, f"coût rendu de l'offre {offer.offer_ref or offer.supplier_id} du {offer.source_ts.date()}"
+        return None
 
     def _cost_reference_problem(body: CostMovementIn, principal: Principal) -> tuple[int, str] | None:
-        """Adossement d'un mouvement de coût (revue R3, R2-NEW-01) ; None = vérifié."""
+        """Adossement d'un mouvement de coût (revues R3 et R4, R2-NEW-01) ; None = vérifié."""
         if body.kind == "RECEIPT":
             if body.stock_ref is None or body.invoice_ref is None:
                 return 422, "réception : stock_ref (réception POST /stock/receive) et invoice_ref (facture) obligatoires"
-            entry = next(
-                (e for e in svc.catalog.entries() if body.product_key in (e.product_id, e.listing.product_key)), None
-            )
-            if entry is None:
-                return 409, f"{body.product_key} : référence absente du catalogue validé (SKU de la réception inconnu)"
-            receipt = svc.stock.receipt(entry.listing.public_sku, body.stock_ref)
+            entry = svc.catalog.entry_for(body.product_key)
+            if entry is None or not entry.canonical:
+                return 409, (
+                    f"{body.product_key} : clé produit canonique absente du catalogue validé (product_id = "
+                    "listing.product_key) — SKU de la réception inconnu"
+                )
+            sku = entry.listing.public_sku
+            receipt = svc.stock.receipt(sku, body.stock_ref)
             if receipt is None:
                 return 409, (
-                    f"réception {body.stock_ref} inconnue pour {entry.listing.public_sku} : déclarer d'abord la "
+                    f"réception {body.stock_ref} inconnue pour {sku} : déclarer d'abord la "
                     "réception physique (POST /stock/receive, operations-sav)"
                 )
             qty, receiver = receipt
@@ -3388,10 +3635,48 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 return 409, f"réception {body.stock_ref} : {qty} unité(s) reçue(s) ≠ {body.qty} au coût"
             if not principal.owner and (receiver is None or receiver == principal.name):
                 return 409, "réception déclarée par le même jeton (ou inconnu) : un autre jeton doit l'avoir déclarée"
-            already = [m for m in svc.costs.movements() if m.kind == "RECEIPT" and m.stock_ref == body.stock_ref
-                       and m.product_key == body.product_key]  # fmt: skip
-            if already and already[0].ref != body.ref:
-                return 409, f"réception {body.stock_ref} déjà valorisée (lot {already[0].ref})"
+            # Revue R4 (R2-NEW-01 b) : une réception physique (SKU, bon) n'est valorisée qu'une fois, quelle que soit
+            # la clé citée (la clé est canonique, et toute clé qui désigne le même SKU compte).
+            for m in svc.costs.movements():
+                if m.kind != "RECEIPT" or m.stock_ref != body.stock_ref:
+                    continue
+                other = svc.catalog.entry_for(m.product_key)
+                same_sku = m.product_key == body.product_key or (other is not None and other.listing.public_sku == sku)
+                if same_sku and (m.ref != body.ref or m.product_key != body.product_key):
+                    return 409, f"réception {body.stock_ref} déjà valorisée (lot {m.ref}, {m.product_key})"
+            if not principal.owner:
+                if body.unit_cost is None:
+                    return 422, "réception : unit_cost obligatoire"
+                reference = _receipt_reference(body.product_key, body.invoice_ref)
+                if reference is None:
+                    return 403, (
+                        "coût de réception sans référence du moteur (facture enregistrée POST /costs/invoices pour cette "
+                        "référence, ou offre évaluée par /sync/run) : la propriétaire l'inscrit (jeton propriétaire)"
+                    )
+                ref_cost, ref_label = reference
+                gap = abs(Decimal(body.unit_cost) - ref_cost) / ref_cost
+                if gap > INVOICE_GAP_OWNER:
+                    return 403, (
+                        f"coût de réception {body.unit_cost} : écart {gap:.2%} > 2 % de la référence du moteur "
+                        f"({ref_cost}, {ref_label}) — carton saisi comme unité, devise ou frais ? signalé, la "
+                        "propriétaire l'inscrit (jeton propriétaire)"
+                    )
+        elif body.kind == "ISSUE":
+            if not principal.owner:
+                return 403, (
+                    "sortie de vente : dérivée par le moteur des commandes enregistrées (POST /orders/shipped avec "
+                    "lignes, au CMP) ; correction manuelle : propriétaire"
+                )
+        elif body.kind == "RETURN":
+            if not principal.owner:
+                order_id = (body.sale_ref or "").removeprefix("order:")
+                if not (body.sale_ref or "").startswith("order:") or svc.orders.get(order_id) is None:
+                    return 409, "retour : sale_ref = « order:<id> » d'une commande enregistrée (sortie dérivée par le moteur)"
+                if svc.orders.refunded(order_id) <= 0:
+                    return 409, (
+                        f"retour sur la commande {order_id} sans avoir enregistré (POST /orders/{order_id}/refunds) : "
+                        "un retour en stock ne se déclare pas seul"
+                    )
         elif body.kind == "INVOICE_ADJUSTMENT":
             if body.invoice_ref is None:
                 return 422, "ajustement de facture : invoice_ref obligatoire"
@@ -3407,6 +3692,74 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                     )
         return None
 
+    @app.post("/costs/invoices", status_code=201)
+    async def costs_invoices(request: Request) -> PokeshopJSONResponse:
+        """Enregistre une facture fournisseur **validée par la propriétaire** (workflow 03) — revue R4.
+
+        Rôle ``n8n-03-factures`` (après le formulaire de validation de l'extraction) ou propriétaire ; jamais
+        l'agent finance qui valorise les réceptions. Lignes : clé produit **canonique** du catalogue, quantité,
+        coût rendu unitaire ventilé (CHF) — référence du coût d'une réception (± 2 %). Solde non payé : dette
+        de la photo du stop-loss jusqu'au paiement relevé. Idempotente par ``invoice_ref`` (autre contenu : 409).
+        """
+        principal = require_api(request)
+        _persistence_guard(SupplierInvoiceBook.STREAM, "registre des factures fournisseur")
+        _persistence_guard(CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation")
+        body = await _body(request, SupplierInvoiceIn)
+        now = svc.clock()
+        if body.issued_at - now > timedelta(minutes=5):
+            raise HTTPProblem(409, "facture datée du futur : horloge non fiable")
+        unknown = [ln.product_key for ln in body.lines if (e := svc.catalog.entry_for(ln.product_key)) is None or not e.canonical]
+        if unknown:
+            raise HTTPProblem(409, f"lignes sur des clés produit inconnues du catalogue validé : {', '.join(unknown)}")
+        try:
+            invoice = SupplierInvoice(
+                invoice_ref=body.invoice_ref, supplier_id=body.supplier_id, issued_at=body.issued_at,
+                total_chf=body.total_chf,
+                lines=tuple(InvoiceLine(product_key=ln.product_key, qty=ln.qty, unit_cost_chf=ln.unit_cost_chf)
+                            for ln in body.lines),
+                source=body.source, recorded_by=principal.name, recorded_at=now,
+            )  # fmt: skip
+        except ValidationError as exc:
+            raise HTTPProblem(422, "facture invalide", details=to_jsonable(exc.errors(include_url=False))) from None
+        item, created = svc.invoices.record(invoice)
+        if created:
+            svc.audit.append(
+                actor=principal.name, actor_kind=ActorKind.PROPRIETAIRE if principal.owner else ActorKind.AGENT,
+                action="costs.invoice", entity="supplier_invoice", entity_id=item.invoice_ref, dry_run=False,
+                payload={"supplier_id": item.supplier_id, "total_chf": item.total_chf, "lines": len(item.lines),
+                         "source": item.source},
+            )  # fmt: skip
+        return _ok({"invoice": item, "created": created, "unpaid_chf": item.total_chf - svc.invoices.paid(item.invoice_ref)},
+                   201 if created else 200)  # fmt: skip
+
+    @app.post("/costs/invoices/{invoice_ref}/payments", status_code=201)
+    async def costs_invoice_payment(invoice_ref: str, request: Request) -> PokeshopJSONResponse:
+        """Inscrit le paiement d'une facture enregistrée, relevé sur le compte — revue R4.
+
+        Rôle ``connecteur-tresorerie`` (débit relevé) ou propriétaire : seule voie qui abaisse la dette d'une
+        facture dans la photo du stop-loss (cumul ≤ montant ; idempotent par ``payment_ref``).
+        """
+        principal = require_api(request)
+        _persistence_guard(SupplierInvoiceBook.STREAM, "registre des factures fournisseur")
+        body = await _body(request, InvoicePaymentIn)
+        now = svc.clock()
+        if body.paid_at - now > timedelta(minutes=5):
+            raise HTTPProblem(409, "paiement daté du futur : horloge non fiable")
+        payment = InvoicePayment(
+            invoice_ref=invoice_ref, payment_ref=body.payment_ref, paid_at=body.paid_at, amount_chf=body.amount_chf,
+            recorded_by=principal.name, recorded_at=now,
+        )  # fmt: skip
+        item, created = svc.invoices.record_payment(payment)
+        if created:
+            svc.audit.append(
+                actor=principal.name, actor_kind=ActorKind.PROPRIETAIRE if principal.owner else ActorKind.AGENT,
+                action="costs.invoice_payment", entity="supplier_invoice", entity_id=invoice_ref, dry_run=False,
+                payload={"payment_ref": item.payment_ref, "amount_chf": item.amount_chf, "paid_at": item.paid_at},
+            )  # fmt: skip
+        invoice = svc.invoices.get(invoice_ref)
+        remaining = invoice.total_chf - svc.invoices.paid(invoice_ref) if invoice is not None else None
+        return _ok({"payment": item, "created": created, "unpaid_chf": remaining}, 201 if created else 200)
+
     @app.post("/costs/movements")
     async def cost_movements(request: Request) -> PokeshopJSONResponse:
         """Registre de coûts historiques interne : seule voie du coût des ventes dans l'étoile polaire.
@@ -3415,13 +3768,19 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         historique de la photo du stop-loss) cite la réception physique ``POST /stock/receive`` (même SKU,
         même quantité, déclarée par un **autre** jeton, ``stock_ref``) et la facture (``invoice_ref``) ; un
         **ajustement de facture** cite la facture et, au-delà de 2 % du coût à la réception, attend la
-        propriétaire. Sinon 409/422/403 (journalisé).
+        propriétaire. Revue R4 : le **coût unitaire** d'une réception est borné par une référence du moteur
+        (ligne de la facture enregistrée, sinon coût rendu de l'offre évaluée) : écart > 2 % (un carton saisi
+        comme unité : × 6 ou × 36) ou aucune référence => propriétaire ; une réception n'est valorisée qu'une
+        fois (clé canonique, même SKU) ; une sortie de vente (ISSUE) est dérivée des commandes enregistrées
+        (rôle : 403) ; un retour cite une commande enregistrée avec avoir. Sinon 409/422/403 (journalisé).
         """
         principal = require_api(request)
         _persistence_guard(CostRegister.STREAM, "registre de coûts historiques")
         _persistence_guard(NorthStarLedger.STREAM, "journal de l'étoile polaire")
         _persistence_guard(PersistentStockRegistry.STREAM, "journal du stock local")
         _persistence_guard(CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation")
+        _persistence_guard(SupplierInvoiceBook.STREAM, "registre des factures fournisseur")
+        _persistence_guard(OrderRegister.STREAM, "registre des commandes")
         body = await _body(request, CostMovementIn)
         problem = _cost_reference_problem(body, principal)
         if problem is not None:

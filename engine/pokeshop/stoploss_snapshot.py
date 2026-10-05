@@ -14,18 +14,24 @@ Apports et retraits        :class:`CapitalRegister` — ``POST /capital/movement
 Cash (banque + PayPal)     derniers relevés ``POST /treasury/bank-balance`` et ``/treasury/paypal-balance``
                            (connecteurs, acteur déduit du jeton ; la photo est datée du plus ancien relevé)
 Dettes et créances         :class:`BalanceStatement` — ``POST /treasury/balance-items`` : précommandes
-                           encaissées non livrées (déduites du cash disponible), factures reçues non payées,
-                           TVA due, versements en transit ; listes vides **attestées** si aucune
+                           encaissées non livrées (déduites du cash disponible), TVA due, remboursements
+                           promis ; listes vides **attestées** si aucune. Revue R4 (R3-NEW-02) : **plancher**
+                           des factures fournisseur enregistrées non payées (:mod:`pokeshop.invoices`,
+                           ``n8n-03-factures`` ; paiement relevé par ``connecteur-tresorerie``) ajouté aux
+                           dettes déclarées ; **créances** comptées seulement si la propriétaire les relève
+                           (jeton propriétaire) — une créance déclarée par un rôle compte 0
 Stock au coût historique   :class:`pokeshop.northstar.CostRegister` (``POST /costs/movements``)
 Exposition par extension   même registre, extension lue dans le catalogue validé (``POST /catalog/items``)
 Marges produit             prix public en vigueur (historique des prix) et coût du stock (CMP) ou coût
                            de remplacement frais, avec les règles de prix signées
 Publicité                  :class:`AdsActivityRegister` — ``POST /ads/activity`` (``connecteur-publicite``,
                            jamais l'agent acquisition) ; ajout seul par (campagne, jour) ; dépense retenue =
-                           MAX(déclaration, paiements pub **exécutés** du registre du mandat) ; commandes
-                           attribuées = commandes enregistrées par le moteur (contribution plafonnée)
-Stock au coût historique   réceptions adossées à ``POST /stock/receive`` (autre jeton), écarts de facture
-                           > 2 % : propriétaire
+                           MAX(déclaration, paiements pub **engagés** du registre du mandat : approuvés à
+                           leur date de décision, exécutés à leur date d'exécution — revue R4, R2-NEW-03) ;
+                           commandes attribuées = commandes enregistrées par le moteur (contribution plafonnée)
+Stock au coût historique   réceptions adossées à ``POST /stock/receive`` (autre jeton), coût à ± 2 % d'une
+                           référence du moteur (facture enregistrée, coût rendu de l'offre), sinon propriétaire ;
+                           sorties de vente dérivées des commandes enregistrées (CMP)
 Plafond pub, budget stock  mandat signé actif et règles (jamais la photo)
 =========================  ===========================================================================
 
@@ -78,6 +84,7 @@ __all__ = [
     "PhotoSourcesError",
     "build_activity_photo",
     "executed_ad_payments",
+    "committed_ad_payments",
     "merge_ad_spends",
     "UNASSIGNED_CAMPAIGN",
     "UNKNOWN_EXTENSION",
@@ -87,6 +94,8 @@ __all__ = [
 UNKNOWN_EXTENSION = "INCONNUE"
 """Extension d'un stock absent du catalogue validé : comptée à part (jamais ignorée)."""
 FUTURE_SKEW = timedelta(minutes=5)
+OWNER_ACTOR = "propriétaire"
+"""Acteur journalisé d'un relevé de la propriétaire (seul à faire compter des créances)."""
 UNASSIGNED_CAMPAIGN = "paiement-pub-sans-campagne"
 """Campagne d'un paiement pub exécuté sans ``campaign_id`` (compté à part, jamais ignoré)."""
 
@@ -255,6 +264,7 @@ class AdsActivityRegister:
         self._spends: dict[tuple[str, date], AdSpend] = {}
         self._orders: dict[str, AttributedOrder] = {}
         self._posters: set[str] = set()
+        self._last: dict[str, datetime] = {}
         self._store = store
 
     @classmethod
@@ -269,7 +279,14 @@ class AdsActivityRegister:
                 raise ActivityRegisterPersistenceError(f"activité publicitaire : enregistrement {n} illisible") from exc
             register._apply(spends, orders)
             poster = record.get("recorded_by")
-            register._posters.add(poster if isinstance(poster, str) else "inconnu")
+            name = poster if isinstance(poster, str) else "inconnu"
+            register._posters.add(name)
+            try:
+                at = datetime.fromisoformat(record["recorded_at"]) if record.get("recorded_at") else None
+            except (TypeError, ValueError):
+                at = None
+            if at is not None and at.tzinfo is not None:
+                register._last[name] = max(register._last.get(name, at), at)
         register._store = store
         return register
 
@@ -313,6 +330,7 @@ class AdsActivityRegister:
         today: date,
         recorded_by: str = "inconnu",
         order_book: Any = None,
+        recorded_at: datetime | None = None,
     ) -> int:
         """Enregistre un lot (contrôlé, écrit d'abord) ; renvoie le nombre d'éléments reçus.
 
@@ -337,17 +355,25 @@ class AdsActivityRegister:
                 self._store,
                 {"ad_spends": [s.model_dump(mode="json") for s in spends],
                  "attributed_orders": [o.model_dump(mode="json") for o in checked],
-                 "recorded_by": recorded_by},
+                 "recorded_by": recorded_by,
+                 "recorded_at": recorded_at.isoformat() if recorded_at is not None else None},
                 "activité publicitaire",
             )  # fmt: skip
             self._apply(spends, checked)
             self._posters.add(recorded_by)
+            if recorded_at is not None:
+                self._last[recorded_by] = max(self._last.get(recorded_by, recorded_at), recorded_at)
         return len(spends) + len(orders)
 
     def posters(self) -> frozenset[str]:
         """Déposants (déduits du jeton) de l'activité publicitaire."""
         with self._lock:
             return frozenset(self._posters)
+
+    def last_recorded_at(self, poster: str) -> datetime | None:
+        """Dernier relevé déposé par ``poster`` (None si jamais) : fraîcheur du connecteur publicitaire."""
+        with self._lock:
+            return self._last.get(poster)
 
     def window(self, since: date) -> tuple[tuple[AdSpend, ...], tuple[AttributedOrder, ...]]:
         """Dépenses et commandes depuis ``since`` (jour civil inclus)."""
@@ -378,10 +404,41 @@ def executed_ad_payments(entries: Iterable[Any], tz: Any) -> dict[tuple[str, dat
     return out
 
 
+def committed_ad_payments(entries: Iterable[Any], tz: Any) -> dict[tuple[str, date], Decimal]:
+    """Paiements publicitaires **engagés** du registre du mandat, par (campagne, jour civil dans ``tz``).
+
+    Revue R4 (R2-NEW-03) : aucune route ne marque encore un paiement « exécuté » ; ne compter que les
+    exécutés laissait le stop-loss pub aveugle. Comptent donc (fermé par défaut) :
+
+    * ``EXECUTED`` : montant et date d'exécution ;
+    * ``APPROVED`` (dans le mandat) et ``HUMAN_APPROVED`` (validé par la propriétaire) : montant de la
+      demande en CHF, à la date de la décision (validation humaine si elle existe) — un engagement compte
+      dès qu'il est pris.
+
+    Sans campagne : :data:`UNASSIGNED_CAMPAIGN`. Refusé, en attente, annulé ou expiré : ne compte pas.
+    """
+    entries = tuple(entries)  # parcouru deux fois (exécutés, puis engagés non exécutés)
+    out = executed_ad_payments(entries, tz)
+    for e in entries:
+        request = getattr(e, "request", None)
+        status = getattr(getattr(e, "status", None), "value", getattr(e, "status", None))
+        category = getattr(getattr(request, "category", None), "value", None)
+        if status not in ("APPROVED", "HUMAN_APPROVED") or category != "ADVERTISING":
+            continue
+        decision = getattr(e, "decision", None)
+        at = getattr(e, "human_decided_at", None) or getattr(decision, "decided_at", None)
+        amount = getattr(decision, "amount_chf", None)
+        if at is None or amount is None:
+            continue
+        key = (getattr(request, "campaign_id", None) or UNASSIGNED_CAMPAIGN, at.astimezone(tz).date())
+        out[key] = out.get(key, Decimal("0")) + Decimal(amount)
+    return out
+
+
 def merge_ad_spends(
     spends: Iterable[AdSpend], executed: dict[tuple[str, date], Decimal], *, until: date
 ) -> tuple[AdSpend, ...]:
-    """Dépense retenue par (campagne, jour) = MAX(déclaration du connecteur, paiements exécutés du mandat).
+    """Dépense retenue par (campagne, jour) = MAX(déclaration du connecteur, paiements engagés du mandat).
 
     L'agent qui dépense ne peut donc jamais faire baisser la dépense prise en compte par le stop-loss pub
     sous ce qui a réellement été payé (séparation des rôles, revue R3).
@@ -420,11 +477,16 @@ def build_activity_photo(
     ads: AdsActivityRegister,
     max_age: timedelta,
     ads_window_days: int = 30,
+    invoices: Any = None,
 ) -> tuple[StopLossState, dict[str, Any]]:
     """Photo d'activité tirée des registres ; :class:`PhotoSourcesError` si une source manque ou est périmée.
 
     ``as_of`` de la photo = date du **plus ancien** relevé de cash : une photo n'est jamais plus fraîche
     que sa donnée la plus vieille (le stop-loss et le mandat jugent la fraîcheur sur elle).
+
+    Revue R4 (R3-NEW-02) : dettes = dettes déclarées + factures fournisseur enregistrées non payées
+    (``invoices`` : :class:`pokeshop.invoices.SupplierInvoiceBook`, plancher du moteur) ; créances = celles
+    relevées par la propriétaire seulement (une créance déclarée par un rôle compte 0).
     """
     _aware(now, "now")
     problems: list[str] = []
@@ -455,6 +517,14 @@ def build_activity_photo(
     debts = balances.debts
     if balances.preorders_collected_chf > 0:
         debts = (BalanceItem(label="Précommandes encaissées non livrées", amount=balances.preorders_collected_chf), *debts)
+    unpaid = invoices.unpaid(paid_until=as_of) if invoices is not None else ()  # paiement compté si le cash l'a vu
+    debts = (
+        *debts,
+        *(BalanceItem(label=f"Facture fournisseur {inv.invoice_ref} non payée (registre du moteur)", amount=remaining)
+          for inv, remaining in unpaid),
+    )  # fmt: skip
+    owner_statement = balances.recorded_by == OWNER_ACTOR
+    receivables = balances.receivables if owner_statement else ()
 
     stock: list[StockValuationLine] = []
     unit_costs: dict[str, Decimal] = {}
@@ -511,11 +581,14 @@ def build_activity_photo(
         )
         chf, pct = contribution(price, cost, params, per_order_costs=not small)
         listing_ext = entry.listing.identity.extension
-        margins.append(
-            ProductMargin(product_key=key, extension=str(listing_ext) if listing_ext else None, contribution_chf=chf,
-                          contribution_pct=pct, small_product=small)
-        )  # fmt: skip
-        seen.add(key)
+        # Revue R4 (R3-NEW-01) : marge émise sous **toutes** les clés de la référence (entrée ancienne incohérente :
+        # product_id ≠ listing.product_key) ; le blocage du stop-loss produit vaut ainsi pour chacune.
+        for k in sorted({key, entry.product_id} - seen):
+            margins.append(
+                ProductMargin(product_key=k, extension=str(listing_ext) if listing_ext else None, contribution_chf=chf,
+                              contribution_pct=pct, small_product=small)
+            )  # fmt: skip
+            seen.add(k)
 
     spends, orders = ads.window(as_of.date() - timedelta(days=ads_window_days))
     state = StopLossState(
@@ -529,7 +602,7 @@ def build_activity_photo(
         cash_available_chf=cash - balances.preorders_collected_chf,
         capital_movements=movements,
         net_worth=NetWorthSnapshot(
-            as_of=as_of, cash_chf=cash, stock=tuple(stock), receivables=balances.receivables, debts=debts
+            as_of=as_of, cash_chf=cash, stock=tuple(stock), receivables=receivables, debts=debts
         ),
     )
     sources = {
@@ -537,7 +610,9 @@ def build_activity_photo(
         "cash": {"paypal": {"as_of": paypal.as_of, "recorded_by": paypal.recorded_by},
                  "banque": {"as_of": bank.as_of, "recorded_by": bank.recorded_by}},
         "dettes_creances": {"as_of": balances.as_of, "recorded_by": balances.recorded_by,
-                            "debts": len(debts), "receivables": len(balances.receivables)},
+                            "debts": len(debts), "receivables": len(receivables),
+                            "receivables_ignored": 0 if owner_statement else len(balances.receivables),
+                            "unpaid_invoices": [inv.invoice_ref for inv, _ in unpaid]},
         "capital_movements": len(movements),
         "stock_lines": len(stock),
         "extensions": [e.extension for e in extensions],

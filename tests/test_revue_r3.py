@@ -364,9 +364,10 @@ def test_r2new03_ads_register_is_append_only_and_owned_by_the_connector(tmp_path
                                    "paid_at": NOW.isoformat(), "contribution_before_acquisition": "500"}]}
     unknown = client.post("/ads/activity", headers=JR.HADS, json=fake)
     assert unknown.status_code == 409 and "inconnue du moteur" in body(unknown)["erreur"]
+    F.seed_stock(client, svc)
     order = {"order_id": "FICTIF-O1", "paid_at": (NOW - timedelta(hours=2)).isoformat(), "net_sales_ht": "60.00",
              "payment_fees": "1.80", "shipping_cost_actual": "8.20", "shipping_label_ref": "FICTIF-ETIQ-1",
-             "source": "Shopify FICTIF"}
+             "source": "Shopify FICTIF", "lines": F.ORDER_LINES}
     assert client.post("/orders/shipped", headers=JR.HORDERS, json=order).status_code == 201
     capped = {"attributed_orders": [{**fake["attributed_orders"][0], "order_id": "FICTIF-O1"}]}
     assert client.post("/ads/activity", headers=JR.HADS, json=capped).status_code == 200
@@ -413,8 +414,9 @@ def test_r2new04_northstar_sales_come_from_recorded_orders_with_real_logistics(t
         resp = client.post("/northstar/entries", headers=JR.HORDERS, json={"entries": [entry]})
         assert resp.status_code == 422, entry
     assert svc.northstar.entries() == ()
+    F.seed_stock(client, svc)
     missing = {"order_id": "FICTIF-O1", "paid_at": NOW.isoformat(), "net_sales_ht": "184.92", "payment_fees": "5.30",
-               "shipping_label_ref": "FICTIF-ETIQ-1", "source": "Shopify FICTIF"}
+               "shipping_label_ref": "FICTIF-ETIQ-1", "source": "Shopify FICTIF", "lines": F.ORDER_LINES}
     assert client.post("/orders/shipped", headers=JR.HORDERS, json=missing).status_code == 422  # transporteur réel
     assert client.post("/orders/shipped", headers=JR.HORDERS, json={**missing, "shipping_cost_actual": "0"}).status_code == 422
     order = {**missing, "shipping_cost_actual": "7.40"}

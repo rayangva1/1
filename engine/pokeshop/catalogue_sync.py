@@ -113,7 +113,12 @@ def _without_declared(item: Any) -> Any:
 
 
 class CatalogEntry(FrozenModel):
-    """Produit du catalogue validé : identité (fiche), liens fournisseur, fiche publiable."""
+    """Produit du catalogue validé : identité (fiche), liens fournisseur, fiche publiable.
+
+    Revue R4 (R3-NEW-01) : **clé produit unique** — ``product_id`` = ``listing.product_key`` (quarantaine,
+    stop-loss produit, publication, coûts et validations portent sur la même clé). Une entrée ancienne
+    incohérente reste lisible (:meth:`canonical`) mais aucune nouvelle ne l'est (:meth:`CatalogRegistry.upsert`).
+    """
 
     product_id: str = Field(min_length=1, max_length=120)
     supplier_links: tuple[SupplierLink, ...] = ()
@@ -125,6 +130,21 @@ class CatalogEntry(FrozenModel):
     @classmethod
     def _tz(cls, v: datetime) -> datetime:
         return _aware(v, "recorded_at")
+
+    @property
+    def canonical(self) -> bool:
+        """Vrai si ``product_id`` = ``listing.product_key`` (clé produit unique)."""
+        return self.product_id == self.listing.product_key
+
+    @property
+    def keys(self) -> frozenset[str]:
+        """Toutes les clés sous lesquelles la référence peut être désignée (``product_id``, ``listing.product_key``)."""
+        return frozenset({self.product_id, self.listing.product_key})
+
+    @property
+    def handle(self) -> str | None:
+        """Handle boutique explicite de la fiche (None : dérivé du titre et du SKU, donc unique avec lui)."""
+        return self.listing.handle
 
 
 class SupplierCostEntry(FrozenModel):
@@ -201,11 +221,33 @@ class CatalogRegistry:
         return registry
 
     def upsert(self, entries: list[CatalogEntry]) -> int:
-        """Enregistre un lot (atomique en mémoire : écrit d'abord, appliqué ensuite) ; renvoie les changements."""
+        """Enregistre un lot (atomique en mémoire : écrit d'abord, appliqué ensuite) ; renvoie les changements.
+
+        Revue R4 (R3-NEW-01) : chaque entrée doit être canonique (``product_id`` = ``listing.product_key``) et,
+        après le lot, un SKU boutique ou un handle explicite n'appartient qu'à une seule référence (409 sinon).
+        """
         with self._lock:
             ids = [e.product_id for e in entries]
             if len(set(ids)) != len(ids):
                 raise SyncRegistryError("product_id en double dans le lot")
+            bad = [e.product_id for e in entries if not e.canonical]
+            if bad:
+                raise SyncRegistryError(
+                    f"clé produit incohérente ({', '.join(bad)}) : product_id doit être égal à listing.product_key"
+                )
+            after = {**self._entries, **{e.product_id: e for e in entries}}
+            for label, attr in (("SKU boutique", "public_sku"), ("handle", "handle")):
+                owners: dict[str, str] = {}
+                for pid in sorted(after):
+                    value = getattr(after[pid].listing, attr)
+                    if value is None:
+                        continue
+                    if value in owners and owners[value] != pid:
+                        raise SyncRegistryError(
+                            f"{label} {value} déjà porté par {owners[value]} : une référence = une clé produit "
+                            f"(refusé pour {pid})"
+                        )
+                    owners[value] = pid
             changed = [
                 e
                 for e in entries
@@ -251,6 +293,25 @@ class CatalogRegistry:
         """Frais en vigueur de tous les fournisseurs."""
         with self._lock:
             return tuple(self._costs[k] for k in sorted(self._costs))
+
+    def entry_for(self, key: str) -> CatalogEntry | None:
+        """Fiche désignée par sa clé canonique (``product_id``) ; None si inconnue.
+
+        Une clé qui ne désigne une fiche que par ``listing.product_key`` (entrée ancienne incohérente) n'est
+        pas résolue : l'appelant refuse (fermé par défaut, revue R4 R3-NEW-01).
+        """
+        with self._lock:
+            return self._entries.get(key)
+
+    def by_sku(self, public_sku: str) -> CatalogEntry | None:
+        """Fiche dont le SKU boutique est ``public_sku`` (unique par construction), None sinon."""
+        with self._lock:
+            return next((e for e in self._entries.values() if e.listing.public_sku == public_sku), None)
+
+    def incoherent(self) -> tuple[str, ...]:
+        """Entrées anciennes dont ``product_id`` ≠ ``listing.product_key`` (à ré-enregistrer)."""
+        with self._lock:
+            return tuple(sorted(pid for pid, e in self._entries.items() if not e.canonical))
 
     def extension_of(self, key: str) -> str | None:
         """Extension d'un produit, par ``product_id`` ou ``listing.product_key`` (None si inconnu)."""

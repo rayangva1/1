@@ -445,9 +445,12 @@ def test_02_order_flow_has_dedupe_human_parcel_task_and_no_personal_data() -> No
 
 def test_03_invoice_flow_requires_human_validation_before_cost() -> None:
     wf = WORKFLOWS["03_facture_vers_marge_reelle.json"]
-    assert successors(wf, "Extraction validée ?", 0) == [
-        "Ventiler les frais et enregistrer le coût historique — route moteur attendue (désactivé)"
-    ]
+    # Revue R4 : facture validée par la propriétaire -> registre des factures du moteur (POST /costs/invoices).
+    assert successors(wf, "Extraction validée ?", 0) == ["Préparer la facture validée (coût rendu ventilé)"]
+    record = nodes(wf)["Enregistrer la facture validée (POST /costs/invoices)"]
+    assert successors(wf, "Préparer la facture validée (coût rendu ventilé)", 0) == [record["name"]]
+    assert not record.get("disabled") and engine_path(record) == "/costs/invoices"
+    assert record["credentials"]["httpHeaderAuth"]["name"] == "Pokeshop API — jeton nommé n8n-03-factures"
     js = nodes(wf)["Contrôles déterministes (centimes)"]["parameters"]["jsCode"]
     assert "* 50 > est" in js and "parseFloat" not in js  # écart > 2 % en arithmétique entière
 
@@ -546,8 +549,17 @@ def test_07_stoploss_watch_freezes_and_notifies_on_change() -> None:
 def test_08_mandate_routes_each_outcome_and_answers_the_agent() -> None:
     wf = WORKFLOWS["08_mandat_depenses.json"]
     by = nodes(wf)
-    hook = by["Demande de dépense (passerelle agents)"]
-    assert hook["parameters"]["responseMode"] == "responseNode"
+    # Revue R4 (SEC-16, R3-NEW-06) : un webhook et un secret par agent qui dépense ; demandeur imposé par le webhook.
+    from pokeshop import authz
+
+    hooks = {n["parameters"]["path"]: n for n in by.values() if n["type"] == "n8n-nodes-base.webhook"}
+    assert set(hooks) == {f"pokeshop-depense-{role}" for role in authz.RELAYED_SPENDERS}
+    for path, hook in hooks.items():
+        role = path.removeprefix("pokeshop-depense-")
+        assert hook["parameters"]["responseMode"] == "responseNode"
+        (tag,) = successors(wf, hook["name"], 0)
+        assert f"requested_by: '{role}'" in by[tag]["parameters"]["jsCode"]
+        assert successors(wf, tag, 0) == ["Demande de dépense (passerelle agents)"]
     check = by["Contrôle du mandat (POST /mandate/check)"]
     assert "record: true" in check["parameters"]["jsonBody"] and check["onError"] == "continueErrorOutput"
     assert successors(wf, check["name"], 1) == ["Répondre : contrôle impossible (refus par défaut)"]

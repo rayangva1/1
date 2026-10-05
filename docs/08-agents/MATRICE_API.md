@@ -1,11 +1,12 @@
 # Matrice d'autorisations de l'API du moteur
 
-> Générée depuis `engine/pokeshop/authz.py` (version `2026-10-05.r3`) — ne pas modifier à la main :
+> Générée depuis `engine/pokeshop/authz.py` (version `2026-10-05.r4`) — ne pas modifier à la main :
 > `python -m pokeshop.authz > docs/08-agents/MATRICE_API.md`. Refus par défaut : une route absente
 > de la matrice est refusée (403). Le **jeton commun** n'a que la lecture et les aperçus en simulation.
 > Nom d'un jeton nommé = rôle ; son empreinte sha256 va dans `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` (une variable
 > par rôle, ex. `POKESHOP_ROLE_TOKEN_SHA256_N8N_07_STOPLOSS`) ou dans la liste `POKESHOP_AGENT_TOKENS_SHA256=rôle:empreinte,…` ;
-> propriétaire = en-tête `X-Pokeshop-Owner-Token` valide, distinct du jeton d'API.
+> propriétaire = en-tête `X-Pokeshop-Owner-Token` valide, distinct du jeton d'API, **suffisant seul** sur toute
+> route qui admet la propriétaire (aucun jeton d'API requis : revue R4, R3-DOC-01).
 
 | Méthode | Route | Nature | Jeton commun | Rôles nommés admis | Propriétaire | Note |
 |---|---|---|---|---|---|---|
@@ -19,7 +20,9 @@
 | POST | `/catalog/approvals` | WRITE | **non** | aucun | oui | fiche approuvée, contenu validé, règle de catégorie : propriétaire seule |
 | POST | `/catalog/cost-inputs` | WRITE | **non** | finance-pricing | oui | fret, douane, TVA import |
 | POST | `/catalog/items` | WRITE | **non** | catalogue | oui | fiches sans champ moteur ni validation humaine (422) |
-| POST | `/costs/movements` | WRITE | **non** | finance-pricing | oui | réception adossée à /stock/receive ; écart de facture > 2 % : propriétaire |
+| POST | `/costs/invoices` | WRITE | **non** | n8n-03-factures | oui | facture fournisseur validée par la propriétaire (workflow 03) : lignes au coût rendu, dette jusqu'au paiement |
+| POST | `/costs/invoices/{invoice_ref}/payments` | WRITE | **non** | connecteur-tresorerie | oui | paiement relevé sur le compte (cumul ≤ montant de la facture) : seule baisse de la dette d'une facture |
+| POST | `/costs/movements` | WRITE | **non** | finance-pricing | oui | réception adossée à /stock/receive (autre jeton), coût ≤ 2 % d'une référence du moteur (facture enregistrée ou offre) sinon propriétaire ; sortie de vente (ISSUE) : dérivée des commandes ; retour : avoir enregistré |
 | GET | `/dashboard/daily` | READ | oui | tous | oui |  |
 | GET | `/dashboard/monthly` | READ | oui | tous | oui |  |
 | GET | `/dashboard/weekly` | READ | oui | tous | oui |  |
@@ -31,11 +34,11 @@
 | POST | `/incidents/{incident_id}/close` | WRITE | **non** | chef-de-projet, n8n-04-incidents, qa-conformite | oui |  |
 | POST | `/incidents/{incident_id}/resume` | WRITE | **non** | chef-de-projet, n8n-04-incidents, qa-conformite | oui | après test réussi attesté ; incident critique : propriétaire |
 | POST | `/incidents/{incident_id}/test` | WRITE | **non** | tous les rôles nommés | oui | passed:true : qa-conformite (≠ ouvreur, cycle réel lancé par un autre principal) ou propriétaire |
-| POST | `/mandate/check` | WRITE | **non** | acquisition, chef-de-projet, communication, direction-artistique, finance-pricing, n8n-08-mandat, operations-sav, site-integrations, sourcing | non | requested_by = rôle du jeton ; relais n8n-08-mandat : trésorerie non vérifiable (validation humaine) |
+| POST | `/mandate/check` | WRITE | **non** | acquisition, chef-de-projet, communication, direction-artistique, finance-pricing, n8n-08-mandat, operations-sav, site-integrations, sourcing | non | requested_by = rôle du jeton ; relais n8n-08-mandat : requested_by parmi les agents qui dépensent, trésorerie non vérifiable (validation humaine) |
 | POST | `/mandate/revoke` | WRITE | **non** | tous les rôles nommés | oui | acte protecteur |
 | GET | `/northstar` | READ | oui | tous | oui |  |
-| POST | `/northstar/entries` | WRITE | **non** | finance-pricing, n8n-02-commandes | oui | rôles : coûts positifs (PAYMENT, SAV, acquisition, charges fixes) ; propriétaire : écriture manuelle |
-| POST | `/orders/shipped` | WRITE | **non** | n8n-02-commandes | oui | vente dérivée d'une commande, coût transporteur réel exigé |
+| POST | `/northstar/entries` | WRITE | **non** | finance-pricing, n8n-02-commandes | oui | rôles : coûts positifs (PAYMENT, SAV, acquisition, charges fixes) ; propriétaire : écriture manuelle ; identifiants order:/refund:/cost: réservés au moteur ; frais d'une commande enregistrée : jamais deux fois |
+| POST | `/orders/shipped` | WRITE | **non** | n8n-02-commandes | oui | vente dérivée d'une commande (lignes SKU × quantité), coût transporteur réel ; sortie de stock et coût des ventes dérivés au CMP ; enregistrement atomique |
 | POST | `/orders/{order_id}/refunds` | WRITE | **non** | n8n-02-commandes, operations-sav | oui | avoir sur une commande enregistrée |
 | GET | `/pricing/approvals` | READ | oui | tous | oui |  |
 | POST | `/pricing/approvals` | WRITE | **non** | aucun | oui | approbation d'un prix public |
@@ -50,12 +53,12 @@
 | POST | `/stoploss/capital-memory/reset` | WRITE | **non** | aucun | oui |  |
 | POST | `/stoploss/freeze` | WRITE | **non** | tous les rôles nommés | oui | gel manuel protecteur |
 | POST | `/stoploss/rearm` | WRITE | **non** | aucun | oui |  |
-| POST | `/stoploss/state` | WRITE | **non** | n8n-07-stoploss | oui | photo déposée (valeurs décisives) |
+| POST | `/stoploss/state` | WRITE | **non** | aucun | oui | photo déposée (relevé propriétaire) : cash recoupé avec les relevés du connecteur, écart => 409 |
 | POST | `/stoploss/state/refresh` | WRITE | **non** | n8n-07-stoploss | oui | photo construite par le moteur depuis ses registres |
 | GET | `/stoploss/status` | READ | oui | tous | oui | évalue le stop-loss (verrouillage protecteur possible) |
 | GET | `/sync/history` | READ | oui | tous | oui |  |
 | POST | `/sync/run` | WRITE | **non** | n8n-01-sync, site-integrations | oui | simulation par défaut ; écriture réelle : porte de gouvernance |
-| POST | `/treasury/balance-items` | WRITE | **non** | connecteur-tresorerie, finance-pricing | oui | dettes et créances à date |
+| POST | `/treasury/balance-items` | WRITE | **non** | connecteur-tresorerie, finance-pricing | oui | dettes à date (finance-pricing : hausse seulement) ; créances : propriétaire seule ; plancher : factures enregistrées non payées |
 | POST | `/treasury/bank-balance` | WRITE | **non** | connecteur-tresorerie | oui |  |
 | POST | `/treasury/paypal-balance` | WRITE | **non** | connecteur-tresorerie | oui |  |
 
@@ -67,7 +70,7 @@
 | `sourcing` | Agent 02 — sourcing (fournisseurs, devis) |
 | `donnees-fournisseurs` | Agent 03 — données fournisseurs (imports en simulation) |
 | `catalogue` | Agent 04 — catalogue (fiches en brouillon, jamais approuvées par lui) |
-| `finance-pricing` | Agent 05 — finance et pricing (coûts, frais, dettes et créances) |
+| `finance-pricing` | Agent 05 — finance et pricing (coûts bornés par une référence du moteur, frais, dettes) |
 | `direction-artistique` | Agent 06 — direction artistique |
 | `site-integrations` | Agent 07 — site et intégrations (cycles de synchronisation) |
 | `seo-redaction` | Agent 08 — SEO et rédaction |
@@ -77,20 +80,20 @@
 | `qa-conformite` | Agent 12 — QA et conformité (atteste les tests d'incident, peut geler) |
 | `n8n-01-sync` | Workflow n8n 01 — fournisseur vers site (imports, cycles en simulation) |
 | `n8n-02-commandes` | Workflow n8n 02 — commandes (frais PSP réels, commandes expédiées) |
-| `n8n-03-factures` | Workflow n8n 03 — factures (signalement d'écarts) |
+| `n8n-03-factures` | Workflow n8n 03 — factures fournisseur validées par la propriétaire (registre, écarts) |
 | `n8n-04-incidents` | Workflow n8n 04 — incidents (ouverture, reprise après test attesté) |
 | `n8n-05-digest` | Workflow n8n 05 — digest quotidien (lecture) |
 | `n8n-06-marketing` | Workflow n8n 06 — automatisations marketing (incidents) |
-| `n8n-07-stoploss` | Workflow n8n 07 — photo du stop-loss construite par le moteur, gel |
-| `n8n-08-mandat` | Workflow n8n 08 — passerelle du mandat de dépense (relais : trésorerie jamais vérifiable) |
-| `connecteur-tresorerie` | Connecteur banque et PayPal en lecture seule (soldes relevés) |
+| `n8n-07-stoploss` | Workflow n8n 07 — demande la photo du stop-loss construite par le moteur, gel |
+| `n8n-08-mandat` | Workflow n8n 08 — passerelle du mandat (relais d'un rôle qui dépense : jamais vérifiable) |
+| `connecteur-tresorerie` | Connecteur banque et PayPal en lecture seule (soldes, paiements de factures) |
 | `connecteur-publicite` | Connecteur de la plateforme publicitaire (dépenses, commandes attribuées) |
 
 ## Écritures par rôle
 
 Écritures **propres** à chaque rôle (hors actes ouverts à tout rôle nommé). Tout rôle nommé peut en plus :
 POST `/autonomy`, POST `/incidents/{incident_id}/test`, POST `/incidents`, POST `/mandate/revoke`, POST `/stoploss/freeze` (signalement, gel, baisse de niveau, révocation ; test réussi : voir la note).
-Propriétaire seule : POST `/capital/movements`, POST `/catalog/approvals`, POST `/fx/rates`, POST `/pricing/approvals`, POST `/stoploss/baseline`, POST `/stoploss/capital-memory/reset`, POST `/stoploss/rearm`.
+Propriétaire seule : POST `/capital/movements`, POST `/catalog/approvals`, POST `/fx/rates`, POST `/pricing/approvals`, POST `/stoploss/baseline`, POST `/stoploss/capital-memory/reset`, POST `/stoploss/rearm`, POST `/stoploss/state`.
 
 | Rôle (nom du jeton) | Écritures propres |
 |---|---|
@@ -108,30 +111,47 @@ Propriétaire seule : POST `/capital/movements`, POST `/catalog/approvals`, POST
 | `qa-conformite` | POST `/incidents/{incident_id}/close`, POST `/incidents/{incident_id}/resume`, POST `/pricing/approvals/{approval_id}/revoke` |
 | `n8n-01-sync` | POST `/imports/{supplier}/run`, POST `/sync/run` |
 | `n8n-02-commandes` | POST `/northstar/entries`, POST `/orders/shipped`, POST `/orders/{order_id}/refunds` |
-| `n8n-03-factures` | aucune (lecture, aperçus et actes protecteurs seulement) |
+| `n8n-03-factures` | POST `/costs/invoices` |
 | `n8n-04-incidents` | POST `/incidents/{incident_id}/close`, POST `/incidents/{incident_id}/resume` |
 | `n8n-05-digest` | aucune (lecture, aperçus et actes protecteurs seulement) |
 | `n8n-06-marketing` | aucune (lecture, aperçus et actes protecteurs seulement) |
-| `n8n-07-stoploss` | POST `/stoploss/state/refresh`, POST `/stoploss/state` |
+| `n8n-07-stoploss` | POST `/stoploss/state/refresh` |
 | `n8n-08-mandat` | POST `/mandate/check` |
-| `connecteur-tresorerie` | POST `/treasury/balance-items`, POST `/treasury/bank-balance`, POST `/treasury/paypal-balance` |
+| `connecteur-tresorerie` | POST `/costs/invoices/{invoice_ref}/payments`, POST `/treasury/balance-items`, POST `/treasury/bank-balance`, POST `/treasury/paypal-balance` |
 | `connecteur-publicite` | POST `/ads/activity` |
 
 ## Séparation des rôles (aucune valeur décisive déclarée par son bénéficiaire)
 
 - Activité publicitaire : `connecteur-publicite`, jamais `acquisition` ; dépense retenue par (campagne, jour) =
-  MAX(déclaration, paiements pub exécutés du registre du mandat) ; registre en ajout seul (baisse refusée).
+  MAX(déclaration, paiements pub **engagés** du registre du mandat : approuvés à leur date de décision, exécutés à
+  leur date d'exécution) ; registre en ajout seul (baisse refusée) ; demande de dépense pub sans relevé du
+  connecteur de moins de 24 h : non vérifiable (validation humaine). Sans connecteur, une pub payée hors du mandat
+  (moyen de paiement du compte publicitaire) reste invisible : aucune campagne sans connecteur.
 - Fiches : `catalogue` les dépose ; `approved`, `content_validated`, `category_rule_validated` : propriétaire
   (`POST /catalog/approvals`, liée au contenu de la fiche).
-- Coûts historiques : `finance-pricing`, réception adossée à `POST /stock/receive` (`operations-sav`, autre jeton) ;
-  écart de facture > 2 % : propriétaire.
-- Étoile polaire : ventes et avoirs dérivés de commandes enregistrées (`POST /orders/shipped`, coût transporteur
-  réel) ; écritures manuelles et montants négatifs (référencés) : propriétaire.
-- Test d'incident réussi : `qa-conformite` (≠ ouvreur, cycle réel lancé par un autre principal) ou propriétaire.
+- Coûts historiques : `finance-pricing`, réception adossée à `POST /stock/receive` (`operations-sav`, autre jeton),
+  coût unitaire à ± 2 % d'une référence du moteur (ligne de la facture enregistrée par `n8n-03-factures`, sinon coût
+  rendu de la dernière offre évaluée) ; sans référence ou au-delà : propriétaire ; une réception n'est valorisée
+  qu'une fois (clé produit canonique) ; écart de facture > 2 % : propriétaire.
+- Clé produit unique : `product_id` = `listing.product_key` (422 sinon) ; SKU ou handle en double : 409 ; un nouvel
+  identifiant ne reprend jamais le SKU ou le handle d'une fiche existante, ni l'identité produit (GTIN, langue, scellé,
+  extension, format, contenu) d'une référence en quarantaine, bloquée ou d'état stop-loss inconnu (409, sauf propriétaire).
+- Photo du stop-loss : construite par le moteur (`POST /stoploss/state/refresh`) ; photo déposée : propriétaire
+  seule, cash recoupé avec les relevés du connecteur ; créances : propriétaire seule ; dettes : plancher des
+  factures enregistrées non payées (paiement relevé par `connecteur-tresorerie`).
+- Étoile polaire : ventes, avoirs, coût des ventes et sortie de stock dérivés de commandes enregistrées
+  (`POST /orders/shipped` avec lignes, coût transporteur réel) ; identifiants `order:`/`refund:`/`cost:`/`expense:`/
+  `fixed:` réservés au moteur ; frais PSP d'une commande comptés une fois ; écritures manuelles et montants négatifs
+  (référencés) : propriétaire.
+- Test d'incident réussi : `qa-conformite` (≠ ouvreur, cycle réel lancé par un autre principal ; cycle FICTIF admis
+  seulement pour un incident sur données FICTIVES ou ouvert alors que le moteur est en simulation) ou propriétaire.
+- Relais `n8n-08-mandat` : `requested_by` parmi les agents qui dépensent (jamais `qa-conformite` ni `catalogue`).
 
 ## Validation humaine requise
 
-- [ ] Générer un jeton par rôle (`openssl rand -hex 32`), en reporter l'empreinte SHA-256 dans
-      `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` de `/etc/pokeshop/api.env` et le jeton en clair dans l'identifiant
-      n8n du même nom (jamais dans le dépôt) ; le jeton propriétaire reste hors de n8n et des agents.
+- [ ] Générer un jeton par rôle (`openssl rand -hex 32`, sur l'ordinateur de la propriétaire :
+      `docs/00-pilotage/DELEGATION_AUTONOMIE.md` §10 étape 6), en reporter l'empreinte SHA-256 dans
+      `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` de `/etc/pokeshop/api.env` (copie `scp`, contrôle, ajout, `shred -u`) et le
+      jeton en clair dans l'identifiant n8n du même nom (jamais dans le dépôt) ; le jeton propriétaire reste hors
+      de n8n et des agents.
 - [ ] Relire cette matrice avant chaque nouvelle route d'écriture : une route absente est refusée.

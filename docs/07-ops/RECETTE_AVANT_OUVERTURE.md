@@ -134,7 +134,7 @@ Testeurs : agent 12 QA + propriétaire   Résultat : ___ cas bloquants OK / ___ 
 | ID | Bloquant | Appareil | Préconditions | Étapes | Résultat attendu | Résultat obtenu | Statut | Preuve |
 |---|---|---|---|---|---|---|---|---|
 | R-I01 | O | Ordinateur | Fiches publiées | Lire le code source des pages, le JSON public des produits, le sitemap et les métadonnées ; lancer le test de fuite de `publish.py` | Aucun coût, marge, prix d'achat, nom de fournisseur ni donnée personnelle | | | |
-| R-I02 | O | — | Comptes d'administration | Vérifier les comptes et les droits | Double authentification active ; chaque compte limité à son rôle | | | |
+| R-I02 | O | — | Comptes d'administration ; jetons et secrets de B21-B22 | Vérifier les comptes et les droits ; appeler une route d'écriture de l'API avec le jeton commun, avec un jeton de rôle non admis, puis avec le jeton propriétaire seul ; appeler chaque passerelle n8n (03, 04, 06, 08) avec le secret d'un autre agent | Double authentification active ; chaque compte limité à son rôle ; jeton commun et rôle non admis : 403, jeton propriétaire seul : accepté (`docs/08-agents/MATRICE_API.md`) ; passerelle avec le secret d'un autre agent : 403 ; administration de n8n par la propriétaire seule | | | |
 | R-I03 | O | — | Moteur et n8n | Lancer une synchronisation sans drapeau d'écriture | Aucune écriture réelle (simulation par défaut, SPEC §0.6) | | | |
 | R-I04 | O | Ordinateur | Sauvegarde du jour du service `db-backup` ; copie hors machine chiffrée avec la clé publique age de la propriétaire (A12) ; sa clé privée | Restaurer la base sur un environnement de test (`db/backup.sh verifier`) ; lancer `db/backup.sh etat` ; relire la copie chiffrée hors de la machine avec la clé privée (commande de contrôle `age -d` de `db/README.md`) | `db/backup.sh etat` répond code 0 (restauration vérifiée depuis moins de 36 h) ; restauration complète, durée notée (BP §6) ; copie chiffrée hors de la machine datée du mois | | | |
 
@@ -146,7 +146,7 @@ Testeurs : agent 12 QA + propriétaire   Résultat : ___ cas bloquants OK / ___ 
 | R-J02 | O | — | Colis test reçu | Faire un retour volontaire test (SAV-13) | Instructions, réception, contrôle du scellé, remboursement exact | | | |
 | R-J03 | O | — | Commande test | Imprimer le bon de préparation | Articles exacts ; option cadeau sans prix | | | |
 | R-J04 | O | — | Bon de préparation | Scanner un mauvais GTIN | Préparation bloquée | | | |
-| R-J05 | O | — | Lot FICTIF | Réception à blanc (`SOP_RECEPTION_STOCK.md`) | Lot de coût saisi ; stock vendable correct ; temps noté | | | |
+| R-J05 | O | — | Lot FICTIF ; facture FICTIVE | Réception à blanc (`SOP_RECEPTION_STOCK.md`) : déclaration E2 par l'agent 11 (son jeton, ou la passerelle 06 avec **son** secret ; le secret d'un autre agent : 403), facture validée puis enregistrée par le workflow 03, coût `RECEIPT` de l'agent 05 | Lot de coût saisi ; stock vendable correct ; coût à ± 2 % de la ligne de facture accepté, coût hors ± 2 % (prix du carton saisi comme unité) refusé (403) puis inscrit par la propriétaire ; même réception valorisée deux fois : 409 ; temps noté | | | |
 
 ### K. Incidents et stop-loss
 

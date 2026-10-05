@@ -5,7 +5,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## 08 — Mandat de dépense (passerelle CONN-PAYPAL, DELEGATION_AUTONOMIE.md)\nToute demande d'achat ou de paiement d'un agent arrive ici (en-tête secret) → **`POST /mandate/check`** (enregistrée au\nregistre, idempotente par clé) :\n- **APPROVED_WITHIN_MANDATE** → réponse à l'agent, paiement PayPal **préparé** (nœud d'exécution désactivé), journal ;\n- **NEEDS_HUMAN_APPROVAL** → email de **validation en 1 clic** (formulaire protégé, 24 h ; sans réponse : refus = statu quo) ;\n  un virement est **préparé**, la propriétaire le signe dans son e-banking ;\n- **REJECTED** → réponse avec les motifs (interdits, stop-loss, réserve cash…).\nContrôle impossible (mandat illisible, stop-loss non évalué) → **refus par défaut**.\n**Activation** : niveau 1 (contrôle et validation) ; exécution PayPal après mandat signé et recette CONN-PAYPAL.\n**Validation humaine requise** : signature du mandat (B01), empreinte au coffre, recette PayPal, routes moteur d'exécution.",
+        "content": "## 08 — Mandat de dépense (passerelle CONN-PAYPAL, DELEGATION_AUTONOMIE.md)\nToute demande d'achat ou de paiement d'un agent arrive ici par **son** webhook (`pokeshop-depense-<rôle>`, un secret par\nagent : le demandeur est fixé par le webhook, jamais par le corps) → **`POST /mandate/check`** (enregistrée au\nregistre, idempotente par clé) :\n- **APPROVED_WITHIN_MANDATE** → réponse à l'agent, paiement PayPal **préparé** (nœud d'exécution désactivé), journal ;\n- **NEEDS_HUMAN_APPROVAL** → email de **validation en 1 clic** (formulaire protégé, 24 h ; sans réponse : refus = statu quo) ;\n  un virement est **préparé**, la propriétaire le signe dans son e-banking ;\n- **REJECTED** → réponse avec les motifs (interdits, stop-loss, réserve cash…).\nContrôle impossible (mandat illisible, stop-loss non évalué) → **refus par défaut**.\n**Activation** : niveau 1 (contrôle et validation) ; exécution PayPal après mandat signé et recette CONN-PAYPAL.\n**Validation humaine requise** : signature du mandat (B01), empreinte au coffre, recette PayPal, routes moteur d'exécution.",
         "height": 430,
         "width": 700,
         "color": 4
@@ -20,29 +20,344 @@
       ]
     },
     {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "pokeshop-depense",
-        "responseMode": "responseNode",
-        "options": {},
-        "authentication": "headerAuth"
-      },
+      "parameters": {},
       "id": "e07fc346-a9b4-5b4b-9e95-04d75d4a7363",
       "name": "Demande de dépense (passerelle agents)",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
       "position": [
         0,
         0
       ],
-      "webhookId": "a4f32935-62ec-5f78-b94c-ee05399ce1e5",
+      "notes": "Point de jonction des webhooks par agent : corps {request} avec requested_by imposé par le webhook.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-acquisition",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "6c8ea7dd-e7eb-58fe-82ba-63b8c4fce905",
+      "name": "Demande de dépense — acquisition (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        -640
+      ],
+      "webhookId": "add566cc-280b-5b37-99cb-3d8470beb34a",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpGateway0001",
-          "name": "Passerelle agents — X-Pokeshop-Gateway"
+          "id": "pkshpGw08Acqui10",
+          "name": "Passerelle 08 dépense — secret de l'agent 10 (acquisition)"
         }
       },
-      "notes": "Corps : {\"request\": SpendRequest} — montants en chaînes. Aucune trésorerie : le moteur la lit dans ses registres (photo du stop-loss, soldes relevés).",
+      "notes": "Secret remis au seul agent « acquisition ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'acquisition' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'acquisition' } }];\n"
+      },
+      "id": "56bea168-b927-5799-b0e7-fc30e0e98163",
+      "name": "Demandeur imposé : acquisition",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        -640
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-chef-de-projet",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "70bac509-6899-5abb-8000-1493824466f7",
+      "name": "Demande de dépense — chef-de-projet (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        -480
+      ],
+      "webhookId": "d988da52-5940-587b-888e-f96eddf83825",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw08Chef001",
+          "name": "Passerelle 08 dépense — secret de l'agent 01 (chef-de-projet)"
+        }
+      },
+      "notes": "Secret remis au seul agent « chef-de-projet ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'chef-de-projet' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'chef-de-projet' } }];\n"
+      },
+      "id": "64e0c94d-4d73-5ed1-ae09-4559d361b361",
+      "name": "Demandeur imposé : chef-de-projet",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        -480
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-communication",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "b67c54f5-81e2-546a-96eb-53cc78d8f46d",
+      "name": "Demande de dépense — communication (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        -320
+      ],
+      "webhookId": "a05a4074-bce9-5a03-a17d-2b998bb39b3f",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw08Commu09",
+          "name": "Passerelle 08 dépense — secret de l'agent 09 (communication)"
+        }
+      },
+      "notes": "Secret remis au seul agent « communication ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'communication' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'communication' } }];\n"
+      },
+      "id": "d10ef04c-0c6a-571a-b0e6-6ed9b3925b31",
+      "name": "Demandeur imposé : communication",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        -320
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-direction-artistique",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "7b9f36e6-363c-56b5-911b-86df1f0786e3",
+      "name": "Demande de dépense — direction-artistique (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        -159
+      ],
+      "webhookId": "6f9b396c-4070-5cbb-b354-551c73d05265",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw08DirAr06",
+          "name": "Passerelle 08 dépense — secret de l'agent 06 (direction-artistique)"
+        }
+      },
+      "notes": "Secret remis au seul agent « direction-artistique ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'direction-artistique' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'direction-artistique' } }];\n"
+      },
+      "id": "fc3d2dad-f4db-5e4b-b8c6-e36e9661295b",
+      "name": "Demandeur imposé : direction-artistique",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        -159
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-finance-pricing",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "4cecb3f1-5513-5580-9de5-f1e92032ed10",
+      "name": "Demande de dépense — finance-pricing (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        0
+      ],
+      "webhookId": "3abf936f-850c-54ed-8013-6f8601d36e89",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw08Finan05",
+          "name": "Passerelle 08 dépense — secret de l'agent 05 (finance-pricing)"
+        }
+      },
+      "notes": "Secret remis au seul agent « finance-pricing ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'finance-pricing' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'finance-pricing' } }];\n"
+      },
+      "id": "b3c4c45a-2b5e-5976-9856-54842b9fb420",
+      "name": "Demandeur imposé : finance-pricing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        0
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-operations-sav",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "8564594c-012d-5b88-8942-1da87f600f75",
+      "name": "Demande de dépense — operations-sav (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        159
+      ],
+      "webhookId": "41583937-f14f-50cf-8569-af293f3ea7b0",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw08OpSav11",
+          "name": "Passerelle 08 dépense — secret de l'agent 11 (operations-sav)"
+        }
+      },
+      "notes": "Secret remis au seul agent « operations-sav ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'operations-sav' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'operations-sav' } }];\n"
+      },
+      "id": "3d4f0610-0fff-5f1e-bf81-86f47d8ac017",
+      "name": "Demandeur imposé : operations-sav",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        159
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-site-integrations",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "05fbe672-5474-599d-b729-79d4461df9e6",
+      "name": "Demande de dépense — site-integrations (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        320
+      ],
+      "webhookId": "74a5b743-61f4-5ab2-9146-54958c2410e8",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw08SiteI07",
+          "name": "Passerelle 08 dépense — secret de l'agent 07 (site-integrations)"
+        }
+      },
+      "notes": "Secret remis au seul agent « site-integrations ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'site-integrations' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'site-integrations' } }];\n"
+      },
+      "id": "63402590-b21c-5b35-814d-defb54c01c41",
+      "name": "Demandeur imposé : site-integrations",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        320
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-sourcing",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "fbcfa6de-a19d-5559-8010-922b8935b1e4",
+      "name": "Demande de dépense — sourcing (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        480
+      ],
+      "webhookId": "64259669-d0bc-5c62-800f-7565a3163ba2",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw08Sourc02",
+          "name": "Passerelle 08 dépense — secret de l'agent 02 (sourcing)"
+        }
+      },
+      "notes": "Secret remis au seul agent « sourcing ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'sourcing' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'sourcing' } }];\n"
+      },
+      "id": "76702829-a895-5459-97de-9a9408bda486",
+      "name": "Demandeur imposé : sourcing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        480
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
       "notesInFlow": true
     },
     {
@@ -838,6 +1153,182 @@
     }
   ],
   "connections": {
+    "Demande de dépense — acquisition (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : acquisition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : acquisition": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de dépense — chef-de-projet (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : chef-de-projet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : chef-de-projet": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de dépense — communication (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : communication",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : communication": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de dépense — direction-artistique (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : direction-artistique",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : direction-artistique": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de dépense — finance-pricing (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : finance-pricing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : finance-pricing": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de dépense — operations-sav (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : operations-sav",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : operations-sav": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de dépense — site-integrations (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : site-integrations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : site-integrations": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de dépense — sourcing (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : sourcing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : sourcing": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Garde : incidents ouverts": {
       "main": [
         [

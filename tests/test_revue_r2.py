@@ -71,10 +71,10 @@ def test_sec06_photo_cannot_declare_capital_and_fake_withdrawal_no_longer_hides_
         {"movement_id": "FICTIF_RETRAIT_FAUX", "at": (P.NOW - timedelta(days=1)).isoformat(), "kind": "WITHDRAWAL",
          "amount": "7100"},
     ]  # fmt: skip
-    refused = client.post("/stoploss/state", headers=P.HPHOTO, json=forged)
+    refused = client.post("/stoploss/state", headers=P.HO, json=forged)
     assert refused.status_code == 422 and "POST /capital/movements" in body(refused)["erreur"]
     assert svc.stoploss_state is None and svc.audit.events(action="stoploss.state.capital_movements_refused")
-    honest = body(client.post("/stoploss/state", headers=P.HPHOTO, json=P.photo("900")))
+    honest = body(client.post("/stoploss/state", headers=P.HO, json=P.photo("900")))
     assert honest["status"]["global_frozen"] is True and svc.stoploss_engine.frozen
     assert [m.movement_id for m in svc.stoploss_state.capital_movements] == ["FICTIF_APPORT"]  # registre seul
 
@@ -86,7 +86,7 @@ def test_sec06_only_the_owner_register_changes_capital(tmp_path: Path) -> None:
     assert client.post("/capital/movements", headers=P.HF, json=withdrawal).status_code == 403  # agent : jamais
     assert client.post("/capital/movements", headers=P.H, json=withdrawal).status_code == 403  # jeton commun : jamais
     assert client.post("/capital/movements", headers=P.HO, json=withdrawal).status_code == 201  # propriétaire
-    data = body(client.post("/stoploss/state", headers=P.HPHOTO, json=P.photo("900")))
+    data = body(client.post("/stoploss/state", headers=P.HO, json=P.photo("900")))
     # Capital de référence 8 000 − 7 100 = 900 attesté par la propriétaire : valeur nette 900, aucune perte.
     assert data["status"]["global_frozen"] is False
     assert {m.movement_id for m in svc.stoploss_state.capital_movements} == {"FICTIF_APPORT", "FICTIF_RETRAIT"}
@@ -97,14 +97,16 @@ def test_sec06_treasury_values_need_a_named_token(tmp_path: Path) -> None:
     reading = {"as_of": P.NOW.isoformat(), "balance_chf": "2000", "source": "relevé FICTIF"}
     statement = {"as_of": P.NOW.isoformat(), "preorders_collected_chf": "0", "source": "déclaration FICTIVE"}
     # Revue R3 : jeton nommé **du rôle** (matrice pokeshop.authz), jamais le jeton commun ni un autre rôle.
-    for path, payload, role in (("/stoploss/state", P.photo(), P.HPHOTO), ("/treasury/paypal-balance", reading, P.HTRES),
+    for path, payload, role in (("/treasury/paypal-balance", reading, P.HTRES),
                                 ("/treasury/bank-balance", reading, P.HTRES), ("/treasury/balance-items", statement, P.HF)):
         common = client.post(path, headers=P.H, json=payload)
         assert common.status_code == 403 and "jeton nommé" in body(common)["erreur"], path
         assert client.post(path, headers=P.HOPS, json=payload).status_code == 403, path  # rôle non autorisé
         assert client.post(path, headers=role, json=payload).status_code == 200, path
-    assert len(svc.audit.events(action="stoploss.state.common_token_refused")) == 1
-    assert len(svc.audit.events(action="stoploss.state.role_refused")) == 1
+    # Revue R4 (R3-NEW-03) : photo déposée = relevé de la propriétaire seule (jamais un rôle d'automatisation).
+    for headers in (P.H, P.HOPS, P.HPHOTO):
+        assert client.post("/stoploss/state", headers=headers, json=P.photo()).status_code == 403
+    assert len(svc.audit.events(action="stoploss.state.owner_token_refused")) == 3
 
 
 # =============================================================================== SEC-09
@@ -342,12 +344,12 @@ def test_new01_failed_test_can_still_be_reported_by_anyone(tmp_path: Path) -> No
 
 def test_new02_startup_hold_is_never_written_even_after_an_evaluation(tmp_path: Path) -> None:
     client, _ = P.boot(tmp_path)
-    assert client.post("/stoploss/state", headers=P.HPHOTO, json=P.photo()).status_code == 200
+    assert client.post("/stoploss/state", headers=P.HO, json=P.photo()).status_code == 200
     bad = tmp_path / "northstar.jsonl"
     bad.write_text("garbage\n", encoding="utf-8")
     client2, svc2 = P.boot(tmp_path)
     assert svc2.stoploss_engine.latch.cause == "RESTORE_FAILED" and svc2.stoploss_engine.frozen
-    during = client2.post("/stoploss/state", headers=P.HPHOTO, json=P.photo())  # workflow 07 continue de déposer
+    during = client2.post("/stoploss/state", headers=P.HO, json=P.photo())  # workflow 07 continue de déposer
     assert during.status_code == 200 and svc2.stoploss_engine.journal[-1].event == "EVALUATION"
     assert svc2.stoploss_engine.persisted_latch.frozen is False
     lines = [json.loads(line) for line in (tmp_path / "stoploss.jsonl").read_text(encoding="utf-8").splitlines()]
@@ -414,7 +416,7 @@ def test_mot18_northstar_refuses_an_assumed_logistics_cost() -> None:
 
 def test_sec07_rearm_without_reference_returns_the_value_and_the_photo_fingerprint(tmp_path: Path) -> None:
     client, svc = P.boot(tmp_path)
-    assert client.post("/stoploss/state", headers=P.HPHOTO, json=P.photo()).status_code == 200
+    assert client.post("/stoploss/state", headers=P.HO, json=P.photo()).status_code == 200
     client.post("/stoploss/freeze", headers=P.HQA, json={"actor": "agent-12", "reason": "gel de test FICTIF"})
     resp = client.post("/stoploss/rearm", headers=P.HO, json={"reason": "valeur nette examinée (FICTIF)"})
     data = body(resp)

@@ -155,7 +155,7 @@ def spend_payload(key: str, amount: str = "280", *, requested_by: str = "operati
 
 def deposit(client: TestClient, *, available: str = "5000", paypal: str = "5000") -> None:
     """Photo (workflow 07, n8n-07-stoploss) et solde PayPal (connecteur de trésorerie) : jamais l'agent qui dépense."""
-    assert client.post("/stoploss/state", headers=HPHOTO, json=photo(available=available)).status_code == 200
+    assert client.post("/stoploss/state", headers=HO, json=photo(available=available)).status_code == 200
     reading = {"as_of": API_NOW.isoformat(), "balance_chf": paypal, "source": "relevé PayPal FICTIF"}
     assert client.post("/treasury/paypal-balance", headers=HTRES, json=reading).status_code == 200
 
@@ -420,7 +420,7 @@ def test_mot09_staleness_is_judged_on_the_photo_date_not_the_evaluation_time() -
 
 def test_sec06_photo_without_contribution_is_refused_and_spending_blocked(tmp_path: Path) -> None:
     client, svc = boot(tmp_path, mandate=api_mandate(), capital=False)  # aucun apport au registre de la propriétaire
-    no_capital = client.post("/stoploss/state", headers=HPHOTO, json=photo("100"))
+    no_capital = client.post("/stoploss/state", headers=HO, json=photo("100"))
     assert no_capital.status_code == 409 and "aucun apport" in body(no_capital)["erreur"]
     assert svc.stoploss_state is None
     assert client.post("/mandate/check", headers=HOPS, json=spend_payload("FICTIF-SL-1", "40")).status_code == 503
@@ -434,16 +434,16 @@ def test_mot12_omitted_contributions_are_refused_until_owner_reset(tmp_path: Pat
         apport = {"movement_id": movement_id, "at": (API_NOW - timedelta(days=days)).isoformat(),
                   "kind": "CONTRIBUTION", "amount": amount}  # fmt: skip
         assert client.post("/capital/movements", headers=HO, json=apport).status_code == 201
-    assert client.post("/stoploss/state", headers=HPHOTO, json=photo()).status_code == 200
+    assert client.post("/stoploss/state", headers=HO, json=photo()).status_code == 200
     assert svc.stoploss_engine.latch.contributions_seen_chf == D("10000")
     # SEC-06 : une photo ne déclare jamais de mouvements de capital (apport omis ou faux retrait) : 422.
-    declared = client.post("/stoploss/state", headers=HPHOTO, json=photo("6000", capital_movements=[OWNER_APPORT]))
+    declared = client.post("/stoploss/state", headers=HO, json=photo("6000", capital_movements=[OWNER_APPORT]))
     assert declared.status_code == 422 and body(declared)["previous_photo_kept"] is True
     # Registre des apports restauré d'une sauvegarde plus ancienne (apport de 2 000 perdu) : perte masquée => refus.
     journal = tmp_path / "capital_movements.jsonl"
     journal.write_text(journal.read_text(encoding="utf-8").splitlines(keepends=True)[0], encoding="utf-8")
     client_b, _ = boot(tmp_path, capital=False)
-    omitted = client_b.post("/stoploss/state", headers=HPHOTO, json=photo("6000"))
+    omitted = client_b.post("/stoploss/state", headers=HO, json=photo("6000"))
     assert omitted.status_code == 409 and body(omitted)["previous_photo_kept"] is True
     _, svc2 = boot(tmp_path, capital=False)  # la mémoire des apports survit au redémarrage
     assert svc2.stoploss_engine.latch.contributions_seen_chf == D("10000")
@@ -452,7 +452,7 @@ def test_mot12_omitted_contributions_are_refused_until_owner_reset(tmp_path: Pat
     assert refused.status_code == 403
     reset = client2.post("/stoploss/capital-memory/reset", headers=HO, json={"reason": "apport erroné FICTIF corrigé"})
     assert reset.status_code == 200 and svc2.stoploss_engine.latch.contributions_seen_chf is None
-    assert client2.post("/stoploss/state", headers=HPHOTO, json=photo("8000")).status_code == 200
+    assert client2.post("/stoploss/state", headers=HO, json=photo("8000")).status_code == 200
     assert svc2.stoploss_engine.latch.contributions_seen_chf == D("8000")
 
 
@@ -477,13 +477,13 @@ def test_mot13_ads_cap_and_stock_budget_never_come_from_the_photo(tmp_path: Path
                    attributed_orders=orders, stock_budget_chf="100000",
                    extensions=[{"extension": "FICTIF_EXT", "stock_value_at_cost": "3000",
                                 "last_sale_at": API_NOW.isoformat()}])  # fmt: skip
-    data = body(client.post("/stoploss/state", headers=HPHOTO, json=posted))
+    data = body(client.post("/stoploss/state", headers=HO, json=posted))
     assert any("plafond jour pub" in n for n in data["overridden"]) and any("budget stock" in n for n in data["overridden"])
     assert data["status"]["ads_globally_cut"] is True
     assert "FICTIF_EXT" in data["status"]["no_reorder_extensions"]
     assert svc.stoploss_state.ads_daily_cap_chf is None and svc.stoploss_state.stock_budget_chf == D("3000")
     svc.mandate = api_mandate()  # mandat signé actif : plafond pub = celui du mandat (33)
-    data = body(client.post("/stoploss/state", headers=HPHOTO, json=posted))
+    data = body(client.post("/stoploss/state", headers=HO, json=posted))
     assert svc.stoploss_state.ads_daily_cap_chf == D("33") and data["status"]["ads_globally_cut"] is True
 
 
@@ -520,7 +520,7 @@ def test_mot21_reorder_route_registers_the_proposal(tmp_path: Path) -> None:
                       "available_qty": 24, "moq": 1, "carton_qty": 1, "source_ts": API_NOW.isoformat(),
                       "raw_ref": "FICTIF:1"}}  # fmt: skip
     # F3 (MOT-24) : une proposition exige un état du stop-loss connu (photo acceptée), sinon 409.
-    assert client.post("/stoploss/state", headers=HPHOTO, json=photo()).status_code == 200
+    assert client.post("/stoploss/state", headers=HO, json=photo()).status_code == 200
     data = body(client.post("/stock/reorder-proposal", headers=HF, json={"candidates": [cand], "budget_available": "5000"}))
     ref = data["justification_ref"]
     assert data["registered"] is True and svc.proposals.get(ref) is not None
@@ -817,11 +817,17 @@ def test_f2_registries_survive_restart_in_postgres(pg: dict[str, Any], tmp_path:
     assert client.post("/catalog/approvals", headers=HO, json=approval).status_code == 201
     assert client.post("/stock/receive", headers=HOPS, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": 1,
                                                              "ref": "FICTIF-BL-1"}).status_code == 200
+    # Revue R4 : facture enregistrée (workflow 03) = référence du coût de réception ; commande avec lignes.
+    invoice = {"invoice_ref": "FICTIF-FACT-1", "supplier_id": "fictif_grossiste_a", "issued_at": API_NOW.isoformat(),
+               "total_chf": "140.00", "lines": [{"product_key": "FICTIF-P1", "qty": 1, "unit_cost_chf": "140.00"}],
+               "source": "facture FICTIVE validée par la propriétaire"}
+    assert client.post("/costs/invoices", headers=JR.headers("n8n-03-factures"), json=invoice).status_code == 201
     lot = {"kind": "RECEIPT", "product_key": "FICTIF-P1", "at": API_NOW.isoformat(), "ref": "FICTIF-LOT-1", "qty": 1,
            "unit_cost": "140.00", "stock_ref": "FICTIF-BL-1", "invoice_ref": "FICTIF-FACT-1"}
     assert client.post("/costs/movements", headers=HF, json=lot).status_code == 200
     order = {"order_id": "FICTIF-O1", "paid_at": API_NOW.isoformat(), "net_sales_ht": "184.92", "payment_fees": "5.30",
-             "shipping_cost_actual": "3.00", "shipping_label_ref": "FICTIF-ETIQ-1", "source": "Shopify FICTIF"}
+             "shipping_cost_actual": "3.00", "shipping_label_ref": "FICTIF-ETIQ-1", "source": "Shopify FICTIF",
+             "lines": [{"public_sku": "DSP-FICTIF_ALPHA-FR", "qty": 1}]}
     assert client.post("/orders/shipped", headers=JR.HORDERS, json=order).status_code == 201
     cand = {"product_key": "FICTIF-P1", "extension": "FICTIF_ALPHA", "unit_cost_chf": "90.00", "sellable_qty": 0,
             "avg_daily_sales": "0.5", "lead_time_days": 7, "safety_stock": 1,
@@ -829,13 +835,14 @@ def test_f2_registries_survive_restart_in_postgres(pg: dict[str, Any], tmp_path:
                       "available_qty": 24, "moq": 1, "carton_qty": 1, "source_ts": API_NOW.isoformat(),
                       "raw_ref": "FICTIF:1"}}  # fmt: skip
     assert client.post("/capital/movements", headers=HO, json=OWNER_APPORT).status_code == 201  # SEC-06
-    assert client.post("/stoploss/state", headers=HPHOTO, json=photo()).status_code == 200  # F3 (MOT-24)
+    assert client.post("/stoploss/state", headers=HO, json=photo()).status_code == 200  # F3 (MOT-24)
     ref = body(client.post("/stock/reorder-proposal", headers=HF,
                            json={"candidates": [cand], "budget_available": "5000"}))["justification_ref"]
     _, svc2 = start()
     assert svc2.proposals.get(ref) is not None
     assert svc2.restore_errors == {} and svc2.fx_rates.reference("EUR", API_NOW) is not None
     assert api_mandate().fingerprint in svc2.revocations.fingerprints()
-    assert svc2.costs.ledger("FICTIF-P1").qty_on_hand == 1
+    assert svc2.costs.ledger("FICTIF-P1").qty_on_hand == 0  # sortie dérivée de la commande (revue R4)
+    assert svc2.invoices.get("FICTIF-FACT-1") is not None and svc2.invoices.unpaid_total() == D("140.00")
     assert svc2.stock.receipt("DSP-FICTIF_ALPHA-FR", "FICTIF-BL-1") == (1, "operations-sav")  # acteur persisté
     assert svc2.catalog_approvals.get("FICTIF-P1").approved and svc2.orders.get("FICTIF-O1") is not None

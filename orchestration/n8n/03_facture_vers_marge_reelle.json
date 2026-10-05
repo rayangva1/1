@@ -5,7 +5,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## 03 — Facture vers marge réelle (BP §12)\nL'agent 05 extrait la facture et le justificatif d'import (PDF/email) et l'envoie à la passerelle (en-tête secret).\n**Contrôles déterministes** (centimes, total des lignes, devise + taux sourcé) → **validation humaine** de l'extraction\n(formulaire protégé, 72 h) → ventilation des frais et **coût historique** (route moteur attendue) → **écarts > 2 %** signalés.\nJamais de modification d'une commande client déjà conclue. Paiements et remboursements : rapprochés dans 02.\n**Activation** : niveau 1 (contrôles et validation) ; enregistrement réel quand la route moteur existe.\n**Validation humaine requise** : chaque extraction (A_VALIDER_HUMAINEMENT), seuil d'écart de 2 %.",
+        "content": "## 03 — Facture vers marge réelle (BP §12)\nL'agent 05 extrait la facture et le justificatif d'import (PDF/email) et l'envoie à **sa** passerelle (secret de l'agent 05 seul).\n**Contrôles déterministes** (centimes, total des lignes, devise + taux sourcé) → **validation humaine** de l'extraction\n(formulaire protégé, 72 h) → frais ventilés au coût rendu unitaire → **facture enregistrée au moteur**\n(`POST /costs/invoices`, jeton `n8n-03-factures`) : référence du coût d'une réception (± 2 %, sinon propriétaire) et dette\nde la photo du stop-loss jusqu'au paiement relevé (`POST /costs/invoices/{ref}/payments`, connecteur-tresorerie ou\npropriétaire) → **écarts > 2 %** signalés. Jamais de modification d'une commande client déjà conclue.\n**Activation** : niveau 1 (contrôles, validation, enregistrement de la facture).\n**Validation humaine requise** : chaque extraction (A_VALIDER_HUMAINEMENT), seuil d'écart de 2 %.",
         "height": 340,
         "width": 640,
         "color": 4
@@ -38,10 +38,12 @@
       "webhookId": "5809a979-8f1d-5685-b4d0-416ab5b816b5",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpGateway0001",
-          "name": "Passerelle agents — X-Pokeshop-Gateway"
+          "id": "pkshpGw03Factu05",
+          "name": "Passerelle 03 factures — secret de l'agent 05 (finance-pricing)"
         }
-      }
+      },
+      "notes": "Secret remis au seul agent 05 (credential « Passerelle 03 factures »).",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -283,6 +285,21 @@
     },
     {
       "parameters": {
+        "jsCode": "// Montants décimaux en centimes entiers (aucun float pour un montant ; arrondi interdit).\nfunction cents(value) {\n  const text = String(value === undefined || value === null ? '' : value).trim();\n  if (!/^-?\\d+(\\.\\d{1,2})?$/.test(text)) throw new Error(`montant non décimal ou plus de 2 décimales : ${text}`);\n  const negative = text.startsWith('-');\n  const [intPart, frac = ''] = text.replace('-', '').split('.');\n  const total = Number(intPart) * 100 + Number((frac + '00').slice(0, 2));\n  return negative ? -total : total;\n}\nfunction chf(c) {\n  const sign = c < 0 ? '-' : '';\n  const a = Math.abs(c);\n  return `${sign}${Math.trunc(a / 100)}.${String(a % 100).padStart(2, '0')}`;\n}\n\n// Facture validée par la propriétaire -> registre des factures du moteur (POST /costs/invoices), revue R4.\n// Coût rendu unitaire ventilé : prix facturé + frais (fret, douane, TVA import) répartis au prorata de la valeur.\nconst body = $('Facture extraite par l’agent 05 (passerelle)').first().json.body || {};\nconst lines = Array.isArray(body.lines) ? body.lines : [];\nconst fees = body.fees_chf || {};\nconst feeCents = ['freight', 'customs', 'import_vat'].reduce((sum, k) => sum + (fees[k] ? cents(fees[k]) : 0), 0);\nconst goods = lines.reduce((sum, l) => sum + cents(l.invoice_unit_cost_chf) * l.qty, 0);\nif (goods <= 0) throw new Error('facture sans valeur marchandise : rien à enregistrer');\nlet allocated = 0;\nconst out = lines.map((l, i) => {\n  const value = cents(l.invoice_unit_cost_chf) * l.qty;\n  const share = i === lines.length - 1 ? feeCents - allocated : Math.floor((feeCents * value) / goods);\n  allocated += share;\n  const unit = Math.round((value + share) / l.qty);\n  return { product_key: String(l.product_key), qty: l.qty, unit_cost_chf: chf(unit) };\n});\nreturn [{ json: {\n  invoice_ref: String(body.invoice_ref),\n  supplier_id: String(body.supplier_id),\n  issued_at: `${body.invoice_date}T12:00:00+00:00`,\n  total_chf: chf(goods + feeCents),\n  lines: out,\n  source: `facture ${body.invoice_ref} extraite par l'agent 05, validée par la propriétaire (formulaire 03)`,\n} }];\n"
+      },
+      "id": "b7381122-47e6-5da0-abf7-4924dcbb1d3d",
+      "name": "Préparer la facture validée (coût rendu ventilé)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2100,
+        -200
+      ],
+      "notes": "Lignes au coût rendu unitaire (frais ventilés au prorata de la valeur) ; total dû = marchandise + frais.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "={{ $('Paramètres').first().json.api_base_url }}/costs/invoices",
         "authentication": "genericCredentialType",
@@ -292,10 +309,10 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ invoice: $('Facture extraite par l’agent 05 (passerelle)').first().json.body, validated_by: 'propriétaire', motif: $json['Motif'] }) }}"
+        "jsonBody": "={{ JSON.stringify($json) }}"
       },
-      "id": "e5b96ed2-9e76-5368-a47b-7796dccb629e",
-      "name": "Ventiler les frais et enregistrer le coût historique — route moteur attendue (désactivé)",
+      "id": "a677525b-dfec-5875-aabb-ef00b6bc2849",
+      "name": "Enregistrer la facture validée (POST /costs/invoices)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -308,8 +325,7 @@
           "name": "Pokeshop API — jeton nommé n8n-03-factures"
         }
       },
-      "disabled": true,
-      "notes": "Route à créer (agent integrations) : allocate_inbound_costs, HistoricalCostLedger.apply_invoice, sync_cost_ledger vers l'étoile polaire. Idempotente par facture.",
+      "notes": "Registre des factures du moteur (revue R4) : référence du coût d'une réception (± 2 %, sinon propriétaire) et dette de la photo du stop-loss jusqu'au paiement relevé par connecteur-tresorerie. Jeton nommé n8n-03-factures, jamais l'agent 05 qui valorise les réceptions. Idempotente par facture (autre contenu : 409).",
       "notesInFlow": true,
       "retryOnFail": true,
       "maxTries": 3,
@@ -571,7 +587,7 @@
       "main": [
         [
           {
-            "node": "Ventiler les frais et enregistrer le coût historique — route moteur attendue (désactivé)",
+            "node": "Préparer la facture validée (coût rendu ventilé)",
             "type": "main",
             "index": 0
           }
@@ -585,7 +601,18 @@
         ]
       ]
     },
-    "Ventiler les frais et enregistrer le coût historique — route moteur attendue (désactivé)": {
+    "Préparer la facture validée (coût rendu ventilé)": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer la facture validée (POST /costs/invoices)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer la facture validée (POST /costs/invoices)": {
       "main": [
         [
           {

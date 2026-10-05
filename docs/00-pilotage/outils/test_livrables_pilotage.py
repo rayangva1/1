@@ -556,7 +556,10 @@ def test_r3_sequencing_of_owner_acts():
     assert days["C30"] == {28, 37} and links["C30"] == ["BL-197"]
     b27 = next(line for line in text.splitlines() if line.startswith("| B27 |"))
     for part in ('sudo install -D -m 600 -o "$USER" .env.example /etc/pokeshop/api.env', "nano",
-                 "cat empreintes-roles.env >> /etc/pokeshop/api.env", "scripts/compose.sh config --quiet",
+                 # Revue R4 (R3-DOC-06) : empreintes copiées sur le serveur, contrôlées, ajoutées, copie effacée.
+                 "scp ~/pokeshop-jetons/empreintes-roles.env serveur:", "grep -cE '^POKESHOP_ROLE_TOKEN_SHA256_",
+                 "cat ~/empreintes-roles.env >> /etc/pokeshop/api.env", "shred -u ~/empreintes-roles.env",
+                 "scripts/compose.sh config --quiet",
                  "scripts/compose.sh up -d db db-migrate db-backup api n8n", "groupe `docker`", "n8n-06-marketing"):  # fmt: skip
         assert part in b27, part
     b26 = next(line for line in text.splitlines() if line.startswith("| B26 |"))

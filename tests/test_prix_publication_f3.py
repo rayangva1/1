@@ -219,7 +219,7 @@ def test_reorder_proposal_refuses_self_declared_budget_and_cap_exceptions() -> N
     client, _ = boot()
     req = {"candidates": [candidate()], "budget_available": "5000"}
     assert client.post("/stock/reorder-proposal", headers=HF, json=req).status_code == 409  # stop-loss inconnu
-    assert client.post("/stoploss/state", headers=HPHOTO, json=state_payload()).status_code == 200
+    assert client.post("/stoploss/state", headers=HO, json=state_payload()).status_code == 200
     assert client.post("/stock/reorder-proposal", headers=HF,
                        json={**req, "stock_budget_total": "100000"}).status_code == 422
     caps = {**req, "cap_exceptions": {"FICTIF_ALPHA": "1"}}
@@ -230,7 +230,7 @@ def test_reorder_proposal_refuses_self_declared_budget_and_cap_exceptions() -> N
 def test_reorder_uses_photo_exposure_caller_can_only_add() -> None:
     client, _ = boot()
     exposed = state_payload(extensions=[{"extension": "FICTIF_ALPHA", "stock_value_at_cost": "750"}])
-    assert client.post("/stoploss/state", headers=HPHOTO, json=exposed).status_code == 200
+    assert client.post("/stoploss/state", headers=HO, json=exposed).status_code == 200
     req = {"candidates": [candidate()], "budget_available": "5000", "extension_exposure": {"FICTIF_ALPHA": "0"}}
     data = body(client.post("/stock/reorder-proposal", headers=HF, json=req))
     assert data["proposal"]["lines"] == []  # 25 % × 3 000 = 750 déjà exposés : plafond atteint

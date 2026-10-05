@@ -33,6 +33,7 @@
 | `engine/pokeshop/stoploss.py` | Évaluation des six stop-loss, gel verrouillé, réarmement par la propriétaire ; **seule source** de l'état des stop-loss | gouvernance | 12, 05, 10 | présent |
 | `engine/pokeshop/mandate.py` | Contrôle de chaque dépense (`check`), registre du mandat (`SpendLedger`), registres des taux et des révocations | gouvernance | 05, 12 | présent |
 | `engine/pokeshop/northstar.py` | Registre de l'étoile polaire (`NorthStarLedger`) | gouvernance | 05, 01, 12 | présent |
+| `engine/pokeshop/invoices.py` | Registre des factures fournisseur validées par la propriétaire (`SupplierInvoiceBook`, `POST /costs/invoices`) : référence du coût d'une réception (± 2 %), dette jusqu'au paiement relevé | gouvernance | 05, 12 | présent |
 | `engine/pokeshop/autonomy.py` | Niveaux d'autonomie et porte de gouvernance (niveau + mandat + stop-loss) | integrations | 12, 07 | présent |
 | `engine/pokeshop/settings.py` | Variables d'environnement (noms seulement : empreintes, jetons nommés) | integrations | 07, 12 | présent |
 | `engine/pokeshop/sync.py` | Cycles de synchronisation (`/sync/run`, simulation par défaut) | integrations | 07, 12 | présent |

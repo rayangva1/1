@@ -1539,7 +1539,11 @@ def check(
     if request.payment_method not in _ALLOWED_METHODS:
         v.add(SpendReason.PAYMENT_METHOD_FORBIDDEN)
     for label in unverified:
-        v.add(SpendReason.TREASURY_UNVERIFIED, f"{label} : déposée par le jeton qui demande la dépense, non vérifiable.")
+        v.add(
+            SpendReason.TREASURY_UNVERIFIED,
+            f"{label} : non vérifiable (déposée par le jeton qui demande la dépense, par un relais, ou sans relevé "
+            "indépendant récent).",
+        )
     if _stale(stoploss_state.photo_as_of, at, max_age):
         v.add(
             SpendReason.STALE_STOPLOSS_STATUS,

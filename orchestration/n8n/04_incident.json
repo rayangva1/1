@@ -361,11 +361,11 @@
       "webhookId": "97403756-c7bd-5438-92e1-1c6bce124fb7",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpGateway0001",
-          "name": "Passerelle agents — X-Pokeshop-Gateway"
+          "id": "pkshpGw04Repri12",
+          "name": "Passerelle 04 reprise — secret de l'agent 12 (qa-conformite)"
         }
       },
-      "notes": "Corps : {\"incident_id\": \"...\", \"actor\": \"qa-conformite\"}. Le test réussi est enregistré AVANT, par le rôle qa-conformite avec SON jeton nommé (POST /incidents/{id}/test, différent de l'ouvreur, cycle réel lancé par un autre principal) ou par la propriétaire : le workflow 04 (n8n-04-incidents) ne peut pas l'attester (403, revue NEW-01) ; il ne fait que reprendre.",
+      "notes": "Secret remis au seul agent 12. Corps : {\"incident_id\": \"...\"}. Le test réussi est enregistré AVANT, par le rôle qa-conformite avec SON jeton nommé (POST /incidents/{id}/test, différent de l'ouvreur, cycle réel lancé par un autre principal) ou par la propriétaire : le workflow 04 (n8n-04-incidents) ne peut pas l'attester (403, revue NEW-01) ; il ne fait que reprendre.",
       "notesInFlow": true
     },
     {

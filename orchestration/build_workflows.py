@@ -108,7 +108,25 @@ CREDENTIALS: dict[str, tuple[str, str, str]] = {
     "api_photo": ("httpHeaderAuth", "pkshpApiPhoto007", "Pokeshop API — jeton nommé n8n-07-stoploss"),
     "api_tresorerie": ("httpHeaderAuth", "pkshpApiTresor01", "Pokeshop API — jeton nommé connecteur-tresorerie"),
     "api_08": ("httpHeaderAuth", "pkshpApiN8n08Man", "Pokeshop API — jeton nommé n8n-08-mandat"),
-    "gateway": ("httpHeaderAuth", "pkshpGateway0001", "Passerelle agents — X-Pokeshop-Gateway"),
+    # Passerelles des agents (revue R4, SEC-16 / R2-NEW-01) : UN SECRET PAR WEBHOOK ET PAR AGENT APPELANT, jamais un
+    # secret partagé entre rôles. 03 : agent 05 seul ; 04 (reprise) : agent 12 seul ; 06 (réception) : agent 11 seul ;
+    # 08 (dépense) : un webhook et un secret par agent qui dépense (le demandeur est fixé par le webhook, pas le corps).
+    "gateway_03": ("httpHeaderAuth", "pkshpGw03Factu05", "Passerelle 03 factures — secret de l'agent 05 (finance-pricing)"),
+    "gateway_04": ("httpHeaderAuth", "pkshpGw04Repri12", "Passerelle 04 reprise — secret de l'agent 12 (qa-conformite)"),
+    "gateway_06": ("httpHeaderAuth", "pkshpGw06Recep11", "Passerelle 06 réception — secret de l'agent 11 (operations-sav)"),
+    **{
+        f"gateway_08_{role}": ("httpHeaderAuth", cid, f"Passerelle 08 dépense — secret de l'agent {num} ({role})")
+        for role, num, cid in (
+            ("chef-de-projet", "01", "pkshpGw08Chef001"),
+            ("sourcing", "02", "pkshpGw08Sourc02"),
+            ("finance-pricing", "05", "pkshpGw08Finan05"),
+            ("direction-artistique", "06", "pkshpGw08DirAr06"),
+            ("site-integrations", "07", "pkshpGw08SiteI07"),
+            ("communication", "09", "pkshpGw08Commu09"),
+            ("acquisition", "10", "pkshpGw08Acqui10"),
+            ("operations-sav", "11", "pkshpGw08OpSav11"),
+        )
+    },
     "owner_form": ("httpBasicAuth", "pkshpOwnerForm01", "Formulaires propriétaire — Basic Auth"),
     "smtp": ("smtp", "pkshpSmtpAgents1", "SMTP boîte des agents"),
     "slack": ("slackApi", "pkshpSlackAlert1", "Slack alertes propriétaire"),
@@ -119,6 +137,17 @@ CREDENTIALS: dict[str, tuple[str, str, str]] = {
     "supplier": ("httpHeaderAuth", "pkshpSupplier001", "Flux fournisseur — accès autorisé"),
     "bank": ("httpHeaderAuth", "pkshpBanqueSolde", "Banque — relevé de solde (lecture seule)"),
 }
+
+GATEWAY_HOLDERS: dict[str, str] = {
+    "gateway_03": "finance-pricing",
+    "gateway_04": "qa-conformite",
+    "gateway_06": "operations-sav",
+    **{key: key.removeprefix("gateway_08_") for key in CREDENTIALS if key.startswith("gateway_08_")},
+}
+"""Credential de passerelle -> SEUL rôle d'agent qui en détient le secret (vérifié par les tests : un secret par webhook)."""
+
+SPEND_RELAY_ROLES: tuple[str, ...] = tuple(sorted(GATEWAY_HOLDERS[k] for k in GATEWAY_HOLDERS if k.startswith("gateway_08_")))
+"""Agents qui demandent une dépense par la passerelle 08 (un webhook chacun) = agents de ``authz.RELAYED_SPENDERS``."""
 
 CREDENTIAL_ROLES: dict[str, str] = {
     "api_01": "n8n-01-sync",
@@ -546,10 +575,17 @@ def webhook(
     auth: str = "headerAuth",
     response_mode: str = "onReceived",
     notes: str | None = None,
+    gateway: str | None = None,
 ) -> str:
-    """Déclencheur webhook (passerelle des agents : en-tête secret par credential)."""
+    """Déclencheur webhook (passerelle d'un agent : en-tête secret par credential, **un secret par webhook**).
+
+    ``gateway`` : clé du credential de passerelle propre à ce webhook (:data:`GATEWAY_HOLDERS`), obligatoire
+    pour une passerelle authentifiée (revue R4, SEC-16 : jamais un secret commun à plusieurs rôles).
+    """
     params: dict[str, Any] = {"httpMethod": method, "path": path, "responseMode": response_mode, "options": {}}
     params["authentication"] = auth
+    if auth == "headerAuth" and gateway not in GATEWAY_HOLDERS:
+        raise ValueError(f"{name} : passerelle authentifiée sans credential propre (gateway={gateway!r})")
     return wf.add(
         name,
         "n8n-nodes-base.webhook",
@@ -557,7 +593,7 @@ def webhook(
         params,
         pos,
         webhook=True,
-        credentials="gateway" if auth == "headerAuth" else None,
+        credentials=gateway if auth == "headerAuth" else None,
         notes=notes,
     )
 
@@ -875,6 +911,10 @@ if (!Array.isArray(txs)) return []; // lecture non configurée : aucune écritur
 const entries = txs
   // Frais positifs seulement (revue R3) : un rôle ne déclare jamais un montant négatif ; un remboursement de
   // frais passe par l'avoir de la commande (POST /orders/{id}/refunds) ou par la propriétaire.
+  // Revue R4 (R3-DOC-03) : UNE SEULE SOURCE PAR FRAIS — les frais d'une commande sont portés par POST /orders/shipped
+  // (payment_fees) ; ici, seulement les frais sans commande (abonnement, frais de versement). Le moteur refuse en
+  // plus tout PAYMENT portant l'order_id d'une commande enregistrée.
+  .filter((t) => !t.associatedOrder)
   .filter((t) => t.fee && t.fee.currencyCode === 'CHF' && /^\d+(\.\d{1,2})?$/.test(String(t.fee.amount)) && !/^0+(\.0+)?$/.test(String(t.fee.amount)))
   .map((t) => ({
     entry_id: `psp:${t.id}:PAYMENT`,
@@ -888,6 +928,43 @@ const entries = txs
 if (!entries.length) return [];
 return [{ json: { entries, count: entries.length } }];
 """
+
+JS_SPEND_REQUESTER = r"""
+// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.
+const body = $input.first().json.body || {};
+const request = Object.assign({}, body.request || {}, { requested_by: '__ROLE__' });
+return [{ json: { body: Object.assign({}, body, { request }), demandeur: '__ROLE__' } }];
+"""
+
+JS_INVOICE_FOR_ENGINE = (
+    JS_CENTS
+    + r"""
+// Facture validée par la propriétaire -> registre des factures du moteur (POST /costs/invoices), revue R4.
+// Coût rendu unitaire ventilé : prix facturé + frais (fret, douane, TVA import) répartis au prorata de la valeur.
+const body = $('Facture extraite par l’agent 05 (passerelle)').first().json.body || {};
+const lines = Array.isArray(body.lines) ? body.lines : [];
+const fees = body.fees_chf || {};
+const feeCents = ['freight', 'customs', 'import_vat'].reduce((sum, k) => sum + (fees[k] ? cents(fees[k]) : 0), 0);
+const goods = lines.reduce((sum, l) => sum + cents(l.invoice_unit_cost_chf) * l.qty, 0);
+if (goods <= 0) throw new Error('facture sans valeur marchandise : rien à enregistrer');
+let allocated = 0;
+const out = lines.map((l, i) => {
+  const value = cents(l.invoice_unit_cost_chf) * l.qty;
+  const share = i === lines.length - 1 ? feeCents - allocated : Math.floor((feeCents * value) / goods);
+  allocated += share;
+  const unit = Math.round((value + share) / l.qty);
+  return { product_key: String(l.product_key), qty: l.qty, unit_cost_chf: chf(unit) };
+});
+return [{ json: {
+  invoice_ref: String(body.invoice_ref),
+  supplier_id: String(body.supplier_id),
+  issued_at: `${body.invoice_date}T12:00:00+00:00`,
+  total_chf: chf(goods + feeCents),
+  lines: out,
+  source: `facture ${body.invoice_ref} extraite par l'agent 05, validée par la propriétaire (formulaire 03)`,
+} }];
+"""
+)
 
 JS_INVOICE_CHECKS = (
     JS_CENTS
@@ -1432,7 +1509,9 @@ Paiement confirmé (webhook Shopify **orders/paid**, signature vérifiée) → *
 → anomalies (CHF, Suisse, payée) → réservation (route moteur attendue) → **bon de préparation**
 → **tâche colis HUMAINE** : un robot ne prépare pas un colis (picking, emballage, scan, dépôt : la propriétaire).
 Suivi : la propriétaire saisit le numéro dans Shopify, qui envoie l'email 07 ; colis en retard signalés chaque matin.
-Rapprochement hebdomadaire : frais PSP réels → étoile polaire (`POST /northstar/entries`).
+Rapprochement hebdomadaire : frais PSP réels **sans commande** (abonnement, versement) → étoile polaire
+(`POST /northstar/entries`) ; les frais d'une commande viennent de `POST /orders/shipped` (`payment_fees`, BL-199) :
+jamais comptés deux fois (le moteur refuse un PAYMENT portant l'`order_id` d'une commande enregistrée).
 Données personnelles : aucune conservée (exécutions réussies non sauvegardées).
 **Activation** : niveau 2 (l'activation inscrit le webhook chez Shopify).
 **Validation humaine requise** : délai d'expédition (DELAI_EXPEDITION), jours de dépôt, route moteur de réservation.
@@ -1552,7 +1631,8 @@ Données personnelles : aucune conservée (exécutions réussies non sauvegardé
         (4, 3.2),
         params="Paramètres — rapprochement",
         body="{ entries: $json.entries }",
-        notes="Écritures idempotentes (entry_id) : un rejeu ne double rien.",
+        notes="Écritures idempotentes (entry_id psp:<transaction>) : un rejeu ne double rien. Identifiants order:, "
+        "refund:, cost: réservés au moteur ; frais d'une commande : POST /orders/shipped seulement.",
     )
     summary = set_node(
         wf,
@@ -1584,17 +1664,22 @@ def wf03(cmap: Mapping[str, str] | None = None) -> Workflow:
         (-1, -2.2),
         """
 ## 03 — Facture vers marge réelle (BP §12)
-L'agent 05 extrait la facture et le justificatif d'import (PDF/email) et l'envoie à la passerelle (en-tête secret).
+L'agent 05 extrait la facture et le justificatif d'import (PDF/email) et l'envoie à **sa** passerelle (secret de l'agent 05 seul).
 **Contrôles déterministes** (centimes, total des lignes, devise + taux sourcé) → **validation humaine** de l'extraction
-(formulaire protégé, 72 h) → ventilation des frais et **coût historique** (route moteur attendue) → **écarts > 2 %** signalés.
-Jamais de modification d'une commande client déjà conclue. Paiements et remboursements : rapprochés dans 02.
-**Activation** : niveau 1 (contrôles et validation) ; enregistrement réel quand la route moteur existe.
+(formulaire protégé, 72 h) → frais ventilés au coût rendu unitaire → **facture enregistrée au moteur**
+(`POST /costs/invoices`, jeton `n8n-03-factures`) : référence du coût d'une réception (± 2 %, sinon propriétaire) et dette
+de la photo du stop-loss jusqu'au paiement relevé (`POST /costs/invoices/{ref}/payments`, connecteur-tresorerie ou
+propriétaire) → **écarts > 2 %** signalés. Jamais de modification d'une commande client déjà conclue.
+**Activation** : niveau 1 (contrôles, validation, enregistrement de la facture).
 **Validation humaine requise** : chaque extraction (A_VALIDER_HUMAINEMENT), seuil d'écart de 2 %.
 """,
         width=640,
         height=340,
     )
-    hook = webhook(wf, "Facture extraite par l’agent 05 (passerelle)", (0, 0), "pokeshop-facture")
+    hook = webhook(
+        wf, "Facture extraite par l’agent 05 (passerelle)", (0, 0), "pokeshop-facture", gateway="gateway_03",
+        notes="Secret remis au seul agent 05 (credential « Passerelle 03 factures »).",
+    )
     p = params_node(wf, "Paramètres", (1, 0), WORKFLOW_KEYS["03"])
     checks = code_node(wf, "Contrôles déterministes (centimes)", (2, 0), JS_INVOICE_CHECKS)
     coherent = if_node(
@@ -1632,17 +1717,23 @@ Jamais de modification d'une commande client déjà conclue. Paiements et rembou
         (7, -0.5),
         [condition("={{ $json['Décision'] }}", "string", "equals", "Conforme au justificatif")],
     )
+    prepare = code_node(
+        wf,
+        "Préparer la facture validée (coût rendu ventilé)",
+        (7.5, -1),
+        JS_INVOICE_FOR_ENGINE,
+        notes="Lignes au coût rendu unitaire (frais ventilés au prorata de la valeur) ; total dû = marchandise + frais.",
+    )
     record = engine(
         wf,
-        "Ventiler les frais et enregistrer le coût historique — route moteur attendue (désactivé)",
+        "Enregistrer la facture validée (POST /costs/invoices)",
         "POST",
         "/costs/invoices",
         (8, -1),
-        disabled=True,
-        body="{ invoice: $('Facture extraite par l’agent 05 (passerelle)').first().json.body, validated_by: 'propriétaire', "
-        "motif: $json['Motif'] }",
-        notes="Route à créer (agent integrations) : allocate_inbound_costs, HistoricalCostLedger.apply_invoice, "
-        "sync_cost_ledger vers l'étoile polaire. Idempotente par facture.",
+        body="$json",
+        notes="Registre des factures du moteur (revue R4) : référence du coût d'une réception (± 2 %, sinon propriétaire) "
+        "et dette de la photo du stop-loss jusqu'au paiement relevé par connecteur-tresorerie. Jeton nommé "
+        "n8n-03-factures, jamais l'agent 05 qui valorise les réceptions. Idempotente par facture (autre contenu : 409).",
     )
     gap = if_node(
         wf,
@@ -1701,7 +1792,8 @@ Jamais de modification d'une commande client déjà conclue. Paiements et rembou
     wf.link(coherent, ask, 0)
     wf.link(coherent, anomaly_inc, 1)
     wf.chain(ask, mail, wait, valid)
-    wf.link(valid, record, 0)
+    wf.link(valid, prepare, 0)
+    wf.link(prepare, record)
     wf.link(valid, refused, 1)
     wf.link(record, gap)
     wf.link(gap, gap_msg, 0)
@@ -1790,7 +1882,8 @@ S1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : tes
         "Demande de reprise (passerelle agents)",
         (0, 2.2),
         "pokeshop-incident-reprise",
-        notes='Corps : {"incident_id": "...", "actor": "qa-conformite"}. Le test réussi est enregistré AVANT, par '
+        gateway="gateway_04",
+        notes='Secret remis au seul agent 12. Corps : {"incident_id": "..."}. Le test réussi est enregistré AVANT, par '
         "le rôle qa-conformite avec SON jeton nommé (POST /incidents/{id}/test, différent de l'ouvreur, cycle réel "
         "lancé par un autre principal) ou par la propriétaire : le workflow 04 (n8n-04-incidents) ne peut pas "
         "l'attester (403, revue NEW-01) ; il ne fait que reprendre.",
@@ -2007,7 +2100,7 @@ def wf06(cmap: Mapping[str, str] | None = None) -> Workflow:
         (-1, -2.8),
         """
 ## 06 — Automatisations marketing (BP §9, docs/06-contenu/EMAILS)
-- **Réception contrôlée** → `POST /stock/receive` (stock local réel), puis alerte « nouveau stock local » aux inscrits
+- **Réception contrôlée** (passerelle de l'agent 11 seul, son secret) → `POST /stock/receive` (stock local réel), puis alerte « nouveau stock local » aux inscrits
   **consentants** (email 04). **Garde-fous** : incident ouvert sur « marketing », stock vendable < seuil, référence sous
   stop-loss produit (marge insuffisante), gel global ou stop-loss non évaluable.
 - **Commande expédiée** → suivi (email 07 envoyé par Shopify ; alerte si aucun numéro de suivi).
@@ -2029,8 +2122,10 @@ Aucun prix ni donnée interne dans un email : titre, statut et prix lus sur la p
         "Réception contrôlée (passerelle agent 11)",
         (0, 0),
         "pokeshop-stock-recu",
-        notes='Corps : {"product_key", "sku", "qty", "ref" (bon de livraison), "public_title", "public_url", '
-        '"format_preference"} — aucun prix.',
+        gateway="gateway_06",
+        notes='Secret remis au SEUL agent 11 (credential « Passerelle 06 réception ») : aucun autre agent ne peut '
+        'déclarer une réception au nom d\'operations-sav (revue R4, R2-NEW-01). Corps : {"product_key", "sku", "qty", '
+        '"ref" (bon de livraison), "public_title", "public_url", "format_preference"} — aucun prix.',
     )
     pa = params_node(wf, "Paramètres — alertes stock", (1, 0), WORKFLOW_KEYS["06"], ("seuil_stock_alerte", 3, "number"))
     body = f"{ref('Réception contrôlée (passerelle agent 11)')}.first().json.body"
@@ -2639,10 +2734,12 @@ catalogue, prix publics, publicité) ; puis `GET /stoploss/status` → si l'éta
 - **notification immédiate** à la propriétaire : cause, chiffres (mesure / seuil), action, **comment réarmer**.
 Une alerte par changement (empreinte mémorisée ; un état qui revient est de nouveau signalé).
 Branche « relevés de trésorerie » (désactivée) : PayPal et banque → `/treasury/*-balance` (connecteurs à recetter).
-Jeton **nommé** `n8n-07-stoploss` : la photo et les soldes ne viennent jamais du jeton qui demande une dépense.
+Jetons **nommés** : photo `n8n-07-stoploss` ; soldes `connecteur-tresorerie` — jamais le jeton qui demande une dépense.
 Aucun réarmement ici : seule la propriétaire réarme, avec son jeton, depuis son terminal.
-**Activation** : niveau 1, juste après 04.
-**Validation humaine requise** : canal d'alerte immédiate ; apports déclarés (votre jeton) ; recette des connecteurs PayPal, banque et publicité.
+**Activation** : niveau 1, **après C19** (BL-191, J27 : point zéro posé avec la première photo, `with_photo: true`),
+jamais avant — une première photo sans point zéro gèlerait tout. Avant C19, les soldes de B26 sont déposés par la
+propriétaire avec son jeton (`/treasury/*-balance`), ou par une exécution manuelle de la seule branche :05.
+**Validation humaine requise** : canal d'alerte immédiate ; apports déclarés (votre jeton) ; point zéro C19 ; recette des connecteurs PayPal, banque et publicité.
 """,
         width=700,
         height=460,
@@ -2791,7 +2888,8 @@ def wf08(cmap: Mapping[str, str] | None = None) -> Workflow:
         (-1, -2.6),
         """
 ## 08 — Mandat de dépense (passerelle CONN-PAYPAL, DELEGATION_AUTONOMIE.md)
-Toute demande d'achat ou de paiement d'un agent arrive ici (en-tête secret) → **`POST /mandate/check`** (enregistrée au
+Toute demande d'achat ou de paiement d'un agent arrive ici par **son** webhook (`pokeshop-depense-<rôle>`, un secret par
+agent : le demandeur est fixé par le webhook, jamais par le corps) → **`POST /mandate/check`** (enregistrée au
 registre, idempotente par clé) :
 - **APPROVED_WITHIN_MANDATE** → réponse à l'agent, paiement PayPal **préparé** (nœud d'exécution désactivé), journal ;
 - **NEEDS_HUMAN_APPROVAL** → email de **validation en 1 clic** (formulaire protégé, 24 h ; sans réponse : refus = statu quo) ;
@@ -2804,15 +2902,34 @@ Contrôle impossible (mandat illisible, stop-loss non évalué) → **refus par 
         width=700,
         height=430,
     )
-    hook = webhook(
+    # Revue R4 (SEC-16, R3-NEW-06) : un webhook et un secret PAR AGENT qui dépense ; le demandeur (requested_by) est
+    # fixé par le webhook appelé, jamais lu dans le corps ; le moteur n'admet en relais que ces agents.
+    hook = noop(
         wf,
         "Demande de dépense (passerelle agents)",
         (0, 0),
-        "pokeshop-depense",
-        response_mode="responseNode",
-        notes='Corps : {"request": SpendRequest} — montants en chaînes. Aucune trésorerie : le moteur la lit dans ses '
-        "registres (photo du stop-loss, soldes relevés).",
+        notes="Point de jonction des webhooks par agent : corps {request} avec requested_by imposé par le webhook.",
     )
+    for i, role in enumerate(SPEND_RELAY_ROLES):
+        row = -3.2 + 0.8 * i
+        gate = webhook(
+            wf,
+            f"Demande de dépense — {role} (passerelle)",
+            (-2, row),
+            f"pokeshop-depense-{role}",
+            response_mode="responseNode",
+            gateway=f"gateway_08_{role}",
+            notes=f'Secret remis au seul agent « {role} ». Corps : {{"request": SpendRequest}} — montants en chaînes ; '
+            "aucune trésorerie (le moteur la lit dans ses registres).",
+        )
+        tag = code_node(
+            wf,
+            f"Demandeur imposé : {role}",
+            (-1, row),
+            JS_SPEND_REQUESTER.replace("__ROLE__", role),
+            notes="requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+        )
+        wf.chain(gate, tag, hook)
     p = params_node(wf, "Paramètres", (1, 0), WORKFLOW_KEYS["08"])
     read, guard = suspension_guard(wf, 2, 0)
     wf.chain(hook, p, read)

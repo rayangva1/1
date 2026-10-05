@@ -970,6 +970,18 @@ class SyncService:
         status, _triggers = self.gate.stoploss_status(at)
         blocked_products = set(status.blocked_products) if status is not None else set()
         listing_counts: dict[str, int] = {}
+
+        def keys_of(pid: str) -> set[str]:
+            # Revue R4 (R3-NEW-01) : quarantaine et stop-loss produit valent pour toutes les clés de la référence
+            # (product_id, listing.product_key) — une entrée ancienne incohérente n'y échappe jamais.
+            listing = ctx.listings.get(pid)
+            return {pid, listing.product_key} if listing is not None else {pid}
+
+        def is_blocked(pid: str) -> bool:
+            return bool(keys_of(pid) & blocked_products)
+
+        def is_quarantined(pid: str) -> bool:
+            return any(self.incidents.is_quarantined(k) for k in keys_of(pid))
         state = {"written": 0, "refused": 0, "api_refused": False, "verify_ok": 0, "verify_ko": 0}
 
         def plan_for(
@@ -988,8 +1000,8 @@ class SyncService:
                 price_validation=ctx.price_validations.get(pid),
                 params=params,
                 now=at,
-                stoploss_blocked=pid in blocked_products,
-                quarantined=self.incidents.is_quarantined(pid),
+                stoploss_blocked=is_blocked(pid),
+                quarantined=is_quarantined(pid),
                 sensitive_terms=sorted(terms),
                 table=ctx.table,
                 real_shop=production,
@@ -1187,7 +1199,7 @@ class SyncService:
         # Revue R3 SEC-09 (b) : une référence bloquée (quarantaine, stop-loss produit) dont l'offre manque dans
         # la livraison du jour est **aussi** dépubliée si le registre (ou la boutique) la dit publiée.
         for pid, listing in sorted(ctx.listings.items()):
-            if pid in decisions or not (pid in blocked_products or self.incidents.is_quarantined(pid)):
+            if pid in decisions or not (is_blocked(pid) or is_quarantined(pid)):
                 continue
             item_incidents = []
             plan = resolve_plan(pid, listing, None, self.stock_status(listing, [], at, ctx), item_incidents)

@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import jetons_roles as JR
+from pokeshop.models import ReplacementCost
 from fastapi.testclient import TestClient
 from pokeshop.api import API_TOKEN_HEADER, OWNER_TOKEN_HEADER, Services, create_app
 from pokeshop.audit import PostgresStateJournal, StateStoreError
@@ -130,15 +131,27 @@ def test_postgres_state_journal_is_chained_and_refuses_a_second_writer(pg: dict[
 def test_restart_on_postgres_keeps_freeze_photo_ledger_northstar_and_quarantine(pg: dict[str, Factory]) -> None:
     """MOT-01 / SEC-01 / E2E-01/02/03/06 avec la base : tout survit au redémarrage du conteneur."""
     client, svc = boot(pg)
-    assert client.post("/stoploss/state", headers=HPHOTO, json=photo()).status_code == 200
+    assert client.post("/stoploss/state", headers=HO, json=photo()).status_code == 200
     spend = {"request": {"amount": "40", "currency": "CHF", "supplier_id": "FICTIF_EMBALLAGES", "category": "PACKAGING",
                          "payment_method": "PAYPAL", "purpose": "Étuis FICTIFS", "idempotency_key": "FICTIF-PG-SPEND-1",
                          "requested_by": "finance-pricing", "requested_at": NOW.isoformat(), "amount_source": "devis FICTIF"},
              "treasury": {"as_of": NOW.isoformat(), "cash_available_chf": "5000", "paypal_balance_chf": "500"},
              "record": True}
     assert body(client.post("/mandate/check", headers=HF, json=spend))["recorded"] is True
+    # Revue R4 (R3-NEW-05) : commande avec lignes, sortie au CMP dérivée (stock au coût adossé, référence du moteur).
+    listing = {"product_key": "FICTIF-P1", "public_sku": "DSP-FICTIF_ALPHA-FR", "fictif": True,
+               "identity": {"gtin": "2000000001012", "language": "FR", "extension": "FICTIF_ALPHA", "format": "DISPLAY",
+                            "content": "36 BOOSTERS", "sealed": True}}  # fmt: skip
+    assert client.post("/catalog/items", headers=JR.HCAT, json={"items": [{"product_id": "FICTIF-P1", "listing": listing}]}).status_code == 200
+    assert client.post("/stock/receive", headers=JR.HOPS, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": 1, "ref": "FICTIF-BL-PG"}).status_code == 200
+    svc.sync.replacement_costs.update(ReplacementCost(product_key="FICTIF-P1", supplier_id="fictif_grossiste_a",
+                                                      unit_cost=D("100.00"), source_ts=NOW, offer_ref="FICTIF"))
+    lot = {"kind": "RECEIPT", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "FICTIF-LOT-PG", "qty": 1,
+           "unit_cost": "100.00", "stock_ref": "FICTIF-BL-PG", "invoice_ref": "FICTIF-FACT-PG"}
+    assert client.post("/costs/movements", headers=JR.HF, json=lot).status_code == 200
     order = {"order_id": "FICTIF-PG-1", "paid_at": NOW.isoformat(), "net_sales_ht": "184.92", "payment_fees": "0",
-             "shipping_cost_actual": "3.00", "shipping_label_ref": "FICTIF-ETIQ-1", "source": "Shopify FICTIF"}
+             "shipping_cost_actual": "3.00", "shipping_label_ref": "FICTIF-ETIQ-1", "source": "Shopify FICTIF",
+             "lines": [{"public_sku": "DSP-FICTIF_ALPHA-FR", "qty": 1}]}
     assert client.post("/orders/shipped", headers=HORDERS, json=order).status_code == 201
     inc = body(client.post("/incidents", headers=HDATA, json={"code": "INC-01", "product_key": "FICTIF-P1",
                                                               "cause": "prix ×10 FICTIF", "actor": "agent-05"}))["incident"]
@@ -151,7 +164,8 @@ def test_restart_on_postgres_keeps_freeze_photo_ledger_northstar_and_quarantine(
     assert svc2.stoploss_state is not None and svc2.stoploss_engine.latch.cause == "MANUAL"
     replay = body(client2.post("/mandate/check", headers=HF, json=spend))["decision"]
     assert replay["replayed"] is True
-    assert body(client2.get("/northstar", headers=H))["cumulative"] == "181.92"
+    assert body(client2.get("/northstar", headers=H))["cumulative"] == "81.92"  # 184.92 − 3.00 − 100.00 (CMP)
+    assert svc2.costs.ledger("FICTIF-P1").qty_on_hand == 0  # sortie dérivée persistée
     assert svc2.orders.get("FICTIF-PG-1") is not None  # registre des commandes en base
     assert svc2.incidents.is_quarantined("FICTIF-P1") and svc2.incidents.get(inc["incident_id"]).is_open
     refs = query(pg["engine"], "SELECT details->>'ref' FROM pokeshop.incidents ORDER BY incident_id")

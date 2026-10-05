@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import jetons_roles as JR
+from pokeshop.models import ReplacementCost
 from fastapi.testclient import TestClient
 from pokeshop.api import API_TOKEN_HEADER, OWNER_TOKEN_HEADER, Services, create_app
 from pokeshop.audit import to_jsonable
@@ -648,16 +649,29 @@ def test_dashboard_routes_read_engine_state(client: TestClient) -> None:
               "kind": "CONTRIBUTION", "amount": "1500"}  # fmt: skip
     owner = {**H, OWNER_TOKEN_HEADER: OWNER_TOKEN}
     assert client.post("/capital/movements", headers=owner, json=apport).status_code == 201
-    assert client.post("/stoploss/state", headers=HPHOTO, json=payload).status_code == 200
-    # Vente dérivée d'une commande enregistrée avec le coût transporteur réel (revue R3, MOT-18).
+    assert client.post("/stoploss/state", headers=owner, json=payload).status_code == 200
+    # Stock au coût (revue R4) : fiche, réception physique, coût adossé à la référence du moteur.
+    svc = client.app.state.services
+    listing = {"product_key": "FICTIF-P1", "public_sku": "DSP-FICTIF_ALPHA-FR", "fictif": True,
+               "identity": {"gtin": "2000000001012", "language": "FR", "extension": "FICTIF_ALPHA", "format": "DISPLAY",
+                            "content": "36 BOOSTERS", "sealed": True}}  # fmt: skip
+    assert client.post("/catalog/items", headers=JR.HCAT, json={"items": [{"product_id": "FICTIF-P1", "listing": listing}]}).status_code == 200
+    assert client.post("/stock/receive", headers=JR.HOPS, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": 1, "ref": "FICTIF-BL-1"}).status_code == 200
+    svc.sync.replacement_costs.update(ReplacementCost(product_key="FICTIF-P1", supplier_id="fictif_grossiste_a",
+                                                      unit_cost=D("50.00"), source_ts=DEMO_AS_OF, offer_ref="FICTIF"))
+    lot = {"kind": "RECEIPT", "product_key": "FICTIF-P1", "at": "2026-11-09T09:00:00+01:00", "ref": "FICTIF-LOT-1", "qty": 1,
+           "unit_cost": "50.00", "stock_ref": "FICTIF-BL-1", "invoice_ref": "FICTIF-FACT-1"}
+    assert client.post("/costs/movements", headers=HF, json=lot).status_code == 200
+    # Vente dérivée d'une commande enregistrée avec le coût transporteur réel (revue R3, MOT-18) et ses lignes (R4).
     order = {"order_id": "FICTIF-1", "paid_at": "2026-11-10T10:00:00+01:00", "net_sales_ht": "184.92",
              "payment_fees": "0", "shipping_cost_actual": "3.00", "shipping_label_ref": "FICTIF-ETIQ-1",
-             "source": "Shopify FICTIF"}
+             "source": "Shopify FICTIF", "lines": [{"public_sku": "DSP-FICTIF_ALPHA-FR", "qty": 1}]}
     assert client.post("/orders/shipped", headers=HORDERS, json=order).status_code == 201
     entries = [{"entry_id": "FICTIF-f1", "at": "2026-11-09T10:00:00+01:00", "post": "FIXED_COSTS", "amount": "92.31"}]
     assert client.post("/northstar/entries", headers=HF, json={"entries": entries}).status_code == 200
     data = body(client.get("/dashboard/daily", headers=H))["report"]
-    assert data["north_star"]["cumulative"] == "89.61" and data["north_star"]["last_closed_week"] == "2026-W46"
+    # 184.92 − 3.00 (transporteur) − 50.00 (coût des ventes dérivé au CMP) − 92.31 (charges fixes) = 39.61
+    assert data["north_star"]["cumulative"] == "39.61" and data["north_star"]["last_closed_week"] == "2026-W46"
     assert data["stoploss"]["status"] == "CRITIQUE"  # cash 1 500 < 1 600
     assert any(t["level"] == "CASH" for t in data["stoploss"]["triggers"])
     kpis = {k["key"]: k for k in data["kpis"]}

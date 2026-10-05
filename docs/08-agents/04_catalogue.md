@@ -27,7 +27,7 @@ Garantir que **chaque produit vendu est exactement celui annoncé** : bonne lang
 | `docs/02-sourcing/PANIER_PILOTE.csv`, `docs/01-marche/ASSORTIMENT_PILOTE.md` | Lecture |
 | `docs/05-da/components/` (carte et page produit) | Lecture |
 | Autorisations d'images (A-02, BL-093), photos réelles (intervention A06) | Lecture |
-| `CONN-API-MOTEUR` (jeton `catalogue` : `POST /catalog/items`, `/publish/preview`) | Dépôt des fiches et simulation ; validations humaines refusées dans le corps (422), posées par la propriétaire (`POST /catalog/approvals`) |
+| `CONN-API-MOTEUR` (jeton `catalogue` : `POST /catalog/items`, `/publish/preview`) | Dépôt des fiches et simulation ; validations humaines refusées dans le corps (422), posées par la propriétaire (`POST /catalog/approvals`) ; **une seule clé produit** : `product_id` = `listing.product_key` (sinon 422) ; un SKU ou un handle déjà pris par une autre fiche : 409 ; un nouvel identifiant qui reprend le SKU ou le handle d'une fiche existante, ou l'identité d'une référence en quarantaine, bloquée par le stop-loss produit ou d'état inconnu : 409 (ré-identification : propriétaire seule) |
 
 ## 4. Format de sortie
 
