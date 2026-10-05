@@ -51,7 +51,7 @@ Tu prouves, avec **500 CHF maximum** (BP §3, §9), qu'une commande payée peut 
 - **Read, Grep, Glob, Write, Edit** : plans et rapports.
 - **Bash** : uniquement `python` (moteur) pour le CAC et les contrôles. Pas de commande git, pas d'installation.
 - **`CONN-PUB`** : statistiques et pause toujours ; création dans le plafond au niveau 3. Le plafond est aussi réglé au niveau du compte publicitaire par la propriétaire.
-- **`CONN-API-MOTEUR`** avec ton jeton nommé (`agent-10-acquisition`, injecté par le coffre) : demande de dépense pub par `POST /mandate/check` (catégorie `ADVERTISING` ; trésorerie, solde PayPal et plafond jour lus par le moteur, jamais fournis par toi) ; état du stop-loss pub par `GET /stoploss/status`.
+- **`CONN-API-MOTEUR`** avec ton jeton nommé (`acquisition`, injecté par le coffre) : demande de dépense pub par `POST /mandate/check` (catégorie `ADVERTISING` ; trésorerie, solde PayPal et plafond jour lus par le moteur, jamais fournis par toi) ; état du stop-loss pub par `GET /stoploss/status`. Tu ne déclares **jamais** ta propre dépense pub : `POST /ads/activity` est réservé au connecteur publicitaire (`connecteur-publicite`, 403 pour ton jeton) et la dépense retenue est le MAX de sa déclaration et des paiements pub exécutés du mandat.
 
 ## Escalade
 

@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import yaml
+import jetons_roles as R
 from fastapi.testclient import TestClient
 from pokeshop.api import API_TOKEN_HEADER, OWNER_TOKEN_HEADER, PersistentPriceHistory, Services, create_app
 from pokeshop.audit import (
@@ -70,13 +71,19 @@ API_TOKEN = "FICTIF-jeton-api-0000000000000001"
 OWNER_TOKEN = "FICTIF-jeton-proprietaire-tres-long-0001"
 H = {API_TOKEN_HEADER: API_TOKEN}
 HO = {API_TOKEN_HEADER: API_TOKEN, OWNER_TOKEN_HEADER: OWNER_TOKEN}
-# Jetons nommés (lot F2) : la photo et le solde PayPal sont déposés par l'agent finance, la dépense est
-# demandée par l'agent opérations ; avec le jeton commun, les chiffres ne seraient pas vérifiables.
-FINANCE_TOKEN = "FICTIF-jeton-agent-05-finance-0001"
-OPS_TOKEN = "FICTIF-jeton-agent-11-operations-0001"
-HF = {API_TOKEN_HEADER: FINANCE_TOKEN}
-HOPS = {API_TOKEN_HEADER: OPS_TOKEN}
+# Jetons nommés par rôle (matrice pokeshop.authz) : la photo est déposée par le workflow 07 (n8n-07-stoploss),
+# le solde PayPal par le connecteur de trésorerie, la dépense demandée par l'agent opérations ; le jeton
+# commun n'a que la lecture et les aperçus.
+FINANCE_TOKEN = R.ROLE_TOKENS["finance-pricing"]
+OPS_TOKEN = R.ROLE_TOKENS["operations-sav"]
+HF, HOPS, HPHOTO, HTRES, HQA = R.HF, R.HOPS, R.HPHOTO, R.HTRES, R.HQA
+HDATA, HINC, HCHEF, HORDERS, HCAT = R.HDATA, R.HINC, R.HCHEF, R.HORDERS, R.HCAT
 CONFIG = load_stoploss_config()
+LISTING_P1 = {
+    "product_key": "FICTIF-P1", "public_sku": "DSP-FICTIF_ALPHA-FR", "fictif": True,
+    "identity": {"gtin": "2000000001012", "language": "FR", "extension": "FICTIF_ALPHA", "format": "DISPLAY",
+                 "content": "36 BOOSTERS", "sealed": True},
+}
 STREAMS = ("stoploss", "stoploss_photo", "mandate_ledger", "northstar", "incidents", "price_history")
 
 
@@ -97,9 +104,7 @@ def settings(state_dir: Path, **extra: str) -> Settings:
         "POKESHOP_API_TOKEN_SHA256": sha256_hex(API_TOKEN),
         "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(OWNER_TOKEN),
         "POKESHOP_STATE_DIR": str(state_dir),
-        "POKESHOP_AGENT_TOKENS_SHA256": (
-            f"agent-05-finance:{sha256_hex(FINANCE_TOKEN)},agent-11-operations:{sha256_hex(OPS_TOKEN)}"
-        ),
+        "POKESHOP_AGENT_TOKENS_SHA256": R.agent_tokens_env(),
     }
     env.update(extra)
     return load_settings(env)
@@ -150,17 +155,17 @@ def signed_mandate() -> Mandate:
 
 
 def deposit_treasury(client: TestClient, cash: str = "8000") -> None:
-    """Photo stop-loss et solde PayPal déposés par l'agent finance (registres du moteur)."""
-    assert client.post("/stoploss/state", headers=HF, json=photo(cash)).status_code == 200
+    """Photo stop-loss (workflow 07) et solde PayPal (connecteur de trésorerie) : registres du moteur."""
+    assert client.post("/stoploss/state", headers=HPHOTO, json=photo(cash)).status_code == 200
     reading = {"as_of": NOW.isoformat(), "balance_chf": "2000", "source": "relevé PayPal FICTIF"}
-    assert client.post("/treasury/paypal-balance", headers=HF, json=reading).status_code == 200
+    assert client.post("/treasury/paypal-balance", headers=HTRES, json=reading).status_code == 200
 
 
 def spend(i: int, amount: str = "150") -> dict[str, Any]:
     return {
         "request": {"amount": amount, "currency": "CHF", "supplier_id": "FICTIF_EMBALLAGES", "category": "PACKAGING",
                     "payment_method": "PAYPAL", "purpose": "Cartons d'expédition FICTIFS",
-                    "idempotency_key": f"FICTIF-PKG-{i:04d}", "requested_by": "agent-11-operations",
+                    "idempotency_key": f"FICTIF-PKG-{i:04d}", "requested_by": "operations-sav",
                     "requested_at": NOW.isoformat(), "amount_source": "devis FICTIF n°1", "fictif": True},
         "treasury": {"as_of": NOW.isoformat(), "cash_available_chf": "5000", "paypal_balance_chf": "2000"},
         "record": True,
@@ -233,7 +238,7 @@ def test_manual_freeze_survives_restart_and_still_blocks_spending(tmp_path: Path
     deposit_treasury(client)
     first = body(client.post("/mandate/check", headers=HOPS, json=spend(1)))["decision"]
     assert first["outcome"] == "APPROVED_WITHIN_MANDATE"
-    frozen = client.post("/stoploss/freeze", headers=H, json={"actor": "agent-12-qa", "reason": "débit inconnu FICTIF"})
+    frozen = client.post("/stoploss/freeze", headers=HQA, json={"actor": "agent-12-qa", "reason": "débit inconnu FICTIF"})
     assert frozen.status_code == 200 and body(frozen)["latch"]["frozen"] is True
 
     client2, svc2 = boot(tmp_path, mandate=signed_mandate())  # redémarrage du conteneur
@@ -244,7 +249,7 @@ def test_manual_freeze_survives_restart_and_still_blocks_spending(tmp_path: Path
     assert [e.event for e in svc2.stoploss_engine.journal].count("MANUAL_FREEZE") == 1
     assert svc2.autonomy.level == 1
     # métriques saines, nouvelle photo : le gel reste verrouillé, les dépenses restent refusées
-    assert body(client2.post("/stoploss/state", headers=HF, json=photo()))["status"]["global_frozen"] is True
+    assert body(client2.post("/stoploss/state", headers=HPHOTO, json=photo()))["status"]["global_frozen"] is True
     after = body(client2.post("/mandate/check", headers=HOPS, json=spend(2, "20")))["decision"]
     assert after["outcome"] == "REJECTED" and "STOPLOSS_GLOBAL_FREEZE" in after["reasons"]
     # MOT-07 / SEC-05 : le rejeu de la dépense approuvée avant le gel n'est jamais APPROVED pendant le gel
@@ -259,7 +264,7 @@ def test_autonomy_level_without_database_survives_restart(tmp_path: Path) -> Non
     """SEC-01 / E2E-21 (t21) : sans base, le niveau ne remonte pas à POKESHOP_AUTONOMY_LEVEL au redémarrage."""
     client, svc = boot(tmp_path, POKESHOP_AUTONOMY_LEVEL="3")
     assert svc.autonomy.level == 3
-    client.post("/stoploss/freeze", headers=H, json={"actor": "n8n:07-stoploss-watch", "reason": "gel constaté FICTIF"})
+    client.post("/stoploss/freeze", headers=HQA, json={"actor": "n8n:07-stoploss-watch", "reason": "gel constaté FICTIF"})
     assert svc.autonomy.level == 1
     client2, svc2 = boot(tmp_path, POKESHOP_AUTONOMY_LEVEL="3")
     assert svc2.autonomy.level == 1 and svc2.stoploss_engine.frozen
@@ -272,7 +277,7 @@ def test_threshold_trip_and_point_zero_survive_restart(tmp_path: Path) -> None:
     no_photo = client.post("/stoploss/baseline", headers=HO, json={"reason": "J1 : lancement assumé (FICTIF)",
                                                                      "reference_chf": "4200"})
     assert no_photo.status_code == 409
-    client.post("/stoploss/state", headers=HF, json=photo())
+    client.post("/stoploss/state", headers=HPHOTO, json=photo())
     agent = client.post("/stoploss/baseline", headers=H, json={"reason": "J1 : lancement assumé (FICTIF)",
                                                                 "reference_chf": "4200"})
     assert agent.status_code == 403
@@ -285,21 +290,21 @@ def test_threshold_trip_and_point_zero_survive_restart(tmp_path: Path) -> None:
     baseline = svc2.stoploss_engine.latch.baseline
     assert baseline is not None and baseline.origin == "POINT_ZERO" and baseline.net_value_chf == D("4200")
     # 20 % de 4 200 = 840 : valeur nette 3 360 => gel verrouillé (mesuré depuis le point zéro, pas depuis 8 000)
-    assert body(client2.post("/stoploss/state", headers=HF, json=photo("3360.01")))["status"]["global_frozen"] is False
-    assert body(client2.post("/stoploss/state", headers=HF, json=photo("3360")))["status"]["global_frozen"] is True
+    assert body(client2.post("/stoploss/state", headers=HPHOTO, json=photo("3360.01")))["status"]["global_frozen"] is False
+    assert body(client2.post("/stoploss/state", headers=HPHOTO, json=photo("3360")))["status"]["global_frozen"] is True
 
     client3, svc3 = boot(tmp_path)
     assert svc3.stoploss_engine.frozen and svc3.stoploss_engine.latch.cause == "THRESHOLD"
     events = [e.event for e in svc3.stoploss_engine.journal]
     assert "BASELINE_SET" in events and events.count("GLOBAL_TRIP") == 1
-    assert body(client3.post("/stoploss/state", headers=HF, json=photo("9000")))["status"]["global_frozen"] is True
+    assert body(client3.post("/stoploss/state", headers=HPHOTO, json=photo("9000")))["status"]["global_frozen"] is True
 
 
 def test_refused_photo_never_replaces_the_valid_one_even_after_restart(tmp_path: Path) -> None:
     """E2E-15 : une photo refusée (409) ne remplace pas la dernière photo valide, qui est relue au démarrage."""
     client, svc = boot(tmp_path)
-    assert client.post("/stoploss/state", headers=HF, json=photo()).status_code == 200
-    stale = client.post("/stoploss/state", headers=HF, json=photo(at=NOW - timedelta(days=3)))
+    assert client.post("/stoploss/state", headers=HPHOTO, json=photo()).status_code == 200
+    stale = client.post("/stoploss/state", headers=HPHOTO, json=photo(at=NOW - timedelta(days=3)))
     assert stale.status_code == 409 and body(stale)["previous_photo_kept"] is True
     status = body(client.get("/stoploss/status", headers=H))
     assert status["available"] is True and status["rearm_reference"]["net_worth_chf"] == "8000"
@@ -308,7 +313,7 @@ def test_refused_photo_never_replaces_the_valid_one_even_after_restart(tmp_path:
     client2, svc2 = boot(tmp_path)
     restored = body(client2.get("/stoploss/status", headers=H))
     assert restored["available"] is True and restored["rearm_reference"]["photo_sha256"] == status["rearm_reference"]["photo_sha256"]
-    assert client2.post("/mandate/check", headers=H, json=spend(1)).status_code == 200  # photo connue : décision possible
+    assert client2.post("/mandate/check", headers=HOPS, json=spend(1)).status_code == 200  # photo connue : décision possible
 
 
 # ------------------------------------------------------------------ mandat, étoile polaire
@@ -339,24 +344,29 @@ def test_mandate_ledger_envelopes_and_idempotency_survive_restart(tmp_path: Path
 def test_northstar_cumulative_survives_restart(tmp_path: Path) -> None:
     """E2E-06 : la contribution nette cumulée ne revient pas à 0 au redémarrage."""
     client, _ = boot(tmp_path)
-    entries = [
-        {"entry_id": "FICTIF-1", "at": NOW.isoformat(), "post": "NET_SALES", "amount": "184.92", "order_id": "FICTIF-O1"},
-        {"entry_id": "FICTIF-3", "at": NOW.isoformat(), "post": "PAYMENT", "amount": "5.30", "order_id": "FICTIF-O1"},
-    ]
-    assert body(client.post("/northstar/entries", headers=H, json={"entries": entries}))["added"] == 2
-    # coût historique : registre interne (lot reçu au coût, vente sortie au CMP), jamais une écriture déclarée
+    # Vente dérivée d'une commande enregistrée (coût transporteur réel), revue R3 (R2-NEW-04, MOT-18).
+    order = {"order_id": "FICTIF-O1", "paid_at": NOW.isoformat(), "net_sales_ht": "184.92", "payment_fees": "5.30",
+             "shipping_cost_actual": "3.00", "shipping_label_ref": "FICTIF-ETIQ-1", "source": "Shopify FICTIF"}
+    assert client.post("/orders/shipped", headers=HORDERS, json=order).status_code == 201
+    # coût historique : registre interne (lot reçu au coût, adossé à la réception physique ; vente au CMP)
+    item = {"product_id": "FICTIF-P1", "listing": LISTING_P1}
+    assert client.post("/catalog/items", headers=HCAT, json={"items": [item]}).status_code == 200
+    assert client.post("/stock/receive", headers=HOPS, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": 1,
+                                                             "ref": "FICTIF-BL-1"}).status_code == 200
     lot = {"kind": "RECEIPT", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "FICTIF-LOT-1", "qty": 1,
-           "unit_cost": "140.00"}
+           "unit_cost": "140.00", "stock_ref": "FICTIF-BL-1", "invoice_ref": "FICTIF-FACT-1"}
     sale = {"kind": "ISSUE", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "FICTIF-O1", "qty": 1}
-    assert client.post("/costs/movements", headers=H, json=lot).status_code == 200
-    assert body(client.post("/costs/movements", headers=H, json=sale))["northstar_added"] == 1
+    assert client.post("/costs/movements", headers=HF, json=lot).status_code == 200
+    assert body(client.post("/costs/movements", headers=HF, json=sale))["northstar_added"] == 1
     client2, svc2 = boot(tmp_path)
-    assert body(client2.get("/northstar", headers=H))["cumulative"] == "39.62"
-    assert body(client2.post("/northstar/entries", headers=H, json={"entries": entries}))["added"] == 0
-    assert client2.post("/costs/movements", headers=H, json=sale).status_code == 422  # stock épuisé : refus
-    changed = [{**entries[0], "amount": "999.00"}]
-    assert client2.post("/northstar/entries", headers=H, json={"entries": changed}).status_code == 422
-    assert len(svc2.northstar.entries()) == 3 and svc2.costs.ledger("FICTIF-P1").qty_on_hand == 0
+    assert body(client2.get("/northstar", headers=H))["cumulative"] == "36.62"
+    assert client2.post("/orders/shipped", headers=HORDERS, json=order).status_code == 200  # rejeu : sans effet
+    assert client2.post("/costs/movements", headers=HF, json=sale).status_code == 422  # stock épuisé : refus
+    changed = {**order, "net_sales_ht": "999.00"}
+    assert client2.post("/orders/shipped", headers=HORDERS, json=changed).status_code == 409
+    declared = [{"entry_id": "FICTIF-1", "at": NOW.isoformat(), "post": "NET_SALES", "amount": "999.00", "order_id": "X"}]
+    assert client2.post("/northstar/entries", headers=HORDERS, json={"entries": declared}).status_code == 422
+    assert len(svc2.northstar.entries()) == 4 and svc2.costs.ledger("FICTIF-P1").qty_on_hand == 0
 
 
 # ------------------------------------------------------------------ incidents
@@ -365,9 +375,9 @@ def test_northstar_cumulative_survives_restart(tmp_path: Path) -> None:
 def test_quarantine_suspension_and_dedup_survive_restart(tmp_path: Path) -> None:
     """E2E-02 / SEC-01 : quarantaines et suspensions relues au démarrage ; reprise après test seulement."""
     client, svc = boot(tmp_path)
-    ref = body(client.post("/incidents", headers=H, json={"code": "INC-01", "product_key": "FICTIF-P1",
+    ref = body(client.post("/incidents", headers=HDATA, json={"code": "INC-01", "product_key": "FICTIF-P1",
                                                           "cause": "Prix fournisseur ×10 FICTIF", "actor": "agent-05"}))["incident"]
-    glob = body(client.post("/incidents", headers=H, json={"code": "INC-14", "cause": "agent hors mandat FICTIF",
+    glob = body(client.post("/incidents", headers=HQA, json={"code": "INC-14", "cause": "agent hors mandat FICTIF",
                                                            "actor": "agent-12-qa"}))["incident"]
     assert svc.incidents.all_writes_suspended and svc.incidents.is_quarantined("FICTIF-P1")
 
@@ -377,14 +387,14 @@ def test_quarantine_suspension_and_dedup_survive_restart(tmp_path: Path) -> None
     assert listing["suspended"] == {"*": [glob["incident_id"]]} and len(listing["incidents"]) == 2
     decision = svc2.gate.authorize(WriteAction.SYNC_PRICE, dry_run=False, product_key="FICTIF-P1")
     assert decision.has(GateReason.PRODUCT_QUARANTINED) and decision.has(GateReason.ALL_WRITES_SUSPENDED)
-    again = body(client2.post("/incidents", headers=H, json={"code": "INC-01", "product_key": "FICTIF-P1",
+    again = body(client2.post("/incidents", headers=HDATA, json={"code": "INC-01", "product_key": "FICTIF-P1",
                                                              "cause": "même anomalie", "actor": "agent-05"}))["incident"]
     assert again["incident_id"] == ref["incident_id"]  # doublon reconnu après redémarrage
-    early = client2.post(f"/incidents/{ref['incident_id']}/resume", headers=H, json={"actor": "agent-12"})
+    early = client2.post(f"/incidents/{ref['incident_id']}/resume", headers=HINC, json={"actor": "agent-12"})
     assert early.status_code == 409  # aucun test enregistré : pas de reprise implicite
     client2.post(f"/incidents/{ref['incident_id']}/test", headers=HO,  # test attesté par la propriétaire
                  json={"test_ref": "rejeu dry-run FICTIF", "passed": True, "actor": "agent-12"})
-    assert client2.post(f"/incidents/{ref['incident_id']}/resume", headers=H, json={"actor": "agent-12"}).status_code == 200
+    assert client2.post(f"/incidents/{ref['incident_id']}/resume", headers=HINC, json={"actor": "agent-12"}).status_code == 200
 
     _, svc3 = boot(tmp_path)
     assert not svc3.incidents.is_quarantined("FICTIF-P1") and svc3.incidents.all_writes_suspended
@@ -415,7 +425,7 @@ def test_incident_ids_are_unique_across_processes(tmp_path: Path) -> None:
 def test_unreadable_state_journal_starts_frozen(tmp_path: Path, stream: str) -> None:
     """Journal d'état configuré mais illisible => démarrage gelé (RESTORE_FAILED), réarmement impossible."""
     client, _ = boot(tmp_path)
-    client.post("/stoploss/state", headers=HF, json=photo())
+    client.post("/stoploss/state", headers=HPHOTO, json=photo())
     (tmp_path / f"{stream}.jsonl").open("a", encoding="utf-8").write('{"seq": 99, "pas": "une ligne valide"}\n')
 
     client2, svc2 = boot(tmp_path, mandate=signed_mandate())
@@ -431,14 +441,14 @@ def test_unreadable_state_journal_starts_frozen(tmp_path: Path, stream: str) -> 
     gate = svc2.gate.authorize(WriteAction.SYNC_STOCK, dry_run=False, product_key="FICTIF-P1")
     assert not gate.allowed
     if stream == "mandate_ledger":
-        assert client2.post("/mandate/check", headers=H, json=spend(9)).status_code == 503
+        assert client2.post("/mandate/check", headers=HOPS, json=spend(9)).status_code == 503
     if stream == "northstar":
         assert client2.get("/northstar", headers=H).status_code == 503
     if stream == "incidents":
         assert svc2.incidents.all_writes_suspended and RESTORE_HOLD in svc2.incidents.suspended()["*"]
     if stream == "stoploss_photo":
         assert svc2.stoploss_state is None
-        assert client2.post("/stoploss/state", headers=HF, json=photo()).status_code == 503
+        assert client2.post("/stoploss/state", headers=HPHOTO, json=photo()).status_code == 503
 
 
 def test_unreadable_autonomy_history_starts_frozen_at_level_one(tmp_path: Path) -> None:
@@ -504,7 +514,7 @@ def test_ledger_northstar_incidents_and_prices_refuse_unsaved_changes() -> None:
     northstar = NorthStarLedger(store=ns_journal)
     ns_journal.broken = True
     with pytest.raises(NorthStarPersistenceError):
-        northstar.record(ContributionEntry(entry_id="FICTIF-1", at=NOW, post=Post.NET_SALES, amount=D("10.00")))
+        northstar.record(ContributionEntry(entry_id="FICTIF-1", at=NOW, post=Post.PAYMENT, amount=D("10.00")))
     assert northstar.entries() == ()
 
     inc_journal = FlakyJournal("incidents")
@@ -552,12 +562,12 @@ def test_price_history_reference_survives_restart(tmp_path: Path) -> None:
 def test_rearm_needs_attested_reference_and_resists_a_poisoned_photo(tmp_path: Path) -> None:
     """SEC-07 : la référence du réarmement rebasé est attestée par la propriétaire, pas la dernière photo d'un agent."""
     client, svc = boot(tmp_path)
-    tripped = body(client.post("/stoploss/state", headers=HF, json=photo("4000")))
+    tripped = body(client.post("/stoploss/state", headers=HPHOTO, json=photo("4000")))
     assert tripped["status"]["global_frozen"] is True
     examined = body(client.get("/stoploss/status", headers=H))["rearm_reference"]
     assert examined["net_worth_chf"] == "4000"
     # un agent dépose une photo minorée juste avant le réarmement
-    assert client.post("/stoploss/state", headers=HF, json=photo("100")).status_code == 200
+    assert client.post("/stoploss/state", headers=HPHOTO, json=photo("100")).status_code == 200
     mismatch = client.post("/stoploss/rearm", headers=HO, json={"reason": "réarmement après examen de la valeur nette",
                                                                 "reference_chf": "4000"})
     assert mismatch.status_code == 409 and "100,00 CHF" in body(mismatch)["erreur"] and svc.stoploss_engine.frozen
@@ -567,7 +577,7 @@ def test_rearm_needs_attested_reference_and_resists_a_poisoned_photo(tmp_path: P
     journal = [e.event for e in svc.stoploss_engine.journal]
     assert journal.count("REARM_REFUSED") == 2 and len(svc.audit.events(action="stoploss.rearm_refused")) == 2
     # la photo honnête revient : le réarmement attesté passe, rebasé sur 4 000
-    client.post("/stoploss/state", headers=HF, json=photo("4000"))
+    client.post("/stoploss/state", headers=HPHOTO, json=photo("4000"))
     ok = client.post("/stoploss/rearm", headers=HO, json={"reason": "réarmement après examen de la valeur nette",
                                                           "reference_chf": "4000.40"})
     assert ok.status_code == 200 and body(ok)["latch"]["baseline"]["net_value_chf"] == "4000"
@@ -594,8 +604,8 @@ def test_short_owner_token_never_rearms(tmp_path: Path) -> None:
     """SEC-24 : un jeton de moins de 16 caractères est refusé au réarmement comme pour l'autonomie."""
     short = "1234"
     client, svc = boot(tmp_path, POKESHOP_OWNER_TOKEN_SHA256=sha256_hex(short))
-    client.post("/stoploss/state", headers=HF, json=photo())
-    client.post("/stoploss/freeze", headers=H, json={"actor": "agent-12", "reason": "gel de test FICTIF"})
+    client.post("/stoploss/state", headers=HPHOTO, json=photo())
+    client.post("/stoploss/freeze", headers=HQA, json={"actor": "agent-12", "reason": "gel de test FICTIF"})
     headers = {API_TOKEN_HEADER: API_TOKEN, OWNER_TOKEN_HEADER: short}
     rearm = client.post("/stoploss/rearm", headers=headers, json={"reason": "réarmement avec jeton court",
                                                                   "rebase": False})
@@ -612,8 +622,8 @@ def test_short_owner_token_never_rearms(tmp_path: Path) -> None:
 def test_every_owner_token_refusal_is_logged(tmp_path: Path) -> None:
     """SEC-26 : en-tête absent ou identique au jeton d'API => refus journalisé (audit + journal du stop-loss)."""
     client, svc = boot(tmp_path)
-    client.post("/stoploss/state", headers=HF, json=photo())
-    client.post("/stoploss/freeze", headers=H, json={"actor": "agent-12", "reason": "gel de test FICTIF"})
+    client.post("/stoploss/state", headers=HPHOTO, json=photo())
+    client.post("/stoploss/freeze", headers=HQA, json={"actor": "agent-12", "reason": "gel de test FICTIF"})
     absent = client.post("/stoploss/rearm", headers=H, json={"reason": "sondage de la route de réarmement"})
     assert absent.status_code == 403
     same = client.post("/stoploss/rearm", headers={**H, OWNER_TOKEN_HEADER: API_TOKEN},
@@ -623,7 +633,7 @@ def test_every_owner_token_refusal_is_logged(tmp_path: Path) -> None:
     assert [e.payload["motif"] for e in refused] == ["absent", "identique au jeton d'API"]
     assert all(API_TOKEN not in json.dumps(e.payload) for e in refused)
     assert [e.event for e in svc.stoploss_engine.journal].count("REARM_REFUSED") == 2
-    client.post("/autonomy", headers=H, json={"level": 2, "reason": "sondage FICTIF", "actor": "agent-01"})
+    client.post("/autonomy", headers=HCHEF, json={"level": 2, "reason": "sondage FICTIF", "actor": "agent-01"})
     assert svc.audit.events(action="autonomy.raise.owner_token_refused")
     client.post("/stoploss/baseline", headers=H, json={"reason": "sondage du point zéro", "reference_chf": "1"})
     assert svc.audit.events(action="stoploss.baseline.owner_token_refused")
@@ -636,14 +646,14 @@ def test_every_owner_token_refusal_is_logged(tmp_path: Path) -> None:
 def test_restore_hold_is_never_persisted(tmp_path: Path) -> None:
     """Le gel de démarrage (journal illisible) n'est pas enregistré : réparer puis redémarrer suffit."""
     client, _ = boot(tmp_path)
-    client.post("/stoploss/state", headers=HF, json=photo())
+    client.post("/stoploss/state", headers=HPHOTO, json=photo())
     bad = tmp_path / "northstar.jsonl"
     bad.write_text("garbage\n", encoding="utf-8")
     client_hold, svc = boot(tmp_path)
     assert svc.stoploss_engine.latch.cause == "RESTORE_FAILED"
     # NEW-02 : le workflow 07 continue de déposer des photos pendant le gel ; l'évaluation est journalisée
     # avec le verrou ENREGISTRÉ, jamais avec le gel de démarrage.
-    assert client_hold.post("/stoploss/state", headers=HF, json=photo()).status_code == 200
+    assert client_hold.post("/stoploss/state", headers=HPHOTO, json=photo()).status_code == 200
     assert svc.stoploss_engine.journal[-1].event == "EVALUATION" and not svc.stoploss_engine.persisted_latch.frozen
     assert "RESTORE_FAILED" not in (tmp_path / "stoploss.jsonl").read_text(encoding="utf-8")
     bad.unlink()  # réparation (ex. restauration de sauvegarde)

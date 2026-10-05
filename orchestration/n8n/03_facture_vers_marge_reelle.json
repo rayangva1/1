@@ -304,8 +304,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
         }
       },
       "disabled": true,
@@ -442,8 +442,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
         }
       },
       "retryOnFail": true,
@@ -473,8 +473,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
         }
       },
       "retryOnFail": true,

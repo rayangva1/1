@@ -27,7 +27,7 @@ Garantir que **chaque produit vendu est exactement celui annoncé** : bonne lang
 | `docs/02-sourcing/PANIER_PILOTE.csv`, `docs/01-marche/ASSORTIMENT_PILOTE.md` | Lecture |
 | `docs/05-da/components/` (carte et page produit) | Lecture |
 | Autorisations d'images (A-02, BL-093), photos réelles (intervention A06) | Lecture |
-| `CONN-API-MOTEUR` (`/publish/preview`) | Simulation |
+| `CONN-API-MOTEUR` (jeton `catalogue` : `POST /catalog/items`, `/publish/preview`) | Dépôt des fiches et simulation ; validations humaines refusées dans le corps (422), posées par la propriétaire (`POST /catalog/approvals`) |
 
 ## 4. Format de sortie
 

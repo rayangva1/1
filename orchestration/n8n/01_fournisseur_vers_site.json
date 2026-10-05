@@ -177,8 +177,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n01Syn",
+          "name": "Pokeshop API — jeton nommé n8n-01-sync"
         }
       },
       "retryOnFail": true,
@@ -341,8 +341,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n01Syn",
+          "name": "Pokeshop API — jeton nommé n8n-01-sync"
         }
       },
       "retryOnFail": true,
@@ -462,8 +462,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n01Syn",
+          "name": "Pokeshop API — jeton nommé n8n-01-sync"
         }
       },
       "notes": "dry_run: true explicite. Catalogue validé et frais : registres du moteur (sans catalogue : 409). Le moteur ouvre lui-même les incidents d'anomalie (simulation).",
@@ -600,8 +600,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n01Syn",
+          "name": "Pokeshop API — jeton nommé n8n-01-sync"
         }
       },
       "notes": "Le stock local confirmé n'est jamais touché par une panne de flux (BP §12).",

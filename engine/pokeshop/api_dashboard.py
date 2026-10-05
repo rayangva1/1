@@ -2,7 +2,7 @@
 
 **INTERNE — contient coûts et marges, ne jamais publier.** Mêmes règles que le reste de l'API
 (:mod:`pokeshop.api`), avec **la même fonction d'authentification** (revue NEW-03) : en-tête
-``X-Pokeshop-Token`` = jeton commun ou jeton nommé d'un agent (``POKESHOP_AGENT_TOKENS_SHA256``) ; 503
+``X-Pokeshop-Token`` = jeton commun ou jeton d'un rôle (lecture : matrice ``pokeshop.authz``) ; 503
 si aucune empreinte n'est configurée, 401 si absent ou faux. Montants en chaînes, aucun ``float``.
 Réponses marquées ``Cache-Control: no-store`` et ``X-Robots-Tag: noindex, nofollow``.
 

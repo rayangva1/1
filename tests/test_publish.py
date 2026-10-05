@@ -22,6 +22,9 @@ from pokeshop.publish import (
     PUBLIC_METAFIELDS,
     CatalogListing,
     ImageRights,
+    ListingApproval,
+    PublishedState,
+    listing_digest,
     SMALL_PRODUCT_TAG,
     PlanOutcome,
     PriceApprovalBook,
@@ -64,7 +67,25 @@ DESCRIPTION = (
 OWN = PublicImage(url="https://cdn.example.org/fictif/display-alpha.jpg", alt="Display face avant", rights=ImageRights.OWN_PHOTO)
 
 
-def listing(**kw: Any) -> CatalogListing:
+class Fiche:
+    """Fiche de test : contenu déposé (CatalogListing) + registres du moteur (état publié) et de la propriétaire.
+
+    Revue R3 : ``approved``, ``content_validated``, ``category_rule_validated`` ne sont plus des champs de la
+    fiche (registre de la propriétaire) ; identifiant, statut et dernier prix publiés viennent du registre
+    des fiches publiées. Les attributs de la fiche restent lisibles (délégation).
+    """
+
+    def __init__(self, item: CatalogListing, published: PublishedState | None, validations: ListingApproval) -> None:
+        self.listing, self.published, self.validations = item, published, validations
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.listing, name)
+
+
+def listing(**kw: Any) -> Fiche:
+    flags = {"content_validated": kw.pop("content_validated", True),
+             "category_rule_validated": kw.pop("category_rule_validated", False), "approved": kw.pop("approved", False)}
+    gid, status, price = kw.pop("shopify_product_id", None), kw.pop("shopify_status", None), kw.pop("current_price_chf", None)
     base: dict[str, Any] = dict(
         product_key="FICTIF-P1",
         identity=IDENTITY,
@@ -73,14 +94,19 @@ def listing(**kw: Any) -> CatalogListing:
         images=(OWN,),
         stock_status=StockStatus.STOCK_LOCAL,
         content_text="36 boosters",
-        content_validated=True,
         fictif=True,
     )
     base.update(kw)
-    return CatalogListing(**base)
+    item = CatalogListing(**base)
+    published = (
+        PublishedState(shopify_product_id=gid, status=status or ShopStatus.ACTIVE, price_chf=price) if gid else None
+    )
+    validations = ListingApproval(product_key=item.product_key, listing_sha256=listing_digest(item),
+                                  reason="validation FICTIVE de la propriétaire", approved_at=NOW, **flags)  # fmt: skip
+    return Fiche(item, published, validations)
 
 
-def existing(**kw: Any) -> CatalogListing:
+def existing(**kw: Any) -> Fiche:
     base: dict[str, Any] = dict(
         shopify_product_id="gid://shopify/Product/7", shopify_status=ShopStatus.ACTIVE, approved=True,
         current_price_chf=ENGINE_PRICE,
@@ -89,9 +115,13 @@ def existing(**kw: Any) -> CatalogListing:
     return listing(**base)
 
 
-def plan(item: CatalogListing, decision: Any = DECISION, **kw: Any):
+def plan(item: Fiche | CatalogListing, decision: Any = DECISION, **kw: Any):
     kw.setdefault("params", PARAMS)
     kw.setdefault("now", NOW)
+    if isinstance(item, Fiche):
+        kw.setdefault("published", item.published)
+        kw.setdefault("validations", item.validations)
+        item = item.listing
     return build_publication(item, decision, max_daily_change=CAP, table=TABLE, **kw)
 
 
@@ -297,7 +327,12 @@ def test_preorder_listing_is_a_distinct_sheet_with_date_and_limit() -> None:
     p = plan(pre)
     assert p.outcome is PlanOutcome.SEND_DRAFT
     assert {PublishBlocker.MAX_QTY_MISSING.value, PublishBlocker.RELEASE_DATE_MISSING.value} <= set(p.reviews)
-    ok = plan(pre.replace(max_qty=2, release_date=date(2026, 11, 7), release_date_status=ReleaseDateStatus.ESTIMEE))
+    # Fiche complétée par l'agent catalogue : l'ancienne validation ne s'applique plus (autre contenu, revue R3).
+    edited = plan(pre.replace(max_qty=2, release_date=date(2026, 11, 7), release_date_status=ReleaseDateStatus.ESTIMEE),
+                  validations=pre.validations)
+    assert edited.outcome is PlanOutcome.SEND_DRAFT and PublishBlocker.VALIDATION_OUTDATED.value in edited.reviews
+    ok = plan(listing(public_sku="DSP-FICTIF_ALPHA-FR-PRECO", stock_status=StockStatus.PRECOMMANDE, category_rule_validated=True,
+                      max_qty=2, release_date=date(2026, 11, 7), release_date_status=ReleaseDateStatus.ESTIMEE))
     assert ok.outcome is PlanOutcome.SEND_ACTIVE
     variant = ok.product_input["variants"][0]
     assert variant["optionValues"] == [{"optionName": "Disponibilité", "name": "Précommande"}]
@@ -483,7 +518,8 @@ def test_build_publication_refuses_to_send_a_leaking_payload() -> None:
 def test_plan_never_contains_costs_margins_or_order_fields() -> None:
     cost = D("123.45")
     decision = decide_price(cost, PARAMS)
-    p = build_publication(listing(category_rule_validated=True), decision, max_daily_change=CAP, table=TABLE)
+    item = listing(category_rule_validated=True)
+    p = build_publication(item.listing, decision, max_daily_change=CAP, table=TABLE, validations=item.validations)
     dumped = p.model_dump_json()
     for forbidden in (str(cost), str(decision.contribution_chf), str(decision.floor_price), str(decision.profitable_price),
                       "contribution", "landed", "floor", "margin", "order", "cost"):
@@ -508,10 +544,11 @@ def test_listing_validation() -> None:
         listing(public_sku="dsp minuscule")
     with pytest.raises(ValueError):
         listing(handle="Pas Valide")
-    with pytest.raises(ValueError):
-        listing(shopify_status=ShopStatus.ACTIVE)
-    with pytest.raises(ValueError):
-        listing(shopify_product_id="7")
+    content = listing().listing.model_dump()
+    for declared in ({"shopify_status": "ACTIVE"}, {"shopify_product_id": "gid://shopify/Product/7"},
+                     {"current_price_chf": "1.00"}, {"approved": True}, {"category_rule_validated": True}):
+        with pytest.raises(ValueError):  # champs du moteur et validations humaines : plus dans la fiche (revue R3)
+            CatalogListing(**{**content, **declared})
     with pytest.raises(ValueError):
         PriceValidation.new(product_key="FICTIF-P1", price=D("10"), reason="FICTIF approbation", now=datetime(2026, 10, 4))
     assert slugify("Coffret Dresseur d'Élite (ETB) – FR") == "coffret-dresseur-d-elite-etb-fr"

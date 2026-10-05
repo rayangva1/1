@@ -12,7 +12,7 @@
 | `SOP_SAV_RETOURS.md` | Matrice de 26 cas (colis perdu, endommagé, erreur, retour volontaire, garantie, fraude, litige, données…), qui décide, 14 modèles de réponse, journal SAV | Agent 11 (dans le mandat), propriétaire (escalades) | Quotidien |
 | `SOP_INCIDENTS.md` | Gravités S1-S3, workflow BP §12 en 6 étapes, catalogue INC-01 à INC-16, stop-loss, violation de données | Tous les agents, propriétaire | Dès qu'un incident survient |
 | `ROUTINES_PILOTAGE.md` | Étoile polaire, budget temps (6 à 10 h/semaine), digest quotidien, revue hebdomadaire et mensuelle, dictionnaire des indicateurs du tableau de bord | Agent 01, propriétaire, agent 07 (dashboard) | Jour, semaine, mois |
-| `RECETTE_AVANT_OUVERTURE.md` | 76 cas de test (69 bloquants) : parcours mobile/ordinateur, stock simultané, remise, port gratuit, rupture pendant paiement, commande mixte, paiements, versements, emails, conformité | Agent 12 QA, propriétaire | Avant le gate G3 et le niveau 2, puis à chaque changement |
+| `RECETTE_AVANT_OUVERTURE.md` | 76 cas de test (70 bloquants) : parcours mobile/ordinateur, stock simultané, remise, port gratuit, rupture pendant paiement, commande mixte, paiements, versements, emails, conformité | Agent 12 QA, propriétaire | Avant le gate G3 et le niveau 2, puis à chaque changement |
 | `FAQ_CLIENTS.md` | FAQ publique (bloc public), alignée sur les CGV | Site | Après validation |
 
 Les champs `{{…}}` sont définis dans `docs/04-legal/champs_a_remplir.yaml` (registre unique). Contrôle de cohérence de ce dossier et de `docs/04-legal/` :

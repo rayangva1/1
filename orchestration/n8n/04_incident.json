@@ -365,7 +365,7 @@
           "name": "Passerelle agents — X-Pokeshop-Gateway"
         }
       },
-      "notes": "Corps : {\"incident_id\": \"...\", \"actor\": \"agent-12-qa\"}. Le test réussi est enregistré AVANT, par l'agent 12 QA avec SON jeton nommé (POST /incidents/{id}/test, différent de l'ouvreur) ou par la propriétaire : la passerelle (jeton commun) ne peut pas l'attester (403, revue NEW-01).",
+      "notes": "Corps : {\"incident_id\": \"...\", \"actor\": \"qa-conformite\"}. Le test réussi est enregistré AVANT, par le rôle qa-conformite avec SON jeton nommé (POST /incidents/{id}/test, différent de l'ouvreur, cycle réel lancé par un autre principal) ou par la propriétaire : le workflow 04 (n8n-04-incidents) ne peut pas l'attester (403, revue NEW-01) ; il ne fait que reprendre.",
       "notesInFlow": true
     },
     {
@@ -432,8 +432,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n04Inc",
+          "name": "Pokeshop API — jeton nommé n8n-04-incidents"
         }
       },
       "notes": "Lecture seule : le test de correction est enregistré par l'agent 12 QA (jeton nommé) ou la propriétaire.",
@@ -719,8 +719,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n04Inc",
+          "name": "Pokeshop API — jeton nommé n8n-04-incidents"
         }
       },
       "notes": "Sans jeton propriétaire : un incident S1 est refusé (erreur => instructions à la propriétaire).",
@@ -886,8 +886,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n04Inc",
+          "name": "Pokeshop API — jeton nommé n8n-04-incidents"
         }
       },
       "onError": "continueErrorOutput"

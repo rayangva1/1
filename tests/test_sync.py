@@ -25,7 +25,16 @@ from pokeshop.importers import run_import
 from pokeshop.incidents import IncidentCode, IncidentManager, LogNotifier, Severity
 from pokeshop.models import ReplacementCost, StockLevel
 from pokeshop.pricing import decide_price
-from pokeshop.publish import CatalogListing, ImageRights, PlanOutcome, PublicImage, ShopStatus, StockStatus
+from pokeshop.publish import (
+    CatalogListing,
+    ImageRights,
+    ListingApproval,
+    PlanOutcome,
+    PublicImage,
+    ShopStatus,
+    StockStatus,
+    listing_digest,
+)
 from pokeshop.rules import load_rules
 from pokeshop.shopify_client import RemoteInventoryLevel, ShopifyClient
 from pokeshop.stock import StockRegistry
@@ -39,6 +48,7 @@ from pokeshop.stoploss import (
     load_stoploss_config,
 )
 from pokeshop.sync import (
+    ShopPublication,
     WORKFLOW_SUPPLIER_TO_SHOP,
     OfferCostInputs,
     StockSyncReport,
@@ -89,21 +99,36 @@ def listing(**kw: Any) -> CatalogListing:
         product_key="FICTIF-P1", identity=IDENT_A1, public_sku="DSP-FICTIF_ALPHA-FR",
         description_html="<p>Display de l'extension Extension Fictive Alpha, en français, neuf et scellé.</p>",
         images=(PublicImage(url="https://cdn.example.org/fictif.jpg", alt="Display face avant", rights=ImageRights.OWN_PHOTO),),
-        stock_status=StockStatus.STOCK_LOCAL, content_text="36 boosters", content_validated=True,
-        category_rule_validated=True, fictif=True, shopify_inventory_item_id=ITEM,
+        stock_status=StockStatus.STOCK_LOCAL, content_text="36 boosters", fictif=True, shopify_inventory_item_id=ITEM,
     )
     base.update(kw)
     return CatalogListing(**base)
 
 
-def context(item: CatalogListing | None = None, **kw: Any) -> SyncContext:
+def owner_validations(item: CatalogListing, *, approved: bool = False, content_validated: bool = True,
+                      category_rule_validated: bool = True) -> ListingApproval:
+    """Validations de la propriétaire (registre ``catalog_approvals``) portant sur ce contenu de fiche."""
+    return ListingApproval(product_key="FICTIF-P1", listing_sha256=listing_digest(item), approved=approved,
+                           content_validated=content_validated, category_rule_validated=category_rule_validated,
+                           reason="validation FICTIVE de la propriétaire", approved_at=SOURCE_NOW)  # fmt: skip
+
+
+def context(item: CatalogListing | None = None, *, approved: bool = False, **kw: Any) -> SyncContext:
     item = item or listing()
     base: dict[str, Any] = dict(
         rules=RULES, catalog_products=[CatalogProduct(product_id="FICTIF-P1", identity=IDENT_A1)],
         listings={"FICTIF-P1": item}, table=TABLE, cost_inputs={"fictif_grossiste_a": FX},
+        validations={"FICTIF-P1": owner_validations(item, approved=approved)},
     )
     base.update(kw)
     return SyncContext(**base)
+
+
+def published(env: Any, *, status: str = "ACTIVE", price: D | None = None) -> None:
+    """Fiche déjà écrite et vérifiée par le moteur (registre ``shop_publications``, jamais la fiche)."""
+    env.sync.publications.record(ShopPublication(product_id="FICTIF-P1", shopify_product_id="gid://shopify/Product/7",
+                                                 status=status, handle="display-fictif", run_id="SYNC-FICTIF-0",
+                                                 recorded_at=SOURCE_NOW - timedelta(days=1), price_chf=price))  # fmt: skip
 
 
 def healthy_state(at: datetime, **kw: Any) -> StopLossState:
@@ -344,11 +369,16 @@ def test_real_cycle_on_test_store_publishes_verifies_and_never_writes_twice() ->
     assert "fictif_grossiste_a" not in json.dumps(sent) and "FICTIF-A-001" not in json.dumps(sent)
     published = [e for e in env.history.events("FICTIF-P1") if e.kind.value == "PUBLISHED"]
     assert len(published) == 1 and published[0].price == p1.price_chf
-    second = env.cycle(dry_run=False)
+    known = env.sync.publications.get("FICTIF-P1")  # registre du moteur : identifiant, statut, prix publiés
+    assert known.status == "ACTIVE" and known.price_chf == p1.price_chf
+    second = env.cycle(dry_run=False)  # fiche connue : mise à jour par l'identifiant du registre (revue R3)
     p1b = item_for(second)
-    assert p1b.replayed and p1b.verified
-    assert len([a for a in env.shop.applied if "productSet" in a]) == 1  # reprise sans double écriture
-    assert consecutive_clean_runs(env.sync.history) == 2
+    assert p1b.action == "UPDATE_APPROVED_PRODUCT" and p1b.verified
+    third = env.cycle(dry_run=False)
+    p1c = item_for(third)
+    assert p1c.replayed and p1c.verified
+    assert len([a for a in env.shop.applied if "productSet" in a]) == 2  # reprise sans double écriture
+    assert consecutive_clean_runs(env.sync.history) == 3
     assert not env.incidents.is_suspended("source:fictif_grossiste_a")  # escalade d'import : signalement seul
 
 
@@ -401,9 +431,8 @@ def test_verification_mismatch_is_a_critical_error_and_demotes_autonomy() -> Non
 def test_product_stoploss_unpublishes_existing_listing() -> None:
     env = Env(state_kw={"products": (ProductMargin(product_key="FICTIF-P1", contribution_chf=D("3"),
                                                    contribution_pct=D("0.03")),)})
-    item = listing(shopify_product_id="gid://shopify/Product/7", shopify_status=ShopStatus.ACTIVE, approved=True,
-                   current_price_chf=D("149.90"))
-    report = env.cycle(context(item), dry_run=False)
+    published(env, price=D("149.90"))
+    report = env.cycle(context(approved=True), dry_run=False)
     p1 = item_for(report)
     assert p1.plan_outcome == PlanOutcome.UNPUBLISH.value and p1.action == "UNPUBLISH_PRODUCT"
     assert p1.written and p1.verified and p1.price_chf is None  # statut seulement, prix boutique inchangé
@@ -612,8 +641,8 @@ def test_quarantined_listing_is_unpublished_without_current_price() -> None:
     env = Env()
     env.incidents.open(cause="FICTIF anomalie de prix", code=IncidentCode.INC_01, product_key="FICTIF-P1",
                        actor="agent-12-qa")
-    item = listing(shopify_product_id="gid://shopify/Product/7", shopify_status=ShopStatus.ACTIVE, approved=True)
-    p1 = item_for(env.cycle(context(item), dry_run=False))
+    published(env)
+    p1 = item_for(env.cycle(context(approved=True), dry_run=False))
     assert p1.plan_outcome == PlanOutcome.UNPUBLISH.value and p1.written
     assert env.shop.applied[-1] == {"productSet": {"status": "DRAFT"}}
 

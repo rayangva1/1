@@ -118,11 +118,11 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiOpsSav11",
+          "name": "Pokeshop API — jeton nommé operations-sav"
         }
       },
-      "notes": "Registre du stock local (idempotent par SKU + bon de livraison) : sans lui, la fiche reste en rupture.",
+      "notes": "Registre du stock local (idempotent par SKU + bon de livraison) : sans lui, la fiche reste en rupture. Jeton nommé operations-sav (agent 11), jamais le jeton commun (SOP_RECEPTION_STOCK E2).",
       "notesInFlow": true,
       "retryOnFail": true,
       "maxTries": 3,
@@ -148,8 +148,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n06Mkt",
+          "name": "Pokeshop API — jeton nommé n8n-06-marketing"
         }
       },
       "retryOnFail": true,
@@ -224,8 +224,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n06Mkt",
+          "name": "Pokeshop API — jeton nommé n8n-06-marketing"
         }
       },
       "retryOnFail": true,
@@ -255,8 +255,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n06Mkt",
+          "name": "Pokeshop API — jeton nommé n8n-06-marketing"
         }
       },
       "retryOnFail": true,
@@ -818,8 +818,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n06Mkt",
+          "name": "Pokeshop API — jeton nommé n8n-06-marketing"
         }
       },
       "retryOnFail": true,
@@ -894,8 +894,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n06Mkt",
+          "name": "Pokeshop API — jeton nommé n8n-06-marketing"
         }
       },
       "retryOnFail": true,
@@ -1379,8 +1379,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n06Mkt",
+          "name": "Pokeshop API — jeton nommé n8n-06-marketing"
         }
       },
       "notes": "Toujours suivi de la réponse à la personne, même si le moteur ne répond pas (sortie d'erreur).",
@@ -1425,8 +1425,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n06Mkt",
+          "name": "Pokeshop API — jeton nommé n8n-06-marketing"
         }
       },
       "notes": "Toujours suivi de la réponse à la personne, même si le moteur ne répond pas (sortie d'erreur).",
@@ -1689,8 +1689,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n06Mkt",
+          "name": "Pokeshop API — jeton nommé n8n-06-marketing"
         }
       },
       "notes": "Toujours suivi de la réponse à la personne, même si le moteur ne répond pas (sortie d'erreur).",
@@ -2034,8 +2034,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n06Mkt",
+          "name": "Pokeshop API — jeton nommé n8n-06-marketing"
         }
       },
       "notes": "Toujours suivi de la réponse à la personne, même si le moteur ne répond pas (sortie d'erreur).",
@@ -2090,8 +2090,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n06Mkt",
+          "name": "Pokeshop API — jeton nommé n8n-06-marketing"
         }
       },
       "notes": "Toujours suivi de la réponse à la personne, même si le moteur ne répond pas (sortie d'erreur).",

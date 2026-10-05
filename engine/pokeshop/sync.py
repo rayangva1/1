@@ -71,9 +71,11 @@ from .pricing import evaluate_offer
 from .publish import (
     HARD_BLOCKER_CODES,
     CatalogListing,
+    ListingApproval,
     PlanOutcome,
     PriceValidation,
     PublicationPlan,
+    PublishedState,
     SensitiveFieldError,
     ShopStatus,
     StockStatus,
@@ -191,6 +193,9 @@ class SyncContext:
     price_validations: Mapping[str, PriceValidation] = field(default_factory=dict)
     """Approbations de prix de la propriétaire **lues dans le registre du moteur**
     (:class:`pokeshop.publish.PriceApprovalBook`), jamais reçues dans un corps de requête."""
+    validations: Mapping[str, ListingApproval] = field(default_factory=dict)
+    """Validations de fiches de la propriétaire (registre ``catalog_approvals``) par ``product_id`` ;
+    appliquées seulement au contenu exact de fiche validé (jamais un champ de la fiche)."""
     sensitive_terms: Collection[str] = ()
 
 
@@ -436,6 +441,14 @@ class ShopPublication(FrozenModel):
     handle: str = Field(min_length=1)
     run_id: str
     recorded_at: datetime
+    price_chf: Decimal | None = Field(default=None, gt=0)
+    """Dernier prix réellement écrit et vérifié (None : enregistrement ancien ou dépublication sans prix connu)."""
+
+    def state(self) -> PublishedState:
+        """État publié pour :func:`pokeshop.publish.build_publication` (seule source d'identifiant et de prix)."""
+        return PublishedState(
+            shopify_product_id=self.shopify_product_id, status=ShopStatus(self.status), price_chf=self.price_chf
+        )
 
 
 class ShopPublicationBook:
@@ -486,11 +499,13 @@ class ShopPublicationBook:
         """Inscrit l'état publié (écrit d'abord, appliqué ensuite ; sans effet si identique)."""
         with self._lock:
             current = self._items.get(item.product_id)
-            if current is not None and (current.shopify_product_id, current.status, current.handle) == (
+            if current is not None and (current.shopify_product_id, current.status, current.handle,
+                                        current.price_chf) == (
                 item.shopify_product_id,
                 item.status,
                 item.handle,
-            ):
+                item.price_chf,
+            ):  # fmt: skip
                 return current
             if self._store is not None:
                 try:
@@ -881,7 +896,8 @@ class SyncService:
         price_counts: dict[str, int] = {}
         for pid, pairs in matched.items():
             listing = ctx.listings.get(pid)
-            reference = price_reference_24h(self.price_history, pid, at, listing.current_price_chf if listing else None)
+            known_pub = self.publications.get(pid)
+            reference = price_reference_24h(self.price_history, pid, at, known_pub.price_chf if known_pub else None)
             evaluated: list[tuple[SupplierOffer, PriceDecision]] = []
             for offer, _match in pairs:
                 ci = ctx.cost_inputs.get(offer.supplier_id, OfferCostInputs())
@@ -954,9 +970,183 @@ class SyncService:
         status, _triggers = self.gate.stoploss_status(at)
         blocked_products = set(status.blocked_products) if status is not None else set()
         listing_counts: dict[str, int] = {}
-        written = refused = 0
-        api_refused = False
-        verify_ok = verify_ko = 0
+        state = {"written": 0, "refused": 0, "api_refused": False, "verify_ok": 0, "verify_ko": 0}
+
+        def plan_for(
+            pid: str,
+            listing: CatalogListing,
+            decision: PriceDecision | None,
+            published: PublishedState | None,
+            reference: Decimal | None,
+            stock_now: StockStatus,
+        ) -> PublicationPlan:
+            return build_publication(
+                listing,
+                decision,
+                max_daily_change=params.max_daily_price_change,
+                reference_price_24h=reference,
+                price_validation=ctx.price_validations.get(pid),
+                params=params,
+                now=at,
+                stoploss_blocked=pid in blocked_products,
+                quarantined=self.incidents.is_quarantined(pid),
+                sensitive_terms=sorted(terms),
+                table=ctx.table,
+                real_shop=production,
+                stock_status=stock_now,
+                published=published,  # registre du moteur, jamais la fiche (revue R3 SEC-09)
+                validations=ctx.validations.get(pid),  # registre de la propriétaire (revue R2-NEW-05)
+            )
+
+        def resolve_plan(
+            pid: str,
+            listing: CatalogListing,
+            decision: PriceDecision | None,
+            stock_now: StockStatus,
+            item_incidents: list[str],
+        ) -> PublicationPlan:
+            """Plan avec l'état publié du **registre du moteur** ; référence bloquée inconnue du registre :
+            état réel relu sur la boutique (écriture réelle) pour la dépublier (revue SEC-09)."""
+            known = self.publications.get(pid)
+            published = known.state() if known is not None else None
+            reference = price_reference_24h(self.price_history, pid, at, published.price_chf if published else None)
+            plan = plan_for(pid, listing, decision, published, reference, stock_now)
+            if plan.outcome is PlanOutcome.NOT_SENT and published is None and set(plan.blockers) & HARD_BLOCKER_CODES:
+                remote = self._known_shop_state(pid, plan.handle, dry_run, critical, item_incidents, rid)
+                if remote is not None:
+                    plan = plan_for(pid, listing, decision, remote, reference, stock_now)
+            return plan
+
+        def apply(
+            pid: str,
+            plan: PublicationPlan,
+            decision: PriceDecision | None,
+            item_incidents: list[str],
+            *,
+            offer_ref: str,
+            match_status: str,
+        ) -> None:
+            listing_counts[plan.outcome.value] = listing_counts.get(plan.outcome.value, 0) + 1
+            if plan.violations:
+                critical.append(f"{pid} : champ interne détecté dans la charge publique ({'; '.join(plan.violations)})")
+                self._incident(
+                    dry_run,
+                    item_incidents,
+                    code=IncidentCode.INC_07,
+                    product_key=pid,
+                    cause="Champ interne ou donnée personnelle dans la charge publique (envoi bloqué).",
+                    details={"run_id": rid, "violations": list(plan.violations)},
+                )
+            gate: GateDecision | None = None
+            written_flag = replayed = False
+            verified: bool | None = None
+            messages = list(plan.messages)
+            if plan.send and plan.action is not None and not state["api_refused"]:
+                gate = self.gate.authorize(
+                    WriteAction(plan.action),
+                    dry_run=dry_run,
+                    actor=self.actor,
+                    product_key=pid,
+                    workflow=WORKFLOW_SUPPLIER_TO_SHOP,
+                )
+                if gate.allowed:
+                    try:
+                        protective = plan.outcome is PlanOutcome.UNPUBLISH
+                        if protective:
+                            assert_protective_payload(plan.product_input or {})
+                        resp = self.client.product_set(
+                            plan.product_input or {},
+                            identifier=plan.identifier,
+                            idempotency_key=derive_idempotency_key("productSet", plan.identifier, plan.product_input),
+                            dry_run=dry_run,
+                            autonomy_level=gate.current_level,
+                            protective=protective,
+                        )
+                    except SensitiveFieldError as exc:
+                        state["refused"] += 1
+                        critical.append(f"{pid} : charge publique refusée par le client ({exc})")
+                        self._incident(
+                            dry_run,
+                            item_incidents,
+                            code=IncidentCode.INC_07,
+                            product_key=pid,
+                            cause="Champ interne détecté au dernier contrôle avant envoi (rien n'a été envoyé).",
+                            details={"run_id": rid, "violations": list(exc.violations)},
+                        )
+                    except ShopifyAccessDeniedError as exc:
+                        state["api_refused"] = True
+                        state["refused"] += 1
+                        messages.append(str(exc))
+                        self._incident(
+                            dry_run,
+                            item_incidents,
+                            code=IncidentCode.INC_08,
+                            workflow=WORKFLOW_SUPPLIER_TO_SHOP,
+                            cause=f"API boutique refusée : {exc}",
+                            details={"run_id": rid},
+                        )
+                    except ShopifyError as exc:
+                        state["refused"] += 1
+                        messages.append(f"{type(exc).__name__} : {exc}")
+                        self._incident(
+                            dry_run,
+                            item_incidents,
+                            code=IncidentCode.INC_08,
+                            workflow=WORKFLOW_SUPPLIER_TO_SHOP,
+                            cause=f"Écriture productSet en échec ({type(exc).__name__}) : {exc}",
+                            details={"run_id": rid},
+                        )
+                    else:
+                        replayed = resp.replayed
+                        if not resp.ok:
+                            state["refused"] += 1
+                            messages.extend(f"userError {e.code or ''} : {e.message}" for e in resp.user_errors)
+                            self._incident(
+                                dry_run,
+                                item_incidents,
+                                code=IncidentCode.INC_08,
+                                workflow=WORKFLOW_SUPPLIER_TO_SHOP,
+                                cause=f"productSet refusé pour {pid} : "
+                                + "; ".join(e.message for e in resp.user_errors),
+                                details={"run_id": rid},
+                            )
+                        else:
+                            written_flag = not resp.dry_run
+                            state["written"] += 1 if written_flag else 0
+                            # Client en simulation (POKESHOP_DRY_RUN=true) : rien n'a été écrit, vérification simulée.
+                            simulated = dry_run or resp.dry_run
+                            verified = self._verify(plan, pid, decision, at, simulated, critical, item_incidents, rid)
+                            if verified:
+                                state["verify_ok"] += 1
+                                if written_flag:
+                                    self._remember_publication(plan, pid, resp, at, rid, critical)
+                            else:
+                                state["verify_ko"] += 1
+                else:
+                    messages.extend(gate.messages)
+            elif state["api_refused"] and plan.send:
+                messages.append("Non envoyé : API boutique refusée plus tôt dans ce cycle (workflow suspendu).")
+            incidents.extend(i for i in item_incidents if i not in incidents)
+            items.append(
+                SyncItem(
+                    offer_ref=offer_ref,
+                    product_id=pid,
+                    match_status=match_status,
+                    decision_status=decision.status.value if decision is not None else None,
+                    decision_reasons=decision.reasons if decision is not None else (),
+                    plan_outcome=plan.outcome.value,
+                    action=plan.action,
+                    price_chf=plan.price_chf,
+                    gate_allowed=gate.allowed if gate else None,
+                    gate_reasons=gate.reasons if gate else (),
+                    written=written_flag,
+                    replayed=replayed,
+                    verified=verified,
+                    incident_ids=tuple(item_incidents),
+                    messages=tuple(dict.fromkeys(messages)),
+                )
+            )
+
         for pid, (offer, decision) in sorted(decisions.items()):
             listing = ctx.listings.get(pid)
             item_incidents: list[str] = []
@@ -990,159 +1180,23 @@ class SyncService:
                     },
                 )
             usable = None if decision.has(Reason.STALE_OFFER) else decision
-            reference = price_reference_24h(self.price_history, pid, at, listing.current_price_chf)
             stock_now = self.stock_status(listing, [o for o, _ in matched.get(pid, ())], at, ctx)
+            plan = resolve_plan(pid, listing, usable, stock_now, item_incidents)
+            apply(pid, plan, decision, item_incidents, offer_ref=_offer_ref(offer), match_status=MatchStatus.MATCHED.value)
 
-            def plan_for(lst: CatalogListing) -> PublicationPlan:
-                return build_publication(
-                    lst,
-                    usable,  # noqa: B023 - fermeture évaluée dans l'itération courante
-                    max_daily_change=params.max_daily_price_change,
-                    reference_price_24h=reference,  # noqa: B023
-                    price_validation=ctx.price_validations.get(pid),  # noqa: B023
-                    params=params,
-                    now=at,
-                    stoploss_blocked=pid in blocked_products,  # noqa: B023
-                    quarantined=self.incidents.is_quarantined(pid),  # noqa: B023
-                    sensitive_terms=sorted(terms),
-                    table=ctx.table,
-                    real_shop=production,
-                    stock_status=stock_now,  # noqa: B023
-                )
-
-            plan = plan_for(listing)
-            if plan.outcome is PlanOutcome.NOT_SENT and listing.shopify_product_id is None and (
-                set(plan.blockers) & HARD_BLOCKER_CODES
-            ):
-                # Revue SEC-09 : fiche du registre sans identifiant Shopify mais bloquée (quarantaine,
-                # stop-loss produit…) : l'état réel publié est relu (registre des fiches publiées, sinon
-                # lecture de la boutique en écriture réelle) ; publiée => dépublication protectrice.
-                known = self._known_shop_state(pid, plan.handle, dry_run, critical, item_incidents, rid)
-                if known is not None:
-                    gid, shop_status = known
-                    plan = plan_for(
-                        listing.model_copy(update={"shopify_product_id": gid, "shopify_status": ShopStatus(shop_status)})
-                    )
-            listing_counts[plan.outcome.value] = listing_counts.get(plan.outcome.value, 0) + 1
-            if plan.violations:
-                critical.append(f"{pid} : champ interne détecté dans la charge publique ({'; '.join(plan.violations)})")
-                self._incident(
-                    dry_run,
-                    item_incidents,
-                    code=IncidentCode.INC_07,
-                    product_key=pid,
-                    cause="Champ interne ou donnée personnelle dans la charge publique (envoi bloqué).",
-                    details={"run_id": rid, "violations": list(plan.violations)},
-                )
-            gate: GateDecision | None = None
-            written_flag = replayed = False
-            verified: bool | None = None
-            messages = list(plan.messages)
-            if plan.send and plan.action is not None and not api_refused:
-                gate = self.gate.authorize(
-                    WriteAction(plan.action),
-                    dry_run=dry_run,
-                    actor=self.actor,
-                    product_key=pid,
-                    workflow=WORKFLOW_SUPPLIER_TO_SHOP,
-                )
-                if gate.allowed:
-                    try:
-                        protective = plan.outcome is PlanOutcome.UNPUBLISH
-                        if protective:
-                            assert_protective_payload(plan.product_input or {})
-                        resp = self.client.product_set(
-                            plan.product_input or {},
-                            identifier=plan.identifier,
-                            idempotency_key=derive_idempotency_key("productSet", plan.identifier, plan.product_input),
-                            dry_run=dry_run,
-                            autonomy_level=gate.current_level,
-                            protective=protective,
-                        )
-                    except SensitiveFieldError as exc:
-                        refused += 1
-                        critical.append(f"{pid} : charge publique refusée par le client ({exc})")
-                        self._incident(
-                            dry_run,
-                            item_incidents,
-                            code=IncidentCode.INC_07,
-                            product_key=pid,
-                            cause="Champ interne détecté au dernier contrôle avant envoi (rien n'a été envoyé).",
-                            details={"run_id": rid, "violations": list(exc.violations)},
-                        )
-                    except ShopifyAccessDeniedError as exc:
-                        api_refused = True
-                        refused += 1
-                        messages.append(str(exc))
-                        self._incident(
-                            dry_run,
-                            item_incidents,
-                            code=IncidentCode.INC_08,
-                            workflow=WORKFLOW_SUPPLIER_TO_SHOP,
-                            cause=f"API boutique refusée : {exc}",
-                            details={"run_id": rid},
-                        )
-                    except ShopifyError as exc:
-                        refused += 1
-                        messages.append(f"{type(exc).__name__} : {exc}")
-                        self._incident(
-                            dry_run,
-                            item_incidents,
-                            code=IncidentCode.INC_08,
-                            workflow=WORKFLOW_SUPPLIER_TO_SHOP,
-                            cause=f"Écriture productSet en échec ({type(exc).__name__}) : {exc}",
-                            details={"run_id": rid},
-                        )
-                    else:
-                        replayed = resp.replayed
-                        if not resp.ok:
-                            refused += 1
-                            messages.extend(f"userError {e.code or ''} : {e.message}" for e in resp.user_errors)
-                            self._incident(
-                                dry_run,
-                                item_incidents,
-                                code=IncidentCode.INC_08,
-                                workflow=WORKFLOW_SUPPLIER_TO_SHOP,
-                                cause=f"productSet refusé pour {pid} : "
-                                + "; ".join(e.message for e in resp.user_errors),
-                                details={"run_id": rid},
-                            )
-                        else:
-                            written_flag = not resp.dry_run
-                            written += 1 if written_flag else 0
-                            # Client en simulation (POKESHOP_DRY_RUN=true) : rien n'a été écrit, vérification simulée.
-                            simulated = dry_run or resp.dry_run
-                            verified = self._verify(plan, pid, decision, at, simulated, critical, item_incidents, rid)
-                            if verified:
-                                verify_ok += 1
-                                if written_flag:
-                                    self._remember_publication(plan, pid, resp, at, rid, critical)
-                            else:
-                                verify_ko += 1
-                else:
-                    messages.extend(gate.messages)
-            elif api_refused and plan.send:
-                messages.append("Non envoyé : API boutique refusée plus tôt dans ce cycle (workflow suspendu).")
-            incidents.extend(i for i in item_incidents if i not in incidents)
-            items.append(
-                SyncItem(
-                    offer_ref=_offer_ref(offer),
-                    product_id=pid,
-                    match_status=MatchStatus.MATCHED.value,
-                    decision_status=decision.status.value,
-                    decision_reasons=decision.reasons,
-                    plan_outcome=plan.outcome.value,
-                    action=plan.action,
-                    price_chf=plan.price_chf,
-                    gate_allowed=gate.allowed if gate else None,
-                    gate_reasons=gate.reasons if gate else (),
-                    written=written_flag,
-                    replayed=replayed,
-                    verified=verified,
-                    incident_ids=tuple(item_incidents),
-                    messages=tuple(dict.fromkeys(messages)),
-                )
-            )
+        # Revue R3 SEC-09 (b) : une référence bloquée (quarantaine, stop-loss produit) dont l'offre manque dans
+        # la livraison du jour est **aussi** dépubliée si le registre (ou la boutique) la dit publiée.
+        for pid, listing in sorted(ctx.listings.items()):
+            if pid in decisions or not (pid in blocked_products or self.incidents.is_quarantined(pid)):
+                continue
+            item_incidents = []
+            plan = resolve_plan(pid, listing, None, self.stock_status(listing, [], at, ctx), item_incidents)
+            if plan.outcome is not PlanOutcome.UNPUBLISH:
+                continue  # jamais publiée (ou déjà en brouillon) : rien à faire
+            apply(pid, plan, None, item_incidents, offer_ref=f"{pid} (aucune offre ce jour)", match_status="SANS_OFFRE")
+        written, refused = state["written"], state["refused"]
+        api_refused = bool(state["api_refused"])
+        verify_ok, verify_ko = state["verify_ok"], state["verify_ko"]
         steps.append(
             StepResult(
                 step=SyncStep.LISTING,
@@ -1181,14 +1235,14 @@ class SyncService:
         critical: list[str],
         incidents: list[str],
         rid: str,
-    ) -> tuple[str, str] | None:
-        """(identifiant Shopify, statut) d'une fiche bloquée : registre du moteur, sinon boutique (écriture réelle).
+    ) -> PublishedState | None:
+        """État publié d'une fiche bloquée : registre du moteur, sinon boutique (écriture réelle) ; jamais la fiche.
 
         Lecture impossible en écriture réelle : erreur critique (la fiche pourrait rester achetable).
         """
         known = self.publications.get(pid)
         if known is not None:
-            return known.shopify_product_id, known.status
+            return known.state()
         if dry_run:
             return None
         try:
@@ -1206,7 +1260,10 @@ class SyncService:
             return None
         if remote is None or remote.status not in ("DRAFT", "ACTIVE"):
             return None
-        return remote.id, remote.status
+        try:
+            return PublishedState(shopify_product_id=remote.id, status=ShopStatus(remote.status))
+        except ValueError:
+            return None
 
     def _remember_publication(
         self, plan: PublicationPlan, pid: str, resp: Any, at: datetime, rid: str, critical: list[str]
@@ -1216,12 +1273,16 @@ class SyncService:
         status = plan.target_status.value if plan.target_status is not None else None
         if not isinstance(gid, str) or status is None:
             return
+        previous = self.publications.get(pid)
+        # Prix réellement écrit et vérifié ; une dépublication (statut seul) garde le dernier prix connu.
+        price = plan.price_chf if plan.price_chf is not None else (previous.price_chf if previous is not None else None)
         try:
             self.publications.record(
                 ShopPublication(
-                    product_id=pid, shopify_product_id=gid, status=status, handle=plan.handle, run_id=rid, recorded_at=at
+                    product_id=pid, shopify_product_id=gid, status=status, handle=plan.handle, run_id=rid, recorded_at=at,
+                    price_chf=price,
                 )
-            )
+            )  # fmt: skip
         except ShopStatePersistenceError as exc:
             critical.append(f"{pid} : état publié non enregistré ({exc}) : dépublication protectrice compromise")
         except ValueError:
@@ -1247,7 +1308,7 @@ class SyncService:
         self,
         plan: PublicationPlan,
         pid: str,
-        decision: PriceDecision,
+        decision: PriceDecision | None,
         at: datetime,
         dry_run: bool,
         critical: list[str],

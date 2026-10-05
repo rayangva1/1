@@ -14,6 +14,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+import jetons_roles as JR
 from fastapi.testclient import TestClient
 from pokeshop.api import API_TOKEN_HEADER, OWNER_TOKEN_HEADER, Services, create_app, guard_rules
 from pokeshop.incidents import LogNotifier
@@ -37,8 +38,7 @@ LISTING: dict[str, Any] = {
     "product_key": "FICTIF-P1", "identity": IDENTITY, "public_sku": "DSP-FICTIF_ALPHA-FR",
     "description_html": "<p>Display de l'extension Extension Fictive Alpha, en français, neuf et scellé.</p>",
     "images": [{"url": "https://cdn.example.org/fictif.jpg", "alt": "Display face avant", "rights": "OWN_PHOTO"}],
-    "stock_status": "stock_local", "content_text": "36 boosters", "content_validated": True,
-    "category_rule_validated": True, "fictif": True,
+    "stock_status": "stock_local", "content_text": "36 boosters", "fictif": True,
 }
 
 
@@ -60,13 +60,21 @@ class Clock:
         return self.now
 
 
-FINANCE_TOKEN = "FICTIF-jeton-agent-05-finance-0001"
-HF = {API_TOKEN_HEADER: FINANCE_TOKEN}  # photo du stop-loss : jeton nommé (valeur décisive)
+# Jetons nommés par rôle (matrice pokeshop.authz) ; le jeton commun H : lecture et aperçus seulement.
+HF, HPHOTO, HOPS, HCAT, HSYNC, HDATA = JR.HF, JR.HPHOTO, JR.HOPS, JR.HCAT, JR.HSYNC, JR.HDATA
+
+
+def approve(client: TestClient) -> None:
+    """Fiche déposée par l'agent catalogue, validée par la propriétaire (registre, revue R3 R2-NEW-05)."""
+    assert client.post("/catalog/items", headers=HCAT, json={"items": [{"product_id": "FICTIF-P1", "listing": LISTING}]}).status_code == 200
+    assert client.post("/catalog/approvals", headers=HO, json={
+        "product_id": "FICTIF-P1", "approved": True, "content_validated": True, "category_rule_validated": True,
+        "reason": "fiche FICTIVE relue par la propriétaire"}).status_code == 201
 
 
 def boot(clock: Clock | None = None, **extra: str) -> tuple[TestClient, Services]:
     env = {"POKESHOP_API_TOKEN_SHA256": sha256_hex(API_TOKEN), "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(OWNER_TOKEN),
-           "POKESHOP_AGENT_TOKENS_SHA256": f"agent-05-finance:{sha256_hex(FINANCE_TOKEN)}"}
+           "POKESHOP_AGENT_TOKENS_SHA256": JR.agent_tokens_env()}
     env.update(extra)
     svc = Services.build(load_settings(env), clock=clock or Clock(), notifier=LogNotifier())
     client = TestClient(create_app(services=svc))
@@ -95,7 +103,7 @@ def candidate(extension: str = "FICTIF_ALPHA") -> dict[str, Any]:
 
 
 def receive(client: TestClient, qty: int = 6, ref: str = "FICTIF-BL-0001") -> Any:
-    return client.post("/stock/receive", headers=H, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": qty, "ref": ref})
+    return client.post("/stock/receive", headers=HOPS, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": qty, "ref": ref})
 
 
 # ------------------------------------------------------------------ MOT-04 / SEC-03 : prix approuvés
@@ -108,7 +116,7 @@ def test_price_validation_is_no_longer_a_free_request_field() -> None:
     preview = client.post("/publish/preview", headers=H, json={"listing": LISTING, "quote": {"cost_chf": "100.00"},
                                                                "price_validation": fake})
     assert preview.status_code == 422
-    sync = client.post("/sync/run", headers=H, json={"supplier": "fictif_grossiste_a", "dry_run": False,
+    sync = client.post("/sync/run", headers=HSYNC, json={"supplier": "fictif_grossiste_a", "dry_run": False,
                                                      "source_path": "FICTIF_offres_grossiste_a.csv",
                                                      "price_validations": {"FICTIF-P1": fake}})
     assert sync.status_code == 422
@@ -128,7 +136,9 @@ def test_price_approval_requires_owner_token_and_is_audited() -> None:
     assert event.actor == "propriétaire" and event.payload["approval_id"] == approval["approval_id"]
     listed = body(client.get("/pricing/approvals", headers=H))["approvals"]
     assert [a["approval_id"] for a in listed] == [approval["approval_id"]]
-    revoked = client.post(f"/pricing/approvals/{approval['approval_id']}/revoke", headers=H,
+    assert client.post(f"/pricing/approvals/{approval['approval_id']}/revoke", headers=H,
+                       json={"reason": "FICTIF erreur de saisie"}).status_code == 403  # jeton commun : jamais
+    revoked = client.post(f"/pricing/approvals/{approval['approval_id']}/revoke", headers=HF,
                           json={"reason": "FICTIF erreur de saisie"})
     assert revoked.status_code == 200 and body(client.get("/pricing/approvals", headers=H))["approvals"] == []
 
@@ -137,6 +147,7 @@ def test_preview_uses_engine_approval_but_never_below_hard_floor() -> None:
     """SEC-03 (poc_api2 C) : coût 100, prix 9.90 « validé » => jamais publié sans exception C18."""
     client, _ = boot()
     receive(client)
+    approve(client)
     quote = {"listing": LISTING, "quote": {"cost_chf": "100.00"}}
     base = body(client.post("/publish/preview", headers=H, json=quote))["plan"]
     assert base["price_source"] == "ENGINE" and base["price_chf"] == "154.90"
@@ -197,7 +208,7 @@ def test_basket_invalid_amounts_are_422_not_500(change: dict[str, Any]) -> None:
 def test_reorder_invalid_budget_is_422() -> None:
     client, _ = boot()
     for budget in ("NaN", "-1000000", "1e999999"):
-        resp = client.post("/stock/reorder-proposal", headers=H, json={"candidates": [], "budget_available": budget})
+        resp = client.post("/stock/reorder-proposal", headers=HF, json={"candidates": [], "budget_available": budget})
         assert resp.status_code == 422, budget
 
 
@@ -207,21 +218,21 @@ def test_reorder_invalid_budget_is_422() -> None:
 def test_reorder_proposal_refuses_self_declared_budget_and_cap_exceptions() -> None:
     client, _ = boot()
     req = {"candidates": [candidate()], "budget_available": "5000"}
-    assert client.post("/stock/reorder-proposal", headers=H, json=req).status_code == 409  # stop-loss inconnu
-    assert client.post("/stoploss/state", headers=HF, json=state_payload()).status_code == 200
-    assert client.post("/stock/reorder-proposal", headers=H,
+    assert client.post("/stock/reorder-proposal", headers=HF, json=req).status_code == 409  # stop-loss inconnu
+    assert client.post("/stoploss/state", headers=HPHOTO, json=state_payload()).status_code == 200
+    assert client.post("/stock/reorder-proposal", headers=HF,
                        json={**req, "stock_budget_total": "100000"}).status_code == 422
     caps = {**req, "cap_exceptions": {"FICTIF_ALPHA": "1"}}
-    assert client.post("/stock/reorder-proposal", headers=H, json=caps).status_code == 403
+    assert client.post("/stock/reorder-proposal", headers=HF, json=caps).status_code == 403
     assert client.post("/stock/reorder-proposal", headers=HO, json=caps).status_code == 200
 
 
 def test_reorder_uses_photo_exposure_caller_can_only_add() -> None:
     client, _ = boot()
     exposed = state_payload(extensions=[{"extension": "FICTIF_ALPHA", "stock_value_at_cost": "750"}])
-    assert client.post("/stoploss/state", headers=HF, json=exposed).status_code == 200
+    assert client.post("/stoploss/state", headers=HPHOTO, json=exposed).status_code == 200
     req = {"candidates": [candidate()], "budget_available": "5000", "extension_exposure": {"FICTIF_ALPHA": "0"}}
-    data = body(client.post("/stock/reorder-proposal", headers=H, json=req))
+    data = body(client.post("/stock/reorder-proposal", headers=HF, json=req))
     assert data["proposal"]["lines"] == []  # 25 % × 3 000 = 750 déjà exposés : plafond atteint
     assert data["proposal"]["skipped"][0]["reason"] == "EXTENSION_CAP"
 
@@ -241,7 +252,9 @@ def test_stock_receive_feeds_the_registry_idempotently_and_survives_restart() ->
     client2, svc2 = boot()
     assert body(client2.post("/stock/sellable", headers=H, json={"sku": "DSP-FICTIF_ALPHA-FR"}))["sellable"] == 6
     assert svc2.restore_errors == {}
-    assert client2.post("/stock/receive", headers=H, json={"sku": "dsp minuscule", "qty": 1, "ref": "X-1"}).status_code == 422
+    assert client2.post("/stock/receive", headers=HOPS, json={"sku": "dsp minuscule", "qty": 1, "ref": "X-1"}).status_code == 422
+    assert client2.post("/stock/receive", headers=H, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": 50,
+                                                           "ref": "FICTIF-FANTOME"}).status_code == 403  # SEC-16
 
 
 def test_preview_public_status_follows_registry() -> None:
@@ -251,6 +264,7 @@ def test_preview_public_status_follows_registry() -> None:
     plan = body(client.post("/publish/preview", headers=H, json=quote))["plan"]
     assert plan["stock_status"] == "rupture" and plan["outcome"] == "SEND_DRAFT"
     receive(client)
+    approve(client)
     plan = body(client.post("/publish/preview", headers=H, json=quote))["plan"]
     assert plan["stock_status"] == "stock_local" and plan["outcome"] == "SEND_ACTIVE"
 
@@ -261,15 +275,15 @@ def test_preview_public_status_follows_registry() -> None:
 def test_import_route_applies_and_persists_the_previous_import_baseline() -> None:
     clock = Clock(datetime(2026, 10, 3, 8, 0, tzinfo=TZ))
     client, svc = boot(clock)
-    j1 = body(client.post("/imports/fictif_grossiste_a/run", headers=H,
+    j1 = body(client.post("/imports/fictif_grossiste_a/run", headers=HDATA,
                           json={"source_path": "FICTIF_offres_grossiste_a_J-1.csv"}))
     assert j1["status"] in ("ACCEPTED", "PARTIAL") and j1["baseline_known"] is True
     clock.now = datetime(2026, 10, 4, 8, 0, tzinfo=TZ)
     client2, _ = boot(clock)  # redémarrage : la référence est relue
-    incomplete = body(client2.post("/imports/fictif_grossiste_a/run", headers=H,
+    incomplete = body(client2.post("/imports/fictif_grossiste_a/run", headers=HDATA,
                                    json={"source_path": "FICTIF_offres_grossiste_a_incomplet.csv"}))
     assert incomplete["status"] == "QUARANTINED" and "INCOMPLETE_IMPORT" in incomplete["reason_counts"]
-    day = body(client2.post("/imports/fictif_grossiste_a/run", headers=H,
+    day = body(client2.post("/imports/fictif_grossiste_a/run", headers=HDATA,
                             json={"source_path": "FICTIF_offres_grossiste_a.csv"}))
     assert "PRICE_ANOMALY" in day["reason_counts"]  # ÷10 / ×10 vs J-1
 
@@ -375,7 +389,8 @@ from test_persistance_postgres import pg  # noqa: E402, F401, F811  (base jetabl
 
 def test_f3_registries_survive_restart_in_postgres(pg: dict[str, Any]) -> None:  # noqa: F811
     """Approbations de prix, références « dernier import » et stock local : journal d'état en base."""
-    env = {"POKESHOP_API_TOKEN_SHA256": sha256_hex(API_TOKEN), "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(OWNER_TOKEN)}
+    env = {"POKESHOP_API_TOKEN_SHA256": sha256_hex(API_TOKEN), "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(OWNER_TOKEN),
+           "POKESHOP_AGENT_TOKENS_SHA256": JR.agent_tokens_env()}
     cfg = load_settings(env)
 
     def start() -> tuple[TestClient, Services]:
@@ -386,7 +401,7 @@ def test_f3_registries_survive_restart_in_postgres(pg: dict[str, Any]) -> None: 
     assert client.post("/pricing/approvals", headers=HO, json={
         "product_key": "FICTIF-P1", "price": "149.90", "reason": "FICTIF prix marché validé"}).status_code == 201
     assert receive(client).status_code == 200
-    assert client.post("/imports/fictif_grossiste_a/run", headers=H,
+    assert client.post("/imports/fictif_grossiste_a/run", headers=HDATA,
                        json={"source_path": "FICTIF_offres_grossiste_a.csv"}).status_code == 200
     _, svc2 = start()
     assert svc2.restore_errors == {} and svc2.state_backend == "postgres"

@@ -28,6 +28,13 @@ Principes (BP §5-§7, SPEC §0.2 et §2.6) :
 * Référence en quarantaine ou bloquée par le stop-loss produit : dépubliée par une charge
   **minimale** ``{"status": "DRAFT"}`` (ni prix, ni contenu, possible sans prix courant) ;
   dernier prix validé conservé.
+* **Registres du moteur seulement** (revue R3, SEC-09 et R2-NEW-02, R2-NEW-05) : identifiant Shopify,
+  statut publié et dernier prix réellement publié viennent du registre des fiches publiées
+  (:class:`PublishedState`, journal ``shop_publications``), jamais de la fiche ; quand le prix du
+  moteur est écarté, le prix renvoyé est ce **dernier prix publié** (jamais un « prix courant »
+  déclaré), sinon rien n'est publié actif. Les validations humaines (fiche approuvée, contenu
+  validé, règle de catégorie) viennent du registre de la propriétaire (:class:`CatalogApprovalBook`,
+  ``POST /catalog/approvals``), liées au contenu exact de la fiche (:func:`listing_digest`).
 * **Statut de stock** recalculé par le moteur (stock local vendable, allocation ferme) : le statut
   déclaré par l'appelant n'est jamais publié tel quel ; nouvelle référence sans stock : brouillon.
 * **Petits produits** (règle active seulement avec un minimum de commande imposé par la boutique) :
@@ -72,6 +79,7 @@ from .models import (
     PricingParams,
     ProductIdentity,
     PromiseKind,
+    canonical_hash,
 )
 from .pricing import is_price_anomaly, price_floor_violations, q2, small_product_rule_active
 
@@ -91,6 +99,14 @@ __all__ = [
     "ReleaseDateStatus",
     "ShopStatus",
     "CatalogListing",
+    "ENGINE_OWNED_LISTING_FIELDS",
+    "HUMAN_VALIDATION_FIELDS",
+    "refuse_declared_listing_fields",
+    "listing_digest",
+    "PublishedState",
+    "ListingApproval",
+    "CatalogApprovalBook",
+    "CatalogApprovalPersistenceError",
     "PriceValidation",
     "PriceApprovalBook",
     "PriceApprovalPersistenceError",
@@ -601,18 +617,8 @@ class CatalogListing(FrozenModel):
     end_of_series: bool = False
     new_arrival: bool = False
     gift: bool = False
-    approved: bool = False
-    """Fiche approuvée par une personne (mises à jour automatiques au niveau 2)."""
-    category_rule_validated: bool = False
-    """Règle de catégorie validée par la propriétaire (publication automatique au niveau 3)."""
-    content_validated: bool = False
-    """Contenu confirmé par le fournisseur (BP §7)."""
-    shopify_product_id: str | None = None
-    """None = nouvelle référence (jamais publiée)."""
-    shopify_status: ShopStatus | None = None
     shopify_inventory_item_id: str | None = None
-    current_price_chf: Decimal | None = Field(default=None, gt=0)
-    """Prix public actuel sur la boutique (dernier prix validé)."""
+    """Interne (poussée du stock) : jamais accepté d'un appelant de l'API (422)."""
     fictif: bool = False
 
     @field_validator("public_sku")
@@ -638,13 +644,147 @@ class CatalogListing(FrozenModel):
             raise ValueError("SKU -PRECO réservé à la fiche de précommande")
         if self.release_date is None and self.release_date_status is not ReleaseDateStatus.INCONNUE:
             raise ValueError("statut de date de sortie sans date")
-        if self.shopify_product_id is not None and not re.match(
-            r"^gid://shopify/Product/\d+$", self.shopify_product_id
-        ):
-            raise ValueError("shopify_product_id : gid://shopify/Product/<n>")
-        if self.shopify_product_id is None and self.shopify_status is not None:
-            raise ValueError("statut boutique sans identifiant produit")
         return self
+
+
+ENGINE_OWNED_LISTING_FIELDS: frozenset[str] = frozenset(
+    {"shopify_product_id", "shopify_status", "shopify_inventory_item_id", "current_price_chf"}
+)
+"""Champs du **moteur** (registre des fiches publiées, historique des prix) : refusés dans toute entrée (422)."""
+HUMAN_VALIDATION_FIELDS: frozenset[str] = frozenset({"approved", "category_rule_validated", "content_validated"})
+"""Validations humaines : uniquement ``POST /catalog/approvals`` (jeton propriétaire), jamais dans une fiche."""
+
+
+def refuse_declared_listing_fields(data: Any) -> Any:
+    """Refuse (ValueError => 422) une fiche d'entrée qui déclare un champ du moteur ou une validation humaine."""
+    if isinstance(data, Mapping):
+        engine = sorted(ENGINE_OWNED_LISTING_FIELDS & set(data))
+        human = sorted(HUMAN_VALIDATION_FIELDS & set(data))
+        problems: list[str] = []
+        if engine:
+            problems.append(
+                f"{', '.join(engine)} : champ(s) du moteur (registre des fiches publiées, historique des prix), "
+                "jamais déclaré(s) par l'appelant"
+            )
+        if human:
+            problems.append(
+                f"{', '.join(human)} : validation humaine réservée à la propriétaire (POST /catalog/approvals, "
+                "jeton propriétaire), jamais déclarée dans une fiche"
+            )
+        if problems:
+            raise ValueError(" ; ".join(problems))
+    return data
+
+
+def listing_digest(listing: CatalogListing) -> str:
+    """Empreinte du contenu d'une fiche (hors statut de stock déclaré, recalculé par le moteur).
+
+    Une validation de la propriétaire porte sur **ce** contenu : une fiche modifiée ensuite par
+    l'agent catalogue n'est plus approuvée (« catalogue ne valide pas ses propres fiches »).
+    """
+    return canonical_hash(listing.model_dump(mode="json", exclude={"stock_status", "shopify_inventory_item_id"}))
+
+
+class PublishedState(FrozenModel):
+    """État **réellement écrit et vérifié** sur la boutique, lu dans le registre du moteur (jamais la fiche)."""
+
+    shopify_product_id: str = Field(pattern=r"^gid://shopify/Product/\d+$")
+    status: ShopStatus
+    price_chf: Decimal | None = Field(default=None, gt=0)
+    """Dernier prix réellement publié et vérifié (None : inconnu, rien n'est renvoyé actif sans prix du moteur)."""
+
+
+class CatalogApprovalPersistenceError(StateStoreError):
+    """Registre des validations de fiches non enregistré ou non relu : aucune validation utilisable."""
+
+
+class ListingApproval(FrozenModel):
+    """Validations humaines d'une fiche, **par la propriétaire** (journal ``catalog_approvals``).
+
+    Portent sur le contenu exact de la fiche (``listing_sha256``) : une fiche modifiée ensuite n'est
+    plus validée. La dernière inscription d'une référence l'emporte (retrait = valeurs ``false``).
+    """
+
+    product_key: str = Field(min_length=1, max_length=120)
+    listing_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    approved: bool = False
+    """Fiche approuvée (mises à jour automatiques au niveau 2)."""
+    content_validated: bool = False
+    """Contenu confirmé par écrit par le fournisseur, vérifié par la propriétaire (BP §7)."""
+    category_rule_validated: bool = False
+    """Règle de catégorie validée par la propriétaire (publication automatique au niveau 3)."""
+    reason: str = Field(min_length=10, max_length=500)
+    approved_by: Literal["propriétaire"] = "propriétaire"
+    approved_at: datetime
+
+    @field_validator("approved_at")
+    @classmethod
+    def _aware(cls, v: datetime) -> datetime:
+        if v.tzinfo is None or v.utcoffset() is None:
+            raise ValueError("horodatage avec fuseau horaire obligatoire")
+        return v
+
+    def applies_to(self, listing: CatalogListing) -> bool:
+        """Vrai si la validation porte sur ce contenu exact de fiche."""
+        return self.listing_sha256 == listing_digest(listing)
+
+
+class CatalogApprovalBook:
+    """Registre des validations de fiches de la propriétaire (écrit d'abord, appliqué ensuite ; relu au démarrage)."""
+
+    STREAM = "catalog_approvals"
+
+    def __init__(self, *, store: StateJournal | None = None) -> None:
+        self._lock = threading.RLock()
+        self._items: dict[str, ListingApproval] = {}
+        self._store = store
+
+    @classmethod
+    def restore(cls, store: StateJournal) -> CatalogApprovalBook:
+        """Relit le registre (:class:`CatalogApprovalPersistenceError` s'il est illisible)."""
+        book = cls()
+        try:
+            records = store.load()
+        except StateStoreError as exc:
+            raise CatalogApprovalPersistenceError(f"validations de fiches : {exc}") from exc
+        for n, record in enumerate(records, start=1):
+            try:
+                item = ListingApproval.model_validate(record["approval"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise CatalogApprovalPersistenceError(f"validations de fiches : enregistrement {n} illisible") from exc
+            book._items[item.product_key] = item
+        book._store = store
+        return book
+
+    def record(self, approval: ListingApproval) -> ListingApproval:
+        """Inscrit une validation (route propriétaire)."""
+        with self._lock:
+            if self._store is not None:
+                try:
+                    self._store.append({"approval": approval.model_dump(mode="json")})
+                except StateStoreError as exc:
+                    raise CatalogApprovalPersistenceError(f"validation de fiche non enregistrée ({exc})") from exc
+            self._items[approval.product_key] = approval
+            return approval
+
+    def get(self, product_key: str) -> ListingApproval | None:
+        """Dernière validation inscrite (quel que soit le contenu)."""
+        with self._lock:
+            return self._items.get(product_key)
+
+    def effective_for(self, listing: CatalogListing, *keys: str) -> ListingApproval | None:
+        """Validation applicable à cette fiche (même contenu), cherchée par ``keys`` puis ``product_key``."""
+        with self._lock:
+            for key in (*keys, listing.product_key):
+                item = self._items.get(key)
+                if item is not None:
+                    return item if item.applies_to(listing) else None
+        return None
+
+    def all(self) -> tuple[ListingApproval, ...]:
+        """Validations en vigueur, par référence."""
+        with self._lock:
+            return tuple(self._items[k] for k in sorted(self._items))
 
 
 MAX_APPROVAL_VALIDITY = timedelta(days=7)
@@ -833,6 +973,8 @@ class PublishBlocker(str, Enum):
     NO_SELLABLE_STOCK = "NO_SELLABLE_STOCK"
     CATEGORY_RULE_NOT_VALIDATED = "CATEGORY_RULE_NOT_VALIDATED"
     CONTENT_NOT_VALIDATED = "CONTENT_NOT_VALIDATED"
+    VALIDATION_OUTDATED = "VALIDATION_OUTDATED"
+    PUBLISHED_PRICE_BELOW_FLOOR = "PUBLISHED_PRICE_BELOW_FLOOR"
     MAX_QTY_MISSING = "MAX_QTY_MISSING"
     RELEASE_DATE_MISSING = "RELEASE_DATE_MISSING"
     DESCRIPTION_MISSING = "DESCRIPTION_MISSING"
@@ -870,6 +1012,12 @@ BLOCKER_LABELS_FR: dict[PublishBlocker, str] = {
     PublishBlocker.NO_SELLABLE_STOCK: "Nouvelle référence sans stock vendable ni allocation ferme : brouillon.",
     PublishBlocker.CATEGORY_RULE_NOT_VALIDATED: "Règle de catégorie non validée : nouvelle référence en brouillon.",
     PublishBlocker.CONTENT_NOT_VALIDATED: "Contenu non confirmé par écrit (boutique.contenu_valide).",
+    PublishBlocker.VALIDATION_OUTDATED: (
+        "Validation de la propriétaire portant sur un autre contenu de fiche : fiche modifiée depuis, à revalider."
+    ),
+    PublishBlocker.PUBLISHED_PRICE_BELOW_FLOOR: (
+        "Dernier prix publié sous le plancher du coût rendu actuel : rien n'est renvoyé, revue humaine."
+    ),
     PublishBlocker.MAX_QTY_MISSING: "Quantité maximale obligatoire pour une nouveauté ou une précommande.",
     PublishBlocker.RELEASE_DATE_MISSING: "Précommande sans date de sortie confirmée ou estimée.",
     PublishBlocker.DESCRIPTION_MISSING: "Description absente.",
@@ -1050,8 +1198,15 @@ def build_publication(
     table: ExtensionTable | None = None,
     real_shop: bool = False,
     stock_status: StockStatus | None = None,
+    published: PublishedState | None = None,
+    validations: ListingApproval | None = None,
 ) -> PublicationPlan:
     """Plan de publication d'une fiche selon les règles BP §5-§7 (voir l'en-tête du module).
+
+    ``published`` : état écrit et vérifié lu dans le **registre du moteur** (identifiant Shopify, statut,
+    dernier prix réellement publié) ; None = référence jamais publiée par le moteur. ``validations`` :
+    validations de la **propriétaire** (registre ``catalog_approvals``), prises en compte seulement si
+    elles portent sur ce contenu exact de fiche. Aucun champ de la fiche ne remplace ces registres.
 
     ``reference_price_24h`` : prix public d'il y a 24 h (base du plafond journalier).
     ``price_validation`` : approbation de la propriétaire **lue dans le registre du moteur**
@@ -1065,6 +1220,15 @@ def build_publication(
     blockers: list[PublishBlocker] = []
     reviews: list[PublishBlocker] = []
     content: list[PublishBlocker] = []
+    flags = validations
+    if flags is not None and not flags.applies_to(listing):
+        reviews.append(PublishBlocker.VALIDATION_OUTDATED)
+        flags = None
+    # Fiche publiée sous une règle de catégorie validée par la propriétaire : tenue pour approuvée pour ses mises
+    # à jour (sinon la publication automatique du niveau 3 serait dépubliée au cycle suivant).
+    approved = flags is not None and (flags.approved or flags.category_rule_validated)
+    content_ok = flags is not None and flags.content_validated
+    category_ok = flags is not None and flags.category_rule_validated
     if stock_status is not None and stock_status is not listing.stock_status:
         reviews.append(PublishBlocker.STOCK_STATUS_CORRECTED)
         listing = listing.model_copy(update={"stock_status": stock_status})
@@ -1095,8 +1259,8 @@ def build_publication(
     if listing.description_html and _UNSAFE_HTML_RE.search(listing.description_html):
         blockers.append(PublishBlocker.UNSAFE_HTML)
 
-    # -- prix
-    current = listing.current_price_chf
+    # -- prix : dernier prix **réellement publié** (registre du moteur), jamais un prix déclaré par l'appelant
+    current = published.price_chf if published is not None else None
     new_price: Decimal | None = None
     source: Literal["ENGINE", "HUMAN_VALIDATED", "UNCHANGED"] | None = None
     approval = price_validation
@@ -1145,13 +1309,23 @@ def build_publication(
         approval = None
     if new_price is not None and current is not None and q2(new_price) == q2(current):
         source = "UNCHANGED"
+    if (
+        new_price is None
+        and current is not None
+        and decision is not None
+        and decision.landed_cost is not None
+        and params is not None
+        and price_floor_violations(current, decision.landed_cost, params, small_product=decision.small_product)
+    ):
+        reviews.append(PublishBlocker.PUBLISHED_PRICE_BELOW_FLOOR)
+        current = None
     price = new_price if new_price is not None else current
     if new_price is None and current is not None:
         source = "UNCHANGED"
 
     # -- contenu
     authorized = [img for img in listing.images if img.authorized]
-    if not listing.content_validated or not (listing.content_text or "").strip():
+    if not content_ok or not (listing.content_text or "").strip():
         content.append(PublishBlocker.CONTENT_NOT_VALIDATED)
     if listing.max_qty is None and (listing.new_arrival or listing.stock_status is StockStatus.PRECOMMANDE):
         content.append(PublishBlocker.MAX_QTY_MISSING)
@@ -1165,16 +1339,17 @@ def build_publication(
         content.append(PublishBlocker.IMAGE_RIGHTS_MISSING)
 
     # -- issue
-    existing = listing.shopify_product_id is not None
+    existing = published is not None
     hard = [b for b in blockers if b in _HARD]
     outcome = PlanOutcome.NOT_SENT
     target: ShopStatus | None = None
     action: str | None = None
     if existing:
-        if hard or not listing.approved:
-            if not listing.approved and not hard:
+        assert published is not None
+        if hard or not approved:
+            if not approved and not hard:
                 reviews.append(PublishBlocker.NOT_APPROVED)
-            if listing.shopify_status is ShopStatus.ACTIVE:
+            if published.status is ShopStatus.ACTIVE:
                 # Dépublication protectrice : statut seulement, jamais de prix ni de contenu (SEC-09, SEC-15).
                 outcome, target, action = PlanOutcome.UNPUBLISH, ShopStatus.DRAFT, "UNPUBLISH_PRODUCT"
                 price, source, approval = None, None, None
@@ -1186,7 +1361,7 @@ def build_publication(
             outcome, target, action = PlanOutcome.SEND_ACTIVE, ShopStatus.ACTIVE, "UPDATE_APPROVED_PRODUCT"
     elif not hard and new_price is not None:
         auto = (
-            listing.category_rule_validated
+            category_ok
             and not content
             and decision is not None
             and decision.status in (DecisionStatus.OK, DecisionStatus.REVIEW)
@@ -1195,7 +1370,7 @@ def build_publication(
         if auto:
             outcome, target, action = PlanOutcome.SEND_ACTIVE, ShopStatus.ACTIVE, "PUBLISH_NEW_PRODUCT"
         else:
-            if not listing.category_rule_validated:
+            if not category_ok:
                 reviews.append(PublishBlocker.CATEGORY_RULE_NOT_VALIDATED)
             if listing.stock_status is StockStatus.RUPTURE:
                 reviews.append(PublishBlocker.NO_SELLABLE_STOCK)
@@ -1210,9 +1385,9 @@ def build_publication(
     product_input: dict[str, Any] | None = None
     identifier: dict[str, str] | None = None
     violations: list[str] = []
-    if outcome is PlanOutcome.UNPUBLISH and listing.shopify_product_id is not None:
+    if outcome is PlanOutcome.UNPUBLISH and published is not None:
         product_input = {"status": ShopStatus.DRAFT.value}
-        identifier = {"id": listing.shopify_product_id}
+        identifier = {"id": published.shopify_product_id}
     elif outcome is not PlanOutcome.NOT_SENT and title is not None and price is not None and target is not None:
         ext_name = _extension_name(ident, table)
         small = decision.small_product if decision is not None else (
@@ -1245,7 +1420,7 @@ def build_publication(
         }
         if listing.description_html:
             product_input["descriptionHtml"] = listing.description_html
-        identifier = {"id": listing.shopify_product_id} if listing.shopify_product_id else {"handle": handle}
+        identifier = {"id": published.shopify_product_id} if published is not None else {"handle": handle}
         violations = sensitive_violations(product_input, sensitive_terms=sensitive_terms)
         if violations:
             blockers.append(PublishBlocker.SENSITIVE_FIELD)

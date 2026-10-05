@@ -287,7 +287,7 @@ def test_recette_summary_mismatch(ctx: v.Context) -> None:
 
 
 def test_recette_total_mismatch(ctx: v.Context) -> None:
-    edit(ctx.ops / "RECETTE_AVANT_OUVERTURE.md", "| **Total** | **69** |", "| **Total** | **70** |")
+    edit(ctx.ops / "RECETTE_AVANT_OUVERTURE.md", "| **Total** | **70** |", "| **Total** | **71** |")
     assert_flags(v.check_recette(ctx), "total")
 
 

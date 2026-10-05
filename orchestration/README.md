@@ -14,7 +14,7 @@
 | `n8n/04_incident.json` | Moteur (`/webhook/pokeshop-incidents`) ; passerelle (`/webhook/pokeshop-incident-reprise`) ; **Error Trigger** | Notification cause + action (S1 immédiat, S2 dans l'heure, S3 digest) ; reprise après **lecture** du test enregistré (par l'agent 12 QA avec son jeton nommé, ou la propriétaire) et validation ; incident pour toute exécution en échec, **sur la clé canonique du workflow en échec** (sa suspension l'arrête vraiment) | `POST /incidents`, `GET /incidents`, `POST /incidents/{id}/resume` | Emails, Slack | **1, en premier** |
 | `n8n/05_digest_quotidien.json` | Chaque jour 07:45 | Digest : **1. étoile polaire** (`GET /northstar`), **2. stop-loss** (avec l'avertissement « alertes temps réel inactives » tant que le moteur simule ses notifications), puis KPI du jour, cycles de synchronisation propres et décisions attendues | `GET /northstar`, `GET /stoploss/status`, `GET /dashboard/daily`, `GET /sync/history`, `GET /health` | Email, Slack | 1 |
 | `n8n/06_marketing_automations.json` | Passerelle agent 11 (réception contrôlée) ; Shopify `orders/fulfilled`, `fulfillment_events/create`, `customers/update` ; **liens des emails** (`alertes-desinscrire`, `avis-refus`, `alertes-preferences`, `alertes-confirmer`) | Réception en stock local puis alerte « nouveau stock local » aux inscrits consentants (**garde-fous** : incident ouvert, stock sous le seuil, marge insuffisante, gel), suivi d'expédition, demande d'avis J+7, **désinscription et refus d'avis propagés, page affichée après traitement**, préférences, double opt-in | `POST /stock/receive`, `GET /incidents`, `GET /stoploss/status`, `POST /stock/sellable`, `POST /incidents` | Outil d'emailing, Shopify | Liens des emails : dès l'outil d'emailing ; envois : 3 |
-| `n8n/07_stoploss_watch.json` | Toutes les heures (:10) ; relevés de trésorerie (:05, déclencheur désactivé) | **Photo d'activité construite par le moteur** à partir de ses registres, puis si l'état **change** : **gel via API**, coupure des campagnes, **notification immédiate** (cause, chiffres, action, comment réarmer) ; relevés des soldes PayPal et banque | `POST /stoploss/state/refresh`, `GET /stoploss/status`, `POST /stoploss/freeze`, `POST /treasury/paypal-balance`, `POST /treasury/bank-balance` (jeton nommé `n8n-07-stoploss`) | Lectures PayPal et banque, plateforme publicitaire, email, Slack | 1, juste après 04 |
+| `n8n/07_stoploss_watch.json` | Toutes les heures (:10) ; relevés de trésorerie (:05, déclencheur désactivé) | **Photo d'activité construite par le moteur** à partir de ses registres, puis si l'état **change** : **gel via API**, coupure des campagnes, **notification immédiate** (cause, chiffres, action, comment réarmer) ; relevés des soldes PayPal et banque | `POST /stoploss/state/refresh`, `GET /stoploss/status`, `POST /stoploss/freeze` (jeton `n8n-07-stoploss`) ; `POST /treasury/paypal-balance`, `POST /treasury/bank-balance` (jeton `connecteur-tresorerie`) | Lectures PayPal et banque, plateforme publicitaire, email, Slack | 1, juste après 04 |
 | `n8n/08_mandat_depenses.json` | Passerelle agents (`/webhook/pokeshop-depense`) | `POST /mandate/check` (sans trésorerie : le moteur lit ses registres) → APPROVED (préparer, journaliser) / NEEDS_HUMAN_APPROVAL (**validation 1 clic**, formulaire 24 h) / REJECTED ; contrôle impossible ou dépenses suspendues = refus | `GET /incidents`, `POST /mandate/check` (`record: true`) | Paiement PayPal, emails, routes d'exécution attendues | 1 (contrôle) ; exécution : mandat signé + recette |
 
 Les exports sont générés par `orchestration/build_workflows.py` (source unique, identifiants stables) : ne pas les éditer à la main, modifier le générateur puis `python orchestration/build_workflows.py`.
@@ -39,13 +39,13 @@ Les exports sont générés par `orchestration/build_workflows.py` (source uniqu
 
 ## 3. Prérequis
 
-- [ ] L'API du moteur tourne (docker compose `api`, ou `uvicorn pokeshop.api:create_app --factory`) avec `POKESHOP_API_TOKEN_SHA256` configuré (sinon 503).
-- [ ] n8n tourne (docker compose `n8n`). **Version testée : n8n 2.41.6** (import, exécution, webhooks, formulaire ; §10). Épingler cette version dans `N8N_IMAGE` après votre propre test.
-- [ ] Jeton d'API en main (celui dont l'empreinte est `POKESHOP_API_TOKEN_SHA256`). **Jamais** le jeton propriétaire dans n8n.
-- [ ] Jeton **nommé** du workflow 07 (`n8n-07-stoploss`, empreinte dans `POKESHOP_AGENT_TOKENS_SHA256`) : la photo du stop-loss et les soldes sont déposés par un autre jeton que celui qui demande une dépense (sinon `TREASURY_UNVERIFIED` : validation humaine). Le **jeton commun ne fournit jamais une valeur décisive** : `POST /stoploss/state`, `/treasury/paypal-balance`, `/treasury/bank-balance` et `/treasury/balance-items` lui répondent **403** (jeton nommé obligatoire).
-- [ ] Jeton **nommé** de l'agent 12 QA (`agent-12-qa`) : lui seul (ou la propriétaire) enregistre un test de correction **réussi** (`POST /incidents/{id}/test`), avec un `test_ref` = `run_id` d'un cycle `/sync/run` **PROPRE** en simulation, postérieur à l'ouverture et portant sur la référence (ou le fournisseur) de l'incident ; le jeton commun et le jeton qui a ouvert l'incident reçoivent 403. La passerelle de 04 (jeton commun) ne fait que **lire** ce test.
-- [ ] Moteur alimenté : catalogue validé (`POST /catalog/items`) et frais par fournisseur (`POST /catalog/cost-inputs`) par l'agent catalogue, taux de change du jour par la propriétaire (`POST /fx/rates`, **seule source de taux** : aucun `fx_*` accepté ailleurs, 422) ; apports et retraits de capital par la propriétaire (`POST /capital/movements`, son jeton, **seule source** : une photo qui déclare des `capital_movements` est refusée, 422) ; dettes et créances déclarées chaque jour par l'agent finance avec son jeton nommé (`POST /treasury/balance-items` : précommandes encaissées non livrées, factures non payées, TVA due, versements en transit ; listes vides **attestées** s'il n'y en a pas) ; sinon 01 répond 409 « catalogue requis » et 07 « sources manquantes ». La photo est datée de sa source **la plus ancienne** : le stop-loss l'accepte jusqu'à 24 h, mais une dépense n'est approuvée sans vous que si relevés et déclaration ont moins d'une heure (fraîcheur du mandat).
-- [ ] Pour les déclencheurs Shopify, les liens des emails et les formulaires : une **URL publique HTTPS** de n8n (`N8N_WEBHOOK_URL` dans le fichier de variables **hors du dépôt** `/etc/pokeshop/api.env`, lu par `scripts/compose.sh`, transmise à n8n comme `WEBHOOK_URL` par le compose) — le compose publie n8n sur 127.0.0.1 seulement (décision §11).
+- [ ] L'API du moteur tourne (`scripts/compose.sh up -d db db-migrate db-backup api n8n`, ou `uvicorn pokeshop.api:create_app --factory` en local) avec les empreintes des jetons par rôle `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` configurées (sinon 503).
+- [ ] n8n tourne (service `n8n` de la même commande `scripts/compose.sh`). **Version testée : n8n 2.41.6** (import, exécution, webhooks, formulaire ; §10). Épingler cette version dans `N8N_IMAGE` après votre propre test.
+- [ ] **Authentification : un jeton par rôle, refus par défaut.** Chaque route du moteur déclare les rôles admis dans la matrice versionnée `engine/pokeshop/authz.py` (table : `docs/08-agents/MATRICE_API.md`) ; une route absente est refusée. n8n n'utilise **jamais** le jeton commun (lecture et aperçus seulement : toute écriture lui répond 403) ni le jeton propriétaire : chaque workflow a son credential nommé du rôle de son jeton (§4), dont l'empreinte est dans `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` (ex. `n8n-01-sync` → `POKESHOP_ROLE_TOKEN_SHA256_N8N_01_SYNC`). Les credentials ne sont que des **références** dans les exports ; les jetons en clair ne vivent que dans n8n (chiffrés par `N8N_ENCRYPTION_KEY`) et au coffre.
+- [ ] Séparation des rôles : la photo du stop-loss est construite par `n8n-07-stoploss`, les soldes relevés par `connecteur-tresorerie`, la dépense demandée par un autre rôle (`n8n-08-mandat` n'est qu'un relais : trésorerie toujours non vérifiée, validation humaine) ; la réception physique (06, passerelle `pokeshop-stock-recu`) est déclarée avec le jeton `operations-sav`.
+- [ ] Jeton de l'agent 12 QA (`qa-conformite`, hors n8n) : lui seul (ou la propriétaire) enregistre un test de correction **réussi** (`POST /incidents/{id}/test`), avec un `test_ref` = `run_id` d'un cycle `/sync/run` **PROPRE** en simulation, catalogue du registre, postérieur à l'ouverture, **lancé par un autre principal** (ex. `n8n-01-sync`), sur le fournisseur et la référence de l'incident ; tout autre jeton reçoit 403. La passerelle de 04 (`n8n-04-incidents`) ne fait que **lire** ce test, puis reprend un incident non critique.
+- [ ] Moteur alimenté : fiches (`POST /catalog/items`, jeton `catalogue`) **validées par la propriétaire** (`POST /catalog/approvals`, son jeton) et frais par fournisseur (`POST /catalog/cost-inputs`, jeton `finance-pricing`), taux de change du jour par la propriétaire (`POST /fx/rates`, **seule source de taux** : aucun `fx_*` accepté ailleurs, 422) ; apports et retraits de capital par la propriétaire (`POST /capital/movements`, son jeton, **seule source** : une photo qui déclare des `capital_movements` est refusée, 422) ; dettes et créances déclarées chaque jour par l'agent finance avec son jeton `finance-pricing` (`POST /treasury/balance-items` : précommandes encaissées non livrées, factures non payées, TVA due, versements en transit ; listes vides **attestées** s'il n'y en a pas) ; sinon 01 répond 409 « catalogue requis » et 07 « sources manquantes ». La photo est datée de sa source **la plus ancienne** : le stop-loss l'accepte jusqu'à 24 h, mais une dépense n'est approuvée sans vous que si relevés et déclaration ont moins d'une heure (fraîcheur du mandat).
+- [ ] Pour les déclencheurs Shopify, les liens des emails et les formulaires : une **URL publique HTTPS** de n8n (`N8N_WEBHOOK_URL` dans le fichier de variables **hors du dépôt** `/etc/pokeshop/api.env`, lu par `scripts/compose.sh`, transmise à n8n comme `WEBHOOK_URL` par le compose) — n8n est exposé en HTTPS public **dès J8 (B27)**, avant la landing (webhook d'inscription et liens des emails seulement), puis pour les webhooks Shopify et les formulaires à J26 (B23) ; le compose publie n8n sur 127.0.0.1, le proxy inverse limite les chemins exposés (§11).
 - [ ] Moteur : `POKESHOP_NOTIFY_DRY_RUN=false` (valeur de `.env.example` et du compose) : les incidents partent vers 04 ; `true` les simule (alertes temps réel inactives, signalé par `/health` et le digest).
 
 ## 4. Créer les identifiants (credentials) — avant l'import
@@ -54,9 +54,17 @@ Dans n8n : **Credentials → Create credential**, avec **exactement** ces noms (
 
 | Nom exact | Type n8n | Contenu | Utilisé par | Quand |
 |---|---|---|---|---|
-| `Pokeshop API — X-Pokeshop-Token` | Header Auth | Name `X-Pokeshop-Token`, Value = jeton d'API (commun, non attribuable : aucune valeur décisive) | Appels du moteur (01-06, 08) | Dès le niveau 1 |
-| `Pokeshop API — jeton nommé n8n-07-stoploss` | Header Auth | Name `X-Pokeshop-Token`, Value = jeton nommé `n8n-07-stoploss` | 07 (photo, gel, soldes) | Dès le niveau 1 |
-| `Passerelle agents — X-Pokeshop-Gateway` | Header Auth | Name `X-Pokeshop-Gateway`, Value = secret aléatoire (coffre), donné aux seuls agents | Webhooks 03, 04 (reprise), 06 (réception), 08 | Dès le niveau 1 |
+| `Pokeshop API — jeton nommé n8n-01-sync` | Header Auth | Name `X-Pokeshop-Token`, Value = jeton du rôle `n8n-01-sync` (empreinte : `POKESHOP_ROLE_TOKEN_SHA256_N8N_01_SYNC`) | 01 (import, cycle `/sync/run`, incidents) | Dès le niveau 1 |
+| `Pokeshop API — jeton nommé n8n-02-commandes` | Header Auth | Name `X-Pokeshop-Token`, Value = jeton du rôle `n8n-02-commandes` (empreinte : `POKESHOP_ROLE_TOKEN_SHA256_N8N_02_COMMANDES`) | 02 (commandes expédiées, avoirs, étoile polaire) | Dès le niveau 1 |
+| `Pokeshop API — jeton nommé n8n-03-factures` | Header Auth | Name `X-Pokeshop-Token`, Value = jeton du rôle `n8n-03-factures` (empreinte : `POKESHOP_ROLE_TOKEN_SHA256_N8N_03_FACTURES`) | 03 (factures, incidents) | Dès le niveau 1 |
+| `Pokeshop API — jeton nommé n8n-04-incidents` | Header Auth | Name `X-Pokeshop-Token`, Value = jeton du rôle `n8n-04-incidents` (empreinte : `POKESHOP_ROLE_TOKEN_SHA256_N8N_04_INCIDENTS`) | 04 (lecture du test, reprise et clôture d'un incident non critique) | Dès J8 (B27, 04 actif avant la landing) |
+| `Pokeshop API — jeton nommé n8n-05-digest` | Header Auth | Name `X-Pokeshop-Token`, Value = jeton du rôle `n8n-05-digest` (empreinte : `POKESHOP_ROLE_TOKEN_SHA256_N8N_05_DIGEST`) | 05 (lectures du digest) | Dès le niveau 1 |
+| `Pokeshop API — jeton nommé n8n-06-marketing` | Header Auth | Name `X-Pokeshop-Token`, Value = jeton du rôle `n8n-06-marketing` (empreinte : `POKESHOP_ROLE_TOKEN_SHA256_N8N_06_MARKETING`) | 06 (stock vendable, incidents des liens des emails) | Dès J8 (B27) |
+| `Pokeshop API — jeton nommé operations-sav` | Header Auth | Name `X-Pokeshop-Token`, Value = jeton du rôle `operations-sav` (empreinte : `POKESHOP_ROLE_TOKEN_SHA256_OPERATIONS_SAV`) | 06 (passerelle `pokeshop-stock-recu` : réception contrôlée) | Dès le niveau 1 |
+| `Pokeshop API — jeton nommé n8n-07-stoploss` | Header Auth | Name `X-Pokeshop-Token`, Value = jeton du rôle `n8n-07-stoploss` (empreinte : `POKESHOP_ROLE_TOKEN_SHA256_N8N_07_STOPLOSS`) | 07 (photo `/stoploss/state/refresh`, gel) | Dès le niveau 1 |
+| `Pokeshop API — jeton nommé connecteur-tresorerie` | Header Auth | Name `X-Pokeshop-Token`, Value = jeton du rôle `connecteur-tresorerie` (empreinte : `POKESHOP_ROLE_TOKEN_SHA256_CONNECTEUR_TRESORERIE`) | 07 (relevés de soldes PayPal et banque, désactivés) | Dès le niveau 1 |
+| `Pokeshop API — jeton nommé n8n-08-mandat` | Header Auth | Name `X-Pokeshop-Token`, Value = jeton du rôle `n8n-08-mandat` (empreinte : `POKESHOP_ROLE_TOKEN_SHA256_N8N_08_MANDAT`) | 08 (relais `POST /mandate/check`, révocation) | Dès le niveau 1 |
+| `Passerelle agents — X-Pokeshop-Gateway` | Header Auth | Name `X-Pokeshop-Gateway`, Value = secret aléatoire (coffre), donné aux seuls agents | Webhooks 03, 04 (reprise), 06 (réception), 08 | Dès J8 (04 et 06 actifs) |
 | `Formulaires propriétaire — Basic Auth` | Basic Auth | Utilisateur et mot de passe connus de la **propriétaire seule** | Formulaires de validation (03, 04, 08) | Dès le niveau 1 |
 | `SMTP boîte des agents` | SMTP | Serveur, port, compte de la boîte dédiée aux agents | Emails à la responsable | Après test d'envoi |
 | `Slack alertes propriétaire` | Slack API | Jeton du canal d'alerte (facultatif) | 04, 05, 07 | Si ce canal est choisi |
@@ -72,7 +80,7 @@ Dans n8n : **Credentials → Create credential**, avec **exactement** ces noms (
 **Par l'interface n8n**
 
 1. Ouvrir n8n (`http://127.0.0.1:5678`), créer le compte propriétaire n8n.
-2. Créer les credentials du §4 (au minimum les trois premiers).
+2. Créer les credentials du §4 (au minimum les dix credentials « Pokeshop API — jeton nommé … », la passerelle et le Basic Auth).
 3. **Workflows → Create workflow → menu « … » → Import from File…** : importer `04_incident.json` en premier, puis 07, 05, 08, 01, 03, 02, 06 (un workflow par import). Enregistrer. **Ne pas renommer les workflows** : le workflow d'erreur 04 retrouve la clé canonique d'un workflow en échec par son identifiant, à défaut par son nom (sinon l'incident ne suspend pas le bon workflow).
 4. Dans chaque workflow, ouvrir le nœud **« Paramètres »** (ou « Paramètres — … ») : vérifier `api_base_url` (docker compose : `http://api:8000`), remplacer `responsable_email`, laisser `simulation = true`.
 5. Ouvrir chaque nœud marqué en rouge (credential introuvable) et choisir le credential du même nom.
@@ -80,11 +88,11 @@ Dans n8n : **Credentials → Create credential**, avec **exactement** ces noms (
 7. Tester : bouton **Execute workflow** sur 05, puis 07, puis 01 ; lire le résultat de chaque nœud (aucun email ne part : nœuds désactivés).
 8. Activer selon le §7 : n8n 2.x → bouton **Publish** ; n8n 1.x → interrupteur **Active**.
 
-**Par la ligne de commande (docker compose)** — le compose monte `./orchestration/n8n` en lecture seule sur `/workflows` :
+**Par la ligne de commande** — le compose monte `./orchestration/n8n` en lecture seule sur `/workflows` ; toujours passer par `scripts/compose.sh` (un `docker compose` nu n'a pas le fichier de variables et échoue sur la première variable obligatoire) :
 
 ```bash
-docker compose exec n8n n8n import:workflow --separate --input=/workflows
-docker compose exec n8n n8n publish:workflow --id=pkshp04Incidents   # n8n 2.x ; puis redémarrer n8n
+scripts/compose.sh exec n8n n8n import:workflow --separate --input=/workflows
+scripts/compose.sh exec n8n n8n publish:workflow --id=pkshp04Incidents   # n8n 2.x ; puis scripts/compose.sh restart n8n
 ```
 
 Les identifiants des workflows sont conservés : le workflow d'erreur (04) est déjà relié. Pour relier aussi les credentials sans clic, créer une table `{clé: id}` (ids lus dans l'URL de chaque credential, **aucun secret**) puis :
@@ -93,13 +101,13 @@ Les identifiants des workflows sont conservés : le workflow d'erreur (04) est d
 python orchestration/build_workflows.py --credentials-map ids.json --out /chemin/hors-depot
 ```
 
-Clés : `api`, `api_photo`, `gateway`, `owner_form`, `smtp`, `slack`, `shopify`, `emailing`, `ads`, `paypal`, `supplier`, `bank`.
+Clés : `api_01` à `api_06` et `api_08` (credential du rôle de chaque workflow), `api_stock` (`operations-sav`, passerelle de réception de 06), `api_photo` (`n8n-07-stoploss`), `api_tresorerie` (`connecteur-tresorerie`), `gateway`, `owner_form`, `smtp`, `slack`, `shopify`, `emailing`, `ads`, `paypal`, `supplier`, `bank`.
 
 ## 6. Nœuds désactivés : quand les activer
 
 | Workflow | Nœud | Condition d'activation |
 |---|---|---|
-| 01 | Récupérer le flux autorisé ; Déposer le fichier | Accès **écrit** du fournisseur (API, fichier fourni ou export approuvé) ; volume `imports` du compose monté sur `/data/imports` (n8n en écriture, API en lecture, `N8N_RESTRICT_FILE_ACCESS_TO=/data/imports` déjà câblé) : `POKESHOP_IMPORTS_DIR=/data/imports` côté moteur, et donner le dossier à l'utilisateur `node` (`docker compose run --rm --user root n8n chown node:node /data/imports`) |
+| 01 | Récupérer le flux autorisé ; Déposer le fichier | Accès **écrit** du fournisseur (API, fichier fourni ou export approuvé) ; volume `imports` du compose monté sur `/data/imports` (n8n en écriture, API en lecture, `N8N_RESTRICT_FILE_ACCESS_TO=/data/imports` déjà câblé) : `POKESHOP_IMPORTS_DIR=/data/imports` côté moteur, et donner le dossier à l'utilisateur `node` (`scripts/compose.sh run --rm --no-deps --user root --entrypoint chown n8n node:node /data/imports`) |
 | 01 | Alerter la responsable (email) | Credential SMTP testé |
 | 02 | Réserver le stock local — route moteur attendue | Route `POST /orders/paid` livrée par l'agent integrations et recettée |
 | 02 | Tâche colis HUMAINE, Colis en retard, Résumé du rapprochement (emails) | Credential SMTP testé |
@@ -114,7 +122,13 @@ Clés : `api`, `api_photo`, `gateway`, `owner_form`, `smtp`, `slack`, `shopify`,
 
 ## 7. Ordre d'activation par niveau d'autonomie (BP §13)
 
-**Niveau 1 — tout en simulation et brouillons**
+**J8, avant la landing (B27, BL-186, BL-187) — pile interne, seuls l'inscription et les liens des emails sont publics**
+- [ ] Pile lancée par `scripts/compose.sh up -d db db-migrate db-backup api n8n` (README « Démarrage ») : base et API en simulation, internes (127.0.0.1, réseau du compose) ; le proxy HTTPS n'expose que le webhook d'inscription et les chemins `alertes-confirmer`, `alertes-preferences`, `alertes-desinscrire`, `avis-refus`.
+- [ ] Credentials : `Pokeshop API — jeton nommé n8n-04-incidents`, `… n8n-06-marketing`, `SMTP boîte des agents` (boîte B02), `Passerelle agents — X-Pokeshop-Gateway`, outil d'emailing (B04) ; ouvrir chaque nœud marqué en rouge (§5).
+- [ ] 04 importé et activé **en premier**, avec ses emails à la propriétaire (`responsable_email`, nœuds email de 04 activés, dont « Alerte : moteur injoignable ») ; vérifier qu'un incident FICTIF (`POST /incidents`, jeton `n8n-06-marketing`, `simulation: true`) arrive par email.
+- [ ] Workflow d'inscription (BL-187) : workflow d'erreur = 04, aucune exécution conservée ; 06 activé pour les seuls liens des emails, ses trois déclencheurs Shopify **désactivés** jusqu'au niveau 2 (ils s'inscriraient chez Shopify à l'activation). Les incidents de ces chemins partent vers l'API interne (`n8n-06-marketing`).
+
+**Niveau 1 — tout en simulation et brouillons** (workflows 01 à 08, à partir de la mise en service de J26, B23)
 - [ ] 04 Incidents (premier : c'est le workflow d'erreur de tous les autres). Côté moteur : `POKESHOP_NOTIFY_DRY_RUN=false` (défaut documenté ; avec `true`, aucune notification n'est envoyée à 04), puis ouvrir un incident FICTIF (`POST /incidents`, `simulation: true`) et vérifier qu'il arrive dans 04 ; `GET /health` → `notifications.real_time_alerts: true`.
 - [ ] 07 Surveillance du stop-loss (photo construite par le moteur, gel par API actif ; relevés de trésorerie et coupure publicitaire désactivés jusqu'à recette des connecteurs).
 - [ ] 05 Digest quotidien (activer l'email après le test SMTP : il ne va qu'à la responsable).
@@ -160,21 +174,23 @@ Ne pas désactiver le blocage de `$env` (`N8N_BLOCK_ENV_ACCESS_IN_NODE`, vrai pa
 | Route | Workflow | État au 5.10.2026 |
 |---|---|---|
 | `GET /incidents`, `POST /incidents`, `POST /incidents/{id}/resume` | 01, 02, 03, 04, 06, 08 | Existe |
-| `POST /incidents/{id}/test` | agent 12 QA (jeton nommé ≠ ouvreur) ou propriétaire ; **jamais** la passerelle n8n pour un test réussi | Existe : test réussi = cycle `/sync/run` PROPRE du journal persisté, sur la cible de l'incident ; jeton commun ou ouvreur : 403 ; test échoué : tout jeton |
+| `POST /incidents/{id}/test` | agent 12 QA (`qa-conformite`, ≠ ouvreur) ou propriétaire ; **jamais** la passerelle n8n pour un test réussi | Existe : test réussi = cycle `/sync/run` PROPRE du journal persisté, catalogue du registre, lancé par un autre principal, sur le fournisseur et la référence de l'incident ; autre rôle, ouvreur ou jeton commun : 403 ; test échoué : tout rôle nommé |
 | `POST /imports/{supplier}/run`, `POST /sync/run` | 01 | Existe (simulation ; sans catalogue : 409 ; `clean` = cycle PROPRE ; `cost_inputs` du corps sans aucun `fx_*` (422) et en simulation seulement (écriture réelle : 409)) |
-| `POST /catalog/items`, `POST /catalog/cost-inputs`, `GET /catalog` | agent catalogue (pas de workflow) | Existe : registre persisté lu par `/sync/run` ; taux de change jamais déclarés ici (`POST /fx/rates`, propriétaire) |
+| `POST /catalog/items`, `POST /catalog/cost-inputs`, `GET /catalog` | agents `catalogue` et `finance-pricing` (pas de workflow) | Existe : registre persisté lu par `/sync/run` ; validations humaines, identifiants Shopify et prix publié refusés (422) ; taux de change jamais déclarés ici (`POST /fx/rates`, propriétaire) |
+| `POST /catalog/approvals`, `GET /catalog/approvals` | propriétaire (écriture, son jeton) ; jamais n8n | Existe : validations humaines liées au contenu de la fiche, lues par `/sync/run` |
 | `GET /sync/history` | 05 ; gate 3.6 | Existe : cycles persistés, `consecutive_clean_runs` (cycles réels et distincts seulement), `counted_run_ids`, motif d'exclusion par cycle |
-| `GET /northstar`, `POST /northstar/entries` | 02, 05 | Existe |
+| `GET /northstar`, `POST /northstar/entries` | 02 (`n8n-02-commandes` : montants positifs de paiement, SAV, acquisition, frais fixes), 05 (lecture) | Existe : ventes, avoirs et montants négatifs réservés à la propriétaire |
+| `POST /orders/shipped`, `POST /orders/{order_id}/refunds` | 02 (`n8n-02-commandes`) ; avoirs : aussi agent 11 | Existe : seule source des ventes et avoirs de l'étoile polaire ; coût transporteur **réel** (> 0) et référence d'étiquette exigés ; nœud de 02 à câbler sur l'étiquette réelle |
 | `POST /stoploss/state/refresh` | 07 | Existe : photo construite par le moteur (apports, soldes, dettes et créances déclarées, stock au coût, catalogue, prix, publicité) ; source manquante ou périmée : 409 |
-| `POST /treasury/balance-items` | agent finance (jeton nommé), chaque jour | Existe : dettes et créances à date, jamais supposées nulles ; précommandes encaissées déduites du cash disponible ; jeton commun : 403 |
-| `POST /stoploss/state` | aucun workflow (07 utilise `/refresh`) ; jeton nommé seulement | Existe : photo déposée, **sans** `capital_movements` (422), apports lus au registre de la propriétaire ; jeton commun : 403 |
+| `POST /treasury/balance-items` | agent finance (`finance-pricing`) ou `connecteur-tresorerie`, chaque jour | Existe : dettes et créances à date, jamais supposées nulles ; précommandes encaissées déduites du cash disponible ; jeton commun : 403 |
+| `POST /stoploss/state` | aucun workflow (07 utilise `/refresh`) ; `n8n-07-stoploss` seulement | Existe : photo déposée, **sans** `capital_movements` (422), apports lus au registre de la propriétaire ; jeton commun : 403 |
 | `GET /stoploss/status`, `POST /stoploss/freeze` | 05, 06, 07 | Existe |
-| `POST /treasury/paypal-balance`, `POST /treasury/bank-balance` | 07 (relevés, désactivés ; jeton nommé `n8n-07-stoploss`) | Existe (acteur déduit du jeton ; jeton commun : 403 ; relevé plus ancien que l'actuel refusé) |
+| `POST /treasury/paypal-balance`, `POST /treasury/bank-balance` | 07 (relevés, désactivés ; jeton `connecteur-tresorerie`) | Existe (acteur déduit du jeton ; jeton commun : 403 ; relevé plus ancien que l'actuel refusé) |
 | `POST /capital/movements` | propriétaire (son jeton), jamais n8n | Existe : apports et retraits en ajout seul ; **seule** source des mouvements de capital du stop-loss |
-| `POST /ads/activity` | connecteur publicitaire (à construire) | Existe : dépenses pub et commandes attribuées pour la photo |
-| `POST /stock/receive`, `POST /stock/sellable` | 06 (réception contrôlée, agent 11) | Existe |
-| `POST /mandate/check` | 08 | Existe (423 si « mandat-depenses » ou toutes les écritures sont suspendues hors gel) |
-| `GET /dashboard/daily`, `GET /health` | 05 | Existe (tableau de bord : jeton commun ou nommé, comme le reste de l'API ; journal non relu => KPI « indisponible », jamais zéro) |
+| `POST /ads/activity` | connecteur publicitaire (à construire, jeton `connecteur-publicite`, jamais `acquisition`) | Existe : dépenses pub (registre en ajout seul) et commandes attribuées (existantes au registre des commandes) ; photo : MAX(déclaration, paiements pub exécutés du mandat) |
+| `POST /stock/receive`, `POST /stock/sellable` | 06 (réception contrôlée : jeton `operations-sav` ; stock vendable : `n8n-06-marketing`) | Existe |
+| `POST /mandate/check` | 08 (`n8n-08-mandat`, relais : trésorerie non vérifiée) | Existe (423 si « mandat-depenses » ou toutes les écritures sont suspendues hors gel) |
+| `GET /dashboard/daily`, `GET /health` | 05 | Existe (tableau de bord : jeton commun ou de rôle, lecture seule ; journal non relu => KPI « indisponible », jamais zéro) |
 | `POST /orders/paid` (réservation, survente INC-06, ventes nettes de l'étoile polaire) | 02 | **Attendue** (nœud désactivé) |
 | `POST /costs/invoices` (ventilation, coût historique, écarts) | 03 | **Attendue** |
 | `POST /mandate/executed`, `POST /mandate/human-decision` (registre du mandat) | 08 | **Attendue** |
@@ -199,7 +215,7 @@ Sources consultées le 5.10.2026 : définitions des nœuds n8n (`https://raw.git
 
 ## 11. Points ouverts
 
-- **Accès public de n8n** : les webhooks Shopify et les liens de formulaire exigent une URL HTTPS publique (`WEBHOOK_URL`), alors que le compose publie n8n sur 127.0.0.1. Proxy inverse ou tunnel : décision et compte à ouvrir.
+- **Accès public de n8n** : n8n est public en HTTPS **dès J8 (B27)**, avant la landing, limité au webhook d'inscription et aux liens des emails ; à J26 (B23), le proxy ouvre aussi les webhooks Shopify et les formulaires (`WEBHOOK_URL`). Le compose publie n8n et l'API sur 127.0.0.1 : le proxy inverse (ou le tunnel) choisi à B27 est le seul accès public, et l'API n'est jamais exposée. Dès J8, la pile interne tourne en simulation : un échec du workflow d'inscription ou d'un lien d'email ouvre un incident dans l'API (`n8n-06-marketing`), notifié par 04 ; API injoignable : alerte « moteur injoignable » de 04 par email (`site/landing/README.md` §4). Limite connue : les nœuds « Incident : … » de 06 continuent sur leur sortie d'erreur (page « traitement manuel ») sans autre alerte si l'API ne répond pas ; surveiller `GET /health` (digest 05 dès J26).
 - **Déclencheur Shopify de n8n** : il inscrit les webhooks via l'API REST de Shopify ; vérifier sa compatibilité avec l'app personnalisée et la version d'API retenue avant le niveau 2 (sinon : webhooks créés dans l'admin Shopify + nœud Webhook avec vérification HMAC côté moteur).
 - **Inscription aux alertes** de la landing (réception du formulaire, envoi de l'email 01) : contrat dans `site/landing/README.md` §4 ; à construire avec l'outil d'emailing (B04). Le lien de **confirmation** (`alertes-confirmer`), les **préférences**, la **désinscription** et le **refus d'avis** existent dans 06 (contrats de réponse de l'outil à adapter).
 - **Dettes et créances de la photo du stop-loss** : déclarées par l'agent finance (`POST /treasury/balance-items`) tant que `POST /orders/paid` et `POST /costs/invoices` ne sont pas livrées pour les calculer ; sans déclaration de moins de 24 h, pas de photo (fermé par défaut).
@@ -208,12 +224,12 @@ Sources consultées le 5.10.2026 : définitions des nœuds n8n (`https://raw.git
 ## Validation humaine requise
 
 - [ ] Choisir et créer le canal d'alerte immédiate (email, Slack, SMS) et les credentials du §4 ; ranger chaque secret au coffre (B03).
-- [ ] Décider l'exposition publique de n8n (`WEBHOOK_URL`, proxy inverse ou tunnel) avant le niveau 2.
+- [ ] Exposer n8n en HTTPS public dès J8 (B27, webhook d'inscription et liens des emails seulement, pile interne lancée par `scripts/compose.sh`), puis ouvrir les webhooks Shopify et les formulaires à J26 (B23).
 - [ ] Valider les hypothèses : délai d'expédition 3 jours ouvrés, seuil d'alerte stock 3 unités, demande d'avis à J+7, digest à 07:45.
 - [ ] Activer les workflows dans l'ordre du §7, niveau par niveau, après chaque recette ; décider C14 avant toute écriture réelle.
 - [ ] Signer le mandat (B01) et recetter CONN-PAYPAL avant d'activer un nœud de paiement.
 - [ ] Enregistrer vos apports de capital avec votre jeton (`POST /capital/movements`) : sans eux, la photo du stop-loss n'est jamais construite.
-- [ ] Générer le jeton nommé `n8n-07-stoploss`, reporter son empreinte dans `POKESHOP_AGENT_TOKENS_SHA256` et créer le credential n8n du même nom.
-- [ ] Générer le jeton nommé `agent-12-qa` (tests de correction des incidents) et le remettre au seul agent QA ; sans lui, seule la propriétaire peut attester un test réussi.
+- [ ] Générer un jeton par rôle du §4 (`openssl rand -hex 32`), reporter chaque empreinte dans `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` et créer le credential n8n du même nom ; ne jamais confier le jeton commun ni le jeton propriétaire à n8n.
+- [ ] Générer le jeton nommé `qa-conformite` (tests de correction des incidents) et le remettre au seul agent QA ; sans lui, seule la propriétaire peut attester un test réussi.
 - [ ] Après l'activation de 04, vérifier la réception d'un incident FICTIF (`POKESHOP_NOTIFY_DRY_RUN=false`).
-- [ ] Faire livrer par l'agent integrations les routes attendues du §9 et l'en-tête secret du webhook d'incident.
+- [ ] Faire livrer par l'agent integrations les routes attendues du §9, l'en-tête secret du webhook d'incident et le nœud `POST /orders/shipped` de 02 (coût transporteur réel).

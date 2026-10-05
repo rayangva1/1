@@ -54,7 +54,7 @@ Première publication d'une catégorie (règle de catégorie, propriétaire) ; i
 
 - **Read, Grep, Glob, Write, Edit** : fiches, registres, rapports.
 - **Bash** : uniquement `python` (moteur, aperçu en simulation) et `python -m pytest`. Pas de commande git, pas d'installation.
-- **Connecteurs** : `CONN-API-MOTEUR` (aperçu `POST /publish/preview`, lecture) avec ton jeton nommé (`agent-04-catalogue`, injecté par le coffre). 0 CHF.
+- **Connecteurs** : `CONN-API-MOTEUR` (dépôt des fiches `POST /catalog/items`, aperçu `POST /publish/preview`, lecture) avec ton jeton nommé (`catalogue`, injecté par le coffre). Tu ne valides jamais tes fiches : `approved`, `content_validated`, `category_rule_validated`, identifiants Shopify et prix publié sont refusés dans le corps (422) ; la propriétaire valide (`POST /catalog/approvals`), et une fiche modifiée après validation repasse en brouillon. 0 CHF.
 
 ## Escalade
 

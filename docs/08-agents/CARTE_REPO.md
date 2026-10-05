@@ -40,7 +40,9 @@
 | `engine/pokeshop/importers/` | Connecteurs fournisseurs CSV, XLSX, XML, quarantaine | data-pipeline | 03, 12 | présent |
 | `engine/pokeshop/shopify_client.py` | Client Admin GraphQL, `dry_run=True`, idempotence | integrations | 07, 12 | présent |
 | `engine/pokeshop/publish.py` | Payloads `productSet` à champs publics filtrés | integrations | 07, 04, 12 | présent |
-| `engine/pokeshop/api.py` | API FastAPI appelée par n8n et les agents (jeton nommé par agent ; actes réservés au jeton de la propriétaire) | integrations | 03, 04, 05, 07, 10, 11, 12 | présent |
+| `engine/pokeshop/api.py` | API FastAPI appelée par n8n et les agents (un jeton par rôle ; actes réservés au jeton de la propriétaire) | integrations | 03, 04, 05, 07, 10, 11, 12 | présent |
+| `engine/pokeshop/authz.py` | Matrice d'autorisations versionnée, refus par défaut : rôles admis par route ; génère `docs/08-agents/MATRICE_API.md` (`python -m pokeshop.authz`) | integrations | tous (lecture) ; 12 (contrôle) | présent |
+| `docs/08-agents/MATRICE_API.md` | Table générée de la matrice : route → rôles, écritures propres de chaque rôle (ne pas modifier à la main) | integrations | tous | présent |
 | `engine/pokeshop/incidents.py` | Quarantaine, suspension, notification, reprise | integrations | 12, 03, 01 | présent |
 | `engine/pokeshop/audit.py` | Journal append-only | integrations | 12 | présent |
 | `tests/` | Tests du moteur (`python -m pytest -q`) | core-engine, finance, integrations | 12 | présent |

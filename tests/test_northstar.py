@@ -199,10 +199,10 @@ def test_sync_and_records_are_idempotent() -> None:
 
 def test_conflicting_rewrite_is_refused_atomically() -> None:
     ns = NorthStarLedger()
-    ns.record_order("A", at(W1), net_sales_ht="100.00", payment_fees="2.80")
+    ns.record_order("A", at(W1), net_sales_ht="100.00", payment_fees="2.80", logistics="3.00")
     with pytest.raises(NorthStarError, match="autre contenu"):
-        ns.record_order("A", at(W1), net_sales_ht="100.00", payment_fees="2.90", logistics="3.00")
-    assert ns.totals().logistics == 0  # rien d'écrit partiellement
+        ns.record_order("A", at(W1), net_sales_ht="100.00", payment_fees="2.90", logistics="4.00")
+    assert ns.totals().logistics == D("3.00") and ns.totals().payment == D("2.80")  # rien d'écrit partiellement
     with pytest.raises(NorthStarError):
         ns.record(ns.entries()[0].replace(amount=D("1")))
 
@@ -234,15 +234,18 @@ def test_entry_validation() -> None:
 def test_order_and_refund_guards() -> None:
     ns = NorthStarLedger()
     with pytest.raises(NorthStarError):
-        ns.record_order("A", at(W1), net_sales_ht="0", payment_fees="0")
+        ns.record_order("A", at(W1), net_sales_ht="0", payment_fees="0", logistics="3.00")
+    for missing in (None, "0", "-1"):  # MOT-18 : logistique réelle obligatoire sur le chemin réel
+        with pytest.raises(NorthStarError, match="transporteur"):
+            ns.record_order("B", at(W1), net_sales_ht="10.00", payment_fees="0", logistics=missing)
     with pytest.raises(NorthStarError):
         ns.record_refund("R", at(W1), net_sales_ht="-5")
     with pytest.raises(NorthStarError):
         ns.record_refund("R", at(W1), net_sales_ht="5", payment_fees_refunded="-1")
     entries = ns.record_refund("R", at(W1), net_sales_ht="50.00", payment_fees_refunded="1.25", order_id="A")
     assert [(e.post, e.amount) for e in entries] == [(Post.NET_SALES, D("-50.00")), (Post.PAYMENT, D("-1.25"))]
-    zero_fee = ns.record_order("Z", at(W1), net_sales_ht="10.00", payment_fees="0")
-    assert [e.post for e in zero_fee] == [Post.NET_SALES]
+    zero_fee = ns.record_order("Z", at(W1), net_sales_ht="10.00", payment_fees="0", logistics="2.50")
+    assert [e.post for e in zero_fee] == [Post.NET_SALES, Post.LOGISTICS]
 
 
 # ------------------------------------------------------------------------------ charges fixes
@@ -268,11 +271,11 @@ def test_fixed_costs_accrued_by_day_sum_exactly() -> None:
 def test_empty_weeks_are_reported_with_delta() -> None:
     ns = NorthStarLedger()
     ns.record_expense("a", at(W1), Post.LOGISTICS, "10.00")
-    ns.record_order("O", at(W1 + timedelta(days=14)), net_sales_ht="50.00", payment_fees="1.50")
+    ns.record_order("O", at(W1 + timedelta(days=14)), net_sales_ht="50.00", payment_fees="1.50", logistics="3.00")
     report = ns.weekly_report()
-    assert [r.net_contribution for r in report.rows] == [D("-10.00"), D("0"), D("48.50")]
-    assert [r.delta_vs_previous_week for r in report.rows] == [D("-10.00"), D("10.00"), D("48.50")]
-    assert report.cumulative == D("38.50")
+    assert [r.net_contribution for r in report.rows] == [D("-10.00"), D("0"), D("45.50")]
+    assert [r.delta_vs_previous_week for r in report.rows] == [D("-10.00"), D("10.00"), D("45.50")]
+    assert report.cumulative == D("35.50")
 
 
 def test_report_window_has_opening_cumulative_and_previous_week_delta() -> None:

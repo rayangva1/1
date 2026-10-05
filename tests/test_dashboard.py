@@ -24,6 +24,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+import jetons_roles as JR
 from fastapi.testclient import TestClient
 from pokeshop.api import API_TOKEN_HEADER, OWNER_TOKEN_HEADER, Services, create_app
 from pokeshop.audit import to_jsonable
@@ -71,8 +72,9 @@ ROOT = Path(__file__).resolve().parents[1]
 API_TOKEN = "FICTIF-jeton-api-dashboard-000001"
 OWNER_TOKEN = "FICTIF-jeton-proprietaire-dashboard-01"
 H = {API_TOKEN_HEADER: API_TOKEN}
-FINANCE_TOKEN = "FICTIF-jeton-agent-05-finance-dash-01"
-HF = {API_TOKEN_HEADER: FINANCE_TOKEN}  # jeton nommé : photo du stop-loss, lecture du tableau de bord (NEW-03)
+FINANCE_TOKEN = JR.ROLE_TOKENS["finance-pricing"]
+HF = JR.HF  # jeton nommé : lecture du tableau de bord (NEW-03), charges fixes de l'étoile polaire
+HPHOTO, HORDERS = JR.HPHOTO, JR.HORDERS  # photo du stop-loss (workflow 07), commandes (workflow 02)
 
 
 @pytest.fixture(scope="module")
@@ -586,7 +588,7 @@ def svc() -> Services:
         {
             "POKESHOP_API_TOKEN_SHA256": sha256_hex(API_TOKEN),
             "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(OWNER_TOKEN),
-            "POKESHOP_AGENT_TOKENS_SHA256": f"agent-05-finance:{sha256_hex(FINANCE_TOKEN)}",
+            "POKESHOP_AGENT_TOKENS_SHA256": JR.agent_tokens_env(),
         }
     )
     return Services.build(settings, clock=lambda: DEMO_AS_OF, notifier=LogNotifier())
@@ -646,20 +648,16 @@ def test_dashboard_routes_read_engine_state(client: TestClient) -> None:
               "kind": "CONTRIBUTION", "amount": "1500"}  # fmt: skip
     owner = {**H, OWNER_TOKEN_HEADER: OWNER_TOKEN}
     assert client.post("/capital/movements", headers=owner, json=apport).status_code == 201
-    assert client.post("/stoploss/state", headers=HF, json=payload).status_code == 200
-    entries = [
-        {
-            "entry_id": "FICTIF-o1",
-            "at": "2026-11-10T10:00:00+01:00",
-            "post": "NET_SALES",
-            "amount": "184.92",
-            "order_id": "FICTIF-1",
-        },
-        {"entry_id": "FICTIF-f1", "at": "2026-11-09T10:00:00+01:00", "post": "FIXED_COSTS", "amount": "92.31"},
-    ]
-    assert client.post("/northstar/entries", headers=H, json={"entries": entries}).status_code == 200
+    assert client.post("/stoploss/state", headers=HPHOTO, json=payload).status_code == 200
+    # Vente dérivée d'une commande enregistrée avec le coût transporteur réel (revue R3, MOT-18).
+    order = {"order_id": "FICTIF-1", "paid_at": "2026-11-10T10:00:00+01:00", "net_sales_ht": "184.92",
+             "payment_fees": "0", "shipping_cost_actual": "3.00", "shipping_label_ref": "FICTIF-ETIQ-1",
+             "source": "Shopify FICTIF"}
+    assert client.post("/orders/shipped", headers=HORDERS, json=order).status_code == 201
+    entries = [{"entry_id": "FICTIF-f1", "at": "2026-11-09T10:00:00+01:00", "post": "FIXED_COSTS", "amount": "92.31"}]
+    assert client.post("/northstar/entries", headers=HF, json={"entries": entries}).status_code == 200
     data = body(client.get("/dashboard/daily", headers=H))["report"]
-    assert data["north_star"]["cumulative"] == "92.61" and data["north_star"]["last_closed_week"] == "2026-W46"
+    assert data["north_star"]["cumulative"] == "89.61" and data["north_star"]["last_closed_week"] == "2026-W46"
     assert data["stoploss"]["status"] == "CRITIQUE"  # cash 1 500 < 1 600
     assert any(t["level"] == "CASH" for t in data["stoploss"]["triggers"])
     kpis = {k["key"]: k for k in data["kpis"]}

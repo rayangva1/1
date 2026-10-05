@@ -8,7 +8,9 @@
 #
 # Le fichier de variables (POSTGRES_PASSWORD, N8N_ENCRYPTION_KEY, POKESHOP_DB_PASSWORD, empreintes des jetons…)
 # vit hors de l'arborescence où travaillent les agents : défaut /etc/pokeshop/api.env, créé par la
-# propriétaire (B23) avec `sudo install -D -m 600 .env.example /etc/pokeshop/api.env` puis rempli depuis le coffre.
+# propriétaire à J8 (B27) avec `sudo install -D -m 600 -o "$USER" .env.example /etc/pokeshop/api.env` puis rempli depuis le coffre
+# (éditeur qui écrit en place, ex. nano : le dossier /etc/pokeshop appartient à root). Compte non root : membre du groupe
+# docker, sinon « sudo scripts/compose.sh … » (root lit le fichier, même s'il t'appartient).
 # Refus (fermé par défaut, rien n'est lancé) :
 #   - un fichier .env (ou *.env) existe à la racine du dépôt : docker compose le lirait tout seul ;
 #   - le fichier de variables est absent, dans le dépôt, lisible par d'autres que son propriétaire
@@ -32,7 +34,7 @@ for f in "${stray[@]}"; do
     [ -e "$f" ] && die "fichier de secrets dans le dépôt ($f) : le déplacer hors du dépôt (ex. /etc/pokeshop/api.env), docker compose le lirait sinon"
 done
 
-[ -f "$env_file" ] || die "fichier de variables introuvable : $env_file (créer avec : sudo install -D -m 600 .env.example $env_file, puis le remplir depuis le coffre)"
+[ -f "$env_file" ] || die "fichier de variables introuvable : $env_file (créer avec : sudo install -D -m 600 -o \"\$USER\" .env.example $env_file, puis le remplir depuis le coffre)"
 real="$(cd "$(dirname "$env_file")" && pwd -P)/$(basename "$env_file")"
 if [ -L "$env_file" ]; then
     target="$(readlink -f "$env_file")"

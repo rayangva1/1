@@ -33,8 +33,11 @@ FAKE_VARS = {
     "POSTGRES_PASSWORD": "fictif-admin-pg-0123456789",
     "POKESHOP_DB_PASSWORD": "fictif-moteur-pg-0123456789",
     "N8N_ENCRYPTION_KEY": "fictif-n8n-key-0123456789abcdef",
-    "POKESHOP_API_TOKEN_SHA256": "1" * 64,
     "POKESHOP_OWNER_TOKEN_SHA256": "2" * 64,
+    # Revue R3 : jeton commun facultatif ; jetons par rôle sans lesquels le stop-loss n'est jamais évaluable.
+    "POKESHOP_ROLE_TOKEN_SHA256_N8N_07_STOPLOSS": "3" * 64,
+    "POKESHOP_ROLE_TOKEN_SHA256_CONNECTEUR_TRESORERIE": "4" * 64,
+    "POKESHOP_ROLE_TOKEN_SHA256_FINANCE_PRICING": "5" * 64,
 }
 SECRETS_OF_OTHERS = {"api": ("POSTGRES_PASSWORD", "N8N_ENCRYPTION_KEY"), "n8n": ("POSTGRES_PASSWORD", "POKESHOP_")}
 
@@ -90,7 +93,7 @@ def test_every_required_variable_is_documented_in_env_example_and_readme() -> No
     for var in REQUIRED:
         assert re.search(rf"^{var}=$", example, re.M), f".env.example : {var}= (vide, à remplir depuis le coffre)"
         assert var in readme, f"README : {var} à remplir avant docker compose"
-    for step in ("sudo install -D -m 600 .env.example /etc/pokeshop/api.env", "scripts/compose.sh config --quiet",
+    for step in ('sudo install -D -m 600 -o "$USER" .env.example /etc/pokeshop/api.env', "scripts/compose.sh config --quiet",
                  "scripts/compose.sh up -d db db-migrate db-backup api n8n"):
         assert step in readme, step
     assert re.search(r"^N8N_WEBHOOK_URL=$", example, re.M)
@@ -177,7 +180,7 @@ def test_sec13_no_startup_doc_creates_a_secret_file_inside_the_repository() -> N
         for bad in ("cp .env.example .env", "Copier en .env", "dans `.env`", "de `.env`", "dans .env ("):
             assert bad not in text, f"{rel} : « {bad} » ferait créer le fichier de secrets dans le dépôt"
     assert "/etc/pokeshop/api.env" in (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-    assert "sudo install -D -m 600 .env.example /etc/pokeshop/api.env" in (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert 'sudo install -D -m 600 -o "$USER" .env.example /etc/pokeshop/api.env' in (ROOT / ".env.example").read_text(encoding="utf-8")
 
 
 def _git_ignored(rel: str) -> bool:

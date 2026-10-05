@@ -143,7 +143,24 @@ pas détectable par la chaîne seule : d'où la règle de sauvegarde ci-dessous 
 | `db/backup.sh etat` | Contrôle R-I04 (sans base) : code 0 seulement si la dernière restauration **vérifiée** (trace `derniere-verification.tsv` écrite par `verifier` après succès) date de moins de `POKESHOP_BACKUP_MAX_AGE_HOURS` (défaut 1,5 × intervalle = 36 h) ; sinon code 1 (aucune trace, trace illisible ou trop ancienne). C'est le **healthcheck** du service `db-backup` : `scripts/compose.sh ps` l'affiche « unhealthy » tant qu'aucune restauration récente n'est vérifiée |
 
 Un test de restauration en échec rend la sauvegarde inutilisable : en refaire une et ouvrir un incident.
-Copier régulièrement les sauvegardes hors de la machine (support chiffré de la propriétaire). Supabase :
+
+**Chiffrement : sur le serveur, en clair ; hors de la machine, chiffré.** Le service `db-backup` du compose ne reçoit pas
+`POKESHOP_BACKUP_AGE_RECIPIENT` : ses sauvegardes (volume `backups`, fichiers en mode 600) sont en clair, comme la base
+qu'elles copient sur la même machine, ce qui lui permet de vérifier chaque jour la restauration sans détenir de clé privée
+(`db/backup.sh etat` : code 0). Chaque mois (A12, BL-195), la propriétaire copie ces sauvegardes **hors de la machine,
+chiffrées pour elle seule** avec sa clé publique age (paire créée une fois : `age-keygen -o cle-privee-age.txt`, clé privée
+jamais sur le serveur) :
+
+```bash
+scripts/compose.sh ps db-backup                         # « healthy » : restauration vérifiée depuis moins de 36 h
+scripts/compose.sh exec -T db-backup tar -C /sauvegardes -cf - . | age -r <votre clé publique age1…> > /chemin/disque/pokeshop-$(date +%F).tar.age
+age -d -i cle-privee-age.txt /chemin/disque/pokeshop-AAAA-MM-JJ.tar.age | tar -tf -   # contrôle : la copie se relit
+```
+
+(Chaîne tar → age → relecture vérifiée le 5.10.2026 sur des fichiers FICTIFS.) Pour restaurer depuis cette copie :
+la déchiffrer (`age -d -i …  | tar -xf -`), puis `db/backup.sh restaurer FICHIER URL_CIBLE`. Un `db/backup.sh sauvegarde`
+lancé hors du compose avec `POKESHOP_BACKUP_AGE_RECIPIENT` produit au contraire des fichiers chiffrés, que `verifier` ne
+contrôle qu'avec `POKESHOP_BACKUP_AGE_IDENTITY`. Supabase :
 activer en plus les sauvegardes du fournisseur (PITR) ; `backup.sh verifier` s'utilise avec un serveur local
 pour tester la restauration d'un `pg_dump` du projet. `tests/test_sauvegarde_restauration.py` exécute ces
 commandes contre une base jetable (empreinte altérée, lignes manquantes, chaîne d'audit rompue, chiffrement).
@@ -166,7 +183,7 @@ un autre serveur (compte superutilisateur, base d'administration).
 - [ ] Choisir l'hébergement (Supabase ou PostgreSQL géré) et créer le compte : action de la propriétaire.
 - [ ] Créer les comptes de connexion et ranger les mots de passe dans le coffre ; réserver `pokeshop_owner` à la propriétaire.
 - [ ] Enregistrer une fois l'empreinte de votre jeton propriétaire en base (`owner_token_fingerprint`, compte `proprietaire`) : sans elle, aucune hausse du niveau d'autonomie n'est possible.
-- [ ] Choisir où vivent les sauvegardes (`POKESHOP_BACKUP_DIR`, volume `backups`) et leur copie hors machine ; décider du chiffrement age (clé publique au service, clé privée chez vous seule).
+- [ ] Choisir où vivent les sauvegardes (`POKESHOP_BACKUP_DIR`, volume `backups`) et leur copie hors machine ; créer votre paire de clés age (clé publique pour chiffrer la copie mensuelle, clé privée chez vous seule, jamais sur le serveur).
 - [ ] Vérifier chaque mois que le service `db-backup` est « healthy » (`scripts/compose.sh ps`, ou `db/backup.sh etat` : dernière restauration vérifiée depuis moins de 36 h) ; la base porte `engine_state_journal` (gel du stop-loss, registre du mandat, incidents). Recette R-I04 : bloquante tant que `etat` échoue.
 - [ ] Valider la rétention des captures brutes (`raw_snapshots.content` contient des prix B2B) et celle des sauvegardes (30 par défaut).
 - [ ] Valider le plafond par commande par défaut (`products.max_qty_per_order` = 5, hypothèse).

@@ -26,7 +26,7 @@ Transformer chaque source fournisseur **autorisée** en offres fiables, datées 
 | `engine/pokeshop/importers/`, `engine/pokeshop/catalog.py`, `engine/pokeshop/incidents.py` | Utilisation ; modification seulement avec revue A-12 et tests verts |
 | `engine/pokeshop/stock.py` (`is_stale`, `pooled_quantity`) | Utilisation |
 | Pièces reçues (fichiers, tarifs) via A-01 et A-02 | Lecture ; archivage hors dépôt (`POKESHOP_DOCS_PRIVES`) |
-| `CONN-API-MOTEUR` (`/imports/{supplier}/run`), `CONN-N8N` | Exécution en simulation, puis selon le niveau |
+| `CONN-API-MOTEUR` (jeton nommé `donnees-fournisseurs` : seule écriture propre `POST /imports/{supplier}/run`, toujours en simulation ; quarantaine par `POST /incidents`), `CONN-N8N` | Exécution en simulation, puis selon le niveau ; jamais de prix, de fiche ni de stock déposés au moteur |
 | Accès fournisseur (API, SFTP, téléchargement authentifié) | Selon l'accord écrit ; identifiant `SUPPLIER_<ID>_CREDENTIAL_REF` dans le coffre |
 
 ## 4. Format de sortie
@@ -73,7 +73,7 @@ A-12 valide dictionnaires, connecteurs et imports (RACI L17, L18). A-01 valide l
 | Outil | Usage | Restriction |
 |---|---|---|
 | Claude Code : Read, Grep, Glob, Write, Edit, Bash | Dictionnaires YAML, imports en simulation, tests | Bash pour `python -m pytest`, scripts d'import et appels à l'API moteur ; jamais d'outil de scraping |
-| `CONN-API-MOTEUR`, `CONN-N8N` | Imports | Simulation au niveau 1 |
+| `CONN-API-MOTEUR` (jeton `donnees-fournisseurs`), `CONN-N8N` | Imports | Simulation au niveau 1 ; le cycle fournisseur → site est lancé par `n8n-01-sync` ou l'agent 07, jamais par ce jeton |
 | Accès fournisseur | Selon accord écrit | Lecture seule |
 
 ## 11. Routines et tâches du backlog

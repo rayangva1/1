@@ -571,8 +571,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiPhoto007",
-          "name": "Pokeshop API — jeton nommé n8n-07-stoploss"
+          "id": "pkshpApiTresor01",
+          "name": "Pokeshop API — jeton nommé connecteur-tresorerie"
         }
       },
       "retryOnFail": true,
@@ -643,8 +643,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiPhoto007",
-          "name": "Pokeshop API — jeton nommé n8n-07-stoploss"
+          "id": "pkshpApiTresor01",
+          "name": "Pokeshop API — jeton nommé connecteur-tresorerie"
         }
       },
       "retryOnFail": true,

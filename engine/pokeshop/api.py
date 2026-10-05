@@ -1,22 +1,26 @@
 """API HTTP interne du moteur (FastAPI), appelée par n8n et le tableau de bord (agent integrations).
 
-* **Authentification** : toutes les routes sauf ``/health`` exigent l'en-tête
-  ``X-Pokeshop-Token`` : jeton commun (``POKESHOP_API_TOKEN_SHA256``, acteur « api ») ou **jeton
-  nommé** d'un agent (``POKESHOP_AGENT_TOKENS_SHA256``) dont le nom **devient l'acteur** (un champ
-  ``actor``/``requested_by`` déclaré est ignoré ou refusé s'il diffère). Un acteur qui se dit
-  « propriétaire » sans jeton propriétaire valide est refusé (403). Sans empreinte configurée, les
-  routes internes répondent 503 (fermé par défaut). Les actes réservés à la propriétaire
-  (réarmement du stop-loss global, point zéro ``/stoploss/baseline``, mémoire des apports, hausse du
-  niveau d'autonomie, reprise d'un incident critique, taux de change ``/fx/rates``) exigent **en plus**
-  ``X-Pokeshop-Owner-Token``, distinct du jeton d'API ; tout refus est journalisé. Un réarmement
-  rebasé exige ``reference_chf`` : la valeur nette de la photo, **attestée** par la propriétaire.
+* **Authentification et autorisation (revue R3, SEC-16)** : matrice versionnée, **refus par défaut**
+  (``pokeshop.authz.ROUTE_MATRIX``, table ``docs/08-agents/MATRICE_API.md``), appliquée par une
+  dépendance d'application à **chaque** route, y compris celles ajoutées plus tard : une route absente
+  de la matrice répond 403 (``authz.route_refused``). ``X-Pokeshop-Token`` porte le jeton commun
+  (``POKESHOP_API_TOKEN_SHA256``, acteur « api » : lecture et aperçus en simulation **seulement**,
+  toute écriture 403) ou le jeton d'un **rôle** (``POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>`` ou
+  ``POKESHOP_AGENT_TOKENS_SHA256``) dont le nom **devient l'acteur** (un champ ``actor``/``requested_by``
+  déclaré est ignoré ou refusé s'il diffère). Chaque écriture n'est admise que pour les rôles listés ;
+  ``X-Pokeshop-Owner-Token`` valide (distinct du jeton d'API) admet la propriétaire, seule sur les
+  actes réservés (réarmement, point zéro, mémoire des apports, apports, taux, approbations de prix,
+  validations de fiches ``/catalog/approvals``). Sans empreinte configurée : 503 ; tout refus est
+  journalisé. ``/docs`` et ``/openapi.json`` sont fermés.
 * **Valeurs décisives jamais auto-déclarées** : ``/mandate/check`` ignore toute trésorerie du corps
   et lit les registres du moteur (photo stop-loss acceptée, solde PayPal relevé, taux de référence,
   propositions de réassort enregistrées) ; une photo déposée par le jeton qui demande la dépense
-  n'est pas vérifiable (``TREASURY_UNVERIFIED`` => validation humaine). Le **jeton commun** ne fournit
-  jamais de valeur décisive (revue 2ᵉ passe) : photo du stop-loss et relevés de trésorerie
-  (``/stoploss/state``, ``/treasury/*``) exigent un jeton nommé (403 sinon) ; un test de correction
-  **réussi** d'incident exige un jeton nommé différent de l'ouvreur ou le jeton propriétaire.
+  n'est pas vérifiable (``TREASURY_UNVERIFIED`` => validation humaine). Séparation des rôles :
+  dépense pub = MAX(déclaration de ``connecteur-publicite``, paiements pub exécutés du mandat) ; coût
+  historique adossé à une réception d'un autre jeton et à une facture ; ventes et avoirs de l'étoile
+  polaire dérivés des commandes enregistrées (``/orders/shipped``, coût transporteur réel) ; un test de
+  correction **réussi** d'incident : ``qa-conformite`` (≠ ouvreur, cycle réel lancé par un autre
+  principal) ou la propriétaire ; validations humaines des fiches : propriétaire seule.
   ``/stoploss/state`` remplace plafond jour pub et budget stock de la photo par ceux du mandat
   signé et des règles, et **refuse tout mouvement de capital** (422) : apports et retraits viennent
   uniquement du registre de la propriétaire (``POST /capital/movements``). ``/northstar/entries``
@@ -89,11 +93,12 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, TypeVar
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
 
 from . import __version__
+from . import authz
 from .audit import (
     ActorKind,
     AuditLog,
@@ -179,15 +184,23 @@ from .northstar import (
     NorthStarError,
     NorthStarLedger,
     NorthStarPersistenceError,
+    OrderRefund,
+    OrderRegister,
+    ShippedOrder,
 )
 from .pricing import basket_contribution, decide_price
 from .publish import (
+    CatalogApprovalBook,
+    CatalogApprovalPersistenceError,
     CatalogListing,
+    ListingApproval,
     PriceApprovalBook,
     PriceApprovalPersistenceError,
     PriceValidation,
     SensitiveFieldError,
     build_publication,
+    listing_digest,
+    refuse_declared_listing_fields,
     stock_status_for,
 )
 from .rules import RuleSet, load_rules
@@ -222,6 +235,8 @@ from .stoploss_snapshot import (
     CapitalRegister,
     PhotoSourcesError,
     build_activity_photo,
+    executed_ad_payments,
+    merge_ad_spends,
 )
 from .sync import (
     WORKFLOW_SUPPLIER_TO_SHOP,
@@ -449,10 +464,17 @@ def guard_rules(rules: RuleSet, expected_sha256: str | None) -> tuple[RuleSet, s
 
 @dataclass(frozen=True)
 class Principal:
-    """Porteur du jeton d'API : jeton commun (« api », non attribuable) ou jeton nommé d'un agent."""
+    """Appelant authentifié : jeton commun (« api », non attribuable), jeton nommé (nom = rôle de la matrice
+    :mod:`pokeshop.authz`) ou propriétaire (jeton propriétaire vérifié, acteur « propriétaire »)."""
 
     name: str
     named: bool
+    owner: bool = False
+
+    @property
+    def role(self) -> str | None:
+        """Rôle de la matrice (None pour le jeton commun ; ``propriétaire`` pour la propriétaire)."""
+        return self.name if self.named else None
 
 
 def _journal_opener(cfg: Settings, factory: Callable[[], Any] | None) -> Callable[[str], StateJournal]:
@@ -525,6 +547,11 @@ class Services:
     """Fiches écrites et vérifiées sur la boutique (journal ``shop_publications``) : dépublication protectrice."""
     balance_statement: BalanceStatement | None = None
     """Dernière déclaration des dettes et créances (mémoire, comme les soldes ; jamais supposée nulle)."""
+    catalog_approvals: CatalogApprovalBook = field(default_factory=CatalogApprovalBook)
+    """Validations de fiches de la propriétaire (journal ``catalog_approvals``) : seule source de
+    ``approved``, ``content_validated`` et ``category_rule_validated`` (revue R3, R2-NEW-05)."""
+    orders: OrderRegister = field(default_factory=OrderRegister)
+    """Commandes expédiées et avoirs (journal ``orders``) : seule source des ventes de l'étoile polaire."""
 
     def authoritative_photo(self, state: StopLossState, now: datetime) -> tuple[StopLossState, list[str]]:
         """Photo avec plafond pub et budget stock du moteur (mandat signé actif, règles), jamais ceux postés."""
@@ -756,6 +783,16 @@ class Services:
             ads = AdsActivityRegister.restore(journal_for(AdsActivityRegister.STREAM))
         except ActivityRegisterPersistenceError as exc:
             ads = AdsActivityRegister(store=failed(AdsActivityRegister.STREAM, exc))
+        try:
+            catalog_approvals = CatalogApprovalBook.restore(journal_for(CatalogApprovalBook.STREAM))
+        except CatalogApprovalPersistenceError as exc:
+            catalog_approvals = CatalogApprovalBook(store=failed(CatalogApprovalBook.STREAM, exc))
+        try:
+            orders = OrderRegister.restore(journal_for(OrderRegister.STREAM))
+            if NorthStarLedger.STREAM not in restore_errors:
+                orders.sync(northstar)  # rattrape une vente enregistrée mais pas encore dans l'étoile polaire
+        except NorthStarError as exc:
+            orders = OrderRegister(store=failed(OrderRegister.STREAM, exc))
         if restore_errors:
             reason = " ; ".join(f"{k} : {v}" for k, v in sorted(restore_errors.items()))
             for stream, message in restore_errors.items():
@@ -840,6 +877,8 @@ class Services:
             capital=capital,
             ads=ads,
             publications=publications,
+            catalog_approvals=catalog_approvals,
+            orders=orders,
         )
         if photo is not None:  # plafond pub et budget stock du moteur, jamais ceux de la photo relue
             svc.stoploss_state, _ = svc.authoritative_photo(photo, now())
@@ -917,7 +956,7 @@ class ReorderIn(_In):
     budget_available: NonNegativeMoney
     extension_exposure: dict[str, NonNegativeMoney] = Field(default_factory=dict)
     cap_exceptions: dict[str, NonNegativeMoney] = Field(default_factory=dict)
-    actor: str = "agent-05-finance"
+    actor: str = "finance-pricing"
 
     @model_validator(mode="after")
     def _caps(self) -> ReorderIn:
@@ -953,14 +992,25 @@ class ImportIn(_In):
     source_ts: datetime | None = None
 
 
+def _declared_listing(value: Any) -> Any:
+    """Fiche d'entrée : aucun champ du moteur ni validation humaine (422) — revue R3 (SEC-09, R2-NEW-02, R2-NEW-05)."""
+    return refuse_declared_listing_fields(value)
+
+
+DeclaredListing = Annotated[CatalogListing, BeforeValidator(_declared_listing)]
+"""Fiche reçue d'un appelant : ``approved``, ``content_validated``, ``category_rule_validated``,
+``shopify_product_id``, ``shopify_status``, ``shopify_inventory_item_id`` et ``current_price_chf`` refusés."""
+
+
 class PublishPreviewIn(_In):
     """Aperçu de publication : fiche + coût rendu (jamais renvoyé).
 
     Aucune « validation de prix » dans le corps : l'approbation éventuelle est lue dans le registre
-    du moteur (``POST /pricing/approvals``, jeton propriétaire) ; le statut de stock est recalculé.
+    du moteur (``POST /pricing/approvals``, jeton propriétaire) ; le statut de stock est recalculé ;
+    validations de fiche et état publié : registres du moteur et de la propriétaire (jamais la fiche).
     """
 
-    listing: CatalogListing
+    listing: DeclaredListing
     quote: QuoteIn | None = None
     reference_price_24h: PositiveMoney | None = None
     stoploss_blocked: bool = False
@@ -970,7 +1020,43 @@ class PublishPreviewIn(_In):
 class CatalogItemIn(_In):
     product_id: str
     supplier_links: list[SupplierLink] = Field(default_factory=list)
-    listing: CatalogListing
+    listing: DeclaredListing
+
+
+class CatalogApprovalIn(_In):
+    """Validations humaines d'une fiche du catalogue : **propriétaire uniquement** (jeton propriétaire).
+
+    Portent sur le contenu en vigueur de la fiche au registre (empreinte inscrite) ; ``false`` retire.
+    """
+
+    product_id: str = Field(min_length=1, max_length=120)
+    approved: bool = False
+    content_validated: bool = False
+    category_rule_validated: bool = False
+    reason: str = Field(min_length=10, max_length=500)
+    listing_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    """Empreinte de la fiche examinée (``GET /catalog/approvals``) : refus si la fiche a changé depuis."""
+
+
+class ShippedOrderIn(_In):
+    """Commande payée **et expédiée** (workflow 02) : coût réel du transporteur obligatoire (revue MOT-18)."""
+
+    order_id: str = Field(min_length=1, max_length=120)
+    paid_at: datetime
+    net_sales_ht: PositiveMoney
+    payment_fees: NonNegativeMoney
+    shipping_cost_actual: PositiveMoney
+    shipping_label_ref: str = Field(min_length=3, max_length=120)
+    source: str = Field(min_length=3, max_length=200)
+
+
+class OrderRefundIn(_In):
+    """Avoir sur une commande enregistrée (cumul ≤ ventes de la commande)."""
+
+    refund_id: str = Field(min_length=1, max_length=120)
+    at: datetime
+    net_sales_ht: PositiveMoney
+    payment_fees_refunded: NonNegativeMoney = Decimal("0")
 
 
 class CatalogItemsIn(_In):
@@ -1106,10 +1192,16 @@ class RearmIn(_In):
 
 
 class BaselineIn(_In):
-    """Point zéro du capital engagé, déclaré par la propriétaire (STOP_LOSS.md §5, option A ou B)."""
+    """Point zéro du capital engagé, déclaré par la propriétaire (STOP_LOSS.md §5, option A ou B).
+
+    ``with_photo`` (revue R2-ADV-01) : la **première** photo est construite par le moteur depuis ses
+    registres et le point zéro est posé **avant** toute évaluation, de façon atomique (sinon la photo du
+    lancement, évaluée sans point zéro, gèlerait tout et rendrait le point zéro impossible).
+    """
 
     reason: str = Field(min_length=10)
     reference_chf: Money
+    with_photo: bool = False
 
 
 class MandateCheckIn(_In):
@@ -1157,6 +1249,10 @@ class CostMovementIn(_In):
     unit_cost: Money | None = None
     lot_id: str | None = None
     sale_ref: str | None = None
+    stock_ref: str | None = Field(default=None, min_length=3, max_length=120)
+    """RECEIPT : référence de la réception physique ``POST /stock/receive`` (même SKU, même quantité, autre jeton)."""
+    invoice_ref: str | None = Field(default=None, min_length=3, max_length=120)
+    """RECEIPT et INVOICE_ADJUSTMENT : référence de la facture fournisseur."""
 
 
 class NorthStarEntriesIn(_In):
@@ -1176,11 +1272,116 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
     """Application FastAPI (fabrique : ``uvicorn pokeshop.api:create_app --factory``)."""
     svc = services or Services.build(settings)
     cfg = svc.settings
+    owner_refusal_hooks: dict[str, Callable[[str], None]] = {}
+    """Journal propre à une route quand la propriétaire est exigée et absente (ex. tentative de réarmement)."""
+
+    def api_principal(request: Request) -> Principal:
+        """Jeton d'API valide : commun (« api ») ou nommé (nom = rôle) ; 503 sans empreinte, 401 sinon."""
+        if cfg.api_token_sha256 is None and not cfg.agent_tokens_sha256:
+            raise HTTPProblem(
+                503,
+                "jeton d'API non configuré (POKESHOP_AGENT_TOKENS_SHA256 ou POKESHOP_API_TOKEN_SHA256) : "
+                "routes internes fermées",
+            )
+        token = request.headers.get(API_TOKEN_HEADER)
+        found: Principal | None = None
+        if token:
+            digest = sha256_hex(token)
+            if cfg.api_token_sha256 is not None and hmac.compare_digest(digest, cfg.api_token_sha256):
+                found = Principal(authz.COMMON, False)
+            for name, expected in cfg.agent_tokens_sha256.items():  # parcours complet (temps constant)
+                if hmac.compare_digest(digest, expected):
+                    found = Principal(name, True)
+        if found is None:
+            raise HTTPProblem(401, f"en-tête {API_TOKEN_HEADER} absent ou invalide")
+        return found
+
+    def owner_check(request: Request) -> str | None:
+        """Motif de refus du jeton propriétaire (None = valide)."""
+        token = request.headers.get(OWNER_TOKEN_HEADER)
+        if not token:
+            return "absent"
+        if token == request.headers.get(API_TOKEN_HEADER):
+            return "identique au jeton d'API"
+        return None if verify_owner_token(token, cfg.owner_token_sha256) else "jeton invalide"
+
+    def authorize(request: Request) -> None:
+        """Garde unique de **toutes** les routes : matrice :mod:`pokeshop.authz`, refus par défaut (revue R3).
+
+        Route absente de la matrice : 403. Jeton commun : lecture et aperçus seulement. Écriture : rôle du
+        jeton nommé listé, ou propriétaire (jeton propriétaire vérifié). Tout refus est journalisé.
+        """
+        route = request.scope.get("route")
+        path = getattr(route, "path", None)
+        rule = authz.rule_for(request.method, path) if isinstance(path, str) else None
+        if rule is None:
+            svc.audit.append(
+                actor="inconnu", actor_kind=ActorKind.AGENT, action="authz.route_refused", entity="route",
+                entity_id=f"{request.method} {path or request.url.path}", dry_run=False,
+                payload={"motif": "route absente de la matrice d'autorisations"},
+            )  # fmt: skip
+            raise HTTPProblem(
+                403, "route absente de la matrice d'autorisations (engine/pokeshop/authz.py) : refusée par défaut"
+            )
+        if rule.kind is authz.Kind.PUBLIC:
+            request.state.principal = None
+            return
+        principal = api_principal(request)
+        motif = owner_check(request)
+        if rule.owner_only:
+            if motif is not None:
+                svc.audit.append(
+                    actor="inconnu", actor_kind=ActorKind.AGENT, action=f"{rule.audit}.owner_token_refused",
+                    entity="owner_token", entity_id=request.url.path, dry_run=False,
+                    payload={"motif": motif, "token": principal.name},
+                )  # fmt: skip
+                hook = owner_refusal_hooks.get(rule.audit)
+                if hook is not None:
+                    hook(motif)
+                raise HTTPProblem(
+                    403,
+                    {
+                        "absent": f"acte réservé à la propriétaire : en-tête {OWNER_TOKEN_HEADER} requis",
+                        "identique au jeton d'API": "jeton propriétaire identique au jeton d'API : jetons distincts exigés",
+                    }.get(motif, "acte réservé à la propriétaire : jeton propriétaire invalide"),
+                )
+            request.state.principal = Principal(authz.OWNER, True, owner=True)
+            return
+        if motif is None and rule.owner:
+            request.state.principal = Principal(authz.OWNER, True, owner=True)
+            return
+        if not authz.allowed(rule, role=principal.role, owner=False):
+            kind = "common_token_refused" if not principal.named else "role_refused"
+            svc.audit.append(
+                actor=principal.name, actor_kind=ActorKind.AGENT, action=f"{rule.audit}.{kind}", entity="token",
+                entity_id=request.url.path, dry_run=False,
+                payload={"motif": "jeton commun non attribuable" if not principal.named else "rôle non autorisé",
+                         "role": principal.name, "authz_version": authz.AUTHZ_VERSION},
+            )  # fmt: skip
+            admitted = "tout rôle nommé" if rule.roles == authz.ALL_NAMED else (", ".join(sorted(rule.roles)) or "aucun rôle")
+            if not principal.named:
+                message = (
+                    "jeton commun : lecture et aperçus en simulation seulement ; écriture réservée à un jeton nommé "
+                    f"par rôle ({admitted}{' ou propriétaire' if rule.owner else ''})"
+                )
+            else:
+                message = (
+                    f"rôle « {principal.name} » non autorisé sur {request.method} {path} "
+                    f"(matrice engine/pokeshop/authz.py : {admitted}{' ou propriétaire' if rule.owner else ''})"
+                )
+            raise HTTPProblem(403, message)
+        request.state.principal = principal
+
     app = FastAPI(
         title="Moteur boutique Pokémon JCC FR — API interne",
         version=__version__,
         description="API interne appelée par n8n. Montants CHF en chaînes. Simulation par défaut.",
         default_response_class=PokeshopJSONResponse,
+        dependencies=[Depends(authorize)],
+        # Refus par défaut : aucune route hors matrice (pas de documentation interactive exposée).
+        openapi_url=None,
+        docs_url=None,
+        redoc_url=None,
     )
     app.state.services = svc
 
@@ -1232,25 +1433,11 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         app.add_exception_handler(exc_type, _error(status))
 
     def require_api(request: Request) -> Principal:
-        """Jeton commun (acteur « api ») ou jeton nommé (acteur = nom de l'agent, jamais auto-déclaré)."""
-        if cfg.api_token_sha256 is None and not cfg.agent_tokens_sha256:
-            raise HTTPProblem(
-                503,
-                "jeton d'API non configuré (POKESHOP_API_TOKEN_SHA256 ou POKESHOP_AGENT_TOKENS_SHA256) : "
-                "routes internes fermées",
-            )
-        token = request.headers.get(API_TOKEN_HEADER)
-        found: Principal | None = None
-        if token:
-            digest = sha256_hex(token)
-            if cfg.api_token_sha256 is not None and hmac.compare_digest(digest, cfg.api_token_sha256):
-                found = Principal("api", False)
-            for name, expected in cfg.agent_tokens_sha256.items():  # parcours complet (temps constant)
-                if hmac.compare_digest(digest, expected):
-                    found = Principal(name, True)
-        if found is None:
-            raise HTTPProblem(401, f"en-tête {API_TOKEN_HEADER} absent ou invalide")
-        return found
+        """Appelant déjà autorisé par :func:`authorize` (matrice) ; jamais évalué ici => 403 (fermé par défaut)."""
+        principal = getattr(request.state, "principal", None)
+        if not isinstance(principal, Principal):
+            raise HTTPProblem(403, "autorisation non évaluée : route refusée (fermé par défaut)")
+        return principal
 
     def owner_verified(request: Request) -> bool:
         token = request.headers.get(OWNER_TOKEN_HEADER)
@@ -1519,13 +1706,17 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
     @app.post("/stock/receive")
     async def stock_receive(request: Request) -> PokeshopJSONResponse:
-        """Réception physique en stock local (registre persisté) ; idempotente par (SKU, référence)."""
+        """Réception physique en stock local (registre persisté) ; idempotente par (SKU, référence).
+
+        Rôle ``operations-sav`` (ou propriétaire) : l'acteur est journalisé avec la réception ; un coût
+        historique de réception (``POST /costs/movements``) doit la citer depuis un **autre** jeton.
+        """
         principal = require_api(request)
         _persistence_guard(PersistentStockRegistry.STREAM, "journal du stock local")
         body = await _body(request, StockReceiveIn)
         actor = principal.name
         try:
-            level, replayed = svc.stock.receive_once(body.sku, body.qty, body.ref, at=svc.clock())
+            level, replayed = svc.stock.receive_once(body.sku, body.qty, body.ref, at=svc.clock(), recorded_by=actor)
         except StockPersistenceError:
             raise
         except PokeshopError as exc:  # même référence, autre quantité
@@ -1654,7 +1845,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         Comparé à la référence « dernier import » du fournisseur (prix ×10 ou ÷10, devise ou HT/TTC
         changés, import incomplet, contenu identique non daté), mise à jour s'il est accepté.
         """
-        require_api(request)
+        principal = require_api(request)
         if not _SUPPLIER_RE.match(supplier):
             raise HTTPProblem(422, "identifiant fournisseur invalide")
         _persistence_guard(ImportBaselineStore.STREAM, "références « dernier import »")
@@ -1669,8 +1860,8 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         )
         svc.baselines.update(result)
         svc.audit.append(
-            actor="n8n",
-            actor_kind=ActorKind.SYSTEME,
+            actor=principal.name,
+            actor_kind=ActorKind.AGENT,
             action="import.run",
             entity="supplier",
             entity_id=supplier,
@@ -1734,6 +1925,13 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         status, _ = svc.gate.stoploss_status()
         listing = body.listing
         blocked = body.stoploss_blocked or (status is not None and listing.product_key in status.blocked_products)
+        _persistence_guard(CatalogApprovalBook.STREAM, "registre des validations de fiches")
+        _persistence_guard(ShopPublicationBook.STREAM, "registre des fiches publiées")
+        pid = next(
+            (e.product_id for e in svc.catalog.entries() if e.listing.product_key == listing.product_key),
+            listing.product_key,
+        )
+        known = svc.publications.get(pid)
         plan = build_publication(
             listing,
             decision,
@@ -1747,6 +1945,8 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             sensitive_terms=body.sensitive_terms,
             table=_table(listing.fictif),
             stock_status=stock_status_for(listing, local_sellable=svc.stock.sellable(listing.public_sku)),
+            published=known.state() if known is not None else None,  # registre du moteur, jamais la fiche
+            validations=svc.catalog_approvals.get(pid),  # registre de la propriétaire
         )
         return _ok({"plan": plan, "dry_run": True})
 
@@ -1818,12 +2018,86 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                         "fictif": e.listing.fictif,
                         "recorded_by": e.recorded_by,
                         "recorded_at": e.recorded_at,
+                        "listing_sha256": listing_digest(e.listing),
                     }
                     for e in svc.catalog.entries()
                 ],
                 "cost_inputs": svc.catalog.all_costs(),
             }
         )
+
+    @app.post("/catalog/approvals", status_code=201)
+    async def catalog_approval(request: Request) -> PokeshopJSONResponse:
+        """Valide une fiche du catalogue : **propriétaire uniquement** (jeton propriétaire, journal persisté).
+
+        Seule voie de ``approved`` (mises à jour automatiques au niveau 2), ``content_validated`` (contenu
+        confirmé par écrit par le fournisseur) et ``category_rule_validated`` (publication automatique au
+        niveau 3) — jamais un champ de ``POST /catalog/items`` ni du corps de ``/sync/run`` (422). La
+        validation porte sur le contenu en vigueur de la fiche (empreinte) : une fiche modifiée ensuite par
+        l'agent catalogue n'est plus validée (revue R2-NEW-05 : « catalogue ne valide pas ses propres fiches »).
+        """
+        require_api(request)
+        _persistence_guard(CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation")
+        _persistence_guard(CatalogApprovalBook.STREAM, "registre des validations de fiches")
+        body = await _body(request, CatalogApprovalIn)
+        entry = next((e for e in svc.catalog.entries() if e.product_id == body.product_id), None)
+        if entry is None:
+            raise HTTPProblem(409, f"{body.product_id} : fiche absente du catalogue validé (POST /catalog/items)")
+        digest = listing_digest(entry.listing)
+        if body.listing_sha256 is not None and body.listing_sha256 != digest:
+            raise HTTPProblem(409, "fiche modifiée depuis votre examen : relire GET /catalog/approvals", listing_sha256=digest)
+        try:
+            approval = ListingApproval(
+                product_key=entry.product_id,
+                listing_sha256=digest,
+                approved=body.approved,
+                content_validated=body.content_validated,
+                category_rule_validated=body.category_rule_validated,
+                reason=body.reason,
+                approved_at=svc.clock(),
+            )
+        except ValidationError as exc:
+            raise HTTPProblem(422, "validation invalide", details=to_jsonable(exc.errors(include_url=False))) from None
+        svc.catalog_approvals.record(approval)
+        svc.audit.append(
+            actor="propriétaire",
+            actor_kind=ActorKind.PROPRIETAIRE,
+            action="catalog.approval",
+            entity="product",
+            entity_id=approval.product_key,
+            dry_run=False,
+            autonomy_level=int(svc.autonomy.level),
+            payload={
+                "approved": approval.approved,
+                "content_validated": approval.content_validated,
+                "category_rule_validated": approval.category_rule_validated,
+                "listing_sha256": digest,
+                "listing_recorded_by": entry.recorded_by,
+                "reason": approval.reason,
+            },
+        )
+        return _ok({"approval": approval}, 201)
+
+    @app.get("/catalog/approvals")
+    def catalog_approvals_list(request: Request) -> PokeshopJSONResponse:
+        """Validations de fiches de la propriétaire et fiches à examiner (empreinte du contenu en vigueur)."""
+        require_api(request)
+        _persistence_guard(CatalogApprovalBook.STREAM, "registre des validations de fiches")
+        _persistence_guard(CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation")
+        rows = []
+        for e in svc.catalog.entries():
+            approval = svc.catalog_approvals.get(e.product_id)
+            digest = listing_digest(e.listing)
+            rows.append(
+                {
+                    "product_id": e.product_id,
+                    "listing_sha256": digest,
+                    "recorded_by": e.recorded_by,
+                    "approval": approval,
+                    "current": approval is not None and approval.listing_sha256 == digest,
+                }
+            )
+        return _ok({"products": rows})
 
     def _owner_rated(entry: SupplierCostEntry, mapping: Any, now: datetime) -> OfferCostInputs:
         """Frais + taux de la propriétaire (``POST /fx/rates``) seulement ; sans taux : coût incomplet (brouillon)."""
@@ -1879,6 +2153,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             (SyncRunLog.STREAM, "journal des cycles de synchronisation"),
             (ShopPublicationBook.STREAM, "registre des fiches publiées"),
             (FxRateBook.STREAM, "registre des taux de change"),
+            (CatalogApprovalBook.STREAM, "registre des validations de fiches"),
         ):
             _persistence_guard(stream, what)
         mapping = load_mapping(body.supplier)
@@ -1928,6 +2203,12 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             cost_inputs=cost_inputs,
             market_refs=body.market_refs,
             price_validations=svc.price_approvals.active(now),
+            # Validations humaines : registre de la propriétaire seulement, appliquées au contenu exact validé.
+            validations={
+                pid: a
+                for pid, _, listing in items
+                if (a := svc.catalog_approvals.get(pid) or svc.catalog_approvals.get(listing.product_key)) is not None
+            },
         )
         try:
             report = svc.sync.run_supplier_cycle(
@@ -2006,6 +2287,16 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         principal = require_api(request)
         body = await _body(request, IncidentIn)
         actor = actor_of(principal, body.actor, request, route="incidents.open")
+        # Données FICTIVES : déduit par le moteur (fiche du catalogue, dictionnaire du fournisseur), jamais déclaré.
+        fictif = False
+        if body.product_key is not None:
+            entry = next((e for e in svc.catalog.entries() if body.product_key in (e.product_id, e.listing.product_key)), None)
+            fictif = entry is not None and entry.listing.fictif
+        if body.supplier_id is not None and _SUPPLIER_RE.match(body.supplier_id):
+            try:
+                fictif = fictif or load_mapping(body.supplier_id).fictif
+            except (MappingError, OSError):
+                pass
         incident = svc.incidents.open(
             cause=body.cause,
             code=body.code,
@@ -2018,8 +2309,9 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             workflow=body.workflow,
             details=body.details,
             actor=actor,
-            actor_kind=ActorKind.AGENT,
+            actor_kind=ActorKind.PROPRIETAIRE if principal.owner else ActorKind.AGENT,
             simulation=body.simulation,
+            fictif=fictif,
         )
         svc.gate.invalidate()
         return _ok({"incident": incident, "notification": svc.incidents.notification_for(incident.incident_id)}, 201)
@@ -2028,36 +2320,39 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
     async def incidents_test(incident_id: str, request: Request) -> PokeshopJSONResponse:
         """Enregistre le test de correction (préalable à toute reprise).
 
-        Un test **réussi** est une valeur décisive (il ouvre la reprise) : soit la propriétaire l'atteste
-        (jeton propriétaire), soit un **jeton nommé différent de celui qui a ouvert l'incident** (agent 12
-        QA) le déclare ; le jeton commun ne le peut jamais (revue NEW-01). ``test_ref`` désigne alors un
-        cycle ``POST /sync/run`` du **journal persisté** (``sync_runs``) : simulation PROPRE (au moins une
-        offre au coût rendu calculé, aucune erreur critique), postérieure à l'ouverture, et portant sur
-        la cible de l'incident (référence rapprochée dans le cycle, ou même fournisseur). Un test échoué
-        peut être déclaré par tout porteur de jeton.
+        Un test **réussi** est une valeur décisive (il ouvre la reprise) — revue R3 (NEW-01) : soit la
+        propriétaire l'atteste (jeton propriétaire), soit le rôle ``qa-conformite`` (liste fermée
+        :data:`pokeshop.authz.INCIDENT_TEST_ATTESTERS`), **différent de l'ouvreur**. ``test_ref`` désigne alors
+        un cycle ``POST /sync/run`` du **journal persisté** (``sync_runs``) : simulation PROPRE, postérieure à
+        l'ouverture, **lancée par un autre principal que l'attestant**, avec le **catalogue du registre**
+        (jamais celui du corps), sur des données **réelles** (non FICTIVES, source datée) sauf incident ouvert
+        en simulation ou sur données FICTIVES, et portant sur le **fournisseur** de l'incident (quand il est
+        connu, même si une référence l'est aussi) et sur sa **référence**. Un test échoué peut être déclaré
+        par tout rôle nommé.
         """
         principal = require_api(request)
         body = await _body(request, IncidentTestIn)
         incident = svc.incidents.get(incident_id)
         token = request.headers.get(OWNER_TOKEN_HEADER)
-        owner = owner_verified(request)
+        owner = principal.owner or owner_verified(request)
         if token and not owner:
             raise HTTPProblem(403, "jeton propriétaire invalide")
         actor = "propriétaire" if owner else actor_of(principal, body.actor, request, route="incidents.test")
         if body.passed and not owner:
             status_code, problem = 409, None
-            if not principal.named:
+            if principal.role not in authz.INCIDENT_TEST_ATTESTERS:
                 status_code = 403
                 problem = (
-                    "test réussi déclaré avec le jeton commun (non attribuable) : jeton nommé de l'agent 12 QA "
-                    "(différent de l'ouvreur) ou jeton propriétaire exigé"
+                    f"test réussi déclaré par « {principal.name} » : seul le rôle qa-conformite (jeton nommé, "
+                    "différent de l'ouvreur) ou la propriétaire atteste un test de correction"
                 )
             elif incident.opened_by in (principal.name, f"agent:{principal.name}"):
                 status_code = 403
-                problem = "test auto-attesté : un autre agent (agent 12 QA) ou la propriétaire doit enregistrer le test"
+                problem = "test auto-attesté : l'ouvreur de l'incident ne l'atteste jamais (propriétaire requise)"
             else:
                 _persistence_guard(SyncRunLog.STREAM, "journal des cycles de synchronisation")
                 run = svc.sync_runs.get(body.test_ref)
+                synthetic = incident.simulation or incident.fictif
                 if run is None:
                     problem = "test_ref doit être l'identifiant d'un cycle POST /sync/run enregistré par ce service"
                 elif not run.dry_run or run.status != "PROPRE":
@@ -2067,12 +2362,19 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                     )
                 elif run.started_at < incident.opened_at:
                     problem = "le cycle cité précède l'ouverture de l'incident : rejouer après la correction"
+                elif run.recorded_by in (principal.name, f"agent:{principal.name}"):
+                    problem = "le cycle cité a été lancé par l'attestant : un autre principal doit le lancer"
+                elif run.catalog_source != "registre":
+                    problem = "le cycle cité utilise un catalogue fourni dans le corps : catalogue du registre exigé"
+                elif not synthetic and run.acceptance_exclusion() is not None:
+                    problem = (
+                        f"le cycle cité n'est pas un cycle réel ({run.acceptance_exclusion()}) alors que l'incident "
+                        "porte sur des données réelles"
+                    )
+                elif incident.supplier_id is not None and run.supplier_id != incident.supplier_id:
+                    problem = f"le cycle cité ne porte pas sur le fournisseur de l'incident ({incident.supplier_id})"
                 elif incident.product_key is not None and incident.product_key not in run.product_ids:
                     problem = f"le cycle cité ne porte pas sur la référence de l'incident ({incident.product_key})"
-                elif incident.product_key is None and incident.supplier_id is not None and (
-                    run.supplier_id != incident.supplier_id
-                ):
-                    problem = f"le cycle cité ne porte pas sur le fournisseur de l'incident ({incident.supplier_id})"
                 elif incident.product_key is None and incident.supplier_id is None and (
                     incident.workflow != WORKFLOW_SUPPLIER_TO_SHOP
                 ):
@@ -2214,22 +2516,24 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         *,
         origin: str,
         sources: dict[str, Any] | None = None,
+        before_accept: Callable[[StopLossState], None] | None = None,
     ) -> PokeshopJSONResponse:
         """Évalue à part, enregistre puis met en vigueur une photo (déposée ou construite par le moteur).
 
         Apports et retraits : **toujours** ceux du registre de la propriétaire à la date de la photo,
-        jamais ceux d'une photo (revue SEC-06).
+        jamais ceux d'une photo (revue SEC-06). Publicité : par (campagne, jour), le MAX entre la dépense
+        de la photo et les paiements pub **exécutés** du registre du mandat (revue R3, R2-NEW-03).
         """
         now = svc.clock()
-        _persistence_guard(CapitalRegister.STREAM, "registre des apports")
-        posted = posted.replace(capital_movements=svc.capital.movements(until=posted.as_of))
-        body, overridden = svc.authoritative_photo(posted, now)
+        body, overridden = _authoritative_photo(engine, posted, now)
         try:
             engine.validate_photo(body, now)
         except StopLossError as exc:
             raise HTTPProblem(
                 409, f"photo refusée : {exc}", previous_photo_kept=svc.stoploss_state is not None
             ) from None
+        if before_accept is not None:
+            before_accept(body)  # ex. point zéro posé avant la première évaluation (revue R2-ADV-01)
         with svc.lock:
             try:
                 svc.photo_journal.append(
@@ -2272,6 +2576,22 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         """
         principal = require_api(request)
         engine = _require_engine()
+        state, sources = _build_photo(engine, principal)
+        return _accept_photo(principal, engine, state, origin="registres du moteur", sources=sources)
+
+    def _authoritative_photo(engine: StopLossEngine, posted: StopLossState, now: datetime) -> tuple[StopLossState, list[str]]:
+        """Photo avec les valeurs du moteur : apports du registre, publicité ≥ paiements exécutés, plafonds signés."""
+        _persistence_guard(CapitalRegister.STREAM, "registre des apports")
+        _persistence_guard(SpendLedger.STREAM, "registre du mandat")
+        executed = executed_ad_payments(svc.spend_ledger.entries(), engine.config.tz)
+        posted = posted.replace(
+            capital_movements=svc.capital.movements(until=posted.as_of),
+            ad_spends=merge_ad_spends(posted.ad_spends, executed, until=posted.as_of.astimezone(engine.config.tz).date()),
+        )
+        return svc.authoritative_photo(posted, now)
+
+    def _build_photo(engine: StopLossEngine, principal: Principal) -> tuple[StopLossState, dict[str, Any]]:
+        """Photo d'activité construite par le moteur depuis ses registres (409 si une source manque)."""
         for stream, what in (
             (CapitalRegister.STREAM, "registre des apports"),
             (CostRegister.STREAM, "registre de coûts historiques"),
@@ -2282,7 +2602,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             _persistence_guard(stream, what)
         now = svc.clock()
         try:
-            state, sources = build_activity_photo(
+            return build_activity_photo(
                 now=now,
                 capital=svc.capital,
                 paypal=svc.paypal_balance,
@@ -2301,7 +2621,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         except PhotoSourcesError as exc:
             svc.audit.append(
                 actor=principal.name,
-                actor_kind=ActorKind.AGENT if principal.named else ActorKind.SYSTEME,
+                actor_kind=ActorKind.PROPRIETAIRE if principal.owner else ActorKind.AGENT,
                 action="stoploss.refresh_refused",
                 entity="stoploss",
                 entity_id="photo",
@@ -2311,7 +2631,6 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             raise HTTPProblem(
                 409, str(exc), manquantes=exc.problems, previous_photo_kept=svc.stoploss_state is not None
             ) from None
-        return _accept_photo(principal, engine, state, origin="registres du moteur", sources=sources)
 
     def _rearm_reference(engine: StopLossEngine) -> dict[str, Any] | None:
         """Valeur à attester au réarmement (valeur nette de la photo en vigueur, date, empreinte)."""
@@ -2464,28 +2783,21 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
     @app.post("/stoploss/baseline")
     async def stoploss_baseline(request: Request) -> PokeshopJSONResponse:
-        """Point zéro du capital engagé : **propriétaire uniquement** (jeton distinct, motif, journal persisté)."""
-        require_api(request)
+        """Point zéro du capital engagé : **propriétaire uniquement** (jeton distinct, motif, journal persisté).
+
+        ``with_photo: true`` (revue R2-ADV-01) : sans point zéro antérieur, le moteur construit la **première**
+        photo depuis ses registres, pose le point zéro (``reference_chf`` attestée) **puis** évalue la photo,
+        de façon atomique : la photo du lancement n'est jamais évaluée sans point zéro (ce qui gèlerait tout
+        et rendrait le point zéro impossible). Ordre : apports, soldes, dettes et créances, point zéro avec
+        la première photo, puis activation du workflow 07.
+        """
+        principal = require_api(request)
         engine = _require_engine()
-        token = owner_token(
-            request,
-            required=True,
-            route="stoploss.baseline",
-            on_refused=lambda motif: engine.record_refused_attempt(
-                "BASELINE_REFUSED", now=svc.clock(), actor="inconnu", detail=f"en-tête propriétaire {motif}"
-            ),
-        )
+        token = owner_token(request, required=True, route="stoploss.baseline")
         body = await _body(request, BaselineIn)
         now = svc.clock()
-        if svc.stoploss_state is None:
-            raise HTTPProblem(
-                409, "photo d'activité requise (POST /stoploss/state) : le point zéro mémorise les apports du moment"
-            )
-        try:
-            entry = engine.set_baseline(
-                token or "", body.reason, now=now, state=svc.stoploss_state, reference_chf=body.reference_chf
-            )
-        except RearmRefusedError:
+
+        def refused() -> None:
             svc.audit.append(
                 actor="inconnu",
                 actor_kind=ActorKind.AGENT,
@@ -2495,6 +2807,56 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 dry_run=False,
                 payload={"reason": body.reason},
             )
+
+        if body.with_photo:
+            if engine.latch.baseline is not None:
+                raise HTTPProblem(409, "point zéro déjà posé : with_photo réservé au premier point zéro (sinon réarmement)")
+            state, sources = _build_photo(engine, principal)
+            entries: list[Any] = []
+
+            def set_first_baseline(photo: StopLossState) -> None:
+                try:
+                    entries.append(
+                        engine.set_baseline(
+                            token or "", body.reason, now=now, state=photo, reference_chf=body.reference_chf
+                        )
+                    )
+                except RearmRefusedError:
+                    refused()
+                    raise
+
+            response = _accept_photo(
+                principal, engine, state, origin="registres du moteur (point zéro)", sources=sources,
+                before_accept=set_first_baseline,
+            )  # fmt: skip
+            svc.gate.invalidate()
+            svc.audit.append(
+                actor="propriétaire",
+                actor_kind=ActorKind.PROPRIETAIRE,
+                action="stoploss.baseline",
+                entity="stoploss",
+                entity_id="global",
+                dry_run=False,
+                autonomy_level=int(svc.autonomy.level),
+                payload={"reason": body.reason, "reference_chf": body.reference_chf, "with_photo": True,
+                         "journal_seq": entries[0].seq if entries else None},
+            )  # fmt: skip
+            content = json.loads(response.body)
+            content["journal_entry"] = entries[0] if entries else None
+            content["latch"] = engine.latch
+            return _ok(content, response.status_code)
+        if svc.stoploss_state is None:
+            raise HTTPProblem(
+                409,
+                "photo d'activité requise : utiliser with_photo: true pour poser le point zéro avec la première photo "
+                "(construite par le moteur, sans évaluation préalable)",
+            )
+        try:
+            entry = engine.set_baseline(
+                token or "", body.reason, now=now, state=svc.stoploss_state, reference_chf=body.reference_chf
+            )
+        except RearmRefusedError:
+            refused()
             raise
         svc.gate.invalidate()
         svc.audit.append(
@@ -2555,10 +2917,13 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         ):
             _persistence_guard(stream, what)
         requester = body.request.requested_by
-        if principal.named and requester != principal.name:
-            raise HTTPProblem(403, f"requested_by « {requester} » ≠ agent du jeton « {principal.name} »")
-        if not principal.named:
-            requester = actor_of(principal, requester, request, route="mandate.check")
+        relay = principal.role in authz.RELAY_ROLES
+        if relay:
+            # Passerelle n8n 08 : relaie la demande d'un agent ; le demandeur déclaré n'est pas authentifié.
+            if requester not in authz.AGENT_ROLES:
+                raise HTTPProblem(403, f"requested_by « {requester} » : rôle d'agent attendu (matrice authz)")
+        elif requester != principal.name:
+            raise HTTPProblem(403, f"requested_by « {requester} » ≠ rôle du jeton « {principal.name} »")
         suspended_now = svc.incidents.suspended()
         frozen = svc.stoploss_engine is not None and svc.stoploss_engine.frozen
         # Incident ouvert sur le workflow de dépense (clé canonique), ou suspension de toutes les écritures
@@ -2596,10 +2961,15 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             posters.append(("Solde bancaire", svc.bank_balance.recorded_by))
         if svc.balance_statement is not None:
             posters.append(("Dettes et créances", svc.balance_statement.recorded_by))
+        # Revue R3 (R2-NEW-01, SEC-16) : déposants des coûts historiques (stock de la photo) et de la publicité.
+        posters.extend(("Stock au coût historique", poster) for poster in sorted(svc.costs.posters()))
+        posters.extend(("Activité publicitaire", poster) for poster in sorted(svc.ads.posters()))
         for label, poster in posters:
-            # Vérifiable seulement si demande et dépôt viennent de deux jetons nommés distincts.
-            if not principal.named or poster is None or poster == "api" or poster == principal.name:
-                unverified.append(label)
+            # Vérifiable seulement si demande et dépôt viennent de deux jetons nommés distincts ; un relais
+            # (passerelle 08) n'authentifie pas le demandeur : jamais vérifiable.
+            if relay or poster is None or poster in (authz.COMMON, "inconnu") or poster in (principal.name, requester):
+                if label not in unverified:
+                    unverified.append(label)
         decision = check(
             body.request,
             svc.mandate,
@@ -2635,6 +3005,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 "recorded": entry is not None,
                 "treasury": treasury,
                 "treasury_source": "registres du moteur (photo stop-loss acceptée, solde PayPal relevé)",
+                "unverified": unverified,
             }
         )
 
@@ -2806,13 +3177,27 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
     @app.post("/ads/activity")
     async def ads_activity(request: Request) -> PokeshopJSONResponse:
-        """Dépenses publicitaires et commandes attribuées relevées par le connecteur publicitaire."""
+        """Dépenses publicitaires et commandes attribuées relevées par le **connecteur publicitaire**.
+
+        Jamais l'agent acquisition (qui dépense) : rôle ``connecteur-publicite`` ou propriétaire (matrice).
+        Registre en ajout seul : une dépense déjà relevée pour (campagne, jour) ne baisse jamais (409) ; une
+        commande attribuée doit être enregistrée par le moteur (``POST /orders/shipped``), sa contribution
+        est plafonnée par ses données (revue R3, R2-NEW-03). Le stop-loss pub retient en plus, par
+        (campagne, jour), le MAX entre cette déclaration et les paiements pub exécutés du registre du mandat.
+        """
         principal = require_api(request)
         _persistence_guard(AdsActivityRegister.STREAM, "registre de l'activité publicitaire")
+        _persistence_guard(OrderRegister.STREAM, "registre des commandes")
         body = await _body(request, AdsActivityIn)
         now = svc.clock()
         tz = svc.stoploss_config.tz if svc.stoploss_config is not None else UTC
-        received = svc.ads.record(list(body.ad_spends), list(body.attributed_orders), today=now.astimezone(tz).date())
+        received = svc.ads.record(
+            list(body.ad_spends),
+            list(body.attributed_orders),
+            today=now.astimezone(tz).date(),
+            recorded_by=principal.name,
+            order_book=svc.orders,
+        )
         svc.audit.append(
             actor=principal.name,
             actor_kind=ActorKind.AGENT if principal.named else ActorKind.SYSTEME,
@@ -2889,12 +3274,18 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
     @app.post("/northstar/entries")
     async def northstar_entries(request: Request) -> PokeshopJSONResponse:
-        """Enregistre des écritures de contribution (idempotentes par ``entry_id``)."""
+        """Enregistre des écritures de contribution (idempotentes par ``entry_id``), lot atomique.
+
+        Rôles nommés (``n8n-02-commandes``, ``finance-pricing``) : coûts **positifs** seulement (paiement,
+        SAV, acquisition, charges fixes) ; ventes et avoirs : ``POST /orders/shipped`` et
+        ``/orders/{id}/refunds`` (commandes enregistrées). Propriétaire : écriture manuelle, montant négatif
+        seulement en annulation d'une écriture positive existante du même poste ; une vente exige la
+        logistique réelle de la même commande (revue MOT-18). Coût historique : jamais (``/costs/movements``).
+        """
         principal = require_api(request)
         _persistence_guard(NorthStarLedger.STREAM, "journal de l'étoile polaire")
         body = await _body(request, NorthStarEntriesIn)
-        # Lot atomique ; coût historique refusé (registre interne /costs/movements uniquement).
-        added = svc.northstar.add_entries(body.entries)
+        added = svc.northstar.add_entries(body.entries, owner=principal.owner)
         svc.audit.append(
             actor=principal.name,
             actor_kind=ActorKind.AGENT if principal.named else ActorKind.SYSTEME,
@@ -2906,26 +3297,175 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         )
         return _ok({"added": len(added), "received": len(body.entries)})
 
+    @app.post("/orders/shipped", status_code=201)
+    async def orders_shipped(request: Request) -> PokeshopJSONResponse:
+        """Commande payée et expédiée : enregistrée par le moteur, ventes de l'étoile polaire **dérivées** d'elle.
+
+        Rôle ``n8n-02-commandes`` (webhook Shopify vérifié) ou propriétaire. Coût **réel** du transporteur et
+        référence de l'étiquette achetée obligatoires (revue MOT-18 : une logistique supposée n'est jamais
+        inscrite) ; idempotente par ``order_id`` (autre contenu : 409).
+        """
+        principal = require_api(request)
+        _persistence_guard(OrderRegister.STREAM, "registre des commandes")
+        _persistence_guard(NorthStarLedger.STREAM, "journal de l'étoile polaire")
+        body = await _body(request, ShippedOrderIn)
+        now = svc.clock()
+        if body.paid_at - now > timedelta(minutes=5):
+            raise HTTPProblem(409, "commande datée du futur : horloge non fiable")
+        try:
+            order, created = svc.orders.record_shipped(
+                ShippedOrder(**body.model_dump(), recorded_by=principal.name, recorded_at=now), svc.northstar
+            )
+        except NorthStarPersistenceError:
+            raise
+        except NorthStarError as exc:
+            raise HTTPProblem(409 if "déjà enregistrée" in str(exc) else 422, str(exc)) from None
+        if created:
+            svc.audit.append(
+                actor=principal.name,
+                actor_kind=ActorKind.PROPRIETAIRE if principal.owner else ActorKind.AGENT,
+                action="orders.shipped",
+                entity="order",
+                entity_id=order.order_id,
+                dry_run=False,
+                payload={"net_sales_ht": order.net_sales_ht, "shipping_cost_actual": order.shipping_cost_actual,
+                         "shipping_label_ref": order.shipping_label_ref},
+            )  # fmt: skip
+        return _ok({"order": order, "created": created}, 201 if created else 200)
+
+    @app.post("/orders/{order_id}/refunds", status_code=201)
+    async def orders_refund(order_id: str, request: Request) -> PokeshopJSONResponse:
+        """Avoir sur une commande enregistrée (cumul ≤ ventes) : ventes négatives **dérivées** de lui."""
+        principal = require_api(request)
+        _persistence_guard(OrderRegister.STREAM, "registre des commandes")
+        _persistence_guard(NorthStarLedger.STREAM, "journal de l'étoile polaire")
+        body = await _body(request, OrderRefundIn)
+        now = svc.clock()
+        if body.at - now > timedelta(minutes=5):
+            raise HTTPProblem(409, "avoir daté du futur : horloge non fiable")
+        try:
+            refund, created = svc.orders.record_refund(
+                OrderRefund(order_id=order_id, **body.model_dump(), recorded_by=principal.name, recorded_at=now),
+                svc.northstar,
+            )
+        except NorthStarPersistenceError:
+            raise
+        except NorthStarError as exc:
+            raise HTTPProblem(409, str(exc)) from None
+        if created:
+            svc.audit.append(
+                actor=principal.name,
+                actor_kind=ActorKind.PROPRIETAIRE if principal.owner else ActorKind.AGENT,
+                action="orders.refund",
+                entity="order",
+                entity_id=order_id,
+                dry_run=False,
+                payload={"refund_id": refund.refund_id, "net_sales_ht": refund.net_sales_ht},
+            )
+        return _ok({"refund": refund, "created": created}, 201 if created else 200)
+
+    INVOICE_GAP_OWNER = Decimal("0.02")
+    """Écart de facture au-delà duquel seule la propriétaire inscrit l'ajustement (workflow 03 : > 2 %)."""
+
+    def _cost_reference_problem(body: CostMovementIn, principal: Principal) -> tuple[int, str] | None:
+        """Adossement d'un mouvement de coût (revue R3, R2-NEW-01) ; None = vérifié."""
+        if body.kind == "RECEIPT":
+            if body.stock_ref is None or body.invoice_ref is None:
+                return 422, "réception : stock_ref (réception POST /stock/receive) et invoice_ref (facture) obligatoires"
+            entry = next(
+                (e for e in svc.catalog.entries() if body.product_key in (e.product_id, e.listing.product_key)), None
+            )
+            if entry is None:
+                return 409, f"{body.product_key} : référence absente du catalogue validé (SKU de la réception inconnu)"
+            receipt = svc.stock.receipt(entry.listing.public_sku, body.stock_ref)
+            if receipt is None:
+                return 409, (
+                    f"réception {body.stock_ref} inconnue pour {entry.listing.public_sku} : déclarer d'abord la "
+                    "réception physique (POST /stock/receive, operations-sav)"
+                )
+            qty, receiver = receipt
+            if body.qty != qty:
+                return 409, f"réception {body.stock_ref} : {qty} unité(s) reçue(s) ≠ {body.qty} au coût"
+            if not principal.owner and (receiver is None or receiver == principal.name):
+                return 409, "réception déclarée par le même jeton (ou inconnu) : un autre jeton doit l'avoir déclarée"
+            already = [m for m in svc.costs.movements() if m.kind == "RECEIPT" and m.stock_ref == body.stock_ref
+                       and m.product_key == body.product_key]  # fmt: skip
+            if already and already[0].ref != body.ref:
+                return 409, f"réception {body.stock_ref} déjà valorisée (lot {already[0].ref})"
+        elif body.kind == "INVOICE_ADJUSTMENT":
+            if body.invoice_ref is None:
+                return 422, "ajustement de facture : invoice_ref obligatoire"
+            original = svc.costs.receipt_unit_cost(body.product_key, body.lot_id or "")
+            if original is None:
+                return 409, f"lot {body.lot_id} inconnu du registre de coûts"
+            if body.unit_cost is not None and not principal.owner:
+                gap = abs(Decimal(body.unit_cost) - original) / original
+                if gap > INVOICE_GAP_OWNER:
+                    return 403, (
+                        f"écart de facture {gap:.2%} > 2 % du coût à la réception ({original}) : signalé, la "
+                        "propriétaire l'inscrit (jeton propriétaire)"
+                    )
+        return None
+
     @app.post("/costs/movements")
     async def cost_movements(request: Request) -> PokeshopJSONResponse:
-        """Registre de coûts historiques interne : seule voie du coût des ventes dans l'étoile polaire."""
+        """Registre de coûts historiques interne : seule voie du coût des ventes dans l'étoile polaire.
+
+        Rôle ``finance-pricing`` (ou propriétaire). Revue R3 (R2-NEW-01) : une **réception** (stock au coût
+        historique de la photo du stop-loss) cite la réception physique ``POST /stock/receive`` (même SKU,
+        même quantité, déclarée par un **autre** jeton, ``stock_ref``) et la facture (``invoice_ref``) ; un
+        **ajustement de facture** cite la facture et, au-delà de 2 % du coût à la réception, attend la
+        propriétaire. Sinon 409/422/403 (journalisé).
+        """
         principal = require_api(request)
         _persistence_guard(CostRegister.STREAM, "registre de coûts historiques")
         _persistence_guard(NorthStarLedger.STREAM, "journal de l'étoile polaire")
+        _persistence_guard(PersistentStockRegistry.STREAM, "journal du stock local")
+        _persistence_guard(CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation")
         body = await _body(request, CostMovementIn)
+        problem = _cost_reference_problem(body, principal)
+        if problem is not None:
+            svc.audit.append(
+                actor=principal.name,
+                actor_kind=ActorKind.AGENT,
+                action="costs.movement_refused",
+                entity="cost_ledger",
+                entity_id=body.product_key,
+                dry_run=False,
+                payload={"kind": body.kind, "ref": body.ref, "stock_ref": body.stock_ref, "motif": problem[1]},
+            )
+            raise HTTPProblem(problem[0], problem[1])
         movement = CostMovement(**body.model_dump(), recorded_by=principal.name)
         added = svc.costs.apply(movement)
         ledger = svc.costs.ledger(movement.product_key)
         svc.audit.append(
             actor=principal.name,
-            actor_kind=ActorKind.AGENT if principal.named else ActorKind.SYSTEME,
+            actor_kind=ActorKind.PROPRIETAIRE if principal.owner else ActorKind.AGENT,
             action="costs.movement",
             entity="cost_ledger",
             entity_id=movement.product_key,
             dry_run=False,
-            payload={"kind": movement.kind, "ref": movement.ref, "qty": movement.qty, "northstar_added": added},
-        )
+            payload={"kind": movement.kind, "ref": movement.ref, "qty": movement.qty, "northstar_added": added,
+                     "stock_ref": movement.stock_ref, "invoice_ref": movement.invoice_ref},
+        )  # fmt: skip
         return _ok({"northstar_added": added, "valuation": ledger.valuation() if ledger is not None else None})
+
+    def _engine_refusal(event: str, label: str) -> Callable[[str], None]:
+        def hook(motif: str) -> None:
+            if svc.stoploss_engine is not None:
+                svc.stoploss_engine.record_refused_attempt(
+                    event, now=svc.clock(), actor="inconnu", detail=f"{label}{motif}"
+                )
+
+        return hook
+
+    owner_refusal_hooks.update(
+        {
+            "stoploss.rearm": _engine_refusal("REARM_REFUSED", "en-tête propriétaire "),
+            "stoploss.baseline": _engine_refusal("BASELINE_REFUSED", "en-tête propriétaire "),
+            "stoploss.capital_reset": _engine_refusal("REARM_REFUSED", "mémoire des apports : en-tête "),
+        }
+    )
 
     from .api_dashboard import build_dashboard_router  # tableau de bord interne (lecture seule)
 

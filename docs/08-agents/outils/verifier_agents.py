@@ -33,6 +33,10 @@ Contrôles (chacun renvoie la liste des erreurs, vide si tout va bien) :
 16. ``check_api_routes_documented`` : chaque route de ``engine/pokeshop/api.py`` et ``api_dashboard.py`` est citée
     dans ``docs/SPEC.md`` §2.7 et dans ``BRIEF_COMMUN.md`` §10 (revue NEW-02) ; chaque route réservée à la
     propriétaire figure dans ``INTERVENTIONS_HUMAINES.md``.
+17. ``check_role_writes_documented`` : le tableau « Qui détient quel jeton » de ``BRIEF_COMMUN.md`` §10 a une ligne par
+    rôle de la matrice (``engine/pokeshop/authz.py``) et ses écritures propres sont exactement celles de la matrice ;
+    chaque agent qui a ``CONN-API-MOTEUR`` cite le nom de son jeton (revue R3). Les anciens noms de jeton
+    (``agent-12-qa``, ``n8n-NN-…``) et un jeton commun qui « dépose » une valeur sont des consignes périmées (14).
 
 Usage ::
 
@@ -43,6 +47,7 @@ from __future__ import annotations
 
 import csv
 import fnmatch
+import importlib.util
 import json
 import re
 import sys
@@ -262,6 +267,15 @@ STALE_GUIDANCE: tuple[tuple[re.Pattern[str], str], ...] = (
         re.compile(r"(?i)générateurs en mode contrôle"),
         "les générateurs n'ont pas de mode contrôle : passer par docs/08-agents/outils/controle_generateurs.py",
     ),
+    (
+        re.compile(r"\bagent-\d{2}-[a-z]|\bn8n-NN-|\bn8n:0\d-"),
+        "ancien nom de jeton : le nom d'un jeton est son rôle de la matrice (`qa-conformite`, `n8n-07-stoploss`…, "
+        "docs/08-agents/MATRICE_API.md)",
+    ),
+    (
+        re.compile(r"(?i)(?:jeton commun|credential commun)[^\n]{0,80}(?:dépose|déclare|écrit|poste)(?![^\n]{0,40}(?:403|jamais|refus))"),
+        "le jeton commun ne fait que lire et simuler : toute écriture lui répond 403 (MATRICE_API.md)",
+    ),
 )
 ATTENDU_RE = re.compile(r"`([^`\n]+)`\s*[,(]?\s*\(?attendu\b")
 
@@ -286,6 +300,7 @@ INTERVENTIONS_FILE = Path("docs") / "00-pilotage" / "INTERVENTIONS_HUMAINES.md"
 # Routes (ou paramètres) réservées au jeton de la propriétaire : chacune a sa fiche dans la checklist maîtresse.
 OWNER_ROUTES = (
     "POST /pricing/approvals",
+    "POST /catalog/approvals",
     "POST /capital/movements",
     "POST /fx/rates",
     "POST /stoploss/rearm",
@@ -295,6 +310,13 @@ OWNER_ROUTES = (
     "POST /incidents/{id}/resume",
     "cap_exceptions",
 )
+
+
+# Matrice d'autorisations (revue R3) : le tableau « Qui détient quel jeton » de BRIEF_COMMUN §10 suit authz.py.
+AUTHZ_FILE = Path("engine") / "pokeshop" / "authz.py"
+ROLE_TABLE_HEADER = "| Rôle (nom du jeton) | Détenu par | Écritures propres |"
+ROUTE_CITE_RE = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE) (/[A-Za-z0-9_{}/.-]+)")
+NO_TOKEN_MARK = "pas de jeton émis"
 
 
 # ----------------------------------------------------------------------------------------- utilitaires
@@ -910,7 +932,7 @@ def check_secret_file_guidance(root: Path = REPO) -> list[str]:
 
     Les agents qui ont Bash travaillent dans le dépôt : un ``.env`` à la racine y serait lisible par un script
     (les règles ``deny`` ne sont qu'un filet). Le fichier de variables vit hors du dépôt
-    (``sudo install -D -m 600 .env.example /etc/pokeshop/api.env``) et la pile se lance par ``scripts/compose.sh``.
+    (``sudo install -D -m 600 -o "$USER" .env.example /etc/pokeshop/api.env``) et la pile se lance par ``scripts/compose.sh``.
     """
     errors: list[str] = []
     for pattern_glob in SECRET_GUIDANCE_GLOBS:
@@ -979,6 +1001,89 @@ def check_api_routes_documented(root: Path = REPO) -> list[str]:
     return errors
 
 
+# ----------------------------------------------------------------------------------------- 17. jetons par rôle
+def load_authz(root: Path = REPO) -> Any | None:
+    """Module ``engine/pokeshop/authz.py`` du dépôt (bibliothèque standard seulement), ou None s'il manque."""
+    path = root / AUTHZ_FILE
+    if not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("_pokeshop_authz_verif", path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # dataclasses résout les annotations par le module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+    return module
+
+
+def _route_key(method: str, path: str) -> str:
+    """Route normalisée (paramètres ``{x}`` sans nom) pour comparer documentation et matrice."""
+    return f"{method} {re.sub(r'{[^}]*}', '{}', path.rstrip('.'))}"
+
+
+def role_writes(authz: Any) -> dict[str, set[str]]:
+    """Rôle -> écritures propres (routes WRITE où le rôle est nommé, hors actes ouverts à tout rôle nommé)."""
+    out: dict[str, set[str]] = {role: set() for role in [*authz.AGENT_ROLES, *authz.CONNECTOR_ROLES]}
+    for (method, path), rule in authz.ROUTE_MATRIX.items():
+        if rule.kind is authz.Kind.WRITE and rule.roles != authz.KNOWN_ROLES:
+            for role in rule.roles:
+                out[role].add(_route_key(method, path))
+    return out
+
+
+def check_role_writes_documented(root: Path = REPO) -> list[str]:
+    """BRIEF_COMMUN §10 : une ligne par rôle de la matrice, écritures propres identiques à ``authz.py``.
+
+    Chaque agent qui a ``CONN-API-MOTEUR`` dans son brief ou son prompt cite aussi le nom de son jeton (`rôle`),
+    et un agent marqué « pas de jeton émis » n'a pas ``CONN-API-MOTEUR``.
+    """
+    authz = load_authz(root)
+    if authz is None:
+        return []
+    errors: list[str] = []
+    brief_path = root / BRIEF_FILE
+    brief = brief_path.read_text(encoding="utf-8") if brief_path.is_file() else ""
+    section = brief.split("## 10.", 1)[-1].split("## 11.", 1)[0]
+    if ROLE_TABLE_HEADER not in section:
+        return [f"{BRIEF_FILE} §10 : tableau « {ROLE_TABLE_HEADER} » absent"]
+    rows: dict[str, list[str]] = {}
+    for line in section.split(ROLE_TABLE_HEADER, 1)[1].splitlines()[2:]:
+        if not line.startswith("|"):
+            break
+        cols = [c.strip() for c in line.strip().strip("|").split("|")]
+        match = re.fullmatch(r"`([a-z0-9-]+)`", cols[0])
+        if match:
+            rows[match.group(1)] = cols
+    expected = role_writes(authz)
+    for role, routes in expected.items():
+        if role not in rows:
+            errors.append(f"{BRIEF_FILE} §10 : rôle `{role}` absent du tableau des jetons")
+            continue
+        cols = rows[role]
+        documented = {_route_key(m, path) for m, path in ROUTE_CITE_RE.findall(cols[2])} if len(cols) > 2 else set()
+        for route in sorted(routes - documented):
+            errors.append(f"{BRIEF_FILE} §10 : `{role}` — écriture {route} de la matrice absente")
+        for route in sorted(documented - routes):
+            errors.append(f"{BRIEF_FILE} §10 : `{role}` — {route} citée mais refusée à ce rôle par la matrice")
+    for role in sorted(set(rows) - set(expected)):
+        errors.append(f"{BRIEF_FILE} §10 : rôle `{role}` inconnu de la matrice (engine/pokeshop/authz.py)")
+    for slug in AGENTS:
+        no_token = slug in rows and NO_TOKEN_MARK in rows[slug][1]
+        for path in (brief_file(slug, root), agent_file(slug, root)):
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            rel = path.relative_to(root)
+            if "CONN-API-MOTEUR" in text and not no_token and f"`{slug}`" not in text:
+                errors.append(f"{rel} : `CONN-API-MOTEUR` sans le nom de son jeton (`{slug}`)")
+            if "CONN-API-MOTEUR" in text and no_token and re.search(r"`CONN-API-MOTEUR`[^|\n]*\|", text):
+                errors.append(f"{rel} : `CONN-API-MOTEUR` listé alors que BRIEF_COMMUN §10 n'émet pas de jeton à `{slug}`")
+    return errors
+
+
 # ----------------------------------------------------------------------------------------- exécution
 ALL_CHECKS: tuple[Callable[..., list[str]], ...] = (
     check_agent_frontmatter,
@@ -999,6 +1104,7 @@ ALL_CHECKS: tuple[Callable[..., list[str]], ...] = (
     check_stale_guidance,
     check_secret_file_guidance,
     check_api_routes_documented,
+    check_role_writes_documented,
 )
 
 

@@ -93,10 +93,21 @@ suspension posée par le moteur ou par 04 arrête bien le workflow concerné (re
 
 CREDENTIALS: dict[str, tuple[str, str, str]] = {
     # clé logique -> (type n8n, id de référence, nom exact à créer dans n8n)
-    "api": ("httpHeaderAuth", "pkshpApiToken001", "Pokeshop API — X-Pokeshop-Token"),
-    # Jeton NOMMÉ (POKESHOP_AGENT_TOKENS_SHA256 « n8n-07-stoploss:<empreinte> ») : la photo du stop-loss et les
-    # relevés de trésorerie sont déposés par un autre jeton que celui qui demande une dépense (mandat vérifiable).
+    # Moteur : UN jeton NOMMÉ PAR RÔLE (revue R3, matrice engine/pokeshop/authz.py ; empreinte dans
+    # POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>). Le jeton commun (lecture seule) n'est jamais confié à n8n.
+    "api_01": ("httpHeaderAuth", "pkshpApiN8n01Syn", "Pokeshop API — jeton nommé n8n-01-sync"),
+    "api_02": ("httpHeaderAuth", "pkshpApiN8n02Cmd", "Pokeshop API — jeton nommé n8n-02-commandes"),
+    "api_03": ("httpHeaderAuth", "pkshpApiN8n03Fac", "Pokeshop API — jeton nommé n8n-03-factures"),
+    "api_04": ("httpHeaderAuth", "pkshpApiN8n04Inc", "Pokeshop API — jeton nommé n8n-04-incidents"),
+    "api_05": ("httpHeaderAuth", "pkshpApiN8n05Dig", "Pokeshop API — jeton nommé n8n-05-digest"),
+    "api_06": ("httpHeaderAuth", "pkshpApiN8n06Mkt", "Pokeshop API — jeton nommé n8n-06-marketing"),
+    # Passerelle 06 « pokeshop-stock-recu » : réception physique déclarée au nom de l'agent 11 (SOP E2), jamais
+    # avec le jeton commun (revue SEC-16).
+    "api_stock": ("httpHeaderAuth", "pkshpApiOpsSav11", "Pokeshop API — jeton nommé operations-sav"),
+    # Photo du stop-loss (refresh, état, gel) : un autre jeton que celui des relevés de cash et des demandes.
     "api_photo": ("httpHeaderAuth", "pkshpApiPhoto007", "Pokeshop API — jeton nommé n8n-07-stoploss"),
+    "api_tresorerie": ("httpHeaderAuth", "pkshpApiTresor01", "Pokeshop API — jeton nommé connecteur-tresorerie"),
+    "api_08": ("httpHeaderAuth", "pkshpApiN8n08Man", "Pokeshop API — jeton nommé n8n-08-mandat"),
     "gateway": ("httpHeaderAuth", "pkshpGateway0001", "Passerelle agents — X-Pokeshop-Gateway"),
     "owner_form": ("httpBasicAuth", "pkshpOwnerForm01", "Formulaires propriétaire — Basic Auth"),
     "smtp": ("smtp", "pkshpSmtpAgents1", "SMTP boîte des agents"),
@@ -109,10 +120,29 @@ CREDENTIALS: dict[str, tuple[str, str, str]] = {
     "bank": ("httpHeaderAuth", "pkshpBanqueSolde", "Banque — relevé de solde (lecture seule)"),
 }
 
+CREDENTIAL_ROLES: dict[str, str] = {
+    "api_01": "n8n-01-sync",
+    "api_02": "n8n-02-commandes",
+    "api_03": "n8n-03-factures",
+    "api_04": "n8n-04-incidents",
+    "api_05": "n8n-05-digest",
+    "api_06": "n8n-06-marketing",
+    "api_stock": "operations-sav",
+    "api_photo": "n8n-07-stoploss",
+    "api_tresorerie": "connecteur-tresorerie",
+    "api_08": "n8n-08-mandat",
+}
+"""Credential moteur -> rôle de la matrice d'autorisations (nom du jeton nommé) ; vérifié par les tests."""
+
 WRITE_NODE_TYPES = frozenset(
     {"n8n-nodes-base.emailSend", "n8n-nodes-base.slack", "n8n-nodes-base.payPal", "n8n-nodes-base.shopify"}
 )
 """Types de nœuds qui écrivent toujours vers l'extérieur : désactivés à l'import."""
+
+
+def wf_id_prefix(filename: str) -> str:
+    """Préfixe numérique d'un export (``07_stoploss_watch.json`` -> ``07``)."""
+    return filename.split("_", 1)[0]
 
 
 def credential(key: str, mapping: Mapping[str, str] | None = None) -> dict[str, dict[str, str]]:
@@ -143,7 +173,12 @@ class Workflow:
         error_workflow: bool = True,
         keep_success_data: bool = True,
         credentials_map: Mapping[str, str] | None = None,
+        api_cred: str | None = None,
     ) -> None:
+        self.api_cred = api_cred or f"api_{wf_id_prefix(filename)}"
+        """Credential moteur par défaut du workflow (jeton nommé de son rôle)."""
+        if self.api_cred not in CREDENTIAL_ROLES:
+            raise ValueError(f"{filename} : credential moteur inconnu {self.api_cred!r}")
         self.wf_id = wf_id
         self.name = name
         self.filename = filename
@@ -297,13 +332,15 @@ def engine(
     disabled: bool = False,
     notes: str | None = None,
     on_error: str | None = None,
-    cred: str = "api",
+    cred: str | None = None,
 ) -> str:
-    """Appel HTTP de l'API du moteur avec un credential « Pokeshop API » (en-tête X-Pokeshop-Token).
+    """Appel HTTP de l'API du moteur avec le credential « Pokeshop API » **nommé par rôle** (en-tête X-Pokeshop-Token).
 
-    ``cred`` : ``api`` (jeton commun, non attribuable) ou ``api_photo`` (jeton nommé n8n-07-stoploss).
+    ``cred`` : défaut = credential du workflow (``wf.api_cred``) ; ``api_photo`` (n8n-07-stoploss),
+    ``api_tresorerie`` (connecteur-tresorerie), ``api_stock`` (operations-sav)… — jamais le jeton commun.
     """
-    if not CREDENTIALS[cred][2].startswith("Pokeshop API"):
+    cred = cred or wf.api_cred
+    if cred not in CREDENTIAL_ROLES or not CREDENTIALS[cred][2].startswith("Pokeshop API"):
         raise ValueError(f"credential non moteur : {cred}")
     parameters: dict[str, Any] = {
         "method": method,
@@ -836,7 +873,9 @@ const account = data && data.data ? data.data.shopifyPaymentsAccount : null;
 const txs = account && account.balanceTransactions ? account.balanceTransactions.nodes : null;
 if (!Array.isArray(txs)) return []; // lecture non configurée : aucune écriture
 const entries = txs
-  .filter((t) => t.fee && t.fee.currencyCode === 'CHF' && /^-?\d+(\.\d{1,2})?$/.test(String(t.fee.amount)) && !/^-?0+(\.0+)?$/.test(String(t.fee.amount)))
+  // Frais positifs seulement (revue R3) : un rôle ne déclare jamais un montant négatif ; un remboursement de
+  // frais passe par l'avoir de la commande (POST /orders/{id}/refunds) ou par la propriétaire.
+  .filter((t) => t.fee && t.fee.currencyCode === 'CHF' && /^\d+(\.\d{1,2})?$/.test(String(t.fee.amount)) && !/^0+(\.0+)?$/.test(String(t.fee.amount)))
   .map((t) => ({
     entry_id: `psp:${t.id}:PAYMENT`,
     at: t.transactionDate,
@@ -1751,9 +1790,10 @@ S1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : tes
         "Demande de reprise (passerelle agents)",
         (0, 2.2),
         "pokeshop-incident-reprise",
-        notes='Corps : {"incident_id": "...", "actor": "agent-12-qa"}. Le test réussi est enregistré AVANT, par '
-        "l'agent 12 QA avec SON jeton nommé (POST /incidents/{id}/test, différent de l'ouvreur) ou par la "
-        "propriétaire : la passerelle (jeton commun) ne peut pas l'attester (403, revue NEW-01).",
+        notes='Corps : {"incident_id": "...", "actor": "qa-conformite"}. Le test réussi est enregistré AVANT, par '
+        "le rôle qa-conformite avec SON jeton nommé (POST /incidents/{id}/test, différent de l'ouvreur, cycle réel "
+        "lancé par un autre principal) ou par la propriétaire : le workflow 04 (n8n-04-incidents) ne peut pas "
+        "l'attester (403, revue NEW-01) ; il ne fait que reprendre.",
     )
     pb = params_node(wf, "Paramètres — reprise", (1, 2.2), WORKFLOW_KEYS["04"])
     body_ref = f"{ref('Demande de reprise (passerelle agents)')}.first().json.body"
@@ -2002,7 +2042,9 @@ Aucun prix ni donnée interne dans un email : titre, statut et prix lus sur la p
         (2, 0),
         params="Paramètres — alertes stock",
         body=f"{{ sku: {body}.sku, qty: {body}.qty, ref: {body}.ref }}",
-        notes="Registre du stock local (idempotent par SKU + bon de livraison) : sans lui, la fiche reste en rupture.",
+        notes="Registre du stock local (idempotent par SKU + bon de livraison) : sans lui, la fiche reste en rupture. "
+        "Jeton nommé operations-sav (agent 11), jamais le jeton commun (SOP_RECEPTION_STOCK E2).",
+        cred="api_stock",
     )
     read_a, guard_a = suspension_guard(wf, 3, 0.8, params="Paramètres — alertes stock", suffix=" (alertes stock)")
     held_a = noop(wf, "Alertes suspendues (incident ouvert)", (5, 1.4))
@@ -2581,7 +2623,8 @@ def _optout_flow(
 
 def wf07(cmap: Mapping[str, str] | None = None) -> Workflow:
     """Surveillance horaire du stop-loss : photo construite par le moteur, gel et coupure via API, notification au changement."""
-    wf = Workflow(WORKFLOW_IDS["07"], WORKFLOW_NAMES["07"], "07_stoploss_watch.json", credentials_map=cmap)
+    wf = Workflow(WORKFLOW_IDS["07"], WORKFLOW_NAMES["07"], "07_stoploss_watch.json", credentials_map=cmap,
+                  api_cred="api_photo")
     sticky(
         wf,
         "Note — à lire",
@@ -2712,7 +2755,7 @@ Aucun réarmement ici : seule la propriétaire réarme, avec son jeton, depuis s
         (4, 2),
         params="Paramètres — trésorerie",
         body="{ as_of: $json.as_of, balance_chf: $json.balance_chf, source: $json.source }",
-        cred="api_photo",
+        cred="api_tresorerie",
     )
     bk_read = external(
         wf,
@@ -2732,7 +2775,7 @@ Aucun réarmement ici : seule la propriétaire réarme, avec son jeton, depuis s
         (4, 2.8),
         params="Paramètres — trésorerie",
         body="{ as_of: $json.as_of, balance_chf: $json.balance_chf, source: $json.source }",
-        cred="api_photo",
+        cred="api_tresorerie",
     )
     wf.chain(t2, pt, pp_read, pp_norm, pp_post)
     wf.chain(pt, bk_read, bk_norm, bk_post)
@@ -2790,9 +2833,10 @@ Contrôle impossible (mandat illisible, stop-loss non évalué) → **refus par 
         (4, 0.2),
         body=f"{{ request: {req}.request, record: true }}",
         on_error="continueErrorOutput",
-        notes="Décision tracée au registre (record: true), idempotente par clé ; aucune exécution ici. Jeton commun : "
-        "demande non attribuable => validation humaine (TREASURY_UNVERIFIED) ; incident ouvert sur "
-        "« mandat-depenses » => 423 (refus).",
+        notes="Décision tracée au registre (record: true), idempotente par clé ; aucune exécution ici. Jeton nommé "
+        "n8n-08-mandat (relais) : requested_by = rôle de l'agent (.claude/agents), non authentifié => trésorerie "
+        "jamais vérifiable, validation humaine (TREASURY_UNVERIFIED) ; incident ouvert sur « mandat-depenses » => "
+        "423 (refus).",
     )
     wf.link(guard, check, 1)
     cannot = respond(

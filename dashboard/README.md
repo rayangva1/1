@@ -31,7 +31,7 @@ Le jeton se lit **uniquement** dans la variable d'environnement `POKESHOP_API_TO
 | Chemin | Rôle |
 |---|---|
 | `engine/pokeshop/dashboard.py` | Calcul des indicateurs (Decimal, déterministe) et jeu de démonstration FICTIF `demo_inputs()` |
-| `engine/pokeshop/api_dashboard.py` | Routes `GET /dashboard/daily|weekly|monthly` (même authentification que l'API : jeton commun **ou jeton nommé** d'un agent ; `Cache-Control: no-store`, `noindex`) ; journal d'état non relu au démarrage => KPI « indisponible » (étoile polaire « journal non relu », jamais « aucune écriture » ni 0) ; sources branchables via `app.state.dashboard_provider` |
+| `engine/pokeshop/api_dashboard.py` | Routes `GET /dashboard/daily|weekly|monthly` (même authentification que l'API, lecture ouverte par la matrice `docs/08-agents/MATRICE_API.md` : jeton commun **ou jeton d'un rôle** ; `Cache-Control: no-store`, `noindex`) ; journal d'état non relu au démarrage => KPI « indisponible » (étoile polaire « journal non relu », jamais « aucune écriture » ni 0) ; sources branchables via `app.state.dashboard_provider` |
 | `dashboard/build.py` | Page HTML autonome (aucune ressource externe, clair/sombre, mobile, lisible sans JavaScript) |
 | `dashboard/out/index.html` | Exemple généré sur les données FICTIVES (photo du lundi 16.11.2026 07:30) |
 | `tests/test_dashboard.py` | Valeurs calculées à la main, routes, page |

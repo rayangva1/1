@@ -23,7 +23,7 @@ Ni le chiffre d'affaires ni les followers ne sont des critères de réussite. Ch
 | Budget PayPal dédié | Paiements exécutés par l'agent 05 (finance) seulement, via l'API officielle de PayPal derrière une passerelle n8n qui contrôle le mandat. Aucun autre agent ne paie. |
 | Propriétaire (« la responsable » du BP) | Intervient seulement pour : **(A)** les actions physiques (réception, authenticité, colis, photos et vidéos réelles) ; **(B)** les actes légaux et d'identité, une seule fois (KYC, comptes, signatures, statut TVA) ; **(C)** les validations au-delà du mandat et le **réarmement du stop-loss global**. Liste maîtresse : `docs/00-pilotage/INTERVENTIONS_HUMAINES.md`. |
 | Garant du stop-loss | Agent 12 (QA et conformité) : **peut geler, ne peut jamais réarmer**. |
-| Registre du mandat et étoile polaire | Agent 05 (finance et pricing). |
+| Registre du mandat et étoile polaire | Agent 05 (finance et pricing) ; les ventes et avoirs de l'étoile polaire ne viennent que des commandes enregistrées par le workflow 02 (`POST /orders/shipped`, coût transporteur réel). |
 
 **Une action n'est permise que si les trois conditions sont réunies :** (1) le **niveau d'autonomie** actif l'autorise (BP §13, voir `docs/08-agents/MATRICE_AUTONOMIE.md`) ; (2) le **mandat** l'autorise (type d'acte, plafond, destinataire) ; (3) **aucun stop-loss** ne la bloque.
 
@@ -147,7 +147,7 @@ Principe de la **passerelle** : un agent ne détient jamais les identifiants d'e
 | `CONN-MAIL-ENVOI` | Passerelle n8n « envoi de modèle approuvé » | `N8N_BASE_URL`, `N8N_WEBHOOK_TOKEN_REF` | 01 |
 | `CONN-PAYPAL` | Passerelle n8n « paiement dans le mandat » (API Payouts) et lecture des transactions (API Transaction Search) | `N8N_BASE_URL`, `N8N_WEBHOOK_TOKEN_REF` (identifiants PayPal dans les credentials n8n uniquement) | 05 (paiement) ; 05 et 12 (lecture) |
 | `CONN-SHOPIFY` | Admin GraphQL via `engine/pokeshop/shopify_client.py`, `dry_run=True` par défaut ; le jeton Shopify n'est lu que par l'API du moteur, jamais par un agent | `POKESHOP_SHOPIFY_SHOP_DOMAIN`, `POKESHOP_SHOPIFY_ADMIN_TOKEN` (conteneur de l'API) | 07 (écriture par le moteur) ; 04, 05, 11, 12 (lecture par l'API moteur) |
-| `CONN-API-MOTEUR` | API FastAPI du moteur (`engine/pokeshop/api.py`), **un jeton nommé par agent** (tableau ci-dessous) | `POKESHOP_API_URL`, `POKESHOP_AGENT_TOKEN_REF` (référence au jeton nommé de l'agent) | 03, 04, 05, 07, 10, 11, 12 |
+| `CONN-API-MOTEUR` | API FastAPI du moteur (`engine/pokeshop/api.py`), **un jeton par rôle** (tableau ci-dessous, matrice `docs/08-agents/MATRICE_API.md`) | `POKESHOP_API_URL`, `POKESHOP_AGENT_TOKEN_REF` (référence au jeton du rôle de l'agent) | 03, 04, 05, 07, 10, 11, 12 (01, 02, 06, 08, 09 : aucun accès, aucun jeton émis) |
 | `CONN-N8N` | Déclenchement et état des workflows | `N8N_BASE_URL`, `N8N_API_TOKEN_REF` | 03, 07, 12 |
 | `CONN-DB-LECTURE` | PostgreSQL en lecture seule (rôle sans accès aux tables d'écriture) | `POKESHOP_DB_DSN_LECTURE` | 05, 12 |
 | `CONN-EMAILING` | Outil d'emailing (inscrits, consentements) | `EMAILING_API_TOKEN_REF` | 09 (brouillons ; envoi au niveau 3) |
@@ -158,39 +158,80 @@ Principe de la **passerelle** : un agent ne détient jamais les identifiants d'e
 
 Les valeurs sont dans le coffre (intervention B03). Un suffixe `_REF` désigne une **référence** au secret dans le coffre, jamais le secret lui-même.
 
-**API du moteur : jetons et actes réservés.** L'acteur journalisé est **déduit du jeton**, jamais déclaré : un champ `actor` ou `requested_by` différent du jeton est refusé, et un acteur « propriétaire » sans jeton propriétaire valide est refusé (403, journalisé).
+**API du moteur : matrice d'autorisations, refus par défaut.** Chaque route déclare les rôles admis dans
+`engine/pokeshop/authz.py` (table générée : `docs/08-agents/MATRICE_API.md`) ; une route absente de la matrice est refusée.
+L'acteur journalisé est **déduit du jeton**, jamais déclaré : avec un jeton de rôle, un champ `actor` du corps est ignoré
+(le nom du rôle le remplace) et un `requested_by` différent du rôle est refusé (403) ; un acteur « propriétaire » sans
+jeton propriétaire valide est refusé (403, journalisé). Aucune valeur décisive
+n'est fournie par l'agent qui en bénéficie, ni par le jeton commun.
 
 | Jeton (en-tête) | Détenu par | Permet | Ne permet jamais |
 |---|---|---|---|
-| Jeton **nommé** `X-Pokeshop-Token` : `agent-NN-<nom>` ou `n8n-NN-<workflow>`, au minimum `n8n-07-stoploss`, `agent-05-finance`, `agent-12-qa`, `agent-11-operations` ; empreintes dans `POKESHOP_AGENT_TOKENS_SHA256` (intervention B22) | Chaque agent ou workflow, **le sien seulement** | Routes internes ; **valeurs décisives réservées au jeton nommé** : photo du stop-loss (`POST /stoploss/state`), relevés de trésorerie (`POST /treasury/*`), test de correction réussi d'un incident ouvert par un **autre** jeton ; actes protecteurs ; demandes de dépense à son nom | Valider ses propres chiffres : une photo ou un solde déposés par le jeton qui demande la dépense ⇒ `TREASURY_UNVERIFIED` (validation humaine) ; attester le test d'un incident qu'il a ouvert (403) |
-| Jeton **commun** `X-Pokeshop-Token` (`POKESHOP_API_TOKEN_SHA256`, acteur « api ») | Tableau de bord, workflows en transition | Lecture, calculs, simulation, actes protecteurs | **Aucune valeur décisive** : photo du stop-loss, relevés de trésorerie et test de correction réussi refusés (403, journalisé) ; toute dépense autonome (non attribuable : validation humaine) |
-| Jeton **propriétaire** `X-Pokeshop-Owner-Token` (`POKESHOP_OWNER_TOKEN_SHA256`, intervention B21) | **La propriétaire seule**, jamais un agent ni un workflow | Réarmement `POST /stoploss/rearm` (avec `reference_chf` = valeur nette attestée de `rearm_reference`), point zéro `POST /stoploss/baseline`, mémoire des apports `POST /stoploss/capital-memory/reset`, **apports et retraits** `POST /capital/movements`, **approbations de prix** `POST /pricing/approvals`, **exceptions de plafond** (`cap_exceptions` de `POST /stock/reorder-proposal`), hausse du niveau `POST /autonomy`, taux de change de référence `POST /fx/rates`, reprise d'un incident critique, attestation d'un test | — |
+| Jeton **de rôle** `X-Pokeshop-Token` : nom = rôle de la matrice (`catalogue`, `finance-pricing`, `operations-sav`, `qa-conformite`, `acquisition`…, `n8n-01-sync` à `n8n-08-mandat`, `connecteur-tresorerie`, `connecteur-publicite`) ; empreinte dans `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` (intervention B22) | Chaque agent ou credential n8n, **le sien seulement** | Lecture, aperçus et **les seules écritures que la matrice ouvre à son rôle** (ex. `catalogue` dépose des fiches, `operations-sav` déclare les réceptions, `n8n-07-stoploss` la photo, `connecteur-tresorerie` les soldes, `connecteur-publicite` l'activité pub, `qa-conformite` le test de correction) ; actes protecteurs | Valider ses propres chiffres : le rôle qui dépense ne dépose ni photo, ni solde, ni dépense pub (`acquisition` : 403 sur `POST /ads/activity`) ; `catalogue` ne valide pas ses fiches ; attester le test d'un incident qu'il a ouvert (403) |
+| Jeton **commun** `X-Pokeshop-Token` (`POKESHOP_API_TOKEN_SHA256`, facultatif, acteur « api ») | Tableau de bord | Lecture et aperçus en simulation | **Toute écriture** (403, journalisé) |
+| Jeton **propriétaire** `X-Pokeshop-Owner-Token` (`POKESHOP_OWNER_TOKEN_SHA256`, intervention B21) | **La propriétaire seule**, jamais un agent ni un workflow | Toutes les écritures sauf `POST /mandate/check` ; seule : réarmement `POST /stoploss/rearm` (avec `reference_chf` = valeur nette attestée de `rearm_reference`), point zéro `POST /stoploss/baseline` (`with_photo:true` : premier point zéro avec la première photo), mémoire des apports `POST /stoploss/capital-memory/reset`, **apports et retraits** `POST /capital/movements`, **approbations de prix** `POST /pricing/approvals`, **validation des fiches** `POST /catalog/approvals`, **exceptions de plafond** (`cap_exceptions` de `POST /stock/reorder-proposal`), hausse du niveau `POST /autonomy`, taux de change `POST /fx/rates`, reprise d'un incident critique, écritures manuelles de l'étoile polaire (ventes, avoirs, montants négatifs), ajustement de facture de plus de 2 % (`POST /costs/movements`) | — |
+
+**Qui détient quel jeton, et ce que chaque rôle peut écrire** (matrice `engine/pokeshop/authz.py` ; le vérificateur
+`docs/08-agents/outils/verifier_agents.py` compare la 3ᵉ colonne à la matrice). Tout rôle nommé peut en plus faire les
+**actes protecteurs** : `POST /incidents`, `POST /stoploss/freeze`, `POST /autonomy` (baisse), `POST /mandate/revoke`,
+et déclarer un test d'incident **échoué** (`POST /incidents/{id}/test`, `passed:false`) ; aucun ne peut réarmer, relever
+un niveau ni valider ses propres chiffres. Un jeton n'est **émis** (intervention B22) que pour un rôle qui l'utilise :
+les agents sans `CONN-API-MOTEUR` (01, 02, 06, 08, 09) n'en reçoivent pas tant que le connecteur ne leur est pas ouvert
+(recette par l'agent 12 et décision de la propriétaire, `docs/08-agents/RUNBOOK.md` §8) ; leurs demandes de dépense
+passent par le workflow 08 (relais `n8n-08-mandat` : trésorerie non vérifiée, validation humaine).
+
+| Rôle (nom du jeton) | Détenu par | Écritures propres | Ne déclare jamais |
+|---|---|---|---|
+| `chef-de-projet` | Agent 01 — pas de jeton émis (pas de `CONN-API-MOTEUR`) | `POST /pricing/approvals/{approval_id}/revoke`, `POST /incidents/{incident_id}/resume`, `POST /incidents/{incident_id}/close`, `POST /mandate/check` | Reprise d'un incident critique (propriétaire) |
+| `sourcing` | Agent 02 — pas de jeton émis | `POST /mandate/check` | Chiffre décisif d'une dépense qu'il demande |
+| `donnees-fournisseurs` | Agent 03 | `POST /imports/{supplier}/run` (simulation) | Prix ou stock publiés |
+| `catalogue` | Agent 04 | `POST /catalog/items` (fiches sans validation, sans identifiant Shopify ni prix publié : 422) | `approved`, `content_validated`, `category_rule_validated` (propriétaire, `POST /catalog/approvals`) |
+| `finance-pricing` | Agent 05 | `POST /treasury/balance-items`, `POST /catalog/cost-inputs`, `POST /costs/movements` (réception adossée à la réception physique déclarée par `operations-sav` ; écart de facture > 2 % : propriétaire), `POST /northstar/entries` (montants positifs de paiement, SAV, acquisition, charges fixes), `POST /stock/reorder-proposal`, `POST /pricing/approvals/{approval_id}/revoke`, `POST /mandate/check` (jamais pour une dépense qu'il paie ; ses propres dépôts rendent la trésorerie non vérifiée) | Taux de change, apports, ventes, approbation d'un prix |
+| `direction-artistique` | Agent 06 — pas de jeton émis | `POST /mandate/check` | — |
+| `site-integrations` | Agent 07 | `POST /sync/run` (simulation ; écriture réelle : porte de gouvernance), `POST /mandate/check` | Validations des fiches, photo du stop-loss |
+| `seo-redaction` | Agent 08 — pas de jeton émis | aucune | — |
+| `communication` | Agent 09 — pas de jeton émis | `POST /mandate/check` | — |
+| `acquisition` | Agent 10 | `POST /mandate/check` (catégorie `ADVERTISING`) | Sa propre dépense pub : `POST /ads/activity` lui répond 403 |
+| `operations-sav` | Agent 11, et le credential n8n de sa passerelle `pokeshop-stock-recu` (workflow 06) | `POST /stock/receive`, `POST /stock/reorder-proposal` (sans `cap_exceptions`), `POST /orders/{order_id}/refunds`, `POST /mandate/check` | Coût historique d'une réception (agent 05) |
+| `qa-conformite` | Agent 12 | `POST /incidents/{incident_id}/resume`, `POST /incidents/{incident_id}/close`, `POST /pricing/approvals/{approval_id}/revoke` ; test d'incident **réussi** (`passed:true`, ≠ ouvreur) | Réarmement, hausse de niveau |
+| `n8n-01-sync` | Credential n8n du workflow 01 | `POST /imports/{supplier}/run`, `POST /sync/run` | — |
+| `n8n-02-commandes` | Credential n8n du workflow 02 | `POST /orders/shipped` (coût transporteur réel), `POST /orders/{order_id}/refunds`, `POST /northstar/entries` (frais PSP réels) | Vente sans commande enregistrée |
+| `n8n-03-factures` | Credential n8n du workflow 03 | aucune | — |
+| `n8n-04-incidents` | Credential n8n du workflow 04 | `POST /incidents/{incident_id}/resume`, `POST /incidents/{incident_id}/close` (incident non critique, après test attesté) | Test réussi |
+| `n8n-05-digest` | Credential n8n du workflow 05 | aucune | — |
+| `n8n-06-marketing` | Credential n8n du workflow 06 | aucune | Réception de stock (credential `operations-sav`) |
+| `n8n-07-stoploss` | Credential n8n du workflow 07 (photo) | `POST /stoploss/state/refresh`, `POST /stoploss/state` | Soldes (connecteur de trésorerie) |
+| `n8n-08-mandat` | Credential n8n du workflow 08 | `POST /mandate/check` (relais) | Trésorerie (jamais vérifiable par un relais) |
+| `connecteur-tresorerie` | Credential n8n des relevés de soldes (workflow 07) | `POST /treasury/paypal-balance`, `POST /treasury/bank-balance`, `POST /treasury/balance-items` | Demande de dépense |
+| `connecteur-publicite` | Connecteur de la plateforme publicitaire (à construire, BL-198) | `POST /ads/activity` (ajout seul) | Baisse d'une dépense déjà relevée (409) |
 
 | Route | Usage | Qui l'appelle (jeton) |
 |---|---|---|
 | `GET /health` | État du service (`signatures`, `persistence`) ; sans jeton | Tout agent, workflow 05 |
 | `GET /stoploss/status` | État des six stop-loss (gel, cause, `rearm_reference`) | Tout agent qui a `CONN-API-MOTEUR` |
-| `POST /stoploss/state/refresh` | Photo d'activité **construite par le moteur** à partir des registres (apports, soldes, dettes et créances, stock, catalogue, prix, publicité) ; source manquante ou périmée : 409 | Workflow 07 (`n8n-07-stoploss`) |
-| `POST /stoploss/state` | Photo déposée (jeton nommé ; `capital_movements` interdit : 422 ; apports lus au registre de la propriétaire) | Aucun workflow en régime (07 utilise `/refresh`) ; jamais le jeton qui demande la dépense |
-| `POST /treasury/paypal-balance`, `POST /treasury/bank-balance` | Soldes relevés par les connecteurs **en lecture seule** (jeton nommé ; commun : 403) | Workflow 07 (`n8n-07-stoploss`) — **jamais** le jeton qui demande la dépense |
-| `POST /treasury/balance-items` | Dettes et créances à date (précommandes encaissées, factures non payées, TVA due ; listes vides attestées), chaque jour | Agent 05 (`agent-05-finance`) |
+| `POST /stoploss/state/refresh` | Photo d'activité **construite par le moteur** à partir des registres (apports, soldes, dettes et créances, stock, catalogue, prix ; publicité = MAX(déclaration, paiements pub exécutés du mandat)) ; source manquante ou périmée : 409 | Workflow 07 (`n8n-07-stoploss`) |
+| `POST /stoploss/state` | Photo déposée (`n8n-07-stoploss` seul ; `capital_movements` interdit : 422 ; apports lus au registre de la propriétaire) | Aucun workflow en régime (07 utilise `/refresh`) |
+| `POST /treasury/paypal-balance`, `POST /treasury/bank-balance` | Soldes relevés par les connecteurs **en lecture seule** | Workflow 07 avec le credential `connecteur-tresorerie` — **jamais** le jeton qui demande la dépense |
+| `POST /treasury/balance-items` | Dettes et créances à date (précommandes encaissées, factures non payées, TVA due ; listes vides attestées), chaque jour | Agent 05 (`finance-pricing`) ou `connecteur-tresorerie` |
 | `POST /capital/movements`, `GET /capital/movements` | Apports et retraits : **seule** source du capital du stop-loss (écriture : propriétaire) ; lecture | Propriétaire (écriture) ; agents 05 et 12 (lecture) |
 | `POST /fx/rates` | Taux de change de référence daté (jour même ou jour ouvré précédent) | Propriétaire uniquement |
-| `POST /mandate/check` | Décision de dépense ; trésorerie, taux et proposition lus dans les registres (une trésorerie jointe est ignorée) ; `requested_by` = nom du jeton | Agent demandeur (07, 10, 11) avec son jeton ; workflow 08 pour un agent sans accès à l'API |
+| `POST /mandate/check` | Décision de dépense ; trésorerie, taux et proposition lus dans les registres (une trésorerie jointe est ignorée) ; `requested_by` = nom du jeton ; tout poste de la photo déposé par le demandeur : `TREASURY_UNVERIFIED` | Rôle demandeur (07, 10, 11…) avec son jeton ; workflow 08 (`n8n-08-mandat`, relais : trésorerie toujours non vérifiée) |
 | `POST /pricing/quote`, `POST /pricing/basket` | Calcul du prix et de la contribution d'un panier (port offert sans coût réel : REVIEW) | Agents 04, 05 |
-| `POST /pricing/approvals`, `GET /pricing/approvals`, `POST /pricing/approvals/{id}/revoke` | Approbation d'un prix REVIEW (propriétaire seule, 48 h par défaut) ; lecture des approbations en vigueur ; retrait (acte protecteur) | Propriétaire (approbation) ; agents 04, 05, 12 (lecture) ; agent 12 (retrait) |
-| `POST /stock/receive` | Déclaration d'une **réception contrôlée** en stock local (sku, qty, réf. du bon de livraison ; idempotente) : sans elle, fiches en rupture et nouvelles références en brouillon | Agent 11 (`agent-11-operations`) ou workflow 06 (passerelle `pokeshop-stock-recu`) |
+| `POST /pricing/approvals`, `GET /pricing/approvals`, `POST /pricing/approvals/{id}/revoke` | Approbation d'un prix REVIEW (propriétaire seule, 48 h par défaut) ; lecture des approbations en vigueur ; retrait (acte protecteur) | Propriétaire (approbation) ; agents 04, 05, 12 (lecture) ; retrait : agents 05 (`finance-pricing`) et 12 (`qa-conformite`), `chef-de-projet` si son jeton est émis |
+| `POST /stock/receive` | Déclaration d'une **réception contrôlée** en stock local (sku, qty, réf. du bon de livraison ; idempotente ; réceptionnaire journalisé) : sans elle, fiches en rupture et nouvelles références en brouillon | Agent 11 (`operations-sav`) ou workflow 06 (passerelle `pokeshop-stock-recu`, credential `operations-sav`) |
 | `POST /stock/sellable` | Stock vendable local (jamais le stock fournisseur) | Agent 11 ; workflow 06 |
-| `POST /stock/reorder-proposal` | Proposition de réassort **enregistrée** (sa `justification_ref` adosse tout achat de stock) ; `cap_exceptions` : jeton propriétaire | Agent 11 ; propriétaire (exceptions) |
-| `POST /catalog/items`, `POST /catalog/cost-inputs`, `GET /catalog` | Catalogue validé et frais par fournisseur (jamais de taux de change) lus par `/sync/run` | Agent 04 (catalogue) ; agent 05 (frais) ; lecture : 04, 05, 07 |
-| `POST /imports/{supplier}/run`, `POST /sync/run`, `GET /sync/history`, `POST /publish/preview` | Simulation d'import et de cycle fournisseur → site ; journal des cycles (`consecutive_clean_runs` : 20 livraisons réelles distinctes pour la gate 3.6) ; aperçu de fiche | Agent 03 et workflow 01 (import, cycle) ; agent 12 (historique) ; agents 04, 07 (aperçu) |
-| `POST /stoploss/freeze`, `POST /incidents`, `POST /autonomy` (baisse), `POST /mandate/revoke` | Gels et actes protecteurs, toujours permis | Agent 12 (et moteur, workflows 04 et 07) |
-| `GET /incidents`, `POST /incidents/{id}/test`, `POST /incidents/{id}/resume`, `POST /incidents/{id}/close` | Liste ; test de correction : `test_ref` = `run_id` d'un `POST /sync/run` PROPRE en simulation, postérieur à l'ouverture, sur la cible, par un **autre** jeton nommé que l'ouvreur ; reprise (incident critique : propriétaire) ; clôture | Agent 12 (`agent-12-qa` : test, clôture) ; workflow 04 (lecture du test enregistré, reprise non critique) ; propriétaire (reprise critique) |
+| `POST /stock/reorder-proposal` | Proposition de réassort **enregistrée** (sa `justification_ref` adosse tout achat de stock) ; `cap_exceptions` : jeton propriétaire | Agents 11 (`operations-sav`) et 05 (`finance-pricing`) ; propriétaire (exceptions) |
+| `POST /catalog/items`, `POST /catalog/cost-inputs`, `GET /catalog` | Fiches déposées (validations, identifiants Shopify et prix publié refusés : 422) et frais par fournisseur (jamais de taux de change) lus par `/sync/run` ; `GET /catalog` donne `listing_sha256` | Agent 04 (`catalogue`) ; agent 05 (`finance-pricing`, frais) ; lecture : 04, 05, 07 |
+| `POST /catalog/approvals`, `GET /catalog/approvals` | Validation humaine d'une fiche (approbation, contenu, règle de catégorie) liée à son contenu ; fiche modifiée : `VALIDATION_OUTDATED` ; lecture des validations | Propriétaire seule (écriture, C30) ; lecture : 04, 07, 12 |
+| `POST /imports/{supplier}/run`, `POST /sync/run`, `GET /sync/history`, `POST /publish/preview` | Simulation d'import et de cycle fournisseur → site ; journal des cycles (`consecutive_clean_runs` : 20 livraisons réelles distinctes pour la gate 3.6) ; aperçu de fiche | Agent 03 (`donnees-fournisseurs`, import) et workflow 01 (`n8n-01-sync`, import et cycle) ; agent 07 (`site-integrations`, cycle) ; agent 12 (historique) ; agents 04, 07 (aperçu) |
+| `POST /stoploss/freeze`, `POST /incidents`, `POST /autonomy` (baisse), `POST /mandate/revoke` | Gels et actes protecteurs, permis à tout rôle nommé (jamais au jeton commun) ; fournisseur ou fiche FICTIF déduit du catalogue | Agent 12 (et moteur, workflows 01 à 08) |
+| `GET /incidents`, `POST /incidents/{id}/test`, `POST /incidents/{id}/resume`, `POST /incidents/{id}/close` | Liste ; test de correction réussi : `qa-conformite` (≠ ouvreur) ou propriétaire, `test_ref` = `run_id` d'un `POST /sync/run` PROPRE en simulation, catalogue du registre, postérieur à l'ouverture, **lancé par un autre principal**, sur le fournisseur et la référence de l'incident, sans source FICTIVE ; reprise et clôture : `qa-conformite`, `chef-de-projet`, `n8n-04-incidents` (incident critique : propriétaire) | Agent 12 (`qa-conformite` : test, clôture) ; workflow 04 (lecture du test enregistré, reprise non critique) ; propriétaire (reprise critique) |
 | `GET /autonomy`, `POST /autonomy` (hausse) | Niveau courant ; hausse avec le jeton propriétaire | Tous (lecture) ; propriétaire (hausse) |
-| `POST /stoploss/rearm`, `POST /stoploss/baseline`, `POST /stoploss/capital-memory/reset` | Réarmement attesté, point zéro (photo acceptée requise), mémoire des apports | Propriétaire uniquement |
-| `GET /northstar`, `POST /northstar/entries`, `POST /costs/movements` | Étoile polaire (coût historique déclaré : refusé) ; coûts historiques (registre interne) | Agent 05 ; workflows 02, 03, 05 |
-| `POST /ads/activity` | Dépenses publicitaires et commandes attribuées (photo du stop-loss pub) | Connecteur publicitaire (agent 10) |
-| `GET /dashboard/daily`, `GET /dashboard/weekly`, `GET /dashboard/monthly` | Tableau de bord (jeton commun ou nommé ; journal non relu : KPI indisponibles, statut CRITIQUE) | `dashboard/build.py` ; workflow 05 |
+| `POST /stoploss/rearm`, `POST /stoploss/baseline`, `POST /stoploss/capital-memory/reset` | Réarmement attesté, point zéro (`with_photo:true` : posé avec la première photo, atomiquement ; sinon photo acceptée requise), mémoire des apports | Propriétaire uniquement |
+| `POST /orders/shipped`, `POST /orders/{order_id}/refunds` | Commande expédiée (ventes, frais de paiement, **coût transporteur réel** et référence d'étiquette) et avoirs (cumul ≤ ventes) : seule source des ventes de l'étoile polaire | Workflow 02 (`n8n-02-commandes`) ; avoirs : aussi agent 11 (`operations-sav`) |
+| `GET /northstar`, `POST /northstar/entries`, `POST /costs/movements` | Étoile polaire (rôle : montants positifs sur paiement, SAV, acquisition, frais fixes ; ventes, avoirs, négatifs : propriétaire) ; coûts historiques adossés à une réception `POST /stock/receive` d'un autre jeton et à une facture (écart > 2 % : propriétaire) | `finance-pricing` ; `n8n-02-commandes` (étoile polaire) ; lecture : workflow 05 |
+| `POST /ads/activity` | Dépenses publicitaires et commandes attribuées (photo du stop-loss pub) ; registre en ajout seul (baisse : 409) ; commandes attribuées existantes au registre des commandes | Connecteur publicitaire (`connecteur-publicite`), **jamais** l'agent 10 |
+| `GET /dashboard/daily`, `GET /dashboard/weekly`, `GET /dashboard/monthly` | Tableau de bord (jeton commun ou de rôle ; journal non relu : KPI indisponibles, statut CRITIQUE) | `dashboard/build.py` ; workflow 05 |
 
 Une réponse 503 (journal d'état illisible, configuration non signée, photo absente) ou 409 (photo refusée, test non vérifiable, référence de réarmement non conforme) est un **refus** : l'agent n'insiste pas, ne contourne pas, et escalade (E2 ou E3).
 
@@ -202,7 +243,7 @@ Sourcing + cadre fiscal → données fiables → catalogue et coûts → prix et
 
 - [ ] Relire les 17 règles non négociables (§3) et signaler toute règle à durcir ou assouplir.
 - [ ] Confirmer les délais de réponse E2 (24 h pour toute dépense hors mandat et pour un gate ; 48 h pour les autres décisions) et le principe du **statu quo sûr** en l'absence de réponse.
-- [ ] Générer un jeton nommé par agent et par workflow (`POKESHOP_AGENT_TOKENS_SHA256`, intervention B22) : sans eux, aucune dépense n'est approuvée seule.
+- [ ] Générer un jeton par rôle **utilisé** (intervention B22 : les 10 connecteurs n8n et les 7 agents qui ont `CONN-API-MOTEUR`), empreintes dans `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` : sans eux, aucune écriture de l'API (403), aucune photo du stop-loss, aucune dépense approuvée seule.
 - [ ] Reporter dans le mandat (`DELEGATION_AUTONOMIE.md`) un plafond par agent et par type de dépense (§8) ; tant que ce n'est pas fait, les agents restent à 0 CHF.
 - [ ] Valider le principe des passerelles n8n (§10) : aucun agent ne détient d'identifiant d'envoi ou de paiement.
 - [ ] Créer le coffre de secrets et y ranger les valeurs des variables listées au §10 (intervention B03).

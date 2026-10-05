@@ -715,7 +715,7 @@ def test_secret_file_guidance_detected(root):
         "Remplir POSTGRES_PASSWORD dans .env avant de lancer.\n"
         "docker compose --env-file .env up -d\n"
         "Les règles deny bloquent la lecture de `.env` (filet de sécurité).\n"
-        "sudo install -D -m 600 .env.example /etc/pokeshop/api.env\n",
+        "sudo install -D -m 600 -o \"$USER\" .env.example /etc/pokeshop/api.env\n",
         encoding="utf-8",
     )
     errors = v.check_secret_file_guidance(root)
@@ -755,7 +755,7 @@ def test_reception_declaration_is_cited_where_agent_11_works():
                 "docs/07-ops/SOP_RECEPTION_STOCK.md"):  # fmt: skip
         text = (REPO / rel).read_text(encoding="utf-8")
         assert "POST /stock/receive" in text and "pokeshop-stock-recu" in text, rel
-        assert "agent-11-operations" in text, rel
+        assert "operations-sav" in text, rel
 
 
 def test_finance_agent_describes_the_price_approval_circuit():
@@ -763,4 +763,65 @@ def test_finance_agent_describes_the_price_approval_circuit():
     for rel in (".claude/agents/finance-pricing.md", "docs/08-agents/05_finance-pricing.md"):
         text = (REPO / rel).read_text(encoding="utf-8")
         assert "POST /pricing/approvals" in text and "48 h par défaut" in text, rel
-        assert "POST /treasury/balance-items" in text and "agent-05-finance" in text, rel
+        assert "POST /treasury/balance-items" in text and "finance-pricing" in text, rel
+
+
+# ------------------------------------------------------------------------------------------- revue R3 : jetons par rôle
+def test_role_table_matches_the_authorization_matrix():
+    """Le tableau « Qui détient quel jeton » de BRIEF_COMMUN §10 suit engine/pokeshop/authz.py, rôle par rôle."""
+    authz = v.load_authz()
+    assert authz is not None
+    writes = v.role_writes(authz)
+    assert set(writes) == set(authz.KNOWN_ROLES) and writes["acquisition"] == {"POST /mandate/check"}
+    assert "POST /ads/activity" in writes["connecteur-publicite"] and "POST /stock/receive" in writes["operations-sav"]
+    assert v.check_role_writes_documented() == []
+
+
+def test_role_table_drift_is_detected(root):
+    brief = root / v.DOCS_DIR / "BRIEF_COMMUN.md"
+    edit(brief, "| `acquisition` | Agent 10 | `POST /mandate/check` (catégorie `ADVERTISING`) |",
+         "| `acquisition` | Agent 10 | `POST /mandate/check` (catégorie `ADVERTISING`), `POST /ads/activity` |")
+    edit(brief, "| `catalogue` | Agent 04 | `POST /catalog/items`", "| `catalogue` | Agent 04 | fiches")
+    errors = v.check_role_writes_documented(root)
+    assert any("`acquisition` — POST /ads/activity citée mais refusée" in e for e in errors), errors
+    assert any("`catalogue` — écriture POST /catalog/items de la matrice absente" in e for e in errors), errors
+
+
+def test_role_table_missing_role_and_token_name_detected(root):
+    brief = root / v.DOCS_DIR / "BRIEF_COMMUN.md"
+    text = brief.read_text(encoding="utf-8")
+    line = next(ln for ln in text.splitlines() if ln.startswith("| `connecteur-publicite` |"))
+    brief.write_text(text.replace(line + "\n", ""), encoding="utf-8")
+    edit(root / v.DOCS_DIR / "04_catalogue.md", "jeton `catalogue`", "jeton du catalogue")
+    errors = v.check_role_writes_documented(root)
+    assert any("rôle `connecteur-publicite` absent" in e for e in errors), errors
+    assert any("04_catalogue.md : `CONN-API-MOTEUR` sans le nom de son jeton (`catalogue`)" in e for e in errors), errors
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Le test réussi est attesté par le jeton `agent-12-qa`.",
+        "Chaque workflow a son jeton nommé (`n8n-NN-<workflow>`).",
+        "Le jeton commun dépose les soldes chaque matin.",
+    ],
+)
+def test_stale_token_guidance_detected(root, line):
+    path = root / v.DOCS_DIR / "RUNBOOK.md"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("## Validation humaine requise", f"{line}\n\n## Validation humaine requise"),
+        encoding="utf-8",
+    )
+    assert any("RUNBOOK.md" in e and "consigne périmée" in e for e in v.check_stale_guidance(root))
+
+
+def test_common_token_refusal_is_not_flagged(root):
+    path = root / v.DOCS_DIR / "RUNBOOK.md"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "## Validation humaine requise",
+            "Le jeton commun qui dépose un solde reçoit 403.\n\n## Validation humaine requise",
+        ),
+        encoding="utf-8",
+    )
+    assert v.check_stale_guidance(root) == []

@@ -183,8 +183,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n02Cmd",
+          "name": "Pokeshop API — jeton nommé n8n-02-commandes"
         }
       },
       "retryOnFail": true,
@@ -214,8 +214,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n02Cmd",
+          "name": "Pokeshop API — jeton nommé n8n-02-commandes"
         }
       },
       "disabled": true,
@@ -535,7 +535,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Frais réels du prestataire de paiement -> écritures PAYMENT de l'étoile polaire (montants en chaînes).\nconst data = $input.first().json;\nconst account = data && data.data ? data.data.shopifyPaymentsAccount : null;\nconst txs = account && account.balanceTransactions ? account.balanceTransactions.nodes : null;\nif (!Array.isArray(txs)) return []; // lecture non configurée : aucune écriture\nconst entries = txs\n  .filter((t) => t.fee && t.fee.currencyCode === 'CHF' && /^-?\\d+(\\.\\d{1,2})?$/.test(String(t.fee.amount)) && !/^-?0+(\\.0+)?$/.test(String(t.fee.amount)))\n  .map((t) => ({\n    entry_id: `psp:${t.id}:PAYMENT`,\n    at: t.transactionDate,\n    post: 'PAYMENT',\n    amount: String(t.fee.amount),\n    ref: String(t.id),\n    source: 'psp',\n    order_id: t.associatedOrder ? String(t.associatedOrder.id) : null,\n  }));\nif (!entries.length) return [];\nreturn [{ json: { entries, count: entries.length } }];\n"
+        "jsCode": "// Frais réels du prestataire de paiement -> écritures PAYMENT de l'étoile polaire (montants en chaînes).\nconst data = $input.first().json;\nconst account = data && data.data ? data.data.shopifyPaymentsAccount : null;\nconst txs = account && account.balanceTransactions ? account.balanceTransactions.nodes : null;\nif (!Array.isArray(txs)) return []; // lecture non configurée : aucune écriture\nconst entries = txs\n  // Frais positifs seulement (revue R3) : un rôle ne déclare jamais un montant négatif ; un remboursement de\n  // frais passe par l'avoir de la commande (POST /orders/{id}/refunds) ou par la propriétaire.\n  .filter((t) => t.fee && t.fee.currencyCode === 'CHF' && /^\\d+(\\.\\d{1,2})?$/.test(String(t.fee.amount)) && !/^0+(\\.0+)?$/.test(String(t.fee.amount)))\n  .map((t) => ({\n    entry_id: `psp:${t.id}:PAYMENT`,\n    at: t.transactionDate,\n    post: 'PAYMENT',\n    amount: String(t.fee.amount),\n    ref: String(t.id),\n    source: 'psp',\n    order_id: t.associatedOrder ? String(t.associatedOrder.id) : null,\n  }));\nif (!entries.length) return [];\nreturn [{ json: { entries, count: entries.length } }];\n"
       },
       "id": "71056c45-9ac8-5afd-b8ef-a9c0b49f3f38",
       "name": "Frais de paiement réels vers écritures",
@@ -569,8 +569,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n02Cmd",
+          "name": "Pokeshop API — jeton nommé n8n-02-commandes"
         }
       },
       "notes": "Écritures idempotentes (entry_id) : un rejeu ne double rien.",

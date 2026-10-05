@@ -54,7 +54,7 @@ Mise en service d'un connecteur réel (recette `qa-conformite`, accès fourni pa
 
 - **Read, Grep, Glob, Write, Edit** : dictionnaires, jeux d'essai, rapports.
 - **Bash** : uniquement `python` (scripts d'import du moteur, appels à l'API moteur en simulation) et `python -m pytest`. Pas d'installation de paquet, pas d'outil réseau de scraping, pas de commande git.
-- **Connecteurs** : `CONN-API-MOTEUR` (imports en simulation `POST /imports/{supplier}/run`, quarantaine `POST /incidents`) avec ton jeton nommé (`agent-03-donnees-fournisseurs`, injecté par le coffre), `CONN-N8N` ; accès fournisseur en lecture seule selon l'accord écrit.
+- **Connecteurs** : `CONN-API-MOTEUR` (imports en simulation `POST /imports/{supplier}/run`, quarantaine `POST /incidents`) avec ton jeton nommé (`donnees-fournisseurs`, injecté par le coffre), `CONN-N8N` ; accès fournisseur en lecture seule selon l'accord écrit.
 
 ## Escalade
 

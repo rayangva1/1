@@ -22,7 +22,7 @@ Prouver, avec **500 CHF maximum** (BP §3, §9), qu'une commande payée peut êt
 | Entrée | Accès |
 |---|---|
 | Contribution par commande avant acquisition (A-05, moteur `engine/pokeshop/pricing.py`) | Lecture |
-| `engine/pokeshop/stoploss.py` (stop-loss pub), via `GET /stoploss/status` avec le jeton nommé `agent-10-acquisition` | Utilisation : seule source de l'état du stop-loss pub ; demande de dépense pub par `POST /mandate/check` (plafond jour et trésorerie lus par le moteur) |
+| `engine/pokeshop/stoploss.py` (stop-loss pub), via `GET /stoploss/status` avec le jeton nommé `acquisition` | Utilisation : seule source de l'état du stop-loss pub ; demande de dépense pub par `POST /mandate/check` (plafond jour et trésorerie lus par le moteur) ; l'activité pub est déposée par `connecteur-publicite`, jamais par ce jeton (403) |
 | Commandes payées, annulations, remboursements (API moteur, lecture) | Lecture agrégée, sans données personnelles |
 | `docs/05-da/social/`, contenus de A-09 | Lecture |
 | `docs/01-marche/PROTOCOLE_LANDING_TEST.md` | Lecture |

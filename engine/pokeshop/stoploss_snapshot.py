@@ -20,7 +20,12 @@ Stock au coût historique   :class:`pokeshop.northstar.CostRegister` (``POST /co
 Exposition par extension   même registre, extension lue dans le catalogue validé (``POST /catalog/items``)
 Marges produit             prix public en vigueur (historique des prix) et coût du stock (CMP) ou coût
                            de remplacement frais, avec les règles de prix signées
-Publicité                  :class:`AdsActivityRegister` — ``POST /ads/activity`` (connecteur publicitaire)
+Publicité                  :class:`AdsActivityRegister` — ``POST /ads/activity`` (``connecteur-publicite``,
+                           jamais l'agent acquisition) ; ajout seul par (campagne, jour) ; dépense retenue =
+                           MAX(déclaration, paiements pub **exécutés** du registre du mandat) ; commandes
+                           attribuées = commandes enregistrées par le moteur (contribution plafonnée)
+Stock au coût historique   réceptions adossées à ``POST /stock/receive`` (autre jeton), écarts de facture
+                           > 2 % : propriétaire
 Plafond pub, budget stock  mandat signé actif et règles (jamais la photo)
 =========================  ===========================================================================
 
@@ -72,6 +77,9 @@ __all__ = [
     "ActivityRegisterPersistenceError",
     "PhotoSourcesError",
     "build_activity_photo",
+    "executed_ad_payments",
+    "merge_ad_spends",
+    "UNASSIGNED_CAMPAIGN",
     "UNKNOWN_EXTENSION",
     "FUTURE_SKEW",
 ]
@@ -79,6 +87,8 @@ __all__ = [
 UNKNOWN_EXTENSION = "INCONNUE"
 """Extension d'un stock absent du catalogue validé : comptée à part (jamais ignorée)."""
 FUTURE_SKEW = timedelta(minutes=5)
+UNASSIGNED_CAMPAIGN = "paiement-pub-sans-campagne"
+"""Campagne d'un paiement pub exécuté sans ``campaign_id`` (compté à part, jamais ignoré)."""
 
 
 class ActivityRegisterError(PokeshopError, ValueError):
@@ -231,7 +241,11 @@ class BalanceStatement(FrozenModel):
 class AdsActivityRegister:
     """Dépenses publicitaires par campagne et par jour, commandes attribuées (journal ``ads_activity``).
 
-    Dernière valeur connue par (campagne, jour) et par commande (statut payée, annulée, remboursée).
+    Revue R3 (R2-NEW-03) : **ajout seul** — une dépense déjà relevée pour (campagne, jour) ne baisse jamais
+    (409) ; une hausse (correction du connecteur) est admise. Une commande attribuée doit être une commande
+    **enregistrée par le moteur** (:class:`pokeshop.northstar.OrderRegister`) : statut et contribution sont
+    plafonnés par ses données (jamais une contribution déclarée plus favorable) ; une commande ne redevient
+    jamais « payée » après annulation ou remboursement. Le déposant (déduit du jeton) est journalisé.
     """
 
     STREAM = "ads_activity"
@@ -240,6 +254,7 @@ class AdsActivityRegister:
         self._lock = threading.RLock()
         self._spends: dict[tuple[str, date], AdSpend] = {}
         self._orders: dict[str, AttributedOrder] = {}
+        self._posters: set[str] = set()
         self._store = store
 
     @classmethod
@@ -253,28 +268,86 @@ class AdsActivityRegister:
             except (KeyError, TypeError, ValidationError) as exc:
                 raise ActivityRegisterPersistenceError(f"activité publicitaire : enregistrement {n} illisible") from exc
             register._apply(spends, orders)
+            poster = record.get("recorded_by")
+            register._posters.add(poster if isinstance(poster, str) else "inconnu")
         register._store = store
         return register
 
     def _apply(self, spends: Iterable[AdSpend], orders: Iterable[AttributedOrder]) -> None:
         for s in spends:
-            self._spends[(s.campaign_id, s.day)] = s
+            current = self._spends.get((s.campaign_id, s.day))
+            if current is None or s.amount >= current.amount:  # ajout seul : jamais de baisse
+                self._spends[(s.campaign_id, s.day)] = s
         for o in orders:
             self._orders[o.order_id] = o
 
-    def record(self, spends: list[AdSpend], orders: list[AttributedOrder], *, today: date) -> int:
-        """Enregistre un lot (écrit d'abord) ; renvoie le nombre d'éléments reçus."""
+    def _checked_orders(self, orders: list[AttributedOrder], order_book: Any) -> list[AttributedOrder]:
+        out: list[AttributedOrder] = []
+        for o in orders:
+            known = order_book.get(o.order_id) if order_book is not None else None
+            if known is None:
+                raise ActivityRegisterError(
+                    f"commande attribuée {o.order_id} inconnue du moteur : seules les commandes enregistrées "
+                    "(POST /orders/shipped) peuvent être attribuées à une campagne"
+                )
+            status = o.status
+            if order_book.status(o.order_id) == "REFUNDED":
+                status = "REFUNDED"
+            bound = order_book.contribution_bound(o.order_id)
+            contribution = min(o.contribution_before_acquisition, bound) if bound is not None else Decimal("0")
+            previous = self._orders.get(o.order_id)
+            if previous is not None:
+                if previous.status != "PAID" and status == "PAID":
+                    raise ActivityRegisterError(f"commande {o.order_id} : redevient « payée » après {previous.status} (refusé)")
+                if previous.campaign_id != o.campaign_id:
+                    raise ActivityRegisterError(f"commande {o.order_id} : déjà attribuée à {previous.campaign_id}")
+                contribution = min(contribution, previous.contribution_before_acquisition)
+            out.append(o.model_copy(update={"status": status, "contribution_before_acquisition": contribution}))
+        return out
+
+    def record(
+        self,
+        spends: list[AdSpend],
+        orders: list[AttributedOrder],
+        *,
+        today: date,
+        recorded_by: str = "inconnu",
+        order_book: Any = None,
+    ) -> int:
+        """Enregistre un lot (contrôlé, écrit d'abord) ; renvoie le nombre d'éléments reçus.
+
+        ``order_book`` : registre des commandes du moteur (``get``, ``status``, ``contribution_bound``) ;
+        sans lui, aucune commande attribuée n'est admise.
+        """
         if any(s.day > today for s in spends):
             raise ActivityRegisterError("dépense publicitaire datée du futur")
+        keys = [(s.campaign_id, s.day) for s in spends]
+        if len(set(keys)) != len(keys):
+            raise ActivityRegisterError("dépense publicitaire en double (campagne, jour) dans le lot")
         with self._lock:
+            for s in spends:
+                current = self._spends.get((s.campaign_id, s.day))
+                if current is not None and s.amount < current.amount:
+                    raise ActivityRegisterError(
+                        f"dépense {s.campaign_id} du {s.day} déjà relevée à {current.amount} CHF : une baisse "
+                        f"({s.amount}) est refusée (registre en ajout seul ; correction : la propriétaire)"
+                    )
+            checked = self._checked_orders(list(orders), order_book)
             _append(
                 self._store,
                 {"ad_spends": [s.model_dump(mode="json") for s in spends],
-                 "attributed_orders": [o.model_dump(mode="json") for o in orders]},
+                 "attributed_orders": [o.model_dump(mode="json") for o in checked],
+                 "recorded_by": recorded_by},
                 "activité publicitaire",
             )  # fmt: skip
-            self._apply(spends, orders)
+            self._apply(spends, checked)
+            self._posters.add(recorded_by)
         return len(spends) + len(orders)
+
+    def posters(self) -> frozenset[str]:
+        """Déposants (déduits du jeton) de l'activité publicitaire."""
+        with self._lock:
+            return frozenset(self._posters)
 
     def window(self, since: date) -> tuple[tuple[AdSpend, ...], tuple[AttributedOrder, ...]]:
         """Dépenses et commandes depuis ``since`` (jour civil inclus)."""
@@ -282,6 +355,45 @@ class AdsActivityRegister:
             spends = tuple(s for (_, d), s in sorted(self._spends.items()) if d >= since)
             orders = tuple(o for _, o in sorted(self._orders.items()) if o.paid_at.date() >= since)
         return spends, orders
+
+
+def executed_ad_payments(entries: Iterable[Any], tz: Any) -> dict[tuple[str, date], Decimal]:
+    """Paiements publicitaires **exécutés** du registre du mandat, par (campagne, jour civil dans ``tz``).
+
+    ``entries`` : :class:`pokeshop.mandate.SpendEntry` ; seules les dépenses ``ADVERTISING`` au statut
+    ``EXECUTED`` avec montant et date d'exécution comptent ; sans campagne : :data:`UNASSIGNED_CAMPAIGN`.
+    """
+    out: dict[tuple[str, date], Decimal] = {}
+    for e in entries:
+        request = getattr(e, "request", None)
+        status = getattr(getattr(e, "status", None), "value", getattr(e, "status", None))
+        category = getattr(getattr(request, "category", None), "value", None)
+        if status != "EXECUTED" or category != "ADVERTISING":
+            continue
+        at, amount = getattr(e, "executed_at", None), getattr(e, "executed_amount_chf", None)
+        if at is None or amount is None:
+            continue
+        key = (getattr(request, "campaign_id", None) or UNASSIGNED_CAMPAIGN, at.astimezone(tz).date())
+        out[key] = out.get(key, Decimal("0")) + Decimal(amount)
+    return out
+
+
+def merge_ad_spends(
+    spends: Iterable[AdSpend], executed: dict[tuple[str, date], Decimal], *, until: date
+) -> tuple[AdSpend, ...]:
+    """Dépense retenue par (campagne, jour) = MAX(déclaration du connecteur, paiements exécutés du mandat).
+
+    L'agent qui dépense ne peut donc jamais faire baisser la dépense prise en compte par le stop-loss pub
+    sous ce qui a réellement été payé (séparation des rôles, revue R3).
+    """
+    merged: dict[tuple[str, date], Decimal] = {}
+    for s in spends:
+        key = (s.campaign_id, s.day)
+        merged[key] = max(merged.get(key, Decimal("0")), s.amount)
+    for key, amount in executed.items():
+        if key[1] <= until:
+            merged[key] = max(merged.get(key, Decimal("0")), amount)
+    return tuple(AdSpend(campaign_id=c, day=d, amount=a) for (c, d), a in sorted(merged.items()))
 
 
 # ------------------------------------------------------------------------------ photo

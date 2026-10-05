@@ -122,7 +122,7 @@
 
 | Connecteur | Mode | Niveau min. | Plafond |
 |---|---|---|---|
-| `CONN-API-MOTEUR` | `/imports/{supplier}/run` en simulation | 1 | — |
+| `CONN-API-MOTEUR` (jeton `donnees-fournisseurs`) | `POST /imports/{supplier}/run` en simulation ; quarantaine (`POST /incidents`) | 1 | — |
 | `CONN-N8N` | Déclencher et suivre les imports | 1 | — |
 | Accès fournisseur | Selon l'accord écrit ; identifiants `SUPPLIER_<ID>_CREDENTIAL_REF` | 1 | — |
 | Dépense | — | — | 0 CHF |
@@ -148,7 +148,7 @@
 
 | Connecteur | Mode | Niveau min. | Plafond |
 |---|---|---|---|
-| `CONN-API-MOTEUR` | `/publish/preview`, lecture du catalogue | 1 | — |
+| `CONN-API-MOTEUR` (jeton `catalogue`) | Dépôt des fiches en brouillon (`POST /catalog/items` ; validations, identifiants Shopify et prix publié : 422), aperçu `POST /publish/preview`, lecture du catalogue ; validation des fiches : propriétaire (`POST /catalog/approvals`, C30) | 1 | — |
 | `CONN-SHOPIFY` | Écriture via les workflows de A-07 uniquement | 2 | — |
 | Dépense | — | — | 0 CHF |
 
@@ -178,7 +178,7 @@
 |---|---|---|---|
 | `CONN-PAYPAL` | Paiement par passerelle ; lecture des transactions | 1 (après B05) | Par transaction et par mois : mandat ; à défaut 0 CHF |
 | `CONN-DB-LECTURE` | Lecture | 1 | — |
-| `CONN-API-MOTEUR` (jeton `agent-05-finance`) | Calculs ; dettes et créances chaque jour (`POST /treasury/balance-items`) ; frais par fournisseur sans taux (`POST /catalog/cost-inputs`) ; étoile polaire et coûts historiques ; lecture des apports et des approbations de prix ; jamais de demande de dépense à son nom | 1 | — |
+| `CONN-API-MOTEUR` (jeton `finance-pricing`) | Calculs ; dettes et créances chaque jour (`POST /treasury/balance-items`) ; frais par fournisseur sans taux (`POST /catalog/cost-inputs`) ; étoile polaire et coûts historiques ; lecture des apports et des approbations de prix ; jamais de demande de dépense à son nom | 1 | — |
 
 ### A-06 — Direction artistique
 
@@ -224,7 +224,7 @@
 |---|---|---|---|
 | `CONN-SHOPIFY` | Écriture via `engine/pokeshop/shopify_client.py` | 2 (réel) | — |
 | `CONN-N8N` | Construire, activer en simulation | 1 | — |
-| `CONN-API-MOTEUR` | Exploitation | 1 | — |
+| `CONN-API-MOTEUR` (jeton `site-integrations`) | Cycles `POST /sync/run` (simulation ; écriture réelle : niveau 2 et porte de gouvernance), demandes de dépense `POST /mandate/check`, actes protecteurs | 1 | — |
 | Dépense | Outils et apps (via A-05) | 1 | Mandat, dans l'enveloppe BP de 1 500 CHF ; à défaut 0 CHF |
 
 ### A-08 — SEO et rédaction
@@ -293,6 +293,7 @@
 | Connecteur | Mode | Niveau min. | Plafond |
 |---|---|---|---|
 | `CONN-PUB` | Lecture et pause ; création dans le plafond | 1 ; 3 | Total : 500 CHF pour le test (BP §3, §9) ; jour : mandat |
+| `CONN-API-MOTEUR` (jeton `acquisition`) | Demande de dépense pub (`POST /mandate/check`), état du stop-loss pub (`GET /stoploss/status`) ; **jamais** l'activité pub (`POST /ads/activity` : connecteur `connecteur-publicite`, 403 pour ce jeton) | 1 | — |
 
 ### A-11 — Opérations et SAV
 
@@ -314,7 +315,7 @@
 | Connecteur | Mode | Niveau min. | Plafond |
 |---|---|---|---|
 | `CONN-TRANSPORTEUR` | Étiquettes et suivi des commandes payées | 2 | Affranchissement selon le tarif du contrat transporteur |
-| `CONN-API-MOTEUR` (jeton `agent-11-operations`) | Stock, **déclaration de chaque réception contrôlée** (`POST /stock/receive`, ou passerelle n8n `pokeshop-stock-recu` du workflow 06), réservations, propositions de réassort enregistrées (`POST /stock/reorder-proposal`, sans `cap_exceptions` : réservé à la propriétaire), demandes de dépense (`/mandate/check`) | 1 | — |
+| `CONN-API-MOTEUR` (jeton `operations-sav`) | Stock, **déclaration de chaque réception contrôlée** (`POST /stock/receive`, ou passerelle n8n `pokeshop-stock-recu` du workflow 06), réservations, propositions de réassort enregistrées (`POST /stock/reorder-proposal`, sans `cap_exceptions` : réservé à la propriétaire), demandes de dépense (`/mandate/check`) | 1 | — |
 | Dépense | Emballages (via A-05) ; réassorts au niveau 4 | 1 ; 4 | Mandat, enveloppe BP de 300 CHF pour les emballages ; réassort : enveloppe décidée à C17 |
 
 ### A-12 — QA et conformité
@@ -336,7 +337,7 @@
 
 | Connecteur | Mode | Niveau min. | Plafond |
 |---|---|---|---|
-| `CONN-API-MOTEUR` (jeton `agent-12-qa`) | `/incidents` (quarantaine, suspension, **test de correction réussi** d'un incident ouvert par un autre jeton : le jeton commun et l'ouvreur reçoivent 403), `/stoploss/freeze`, `/autonomy` (baisse seulement), `/mandate/revoke`, `/pricing/approvals/{id}/revoke`, lecture `/stoploss/status`, `/sync/history` (gate 3.6) | 1 | — |
+| `CONN-API-MOTEUR` (jeton `qa-conformite`) | `/incidents` (quarantaine, suspension, **test de correction réussi** d'un incident ouvert par un autre jeton, sur un cycle réel lancé par un autre principal : tout autre rôle, l'ouvreur et le jeton commun reçoivent 403), reprise et clôture d'un incident non critique, `/stoploss/freeze`, `/autonomy` (baisse seulement), `/mandate/revoke`, `/pricing/approvals/{id}/revoke`, lecture `/stoploss/status`, `/sync/history` (gate 3.6) | 1 | — |
 | `CONN-N8N` | Suspension de workflow | 1 | — |
 | `CONN-DB-LECTURE`, `CONN-PAYPAL` (lecture) | Contrôle | 1 | — |
 | Dépense | — | — | 0 CHF |
@@ -359,7 +360,7 @@
 | Publication d'une fiche | A-04, A-08 | A-07 | A-12 (aucun champ interne) |
 | Campagne pub | A-10 | Plateforme, dans le plafond | A-05 (CAC) et A-12 (stop-loss pub) |
 | Niveau d'autonomie | A-01 (dossier) | Propriétaire (son jeton) | A-12 (recette) |
-| Chiffres décisifs d'une dépense (photo de trésorerie, soldes, dettes et créances) | Workflow 07 (`n8n-07-stoploss` : photo construite par le moteur, soldes des connecteurs en lecture seule) et A-05 (`agent-05-finance` : dettes et créances), chacun avec son jeton nommé ; jamais le jeton commun (403) | Moteur (`/mandate/check` lit ses registres ; une trésorerie jointe à la demande est ignorée) | A-12 ; jamais déposés par le jeton de l'agent qui demande la dépense (sinon validation humaine) |
+| Chiffres décisifs d'une dépense (photo de trésorerie, soldes, dettes et créances, coûts historiques, activité pub) | Workflow 07 (`n8n-07-stoploss` : photo construite par le moteur), connecteur de trésorerie (`connecteur-tresorerie` : soldes en lecture seule), A-05 (`finance-pricing` : dettes et créances, coûts historiques adossés aux réceptions de A-11), connecteur publicitaire (`connecteur-publicite`), chacun avec son jeton nommé ; jamais le jeton commun (403) | Moteur (`/mandate/check` lit ses registres ; une trésorerie jointe à la demande est ignorée) | A-12 ; jamais déposés par le jeton de l'agent qui demande la dépense (sinon validation humaine) |
 | Taux de change de référence, point zéro, réarmement, apports de capital, approbation d'un prix, exception au plafond de 25 % | A-05 (dossier chiffré) ; A-11 (proposition de réassort) | Propriétaire (son jeton : `POST /fx/rates`, `/stoploss/baseline`, `/stoploss/rearm`, `/capital/movements`, `/pricing/approvals`, `cap_exceptions`) | A-12 (journal) |
 
 ## 6. Ce qu'aucun agent ne fait, à aucun niveau

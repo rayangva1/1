@@ -40,7 +40,6 @@ TRIGGER_TYPES = {
     "n8n-nodes-base.errorTrigger",
     "n8n-nodes-base.shopifyTrigger",
 }
-ENGINE_CREDENTIALS = {"Pokeshop API — X-Pokeshop-Token", "Pokeshop API — jeton nommé n8n-07-stoploss"}
 ENGINE_URL_PREFIX = re.compile(r"^=\{\{ \$\('Paramètres[^']*'\)\.first\(\)\.json\.api_base_url \}\}")
 
 
@@ -53,6 +52,8 @@ def _load_generator() -> Any:
 
 
 GEN = _load_generator()
+ENGINE_CREDENTIALS = {GEN.CREDENTIALS[key][2] for key in GEN.CREDENTIAL_ROLES}
+"""Credentials moteur : un jeton nommé par rôle (revue R3) ; le jeton commun n'est jamais confié à n8n."""
 
 
 def _workflows() -> dict[str, dict[str, Any]]:
@@ -138,7 +139,7 @@ def test_committed_json_matches_generator() -> None:
 
 def test_credentials_map_produces_a_separate_customised_copy(tmp_path: Path) -> None:
     mapping = tmp_path / "ids.json"
-    mapping.write_text(json.dumps({"api": "AbCdEf0123456789"}), encoding="utf-8")
+    mapping.write_text(json.dumps({"api_05": "AbCdEf0123456789"}), encoding="utf-8")
     out = tmp_path / "import"
     assert GEN.main(["--credentials-map", str(mapping), "--out", str(out)]) == 0
     custom = json.loads((out / "05_digest_quotidien.json").read_text(encoding="utf-8"))
@@ -707,9 +708,11 @@ def test_f4_execution_failure_suspends_the_failed_workflow_key(tmp_path: Path) -
     from pokeshop.api import Services, create_app
     from pokeshop.settings import load_settings, sha256_hex
 
-    token = "FICTIF-jeton-api-0000000000000001"
+    token = "FICTIF-jeton-n8n-04-incidents-00001"
+    relay = "FICTIF-jeton-n8n-08-mandat-0000001"
     client = TestClient(create_app(services=Services.build(
-        load_settings({"POKESHOP_API_TOKEN_SHA256": sha256_hex(token), "POKESHOP_STATE_DIR": ":memory:"}),
+        load_settings({"POKESHOP_AGENT_TOKENS_SHA256": f"n8n-04-incidents:{sha256_hex(token)},n8n-08-mandat:{sha256_hex(relay)}",
+                       "POKESHOP_STATE_DIR": ":memory:"}),
         clock=lambda: datetime(2026, 10, 4, 12, tzinfo=UTC))))
     nodes_data = {"Échec d’exécution d’un workflow": {"execution": {"id": "42", "lastNodeExecuted": "Contrôle du mandat",
                                                                      "error": {"message": "délai"}},
@@ -724,9 +727,9 @@ def test_f4_execution_failure_suspends_the_failed_workflow_key(tmp_path: Path) -
     assert guard_key in suspended
     spend = {"request": {"amount": "150", "currency": "CHF", "supplier_id": "FICTIF_EMBALLAGES", "category": "PACKAGING",
                          "payment_method": "PAYPAL", "purpose": "Cartons FICTIFS", "idempotency_key": "FICTIF-PKG-0001",
-                         "requested_by": "agent-11", "requested_at": "2026-10-04T10:00:00+02:00", "amount_source": "devis"},
+                         "requested_by": "operations-sav", "requested_at": "2026-10-04T10:00:00+02:00", "amount_source": "devis"},
              "record": True}
-    assert client.post("/mandate/check", headers=headers, json=spend).status_code == 423
+    assert client.post("/mandate/check", headers={"X-Pokeshop-Token": relay}, json=spend).status_code == 423
 
 
 @pytest.mark.skipif(NODE_BIN is None, reason="node absent : code non exécuté")
@@ -758,8 +761,9 @@ def test_f4_stoploss_photo_is_built_by_the_engine_and_balances_never_invented(tm
     assert engine_path(refresh) == "/stoploss/state/refresh" and refresh["onError"] == "continueRegularOutput"
     assert successors(wf, refresh["name"]) == ["État du stop-loss (GET /stoploss/status)"]
     for node in by.values():
-        if is_engine_call(node):
-            assert node["credentials"]["httpHeaderAuth"]["name"] == "Pokeshop API — jeton nommé n8n-07-stoploss"
+        if is_engine_call(node):  # photo, état, gel : n8n-07-stoploss ; relevés de cash : connecteur-tresorerie (R3)
+            expected = "connecteur-tresorerie" if engine_path(node).startswith("/treasury/") else "n8n-07-stoploss"
+            assert node["credentials"]["httpHeaderAuth"]["name"] == f"Pokeshop API — jeton nommé {expected}"
     assert by["Toutes les heures (:05) — relevés de trésorerie (désactivé)"].get("disabled") is True
     paypal = by["Normaliser le solde PayPal"]["parameters"]["jsCode"]
     out, _ = run_js(tmp_path, paypal, [{"api_base_url": "x"}])  # lecture non configurée (nœud désactivé)
@@ -927,3 +931,35 @@ def test_f4_mandate_requests_carry_no_treasury() -> None:
     by = nodes(WORKFLOWS["08_mandat_depenses.json"])
     body = by["Contrôle du mandat (POST /mandate/check)"]["parameters"]["jsonBody"]
     assert "treasury" not in body and "record: true" in body
+
+
+# ------------------------------------------------------------------- revue R3 : jetons nommés par rôle
+
+
+def test_r3_every_engine_call_uses_a_role_token_authorized_by_the_matrix() -> None:
+    """Revue R3 (SEC-16) : chaque appel moteur actif utilise le jeton nommé de son rôle, admis par la matrice."""
+    from pokeshop import authz
+
+    names = {GEN.CREDENTIALS[key][2]: role for key, role in GEN.CREDENTIAL_ROLES.items()}
+    assert set(GEN.CREDENTIAL_ROLES.values()) <= authz.KNOWN_ROLES
+    assert not any("jeton commun" in name or name.endswith("X-Pokeshop-Token") for name in names)
+    checked = 0
+    for name, wf in WORKFLOWS.items():
+        for node in wf["nodes"]:
+            if not is_engine_call(node) or node.get("disabled"):
+                continue
+            role = names[node["credentials"]["httpHeaderAuth"]["name"]]
+            method = node["parameters"]["method"]
+            path = engine_path(node)
+            rule = next((r for (m, tpl), r in authz.ROUTE_MATRIX.items()
+                         if m == method and re.fullmatch(re.sub(r"\\\{[^}]+\\\}", "[^/]+", re.escape(tpl)), path)), None)
+            assert rule is not None, f"{name} : {method} {path} absent de la matrice"
+            assert authz.allowed(rule, role=role, owner=False), f"{name} : {role} refusé sur {method} {path}"
+            checked += 1
+    assert checked >= 30
+    receive = next(n for n in WORKFLOWS["06_marketing_automations.json"]["nodes"]
+                   if is_engine_call(n) and engine_path(n) == "/stock/receive")
+    assert names[receive["credentials"]["httpHeaderAuth"]["name"]] == "operations-sav"  # jamais le jeton commun
+    balances = [n for n in WORKFLOWS["07_stoploss_watch.json"]["nodes"]
+                if is_engine_call(n) and engine_path(n).startswith("/treasury/")]
+    assert balances and {names[n["credentials"]["httpHeaderAuth"]["name"]] for n in balances} == {"connecteur-tresorerie"}

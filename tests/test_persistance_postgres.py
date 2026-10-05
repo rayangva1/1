@@ -20,6 +20,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+import jetons_roles as JR
 from fastapi.testclient import TestClient
 from pokeshop.api import API_TOKEN_HEADER, OWNER_TOKEN_HEADER, Services, create_app
 from pokeshop.audit import PostgresStateJournal, StateStoreError
@@ -36,8 +37,8 @@ API_TOKEN = "FICTIF-jeton-api-0000000000000001"
 OWNER_TOKEN = "FICTIF-jeton-proprietaire-tres-long-0001"
 H = {API_TOKEN_HEADER: API_TOKEN}
 HO = {API_TOKEN_HEADER: API_TOKEN, OWNER_TOKEN_HEADER: OWNER_TOKEN}
-FINANCE_TOKEN = "FICTIF-jeton-agent-05-finance-0001"
-HF = {API_TOKEN_HEADER: FINANCE_TOKEN}  # photo du stop-loss : jeton nommé (valeur décisive)
+FINANCE_TOKEN = JR.ROLE_TOKENS["finance-pricing"]
+HF, HPHOTO, HORDERS, HDATA, HQA = JR.HF, JR.HPHOTO, JR.HORDERS, JR.HDATA, JR.HQA  # jetons nommés par rôle
 
 Factory = Callable[[], Any]
 
@@ -92,7 +93,7 @@ def boot(pg: dict[str, Factory]) -> tuple[TestClient, Services]:
     """(Re)démarrage de l'API sur la même base, avec le compte de production (membre de pokeshop_engine)."""
     settings = load_settings({"POKESHOP_API_TOKEN_SHA256": sha256_hex(API_TOKEN),
                               "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(OWNER_TOKEN),
-                              "POKESHOP_AGENT_TOKENS_SHA256": f"agent-05-finance:{sha256_hex(FINANCE_TOKEN)}"})
+                              "POKESHOP_AGENT_TOKENS_SHA256": JR.agent_tokens_env()})
     svc = Services.build(settings, clock=lambda: NOW, notifier=LogNotifier(), connect=pg["engine"])
     client = TestClient(create_app(services=svc))
     # Apport attesté par la propriétaire (registre en base, SEC-06) : idempotent d'un démarrage à l'autre.
@@ -129,27 +130,29 @@ def test_postgres_state_journal_is_chained_and_refuses_a_second_writer(pg: dict[
 def test_restart_on_postgres_keeps_freeze_photo_ledger_northstar_and_quarantine(pg: dict[str, Factory]) -> None:
     """MOT-01 / SEC-01 / E2E-01/02/03/06 avec la base : tout survit au redémarrage du conteneur."""
     client, svc = boot(pg)
-    assert client.post("/stoploss/state", headers=HF, json=photo()).status_code == 200
+    assert client.post("/stoploss/state", headers=HPHOTO, json=photo()).status_code == 200
     spend = {"request": {"amount": "40", "currency": "CHF", "supplier_id": "FICTIF_EMBALLAGES", "category": "PACKAGING",
                          "payment_method": "PAYPAL", "purpose": "Étuis FICTIFS", "idempotency_key": "FICTIF-PG-SPEND-1",
-                         "requested_by": "agent-05", "requested_at": NOW.isoformat(), "amount_source": "devis FICTIF"},
+                         "requested_by": "finance-pricing", "requested_at": NOW.isoformat(), "amount_source": "devis FICTIF"},
              "treasury": {"as_of": NOW.isoformat(), "cash_available_chf": "5000", "paypal_balance_chf": "500"},
              "record": True}
-    assert body(client.post("/mandate/check", headers=H, json=spend))["recorded"] is True
-    entries = [{"entry_id": "FICTIF-PG-1", "at": NOW.isoformat(), "post": "NET_SALES", "amount": "184.92"}]
-    assert body(client.post("/northstar/entries", headers=H, json={"entries": entries}))["added"] == 1
-    inc = body(client.post("/incidents", headers=H, json={"code": "INC-01", "product_key": "FICTIF-P1",
-                                                          "cause": "prix ×10 FICTIF", "actor": "agent-05"}))["incident"]
-    assert client.post("/stoploss/freeze", headers=H, json={"actor": "agent-12", "reason": "débit inconnu FICTIF"}).status_code == 200
+    assert body(client.post("/mandate/check", headers=HF, json=spend))["recorded"] is True
+    order = {"order_id": "FICTIF-PG-1", "paid_at": NOW.isoformat(), "net_sales_ht": "184.92", "payment_fees": "0",
+             "shipping_cost_actual": "3.00", "shipping_label_ref": "FICTIF-ETIQ-1", "source": "Shopify FICTIF"}
+    assert client.post("/orders/shipped", headers=HORDERS, json=order).status_code == 201
+    inc = body(client.post("/incidents", headers=HDATA, json={"code": "INC-01", "product_key": "FICTIF-P1",
+                                                              "cause": "prix ×10 FICTIF", "actor": "agent-05"}))["incident"]
+    assert client.post("/stoploss/freeze", headers=HQA, json={"actor": "agent-12", "reason": "débit inconnu FICTIF"}).status_code == 200
 
     client2, svc2 = boot(pg)
     health = body(client2.get("/health"))
     assert health["global_frozen"] is True and health["persistence"]["backend"] == "postgres"
     assert health["persistence"]["restored"] is True
     assert svc2.stoploss_state is not None and svc2.stoploss_engine.latch.cause == "MANUAL"
-    replay = body(client2.post("/mandate/check", headers=H, json=spend))["decision"]
+    replay = body(client2.post("/mandate/check", headers=HF, json=spend))["decision"]
     assert replay["replayed"] is True
-    assert body(client2.get("/northstar", headers=H))["cumulative"] == "184.92"
+    assert body(client2.get("/northstar", headers=H))["cumulative"] == "181.92"
+    assert svc2.orders.get("FICTIF-PG-1") is not None  # registre des commandes en base
     assert svc2.incidents.is_quarantined("FICTIF-P1") and svc2.incidents.get(inc["incident_id"]).is_open
     refs = query(pg["engine"], "SELECT details->>'ref' FROM pokeshop.incidents ORDER BY incident_id")
     assert len({r[0] for r in refs}) == len(refs) >= 2  # INC-01 + INC-09 du gel : deux lignes distinctes

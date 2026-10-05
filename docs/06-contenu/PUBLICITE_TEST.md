@@ -14,7 +14,7 @@
 - [ ] **Mandat signé** avec `ads_daily_cap_chf` et l'enveloppe `ADVERTISING` (proposée : 500 CHF) ; sans mandat signé, le stop-loss pub refuse toute dépense.
 - [ ] **Comptes publicitaires** créés par la propriétaire (B20) avec un **plafond de dépense réglé au niveau du compte** (500 CHF) en plus du plafond jour des campagnes.
 - [ ] **Cash disponible ≥ 1 600 CHF + budget engagé** (G4, critère 4.5) ; rappel écart EC-F-06 : les charges d'avant ouverture peuvent entamer la réserve et interdire le test.
-- [ ] **Stop-loss pub branché** : dépenses quotidiennes par campagne (`AdSpend`) et commandes attribuées (`AttributedOrder`) transmises chaque jour à `engine/pokeshop/stoploss.py`.
+- [ ] **Stop-loss pub branché** : dépenses quotidiennes par campagne (`AdSpend`) et commandes attribuées (`AttributedOrder`) déposées chaque jour au moteur (`POST /ads/activity`) par le **connecteur publicitaire** (rôle `connecteur-publicite`, recetté : BL-198, J49), jamais par l'agent 10 qui dépense (403) ; registre en ajout seul, commandes attribuées présentes au registre des commandes (workflow 02, BL-199) ; le moteur retient par campagne et par jour le maximum entre cette déclaration et les paiements pub exécutés du mandat. Sans connecteur recetté : aucune campagne.
 - [ ] Produits promus **en stock local** (au moins 3 unités vendables par produit promu, **hypothèse**), fiches conformes (`site/shopify/MODELE_FICHE_PRODUIT.md`), aucun stop-loss produit actif.
 - [ ] Liens suivis (UTM) et, pour un créateur, code ou lien dédié prêts ; page d'arrivée testée sur mobile.
 - [ ] Bandeau cookies conforme (`docs/04-legal/COOKIES.md`) : la mesure ne dépend **pas** du pixel publicitaire (§6).

@@ -106,7 +106,7 @@ DIGEST {{NOM_BOUTIQUE}} — jj.mm.aaaa
 | Inventaire physique | Comptage complet, écarts expliqués (A08, BL-167) | Propriétaire, 11 | — |
 | Niveau d'autonomie | Incidents du mois ; proposition de passage au niveau supérieur ou maintien | 01, 12 | Activer ou non |
 | Données personnelles | Purges selon les durées de conservation (`docs/04-legal/CONFIDENTIALITE.md` ; avant l'ouverture, `docs/04-legal/CONFIDENTIALITE_LANDING.md`), y compris les paniers non finalisés (`DUREE_CONSERVATION_PANIER`) ; liste des demandes LPD du mois | 12 | — |
-| Sauvegarde | Test de restauration (BP §6), au moins une fois par trimestre | 07, 12 | — |
+| Sauvegarde | Contrôle R-I04 **chaque mois** : `db/backup.sh etat` code 0 (restauration vérifiée depuis moins de 36 h, `db-backup` « healthy ») et copie chiffrée hors de la machine (A12) ; écart = incident | 07, 12 | Copier la sauvegarde hors de la machine (A12) |
 
 ## 6. Dictionnaire des indicateurs (spécification du tableau de bord)
 

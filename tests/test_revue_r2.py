@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import jetons_roles as JR
 import test_api as A
 import test_orchestration_f4 as F
 import test_persistance_etats as P
@@ -70,10 +71,10 @@ def test_sec06_photo_cannot_declare_capital_and_fake_withdrawal_no_longer_hides_
         {"movement_id": "FICTIF_RETRAIT_FAUX", "at": (P.NOW - timedelta(days=1)).isoformat(), "kind": "WITHDRAWAL",
          "amount": "7100"},
     ]  # fmt: skip
-    refused = client.post("/stoploss/state", headers=P.HF, json=forged)
+    refused = client.post("/stoploss/state", headers=P.HPHOTO, json=forged)
     assert refused.status_code == 422 and "POST /capital/movements" in body(refused)["erreur"]
     assert svc.stoploss_state is None and svc.audit.events(action="stoploss.state.capital_movements_refused")
-    honest = body(client.post("/stoploss/state", headers=P.HF, json=P.photo("900")))
+    honest = body(client.post("/stoploss/state", headers=P.HPHOTO, json=P.photo("900")))
     assert honest["status"]["global_frozen"] is True and svc.stoploss_engine.frozen
     assert [m.movement_id for m in svc.stoploss_state.capital_movements] == ["FICTIF_APPORT"]  # registre seul
 
@@ -85,7 +86,7 @@ def test_sec06_only_the_owner_register_changes_capital(tmp_path: Path) -> None:
     assert client.post("/capital/movements", headers=P.HF, json=withdrawal).status_code == 403  # agent : jamais
     assert client.post("/capital/movements", headers=P.H, json=withdrawal).status_code == 403  # jeton commun : jamais
     assert client.post("/capital/movements", headers=P.HO, json=withdrawal).status_code == 201  # propriétaire
-    data = body(client.post("/stoploss/state", headers=P.HF, json=P.photo("900")))
+    data = body(client.post("/stoploss/state", headers=P.HPHOTO, json=P.photo("900")))
     # Capital de référence 8 000 − 7 100 = 900 attesté par la propriétaire : valeur nette 900, aucune perte.
     assert data["status"]["global_frozen"] is False
     assert {m.movement_id for m in svc.stoploss_state.capital_movements} == {"FICTIF_APPORT", "FICTIF_RETRAIT"}
@@ -95,12 +96,15 @@ def test_sec06_treasury_values_need_a_named_token(tmp_path: Path) -> None:
     client, svc = P.boot(tmp_path)
     reading = {"as_of": P.NOW.isoformat(), "balance_chf": "2000", "source": "relevé FICTIF"}
     statement = {"as_of": P.NOW.isoformat(), "preorders_collected_chf": "0", "source": "déclaration FICTIVE"}
-    for path, payload in (("/stoploss/state", P.photo()), ("/treasury/paypal-balance", reading),
-                          ("/treasury/bank-balance", reading), ("/treasury/balance-items", statement)):
+    # Revue R3 : jeton nommé **du rôle** (matrice pokeshop.authz), jamais le jeton commun ni un autre rôle.
+    for path, payload, role in (("/stoploss/state", P.photo(), P.HPHOTO), ("/treasury/paypal-balance", reading, P.HTRES),
+                                ("/treasury/bank-balance", reading, P.HTRES), ("/treasury/balance-items", statement, P.HF)):
         common = client.post(path, headers=P.H, json=payload)
         assert common.status_code == 403 and "jeton nommé" in body(common)["erreur"], path
-        assert client.post(path, headers=P.HF, json=payload).status_code == 200, path
+        assert client.post(path, headers=P.HOPS, json=payload).status_code == 403, path  # rôle non autorisé
+        assert client.post(path, headers=role, json=payload).status_code == 200, path
     assert len(svc.audit.events(action="stoploss.state.common_token_refused")) == 1
+    assert len(svc.audit.events(action="stoploss.state.role_refused")) == 1
 
 
 # =============================================================================== SEC-09
@@ -163,17 +167,17 @@ def test_mot02_sync_run_never_accepts_a_caller_fx_rate() -> None:
             "catalog": [{"product_id": "FICTIF-P1", "listing": A.LISTING}]}  # fmt: skip
     forged = {"fictif_grossiste_a": {"inbound_freight_alloc": "2.00", "customs_and_fees": "0", "import_vat": "0",
                                      "fx_rate_to_chf": "0.30", "fx_source": "agent", "fx_date": "2026-10-04"}}
-    resp = client.post("/sync/run", headers=A.H, json={**base, "cost_inputs": forged})
+    resp = client.post("/sync/run", headers=A.HSYNC, json={**base, "cost_inputs": forged})
     assert resp.status_code == 422 and "fx_rate_to_chf" in resp.text
     # Sans taux de la propriétaire : coût incomplet => brouillon, jamais un prix public.
-    no_rate = body(client.post("/sync/run", headers=A.H, json={**base, "cost_inputs": A.BODY_COSTS}))
+    no_rate = body(client.post("/sync/run", headers=A.HSYNC, json={**base, "cost_inputs": A.BODY_COSTS}))
     p1 = next(i for i in no_rate["report"]["items"] if i["product_id"] == "FICTIF-P1")
     assert p1["decision_status"] == "DRAFT" and p1["plan_outcome"] == "NOT_SENT" and no_rate["cycle_status"] == "VIDE"
     assert client.post("/fx/rates", headers=A.HO, json=A.OWNER_FX).status_code == 200
-    rated = body(client.post("/sync/run", headers=A.H, json={**base, "cost_inputs": A.BODY_COSTS}))
+    rated = body(client.post("/sync/run", headers=A.HSYNC, json={**base, "cost_inputs": A.BODY_COSTS}))
     p1 = next(i for i in rated["report"]["items"] if i["product_id"] == "FICTIF-P1")
     assert p1["decision_status"] == "OK" and p1["price_chf"] == "144.90"  # 95 EUR × 0.9375 + 2 : jamais 55.90
-    real = client.post("/sync/run", headers=A.H, json={**base, "cost_inputs": A.BODY_COSTS, "dry_run": False})
+    real = client.post("/sync/run", headers=A.HSYNC, json={**base, "cost_inputs": A.BODY_COSTS, "dry_run": False})
     assert real.status_code == 409 and "simulation seulement" in body(real)["erreur"]
 
 
@@ -184,7 +188,7 @@ def test_e2e07_twenty_identical_fictif_cycles_never_meet_the_criterion(tmp_path:
     client, _, _ = F.boot(tmp_path)
     F.register_catalog(client)
     for _ in range(20):
-        data = body(client.post("/sync/run", headers=F.H, json=F.N8N_SYNC_BODY))
+        data = body(client.post("/sync/run", headers=F.HSYNC, json=F.N8N_SYNC_BODY))
         assert data["cycle_status"] == "PROPRE" and data["counted_for_acceptance"] is False
     history = body(client.get("/sync/history", headers=F.H))
     assert history["consecutive_clean_runs"] == 0 and history["criterion_met"] is False
@@ -266,35 +270,48 @@ def test_coh02_no_decisive_rule_key_escapes_the_strictest_rules() -> None:
 
 
 def _incident_boot(tmp_path: Path) -> tuple[TestClient, Services, dict[str, str]]:
-    ops, qa = "FICTIF-jeton-agent-07-integrations-01", "FICTIF-jeton-agent-12-qa-00000001"
     env = {"POKESHOP_API_TOKEN_SHA256": sha256_hex(A.API_TOKEN), "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(A.OWNER_TOKEN),
-           "POKESHOP_STATE_DIR": str(tmp_path),
-           "POKESHOP_AGENT_TOKENS_SHA256": f"agent-07-integrations:{sha256_hex(ops)},agent-12-qa:{sha256_hex(qa)}"}  # fmt: skip
+           "POKESHOP_STATE_DIR": str(tmp_path), "POKESHOP_AGENT_TOKENS_SHA256": JR.agent_tokens_env()}  # fmt: skip
     svc = Services.build(load_settings(env), clock=lambda: A.NOW, notifier=LogNotifier())
-    return TestClient(create_app(services=svc)), svc, {"ops": ops, "qa": qa}
+    return TestClient(create_app(services=svc)), svc, {"ops": JR.ROLE_TOKENS["site-integrations"],
+                                                       "qa": JR.ROLE_TOKENS["qa-conformite"]}
+
+
+P9_IDENTITY = {"gtin": "2000000001029", "language": "FR", "extension": "FICTIF_ALPHA", "format": "ETB",
+               "content": "9 BOOSTERS", "sealed": True}
+"""Identité de l'offre FICTIF-A-002 (coffret) : référence FICTIF-P9 distincte de FICTIF-P1 (aucune ambiguïté)."""
+
+
+def register(client: TestClient, product_id: str) -> None:
+    """Fiche du catalogue validé (registre, agent catalogue) : le cycle cité doit lire le registre (revue R3)."""
+    listing = dict(A.LISTING, product_key=product_id, **({"identity": P9_IDENTITY, "public_sku": "ETB-FICTIF_ALPHA-FR"}
+                                                         if product_id == "FICTIF-P9" else {}))  # fmt: skip
+    assert client.post("/catalog/items", headers=JR.HCAT, json={"items": [{"product_id": product_id, "listing": listing}]}).status_code == 200
 
 
 def _run(client: TestClient, product_id: str = "FICTIF-P1", costs: bool = True) -> str:
-    listing = dict(A.LISTING, product_key=product_id)
-    payload: dict[str, Any] = {"supplier": "fictif_grossiste_a", "source_path": "FICTIF_offres_grossiste_a.csv",
-                               "catalog": [{"product_id": product_id, "listing": listing}]}  # fmt: skip
+    """Cycle en simulation lancé par le workflow 01 (n8n-01-sync) sur le **catalogue du registre**."""
+    register(client, product_id)
+    payload: dict[str, Any] = {"supplier": "fictif_grossiste_a", "source_path": "FICTIF_offres_grossiste_a.csv"}
     if costs:
         payload["cost_inputs"] = A.BODY_COSTS
-    return body(client.post("/sync/run", headers=A.H, json=payload))["report"]["run_id"]
+    return body(client.post("/sync/run", headers=JR.HSYNC, json=payload))["report"]["run_id"]
 
 
 def test_new01_resume_test_needs_a_named_token_other_than_the_opener_and_a_relevant_clean_run(tmp_path: Path) -> None:
     client, svc, tok = _incident_boot(tmp_path)
     assert client.post("/fx/rates", headers=A.HO, json=A.OWNER_FX).status_code == 200
     ops, qa = {API_TOKEN_HEADER: tok["ops"]}, {API_TOKEN_HEADER: tok["qa"]}
+    register(client, "FICTIF-P9")  # fiche FICTIVE au registre : l'incident est déduit FICTIF
     inc = body(client.post("/incidents", headers=ops, json={"code": "INC-01", "product_key": "FICTIF-P9",
                                                             "cause": "prix publié anormal (FICTIF)"}))["incident"]  # fmt: skip
     url = f"/incidents/{inc['incident_id']}/test"
-    unrelated = _run(client, "FICTIF-P1")  # cycle PROPRE, mais sur une autre référence
+    svc.catalog._entries.pop("FICTIF-P9")  # cycle PROPRE sur une autre référence seulement (P9 retirée)
+    unrelated = _run(client, "FICTIF-P1")
     common = client.post(url, headers=A.H, json={"test_ref": unrelated, "passed": True, "actor": "agent-07"})
     assert common.status_code == 403 and "jeton commun" in body(common)["erreur"]
     own = client.post(url, headers=ops, json={"test_ref": unrelated, "passed": True, "actor": "x1"})
-    assert own.status_code == 403 and "auto-attesté" in body(own)["erreur"]
+    assert own.status_code == 403 and "qa-conformite" in body(own)["erreur"]  # revue R3 : liste fermée
     other = client.post(url, headers=qa, json={"test_ref": unrelated, "passed": True, "actor": "x1"})
     assert other.status_code == 409 and "FICTIF-P9" in body(other)["erreur"]
     empty = client.post(url, headers=qa, json={"test_ref": _run(client, "FICTIF-P9", costs=False), "passed": True,
@@ -307,15 +324,15 @@ def test_new01_resume_test_needs_a_named_token_other_than_the_opener_and_a_relev
     assert svc2.sync.history == []
     ok = client2.post(url, headers=qa, json={"test_ref": target, "passed": True, "actor": "x1"})
     assert ok.status_code == 200 and body(ok)["incident"]["test_passed"] is True
-    resumed = client2.post(f"/incidents/{inc['incident_id']}/resume", headers=A.H, json={"actor": "agent-07"})
+    resumed = client2.post(f"/incidents/{inc['incident_id']}/resume", headers=JR.HINC, json={"actor": "agent-07"})
     assert resumed.status_code == 200 and not svc2.incidents.is_quarantined("FICTIF-P9")
 
 
 def test_new01_failed_test_can_still_be_reported_by_anyone(tmp_path: Path) -> None:
     client, _, _ = _incident_boot(tmp_path)
-    inc = body(client.post("/incidents", headers=A.H, json={"code": "INC-01", "product_key": "FICTIF-P9",
-                                                            "cause": "prix publié anormal (FICTIF)"}))["incident"]  # fmt: skip
-    failed = client.post(f"/incidents/{inc['incident_id']}/test", headers=A.H,
+    inc = body(client.post("/incidents", headers=JR.HINC, json={"code": "INC-01", "product_key": "FICTIF-P9",
+                                                                "cause": "prix publié anormal (FICTIF)"}))["incident"]  # fmt: skip
+    failed = client.post(f"/incidents/{inc['incident_id']}/test", headers=JR.HACQ,
                          json={"test_ref": "contrôle FICTIF", "passed": False, "actor": "agent-07"})  # fmt: skip
     assert failed.status_code == 200 and body(failed)["incident"]["test_passed"] is False
 
@@ -325,12 +342,12 @@ def test_new01_failed_test_can_still_be_reported_by_anyone(tmp_path: Path) -> No
 
 def test_new02_startup_hold_is_never_written_even_after_an_evaluation(tmp_path: Path) -> None:
     client, _ = P.boot(tmp_path)
-    assert client.post("/stoploss/state", headers=P.HF, json=P.photo()).status_code == 200
+    assert client.post("/stoploss/state", headers=P.HPHOTO, json=P.photo()).status_code == 200
     bad = tmp_path / "northstar.jsonl"
     bad.write_text("garbage\n", encoding="utf-8")
     client2, svc2 = P.boot(tmp_path)
     assert svc2.stoploss_engine.latch.cause == "RESTORE_FAILED" and svc2.stoploss_engine.frozen
-    during = client2.post("/stoploss/state", headers=P.HF, json=P.photo())  # workflow 07 continue de déposer
+    during = client2.post("/stoploss/state", headers=P.HPHOTO, json=P.photo())  # workflow 07 continue de déposer
     assert during.status_code == 200 and svc2.stoploss_engine.journal[-1].event == "EVALUATION"
     assert svc2.stoploss_engine.persisted_latch.frozen is False
     lines = [json.loads(line) for line in (tmp_path / "stoploss.jsonl").read_text(encoding="utf-8").splitlines()]
@@ -362,14 +379,14 @@ def test_new02_real_trip_or_manual_freeze_during_the_hold_is_kept() -> None:
 def test_new03_dashboard_accepts_named_tokens_and_reports_unreadable_journals(tmp_path: Path) -> None:
     client, _ = P.boot(tmp_path)
     assert client.get("/dashboard/weekly", headers=P.HF).status_code == 200  # jeton nommé admis
-    named_only = load_settings({"POKESHOP_AGENT_TOKENS_SHA256": f"agent-05-finance:{sha256_hex(P.FINANCE_TOKEN)}",
+    named_only = load_settings({"POKESHOP_AGENT_TOKENS_SHA256": f"finance-pricing:{sha256_hex(P.FINANCE_TOKEN)}",
                                 "POKESHOP_STATE_DIR": str(tmp_path / "autre")})  # fmt: skip
     only = TestClient(create_app(services=Services.build(named_only, clock=P.Clock(), notifier=LogNotifier())))
     assert only.get("/dashboard/daily", headers=P.HF).status_code == 200  # un jeton par agent, sans jeton commun
     assert only.get("/dashboard/daily", headers=P.H).status_code == 401
-    entry = {"entries": [{"entry_id": "FICTIF-1", "at": P.NOW.isoformat(), "post": "NET_SALES", "amount": "184.92",
+    entry = {"entries": [{"entry_id": "FICTIF-1", "at": P.NOW.isoformat(), "post": "PAYMENT", "amount": "5.30",
                           "order_id": "FICTIF-O1"}]}  # fmt: skip
-    assert client.post("/northstar/entries", headers=P.H, json=entry).status_code == 200
+    assert client.post("/northstar/entries", headers=P.HF, json=entry).status_code == 200
     (tmp_path / "northstar.jsonl").write_text("garbage\n", encoding="utf-8")
     client2, _ = P.boot(tmp_path)
     assert client2.get("/northstar", headers=P.H).status_code == 503
@@ -397,8 +414,8 @@ def test_mot18_northstar_refuses_an_assumed_logistics_cost() -> None:
 
 def test_sec07_rearm_without_reference_returns_the_value_and_the_photo_fingerprint(tmp_path: Path) -> None:
     client, svc = P.boot(tmp_path)
-    assert client.post("/stoploss/state", headers=P.HF, json=P.photo()).status_code == 200
-    client.post("/stoploss/freeze", headers=P.H, json={"actor": "agent-12", "reason": "gel de test FICTIF"})
+    assert client.post("/stoploss/state", headers=P.HPHOTO, json=P.photo()).status_code == 200
+    client.post("/stoploss/freeze", headers=P.HQA, json={"actor": "agent-12", "reason": "gel de test FICTIF"})
     resp = client.post("/stoploss/rearm", headers=P.HO, json={"reason": "valeur nette examinée (FICTIF)"})
     data = body(resp)
     assert resp.status_code == 409 and data["rearm_reference"]["net_worth_chf"] == "8000"

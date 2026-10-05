@@ -1,19 +1,28 @@
-# Pile locale « pour plus tard » — {{NOM_BOUTIQUE}} : PostgreSQL 16 + migrations + n8n + API du moteur.
+# Pile locale — {{NOM_BOUTIQUE}} : PostgreSQL 16 + migrations + n8n + API du moteur.
 #
-# NE PAS LANCER avant décision de la propriétaire : coffre de secrets (B03), boutique Shopify
-# (B15) et niveau d'autonomie (C14). Préparation (exécutable telle quelle, voir README.md « Démarrage ») :
-#   1. Fichier de variables HORS DU DÉPÔT (jamais de .env à la racine : docker compose le lirait tout seul) :
-#        sudo install -D -m 600 .env.example /etc/pokeshop/api.env
+# Calendrier (INTERVENTIONS_HUMAINES.md) : la pile (db, db-migrate, db-backup, api, n8n) dès J8 (B27), en simulation,
+# seul n8n étant exposé par le proxy HTTPS (webhook d'inscription, liens des emails) ; mise en service complète
+# (workflows 01 à 08, webhooks Shopify, formulaires) à J26 (B23), avant le niveau 2 (C14).
+# Préparation (exécutable telle quelle, voir README.md « Démarrage ») :
+#   1. Fichier de variables HORS DU DÉPÔT, appartenant à TON compte (jamais de .env à la racine : docker compose le
+#      lirait tout seul) :
+#        sudo install -D -m 600 -o "$USER" .env.example /etc/pokeshop/api.env
 #      puis y remplir DEPUIS LE COFFRE au minimum POSTGRES_PASSWORD, POKESHOP_DB_PASSWORD, N8N_ENCRYPTION_KEY,
-#      POKESHOP_API_TOKEN_SHA256 et POKESHOP_OWNER_TOKEN_SHA256 (autre chemin : POKESHOP_ENV_FILE=…) ;
+#      POKESHOP_OWNER_TOKEN_SHA256 et les empreintes des jetons par rôle POKESHOP_ROLE_TOKEN_SHA256_<RÔLE> (au minimum
+#      N8N_07_STOPLOSS, CONNECTEUR_TRESORERIE et FINANCE_PRICING : sans eux, aucune photo ni relevé de trésorerie, le
+#      stop-loss n'est jamais évaluable) ; POKESHOP_API_TOKEN_SHA256 (jeton commun, lecture seule) est facultatif
+#      (autre chemin : POKESHOP_ENV_FILE=…) ;
 #   2. scripts/compose.sh config --quiet   (vérification sans rien lancer : refuse un .env dans le dépôt, un
 #      fichier de variables dans le dépôt ou lisible par d'autres, et échoue tant qu'un secret obligatoire manque) ;
-#   3. scripts/compose.sh up -d db db-migrate db-backup api n8n
+#   3. scripts/compose.sh up -d db db-migrate db-backup api n8n   (même commande à J8 et à J26 ; « up -d n8n » démarrerait de
+#      toute façon api et la base, dont n8n dépend)
 #   4. scripts/compose.sh ps   (db-backup « healthy » = restauration vérifiée depuis moins de 36 h, db/backup.sh etat)
-# scripts/compose.sh = docker compose --env-file /etc/pokeshop/api.env (interpolation seulement).
+# scripts/compose.sh = docker compose --env-file /etc/pokeshop/api.env (interpolation seulement). La CLI lit --env-file
+# avec l'identité de l'appelant : fichier à ton nom (-o "$USER"), ton compte membre du groupe docker (sudo usermod -aG
+# docker "$USER", puis reconnexion), sinon « sudo scripts/compose.sh … ». Le compléter en place (nano), pas « sed -i ».
 # Ports publiés sur 127.0.0.1 uniquement (aucune exposition réseau).
 # Simulation par défaut : POKESHOP_DRY_RUN=true ; aucune écriture Shopify réelle sans POKESHOP_DRY_RUN=false
-# ET le niveau d'autonomie requis.
+# ET le niveau d'autonomie requis. Autorisations par route : docs/08-agents/MATRICE_API.md (engine/pokeshop/authz.py).
 #
 # Moindre privilège : AUCUN service ne charge le fichier de variables en entier. Docker Compose le lit pour
 # l'interpolation ${…} ; chaque service ne reçoit que les variables listées dans son bloc `environment` :
@@ -107,9 +116,33 @@ services:
       POKESHOP_MANDATE_FINGERPRINT: ${POKESHOP_MANDATE_FINGERPRINT:-}
       POKESHOP_STOPLOSS_FINGERPRINT: ${POKESHOP_STOPLOSS_FINGERPRINT:-}
       POKESHOP_RULES_FINGERPRINT: ${POKESHOP_RULES_FINGERPRINT:-}
-      POKESHOP_API_TOKEN_SHA256: ${POKESHOP_API_TOKEN_SHA256:?definir POKESHOP_API_TOKEN_SHA256 dans /etc/pokeshop/api.env (sinon routes internes fermees)}
+      # Jeton commun : lecture et aperçus seulement (facultatif ; tableau de bord dashboard/build.py).
+      POKESHOP_API_TOKEN_SHA256: ${POKESHOP_API_TOKEN_SHA256:-}
       POKESHOP_OWNER_TOKEN_SHA256: ${POKESHOP_OWNER_TOKEN_SHA256:?definir POKESHOP_OWNER_TOKEN_SHA256 dans /etc/pokeshop/api.env (coffre)}
       POKESHOP_AGENT_TOKENS_SHA256: ${POKESHOP_AGENT_TOKENS_SHA256:-}
+      # Un jeton nommé par rôle (matrice docs/08-agents/MATRICE_API.md) : empreinte sha256, jamais le jeton.
+      POKESHOP_ROLE_TOKEN_SHA256_ACQUISITION: ${POKESHOP_ROLE_TOKEN_SHA256_ACQUISITION:-}
+      POKESHOP_ROLE_TOKEN_SHA256_CATALOGUE: ${POKESHOP_ROLE_TOKEN_SHA256_CATALOGUE:-}
+      POKESHOP_ROLE_TOKEN_SHA256_CHEF_DE_PROJET: ${POKESHOP_ROLE_TOKEN_SHA256_CHEF_DE_PROJET:-}
+      POKESHOP_ROLE_TOKEN_SHA256_COMMUNICATION: ${POKESHOP_ROLE_TOKEN_SHA256_COMMUNICATION:-}
+      POKESHOP_ROLE_TOKEN_SHA256_CONNECTEUR_PUBLICITE: ${POKESHOP_ROLE_TOKEN_SHA256_CONNECTEUR_PUBLICITE:-}
+      POKESHOP_ROLE_TOKEN_SHA256_CONNECTEUR_TRESORERIE: ${POKESHOP_ROLE_TOKEN_SHA256_CONNECTEUR_TRESORERIE:?definir POKESHOP_ROLE_TOKEN_SHA256_CONNECTEUR_TRESORERIE dans /etc/pokeshop/api.env (sinon stop-loss jamais evaluable)}
+      POKESHOP_ROLE_TOKEN_SHA256_DIRECTION_ARTISTIQUE: ${POKESHOP_ROLE_TOKEN_SHA256_DIRECTION_ARTISTIQUE:-}
+      POKESHOP_ROLE_TOKEN_SHA256_DONNEES_FOURNISSEURS: ${POKESHOP_ROLE_TOKEN_SHA256_DONNEES_FOURNISSEURS:-}
+      POKESHOP_ROLE_TOKEN_SHA256_FINANCE_PRICING: ${POKESHOP_ROLE_TOKEN_SHA256_FINANCE_PRICING:?definir POKESHOP_ROLE_TOKEN_SHA256_FINANCE_PRICING dans /etc/pokeshop/api.env (sinon stop-loss jamais evaluable)}
+      POKESHOP_ROLE_TOKEN_SHA256_N8N_01_SYNC: ${POKESHOP_ROLE_TOKEN_SHA256_N8N_01_SYNC:-}
+      POKESHOP_ROLE_TOKEN_SHA256_N8N_02_COMMANDES: ${POKESHOP_ROLE_TOKEN_SHA256_N8N_02_COMMANDES:-}
+      POKESHOP_ROLE_TOKEN_SHA256_N8N_03_FACTURES: ${POKESHOP_ROLE_TOKEN_SHA256_N8N_03_FACTURES:-}
+      POKESHOP_ROLE_TOKEN_SHA256_N8N_04_INCIDENTS: ${POKESHOP_ROLE_TOKEN_SHA256_N8N_04_INCIDENTS:-}
+      POKESHOP_ROLE_TOKEN_SHA256_N8N_05_DIGEST: ${POKESHOP_ROLE_TOKEN_SHA256_N8N_05_DIGEST:-}
+      POKESHOP_ROLE_TOKEN_SHA256_N8N_06_MARKETING: ${POKESHOP_ROLE_TOKEN_SHA256_N8N_06_MARKETING:-}
+      POKESHOP_ROLE_TOKEN_SHA256_N8N_07_STOPLOSS: ${POKESHOP_ROLE_TOKEN_SHA256_N8N_07_STOPLOSS:?definir POKESHOP_ROLE_TOKEN_SHA256_N8N_07_STOPLOSS dans /etc/pokeshop/api.env (sinon stop-loss jamais evaluable)}
+      POKESHOP_ROLE_TOKEN_SHA256_N8N_08_MANDAT: ${POKESHOP_ROLE_TOKEN_SHA256_N8N_08_MANDAT:-}
+      POKESHOP_ROLE_TOKEN_SHA256_OPERATIONS_SAV: ${POKESHOP_ROLE_TOKEN_SHA256_OPERATIONS_SAV:-}
+      POKESHOP_ROLE_TOKEN_SHA256_QA_CONFORMITE: ${POKESHOP_ROLE_TOKEN_SHA256_QA_CONFORMITE:-}
+      POKESHOP_ROLE_TOKEN_SHA256_SEO_REDACTION: ${POKESHOP_ROLE_TOKEN_SHA256_SEO_REDACTION:-}
+      POKESHOP_ROLE_TOKEN_SHA256_SITE_INTEGRATIONS: ${POKESHOP_ROLE_TOKEN_SHA256_SITE_INTEGRATIONS:-}
+      POKESHOP_ROLE_TOKEN_SHA256_SOURCING: ${POKESHOP_ROLE_TOKEN_SHA256_SOURCING:-}
       POKESHOP_SHOPIFY_SHOP_DOMAIN: ${POKESHOP_SHOPIFY_SHOP_DOMAIN:-}
       POKESHOP_SHOPIFY_API_VERSION: ${POKESHOP_SHOPIFY_API_VERSION:-2026-10}
       POKESHOP_SHOPIFY_ADMIN_TOKEN: ${POKESHOP_SHOPIFY_ADMIN_TOKEN:-}

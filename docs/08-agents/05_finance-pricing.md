@@ -33,7 +33,7 @@ Faire en sorte que **chaque vente contribue** et que **le cash ne manque jamais*
 | `docs/02-sourcing/COMPARATEUR_OFFRES.xlsx`, `docs/02-sourcing/outils/generer_comparateur.py` | Écriture (saisie des devis structurés de A-02) |
 | `docs/01-marche/GRILLE_CONCURRENCE.csv` | Lecture (référence marché) |
 | `docs/08-agents/modeles/REGISTRE_MANDAT.csv`, `docs/08-agents/modeles/DEMANDE_ENGAGEMENT.md` | Écriture du registre ; lecture des demandes |
-| `CONN-PAYPAL`, `CONN-DB-LECTURE`, `CONN-API-MOTEUR` (jeton nommé `agent-05-finance`) | Paiement par passerelle ; lectures (`GET /stoploss/status`, `GET /capital/movements`, `GET /pricing/approvals`, `GET /catalog`) ; **chaque jour**, dépôt des dettes et créances (`POST /treasury/balance-items` : précommandes encaissées, factures non payées, TVA due ; listes vides attestées) ; frais par fournisseur (`POST /catalog/cost-inputs`, jamais de taux de change) ; écritures de l'étoile polaire (`POST /northstar/entries`) et coûts historiques (`POST /costs/movements`). La photo du stop-loss est construite par le moteur (`POST /stoploss/state/refresh`, workflow 07) ; les soldes PayPal et bancaire viennent des connecteurs en lecture seule (`n8n-07-stoploss`) ; le jeton commun ne dépose aucune de ces valeurs (403). **Jamais** de demande de dépense (`POST /mandate/check`) à son propre nom |
+| `CONN-PAYPAL`, `CONN-DB-LECTURE`, `CONN-API-MOTEUR` (jeton nommé `finance-pricing`) | Paiement par passerelle ; lectures (`GET /stoploss/status`, `GET /capital/movements`, `GET /pricing/approvals`, `GET /catalog`) ; **chaque jour**, dépôt des dettes et créances (`POST /treasury/balance-items` : précommandes encaissées, factures non payées, TVA due ; listes vides attestées) ; frais par fournisseur (`POST /catalog/cost-inputs`, jamais de taux de change) ; écritures de l'étoile polaire (`POST /northstar/entries`) et coûts historiques (`POST /costs/movements`). La photo du stop-loss est construite par le moteur (`POST /stoploss/state/refresh`, workflow 07) ; les soldes PayPal et bancaire viennent des connecteurs en lecture seule (`n8n-07-stoploss`) ; le jeton commun ne dépose aucune de ces valeurs (403). **Jamais** de demande de dépense (`POST /mandate/check`) à son propre nom |
 
 ## 4. Format de sortie
 
@@ -98,7 +98,7 @@ Sources PayPal (index de recherche, pages non ouvertes depuis l'environnement de
 
 ## 11. Routines et tâches du backlog
 
-- **Chaque jour, dès la mise en service de l'API** : dettes et créances déclarées avec le jeton `agent-05-finance` (`POST /treasury/balance-items`, BL-190) ; sans déclaration de moins de 24 h, pas de photo du stop-loss.
+- **Chaque jour, dès la mise en service de l'API** : dettes et créances déclarées avec le jeton `finance-pricing` (`POST /treasury/balance-items`, BL-190) ; sans déclaration de moins de 24 h, pas de photo du stop-loss.
 - **Lundi** : trésorerie 13 semaines (BL-165), étoile polaire, rapprochements (BL-166), temps de supervision (BL-171).
 - **À chaque devis** : saisie au comparateur (BL-048), décisions de prix pilote (BL-081), contrôle contre devis (BL-082 avec A-12).
 - **À chaque réception** : coût historique (BL-113) ; **à chaque facture** : marge réelle (BL-122, BL-145).

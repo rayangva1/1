@@ -34,7 +34,7 @@ from .audit import StateJournal, StateStoreError
 from .catalog import SupplierLink
 from .errors import PokeshopError
 from .models import FrozenModel
-from .publish import CatalogListing
+from .publish import ENGINE_OWNED_LISTING_FIELDS, HUMAN_VALIDATION_FIELDS, CatalogListing
 from .sync import OfferCostInputs, SyncReport, SyncStep
 
 __all__ = [
@@ -97,6 +97,19 @@ def _append(store: StateJournal | None, record: dict[str, Any], what: str) -> No
 
 
 # ----------------------------------------------------------------------------- catalogue
+
+
+def _without_declared(item: Any) -> Any:
+    """Enregistrement ancien : retire les champs du moteur et validations humaines déclarés (jamais crus).
+
+    Avant la revue R3, une fiche pouvait porter ``approved``, ``shopify_product_id``, ``current_price_chf``…
+    déclarés par l'appelant ; ils ne font plus foi (registres du moteur et de la propriétaire) : ignorés.
+    """
+    if isinstance(item, dict) and isinstance(item.get("listing"), dict):
+        listing = {k: v for k, v in item["listing"].items()
+                   if k not in ENGINE_OWNED_LISTING_FIELDS and k not in HUMAN_VALIDATION_FIELDS}  # fmt: skip
+        return {**item, "listing": listing}
+    return item
 
 
 class CatalogEntry(FrozenModel):
@@ -173,7 +186,7 @@ class CatalogRegistry:
         registry = cls()
         for n, record in enumerate(_load(catalog_store, "catalogue de synchronisation"), start=1):
             try:
-                batch = [CatalogEntry.model_validate(item) for item in record["entries"]]
+                batch = [CatalogEntry.model_validate(_without_declared(item)) for item in record["entries"]]
             except (KeyError, TypeError, ValidationError) as exc:
                 raise SyncRegistryPersistenceError(f"catalogue de synchronisation : enregistrement {n} illisible") from exc
             for entry in batch:

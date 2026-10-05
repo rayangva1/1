@@ -25,6 +25,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+import jetons_roles as JR
 from fastapi.testclient import TestClient
 
 from pokeshop.api import API_TOKEN_HEADER, OWNER_TOKEN_HEADER, WORKFLOW_KEYS, WORKFLOW_MANDATE, Services, create_app
@@ -38,20 +39,20 @@ TZ = ZoneInfo("Europe/Zurich")
 NOW = datetime(2026, 10, 4, 12, 0, tzinfo=TZ)
 API_TOKEN = "FICTIF-jeton-api-0000000000000001"
 OWNER_TOKEN = "FICTIF-jeton-proprietaire-tres-long-0001"
-CONNECTOR_TOKEN = "FICTIF-jeton-connecteur-tresorerie-0001"
-PHOTO_TOKEN = "FICTIF-jeton-n8n-07-stoploss-0000001"
+CONNECTOR_TOKEN = JR.ROLE_TOKENS["connecteur-tresorerie"]
+PHOTO_TOKEN = JR.ROLE_TOKENS["n8n-07-stoploss"]
 H = {API_TOKEN_HEADER: API_TOKEN}
 HO = {API_TOKEN_HEADER: API_TOKEN, OWNER_TOKEN_HEADER: OWNER_TOKEN}
-HCONN = {API_TOKEN_HEADER: CONNECTOR_TOKEN}
-HPHOTO = {API_TOKEN_HEADER: PHOTO_TOKEN}
+HCONN = JR.HTRES
+HPHOTO = JR.HPHOTO
+HF, HOPS, HCAT, HSYNC, HINC, HMANDAT = JR.HF, JR.HOPS, JR.HCAT, JR.HSYNC, JR.HINC, JR.HMANDAT
 IDENTITY = {"gtin": "2000000001012", "language": "FR", "extension": "FICTIF_ALPHA", "format": "DISPLAY",
             "content": "36 BOOSTERS", "sealed": True}
 LISTING = {
     "product_key": "FICTIF-P1", "identity": IDENTITY, "public_sku": "DSP-FICTIF_ALPHA-FR",
     "description_html": "<p>Display de l'extension Extension Fictive Alpha, en français, neuf et scellé.</p>",
     "images": [{"url": "https://cdn.example.org/fictif.jpg", "alt": "Display face avant", "rights": "OWN_PHOTO"}],
-    "stock_status": "stock_local", "content_text": "36 boosters", "content_validated": True,
-    "category_rule_validated": True, "fictif": True,
+    "stock_status": "stock_local", "content_text": "36 boosters", "fictif": True,
 }
 N8N_SYNC_BODY = {"supplier": "fictif_grossiste_a", "source_path": "FICTIF_offres_grossiste_a.csv", "dry_run": True}
 """Corps exact envoyé par le nœud « Cycle fournisseur vers site (dry-run) » du workflow 01."""
@@ -74,7 +75,7 @@ def boot(tmp_path: Path, clock: Clock | None = None, **env: str) -> tuple[TestCl
     settings = load_settings({
         "POKESHOP_API_TOKEN_SHA256": sha256_hex(API_TOKEN),
         "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(OWNER_TOKEN),
-        "POKESHOP_AGENT_TOKENS_SHA256": f"n8n-tresorerie:{sha256_hex(CONNECTOR_TOKEN)},n8n-07-stoploss:{sha256_hex(PHOTO_TOKEN)}",
+        "POKESHOP_AGENT_TOKENS_SHA256": JR.agent_tokens_env(),
         "POKESHOP_STATE_DIR": str(tmp_path / "etat"),
         **env,
     })
@@ -86,10 +87,10 @@ def boot(tmp_path: Path, clock: Clock | None = None, **env: str) -> tuple[TestCl
 
 
 def register_catalog(client: TestClient, *, fx: bool = True) -> None:
-    assert client.post("/catalog/items", headers=H, json={"items": [{"product_id": "FICTIF-P1", "listing": LISTING}]}).status_code == 200
+    assert client.post("/catalog/items", headers=HCAT, json={"items": [{"product_id": "FICTIF-P1", "listing": LISTING}]}).status_code == 200
     costs = {"supplier_id": "fictif_grossiste_a", "currency": "EUR", "inbound_freight_alloc": "2.00",
              "customs_and_fees": "0", "import_vat": "0", "source": "devis transporteur FICTIF"}
-    assert client.post("/catalog/cost-inputs", headers=H, json=costs).status_code == 200
+    assert client.post("/catalog/cost-inputs", headers=HF, json=costs).status_code == 200
     if fx:
         rate = {"currency": "EUR", "rate_to_chf": "0.9375", "rate_date": "2026-10-04", "source": "BNS FICTIF 11:00"}
         assert client.post("/fx/rates", headers=HO, json=rate).status_code == 200
@@ -97,7 +98,7 @@ def register_catalog(client: TestClient, *, fx: bool = True) -> None:
 
 def test_e2e07_n8n_body_without_catalog_is_refused_not_counted_clean(tmp_path: Path) -> None:
     client, svc, _ = boot(tmp_path)
-    resp = client.post("/sync/run", headers=H, json=N8N_SYNC_BODY)
+    resp = client.post("/sync/run", headers=HSYNC, json=N8N_SYNC_BODY)
     assert resp.status_code == 409 and "catalogue requis" in body(resp)["erreur"]
     assert svc.sync_runs.runs() == () and body(client.get("/sync/history", headers=H))["consecutive_clean_runs"] == 0
 
@@ -105,7 +106,7 @@ def test_e2e07_n8n_body_without_catalog_is_refused_not_counted_clean(tmp_path: P
 def test_e2e07_registry_catalog_and_owner_fx_make_a_clean_counted_cycle(tmp_path: Path) -> None:
     client, svc, _ = boot(tmp_path)
     register_catalog(client)
-    data = body(client.post("/sync/run", headers=H, json=N8N_SYNC_BODY))
+    data = body(client.post("/sync/run", headers=HSYNC, json=N8N_SYNC_BODY))
     assert data["catalog_source"] == "registre" and data["cycle_status"] == "PROPRE" and data["clean"] is True
     # Revue E2E-07 (2ᵉ passe) : un cycle PROPRE sur données FICTIVES ne compte jamais pour la recette.
     assert data["offers_costed"] >= 1 and data["consecutive_clean_runs"] == 0
@@ -119,20 +120,20 @@ def test_e2e07_registry_catalog_and_owner_fx_make_a_clean_counted_cycle(tmp_path
     assert history["consecutive_clean_runs"] == 0 and history["target"] == 20 and not history["criterion_met"]
     assert [r["status"] for r in history["runs"]] == ["PROPRE"] and history["runs"][0]["fictif"] is True
     assert history["runs"][0]["acceptance_exclusion"] == "données FICTIVES" and "FICTIF" in history["definition"]
-    again = body(client2.post("/sync/run", headers=H, json=N8N_SYNC_BODY))
+    again = body(client2.post("/sync/run", headers=HSYNC, json=N8N_SYNC_BODY))
     assert again["clean"] is True and again["consecutive_clean_runs"] == 0
 
 
 def test_e2e07_cycle_without_evaluated_offer_is_empty_and_never_counted(tmp_path: Path) -> None:
     client, svc, _ = boot(tmp_path)
     register_catalog(client, fx=False)  # aucun taux de la propriétaire : coût rendu incomplet (EUR)
-    data = body(client.post("/sync/run", headers=H, json=N8N_SYNC_BODY))
+    data = body(client.post("/sync/run", headers=HSYNC, json=N8N_SYNC_BODY))
     assert data["cycle_status"] == "VIDE" and data["clean"] is False and data["offers_costed"] == 0
     unmatched = dict(LISTING, identity=dict(IDENTITY, gtin="2000000009998"), public_sku="DSP-FICTIF_ALPHA-FR")
-    other = body(client.post("/sync/run", headers=H, json=dict(N8N_SYNC_BODY, catalog=[{"product_id": "FICTIF-AUTRE",
+    other = body(client.post("/sync/run", headers=HSYNC, json=dict(N8N_SYNC_BODY, catalog=[{"product_id": "FICTIF-AUTRE",
                                                                                          "listing": unmatched}])))
     assert other["cycle_status"] == "VIDE" and other["clean"] is False
-    incomplete = body(client.post("/sync/run", headers=H, json=dict(N8N_SYNC_BODY,
+    incomplete = body(client.post("/sync/run", headers=HSYNC, json=dict(N8N_SYNC_BODY,
                                                                     source_path="FICTIF_offres_grossiste_a_incomplet.csv")))
     assert incomplete["clean"] is False
     assert body(client.get("/sync/history", headers=H))["consecutive_clean_runs"] == 0
@@ -141,7 +142,8 @@ def test_e2e07_cycle_without_evaluated_offer_is_empty_and_never_counted(tmp_path
 def test_e2e07_cost_inputs_never_carry_a_self_declared_fx_rate(tmp_path: Path) -> None:
     client, _, _ = boot(tmp_path)
     bad = {"supplier_id": "fictif_grossiste_a", "currency": "EUR", "source": "devis FICTIF", "fx_rate_to_chf": "0.50"}
-    assert client.post("/catalog/cost-inputs", headers=H, json=bad).status_code == 422
+    assert client.post("/catalog/cost-inputs", headers=H, json=bad).status_code == 403  # jeton commun : jamais
+    assert client.post("/catalog/cost-inputs", headers=HF, json=bad).status_code == 422
 
 
 def test_e2e07_streak_counts_clean_runs_ignores_empty_and_resets_on_anomaly() -> None:
@@ -172,10 +174,14 @@ def feed_registers(client: TestClient, svc: Services) -> None:
     balances = {"as_of": (NOW - timedelta(minutes=15)).isoformat(), "preorders_collected_chf": "0", "debts": [],
                 "receivables": [], "source": "agent finance FICTIF : aucune précommande ni facture en attente"}
     assert client.post("/treasury/balance-items", headers=HCONN, json=balances).status_code == 200
+    assert client.post("/catalog/items", headers=HCAT, json={"items": [{"product_id": "FICTIF-P1", "listing": LISTING}]}).status_code == 200
+    # Revue R3 : coût de réception adossé à la réception physique (operations-sav), déposé par finance-pricing.
+    assert client.post("/stock/receive", headers=HOPS, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": 6,
+                                                             "ref": "FICTIF-BL-1"}).status_code == 200
     receipt = {"kind": "RECEIPT", "product_key": "FICTIF-P1", "at": (NOW - timedelta(days=2)).isoformat(), "ref": "FICTIF-LOT-1",
-               "qty": 6, "unit_cost": "101.2345"}
-    assert client.post("/costs/movements", headers=HCONN, json=receipt).status_code == 200
-    assert client.post("/catalog/items", headers=H, json={"items": [{"product_id": "FICTIF-P1", "listing": LISTING}]}).status_code == 200
+               "qty": 6, "unit_cost": "101.2345", "stock_ref": "FICTIF-BL-1", "invoice_ref": "FICTIF-FACT-1"}
+    assert client.post("/costs/movements", headers=HCONN, json=receipt).status_code == 403  # connecteur : pas son rôle
+    assert client.post("/costs/movements", headers=HF, json=receipt).status_code == 200
     svc.price_history.publish("FICTIF-P1", D("154.90"), NOW - timedelta(days=1), "engine", validated=True)
 
 
@@ -253,7 +259,7 @@ def test_e2e08_withdrawal_after_reading_is_not_in_the_photo_and_mandate_sees_ban
 
 SPEND = {"request": {"amount": "150", "currency": "CHF", "supplier_id": "FICTIF_EMBALLAGES", "category": "PACKAGING",
                      "payment_method": "PAYPAL", "purpose": "Cartons FICTIFS", "idempotency_key": "FICTIF-PKG-0001",
-                     "requested_by": "agent-11", "requested_at": NOW.isoformat(), "amount_source": "devis FICTIF"}}
+                     "requested_by": "operations-sav", "requested_at": NOW.isoformat(), "amount_source": "devis FICTIF"}}
 
 
 def test_e2e10_canonical_workflow_keys_match_the_engine() -> None:
@@ -265,20 +271,20 @@ def test_e2e10_canonical_workflow_keys_match_the_engine() -> None:
 @pytest.mark.parametrize("scope", ["WORKFLOW", "GLOBAL"])
 def test_e2e10_open_incident_suspends_the_spending_check(tmp_path: Path, scope: str) -> None:
     client, svc, _ = boot(tmp_path)
-    before = client.post("/mandate/check", headers=H, json=SPEND)
+    before = client.post("/mandate/check", headers=HOPS, json=SPEND)
     assert before.status_code != 423
     incident = {"cause": "Exécution 42 en échec au nœud Contrôle du mandat", "kind": "WORKFLOW_EN_ECHEC", "severity": "MAJEUR",
                 "scope": scope, "workflow": WORKFLOW_MANDATE if scope == "WORKFLOW" else None,
                 "proposed_action": "Corriger puis relancer", "actor": "n8n:04-incident", "simulation": False}
-    assert client.post("/incidents", headers=H, json=incident).status_code == 201
-    resp = client.post("/mandate/check", headers=H, json=SPEND)
+    assert client.post("/incidents", headers=HINC, json=incident).status_code == 201
+    resp = client.post("/mandate/check", headers=HOPS, json=SPEND)
     assert resp.status_code == 423 and body(resp)["outcome"] == "REJECTED"
     assert svc.audit.events(action="mandate.check_suspended")
     # Un incident ouvert sur un AUTRE workflow ne suspend pas les dépenses.
     client2, _, _ = boot(tmp_path / "autre")
     other = dict(incident, scope="WORKFLOW", workflow=WORKFLOW_SUPPLIER_TO_SHOP)
-    assert client2.post("/incidents", headers=H, json=other).status_code == 201
-    assert client2.post("/mandate/check", headers=H, json=SPEND).status_code != 423
+    assert client2.post("/incidents", headers=HINC, json=other).status_code == 201
+    assert client2.post("/mandate/check", headers=HOPS, json=SPEND).status_code != 423
 
 
 # =============================================================================== E2E-13
@@ -314,7 +320,7 @@ def test_e2e13_critical_incident_is_delivered_only_when_really_sent(tmp_path: Pa
     notifications = body(client.get("/health"))["notifications"]
     assert notifications == {"webhook_configured": True, "webhook_dry_run": dry_run == "true",
                              "real_time_alerts": dry_run == "false"}
-    frozen = client.post("/stoploss/freeze", headers=H, json={"actor": "n8n:07-stoploss-watch", "reason": "Gel global FICTIF"})
+    frozen = client.post("/stoploss/freeze", headers=HPHOTO, json={"actor": "n8n:07-stoploss-watch", "reason": "Gel global FICTIF"})
     assert frozen.status_code == 200
     receipt = svc.incidents.receipts[-1]
     event = svc.audit.events(action="incident.notify")[-1].payload

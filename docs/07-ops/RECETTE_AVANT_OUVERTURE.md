@@ -136,7 +136,7 @@ Testeurs : agent 12 QA + propriétaire   Résultat : ___ cas bloquants OK / ___ 
 | R-I01 | O | Ordinateur | Fiches publiées | Lire le code source des pages, le JSON public des produits, le sitemap et les métadonnées ; lancer le test de fuite de `publish.py` | Aucun coût, marge, prix d'achat, nom de fournisseur ni donnée personnelle | | | |
 | R-I02 | O | — | Comptes d'administration | Vérifier les comptes et les droits | Double authentification active ; chaque compte limité à son rôle | | | |
 | R-I03 | O | — | Moteur et n8n | Lancer une synchronisation sans drapeau d'écriture | Aucune écriture réelle (simulation par défaut, SPEC §0.6) | | | |
-| R-I04 | N | — | Sauvegarde récente | Restaurer la base sur un environnement de test | Restauration complète ; durée notée (BP §6) | | | |
+| R-I04 | O | Ordinateur | Sauvegarde du jour du service `db-backup` ; copie hors machine chiffrée avec la clé publique age de la propriétaire (A12) ; sa clé privée | Restaurer la base sur un environnement de test (`db/backup.sh verifier`) ; lancer `db/backup.sh etat` ; relire la copie chiffrée hors de la machine avec la clé privée (commande de contrôle `age -d` de `db/README.md`) | `db/backup.sh etat` répond code 0 (restauration vérifiée depuis moins de 36 h) ; restauration complète, durée notée (BP §6) ; copie chiffrée hors de la machine datée du mois | | | |
 
 ### J. Opérations physiques
 
@@ -169,10 +169,10 @@ Testeurs : agent 12 QA + propriétaire   Résultat : ___ cas bloquants OK / ___ 
 | F. Versements | 2 | | | |
 | G. Emails | 6 | | | |
 | H. Conformité | 8 | | | |
-| I. Sécurité | 3 | | | |
+| I. Sécurité | 4 | | | |
 | J. Opérations | 5 | | | |
 | K. Incidents | 4 | | | |
-| **Total** | **69** | | | |
+| **Total** | **70** | | | |
 
 ## Validation humaine requise
 

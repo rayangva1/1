@@ -474,7 +474,7 @@ def test_interventions_cover_every_owner_route_and_sequence():
                   "POST /autonomy", "POST /incidents/{id}/resume", "POST /incidents/{id}/test"):  # fmt: skip
         assert route in text, route
     for act in ("lecture seule", "Basic Auth", "age", "R-I04", "R-E03", "checklist LCD", "canal d'alerte",
-                "petits produits", "agent-12-qa", "n8n-07-stoploss", "/etc/pokeshop/api.env"):  # fmt: skip
+                "petits produits", "qa-conformite", "n8n-07-stoploss", "/etc/pokeshop/api.env"):  # fmt: skip
         assert act in text, act
     days, _ = v.interventions_tables(text)
     assert days["C19"] == {3, 27} and days["B03"] == {1} and days["B01"] == {1} and days["B27"] == {8}
@@ -483,3 +483,101 @@ def test_interventions_cover_every_owner_route_and_sequence():
     assert {"BL-188", "BL-189", "BL-190"} <= set(v.split_ids(by["BL-191"]["Dépendances"]))
     assert {"BL-186", "BL-187"} <= set(v.split_ids(by["BL-032"]["Dépendances"]))
     assert "BL-005" in v.split_ids(by["BL-002"]["Dépendances"])
+
+
+# ---------------------------------------------------------------- revue R3 (documentation)
+REPO = v.PILOTAGE.parents[1]
+
+
+def _delegation_roles() -> list[str]:
+    """Rôles de la commande de génération des jetons (DELEGATION_AUTONOMIE.md §10 étape 6)."""
+    import re
+
+    text = (v.PILOTAGE / "DELEGATION_AUTONOMIE.md").read_text(encoding="utf-8")
+    block = text.split("6. Générer **un jeton par rôle utilisé**", 1)[1].split("```bash", 1)[1].split("```", 1)[0]
+    loop = block.split("for role in", 1)[1].split("; do", 1)[0]
+    return re.findall(r"[a-z0-9-]+", loop.replace("\\", " "))
+
+
+def test_r3_token_procedure_is_executable_and_matches_the_engine(tmp_path):
+    """B22 : la commande documentée produit des empreintes que le moteur charge, une par rôle utilisé (17)."""
+    import os
+    import subprocess
+    import sys
+
+    if not (shutil.which("openssl") and shutil.which("sha256sum")):
+        pytest.skip("openssl ou sha256sum absent")
+    text = (v.PILOTAGE / "DELEGATION_AUTONOMIE.md").read_text(encoding="utf-8")
+    block = text.split("6. Générer **un jeton par rôle utilisé**", 1)[1].split("```bash", 1)[1].split("```", 1)[0]
+    script = "\n".join(line[3:] if line.startswith("   ") else line for line in block.strip("\n").splitlines())
+    env = {"HOME": str(tmp_path), "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+    subprocess.run(["bash", "-euo", "pipefail", "-c", script], check=True, env=env, cwd=tmp_path)
+    folder = tmp_path / "pokeshop-jetons"
+    assert oct(folder.stat().st_mode & 0o777) == "0o700"
+    hashes = dict(line.split("=", 1) for line in (folder / "empreintes-roles.env").read_text().splitlines())
+    tokens = dict(line.split("\t") for line in (folder / "jetons-roles.txt").read_text().splitlines())
+    for name in ("empreintes-roles.env", "jetons-roles.txt"):
+        assert oct((folder / name).stat().st_mode & 0o777) == "0o600", name
+    if str(REPO / "engine") not in sys.path:
+        sys.path.insert(0, str(REPO / "engine"))
+    from pokeshop import authz
+    from pokeshop.settings import ROLE_TOKEN_VARIABLES, load_settings, sha256_hex
+
+    cfg = load_settings(hashes)
+    assert set(cfg.agent_tokens_sha256) == set(tokens) == set(_delegation_roles())
+    assert len(tokens) == 17 and set(tokens) <= authz.KNOWN_ROLES
+    for role, token in tokens.items():
+        assert hashes[ROLE_TOKEN_VARIABLES[role]] == sha256_hex(token) == cfg.agent_tokens_sha256[role]
+    # Les trois empreintes obligatoires du compose sont produites ; les 5 agents sans accès à l'API n'ont pas de jeton.
+    assert {"n8n-07-stoploss", "connecteur-tresorerie", "finance-pricing"} <= set(tokens)
+    assert not {"chef-de-projet", "sourcing", "direction-artistique", "seo-redaction", "communication"} & set(tokens)
+
+
+def test_r3_token_roles_agree_across_documents():
+    """Jetons émis (DELEGATION) = rôles avec jeton de BRIEF_COMMUN §10 ; chaque credential n8n a son jeton."""
+    import re
+
+    roles = set(_delegation_roles())
+    brief = (REPO / "docs" / "08-agents" / "BRIEF_COMMUN.md").read_text(encoding="utf-8")
+    table = brief.split("| Rôle (nom du jeton) | Détenu par | Écritures propres |", 1)[1].split("\n\n", 1)[0]
+    issued = {m.group(1) for m in re.finditer(r"^\| `([a-z0-9-]+)` \| ([^|]+)\|", table, re.M)
+              if "pas de jeton émis" not in m.group(2)}  # fmt: skip
+    assert issued == roles
+    build = (REPO / "orchestration" / "build_workflows.py").read_text(encoding="utf-8")
+    credential_roles = set(re.findall(r'"api_[a-z0-9_]+": "([a-z0-9-]+)"', build))
+    assert credential_roles and credential_roles <= roles
+
+
+def test_r3_sequencing_of_owner_acts():
+    """B22 à J2 ; n8n et la pile interne à J8 (B27) ; mise en service à J26 ; fiches validées avant publication."""
+    text = (v.PILOTAGE / "INTERVENTIONS_HUMAINES.md").read_text(encoding="utf-8")
+    days, links = v.interventions_tables(text)
+    assert days["B22"] == {2} and days["B21"] == {2} and days["B27"] == {8} and days["B23"] == {26}
+    assert days["C30"] == {28, 37} and links["C30"] == ["BL-197"]
+    b27 = next(line for line in text.splitlines() if line.startswith("| B27 |"))
+    for part in ('sudo install -D -m 600 -o "$USER" .env.example /etc/pokeshop/api.env', "nano",
+                 "cat empreintes-roles.env >> /etc/pokeshop/api.env", "scripts/compose.sh config --quiet",
+                 "scripts/compose.sh up -d db db-migrate db-backup api n8n", "groupe `docker`", "n8n-06-marketing"):  # fmt: skip
+        assert part in b27, part
+    b26 = next(line for line in text.splitlines() if line.startswith("| B26 |"))
+    assert "connecteur-tresorerie" in b26 and "n8n-07-stoploss" not in b26
+    _, rows = v.read_csv(v.PILOTAGE / "BACKLOG.csv")
+    by = {r["ID"]: r for r in rows}
+    assert {"BL-176", "BL-177"} <= set(v.split_ids(by["BL-186"]["Dépendances"]))
+    assert "BL-197" in v.split_ids(by["BL-115"]["Dépendances"])
+    assert "BL-199" in v.split_ids(by["BL-116"]["Dépendances"])
+    assert "BL-198" in v.split_ids(by["BL-133"]["Dépendances"])
+    assert "POST /orders/shipped" in by["BL-199"]["Titre"] and "connecteur-publicite" in by["BL-198"]["Titre"]
+    assert "connecteur-tresorerie" in by["BL-189"]["Critère de done"]
+
+
+def test_r3_backups_are_encrypted_off_machine_only():
+    """Le service db-backup du compose ne chiffre pas : la doc ne promet le chiffrement que pour la copie hors machine."""
+    compose = (REPO / "docker-compose.yml").read_text(encoding="utf-8")
+    service = compose.split("  db-backup:", 1)[1].split("\n  api:", 1)[0]
+    assert "POKESHOP_BACKUP_AGE_RECIPIENT" not in service
+    text = (v.PILOTAGE / "INTERVENTIONS_HUMAINES.md").read_text(encoding="utf-8")
+    b23 = next(line for line in text.splitlines() if line.startswith("| B23 |"))
+    assert "sauvegardes quotidiennes **chiffrées**" not in b23 and "age" in b23
+    db_readme = (REPO / "db" / "README.md").read_text(encoding="utf-8")
+    assert "scripts/compose.sh exec -T db-backup tar -C /sauvegardes -cf - . | age -r" in db_readme

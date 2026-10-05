@@ -1,14 +1,17 @@
 """Configuration du service d'intégration lue dans les variables d'environnement (agent integrations).
 
-* **Aucun secret en dur** : jetons et URL de base viennent du coffre via l'environnement
-  (fichier ``.env`` local ignoré par git, ou variables du conteneur). Les secrets sont des
-  :class:`pydantic.SecretStr` : jamais affichés par ``repr`` ni journalisés.
+* **Aucun secret en dur** : jetons et URL de base viennent du coffre via l'environnement du conteneur
+  (fichier ``/etc/pokeshop/api.env`` hors du dépôt, lu par ``scripts/compose.sh`` ; ``.env.example``
+  n'en documente que les noms). Les secrets sont des :class:`pydantic.SecretStr` : jamais affichés par
+  ``repr`` ni journalisés.
 * Les jetons d'API et de la propriétaire ne sont **jamais** stockés en clair : seule leur
   empreinte sha256 est configurée (``POKESHOP_API_TOKEN_SHA256``,
   ``POKESHOP_OWNER_TOKEN_SHA256``). Les deux empreintes doivent différer (jetons distincts).
-  **Jetons nommés** (``POKESHOP_AGENT_TOKENS_SHA256`` = ``nom:empreinte,nom2:empreinte``) : l'acteur
-  est déduit du jeton (jamais auto-déclaré) ; une photo de trésorerie déposée par le jeton qui
-  demande une dépense (ou par le jeton commun) n'est pas vérifiable (validation humaine).
+  **Jetons nommés par rôle** (``POKESHOP_AGENT_TOKENS_SHA256`` = ``rôle:empreinte,rôle2:empreinte``) : le
+  nom est un **rôle** de la matrice d'autorisations (:mod:`pokeshop.authz` : les 12 agents de
+  ``.claude/agents/`` et les connecteurs/workflows n8n) ; un nom inconnu est refusé au démarrage. L'acteur
+  est déduit du jeton (jamais auto-déclaré). Le **jeton commun** (``POKESHOP_API_TOKEN_SHA256``,
+  facultatif) n'a que la lecture et les aperçus en simulation.
 * **Empreintes signées par la propriétaire** (coffre) : mandat (``POKESHOP_MANDATE_FINGERPRINT``,
   obligatoire pour un mandat actif), seuils du stop-loss (``POKESHOP_STOPLOSS_FINGERPRINT``) et
   règles de prix (``POKESHOP_RULES_FINGERPRINT``) ; absentes => seuils les plus stricts, et
@@ -39,6 +42,7 @@ from typing import Literal
 
 from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
 
+from .authz import AUTHZ_VERSION, KNOWN_ROLES
 from .errors import PokeshopError
 from .models import FrozenModel, VatMode
 
@@ -46,6 +50,8 @@ __all__ = [
     "REPO_ROOT",
     "DEFAULT_SHOPIFY_API_VERSION",
     "ENV_VARIABLES",
+    "ROLE_TOKEN_PREFIX",
+    "ROLE_TOKEN_VARIABLES",
     "SettingsError",
     "Settings",
     "load_settings",
@@ -111,6 +117,14 @@ ENV_VARIABLES: dict[str, tuple[str, ...]] = {
     "imports_dir": ("POKESHOP_IMPORTS_DIR",),
 }
 """Champ de :class:`Settings` -> variables d'environnement acceptées (la première présente gagne)."""
+
+ROLE_TOKEN_PREFIX = "POKESHOP_ROLE_TOKEN_SHA256_"
+ROLE_TOKEN_VARIABLES: dict[str, str] = {
+    role: ROLE_TOKEN_PREFIX + role.upper().replace("-", "_") for role in sorted(KNOWN_ROLES)
+}
+"""Rôle de la matrice -> variable de son empreinte de jeton (une ligne par rôle dans ``/etc/pokeshop/api.env``).
+
+Fusionnées avec ``POKESHOP_AGENT_TOKENS_SHA256`` (``rôle:empreinte,…``) ; un rôle défini deux fois est refusé."""
 
 
 class SettingsError(PokeshopError, ValueError):
@@ -205,6 +219,11 @@ class Settings(FrozenModel):
                 raise ValueError(f"nom de jeton invalide : {name!r} ([a-z0-9_.-], 2 à 64 caractères, pas « api »)")
             if is_owner_like(name):
                 raise ValueError(f"nom de jeton réservé à la propriétaire : {name!r}")
+            if name not in KNOWN_ROLES:
+                raise ValueError(
+                    f"nom de jeton inconnu de la matrice d'autorisations : {name!r} (rôles admis : "
+                    f"{', '.join(sorted(KNOWN_ROLES))} ; engine/pokeshop/authz.py)"
+                )
             if not _SHA256_RE.match(digest):
                 raise ValueError(f"empreinte sha256 attendue pour {name}")
         if len(set(v.values())) != len(v):
@@ -318,8 +337,11 @@ class Settings(FrozenModel):
             out.append("POKESHOP_SHOPIFY_ADMIN_TOKEN absent (coffre)")
         if self.shopify_location_id is None:
             out.append("POKESHOP_SHOPIFY_LOCATION_ID absent")
-        if self.api_token_sha256 is None:
-            out.append("POKESHOP_API_TOKEN_SHA256 absent")
+        if not self.agent_tokens_sha256:
+            out.append(
+                "aucun jeton nommé par rôle (POKESHOP_ROLE_TOKEN_SHA256_<RÔLE> ou POKESHOP_AGENT_TOKENS_SHA256) : "
+                "aucune écriture possible"
+            )
         if self.owner_token_sha256 is None:
             out.append("POKESHOP_OWNER_TOKEN_SHA256 absent")
         if self.mandate_fingerprint is None:
@@ -346,6 +368,7 @@ class Settings(FrozenModel):
             "api_token_configured": self.api_token_sha256 is not None,
             "owner_token_configured": self.owner_token_sha256 is not None,
             "named_agent_tokens": sorted(self.agent_tokens_sha256),
+            "authz_version": AUTHZ_VERSION,
             "mandate_fingerprint_configured": self.mandate_fingerprint is not None,
             "stoploss_fingerprint_configured": self.stoploss_fingerprint is not None,
             "rules_fingerprint_configured": self.rules_fingerprint is not None,
@@ -364,6 +387,12 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
                 data[field] = raw.strip()
                 origin[field] = name
                 break
+    per_role = [
+        f"{role}:{raw.strip()}" for role, var in ROLE_TOKEN_VARIABLES.items() if (raw := env.get(var)) and raw.strip()
+    ]
+    if per_role:  # une variable par rôle (documentée dans .env.example), fusionnée avec la liste combinée
+        data["agent_tokens_sha256"] = ",".join(filter(None, [data.get("agent_tokens_sha256", ""), *per_role]))
+        origin["agent_tokens_sha256"] = "POKESHOP_AGENT_TOKENS_SHA256 / POKESHOP_ROLE_TOKEN_SHA256_*"
     try:
         return Settings.model_validate(data)
     except ValidationError as exc:

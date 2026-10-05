@@ -52,5 +52,5 @@ python -m pytest -q docs/08-agents/outils            # tests du vérificateur et
 
 - [ ] Relire le brief commun, la matrice d'autonomie et le RACI, puis les 12 agents exécutables, avant la première utilisation.
 - [ ] Signer le mandat (`docs/00-pilotage/DELEGATION_AUTONOMIE.md`) **et reporter son empreinte au coffre** : sans elle, la flotte reste en préparation, à 0 CHF.
-- [ ] Générer un jeton nommé par agent et par workflow (`docs/00-pilotage/INTERVENTIONS_HUMAINES.md`, B22) et garder le jeton de la propriétaire hors de portée de la flotte (B21).
+- [ ] Générer un jeton par rôle utilisé (17 : les 10 connecteurs n8n et les 7 agents qui ont `CONN-API-MOTEUR` ; commande prête : `docs/00-pilotage/DELEGATION_AUTONOMIE.md` §10 étape 6 ; `docs/00-pilotage/INTERVENTIONS_HUMAINES.md`, B22) et garder le jeton de la propriétaire hors de portée de la flotte (B21).
 - [ ] Garder `.claude/settings.json` en règles `deny` seulement ; ne jamais y ajouter de règle `allow` (le vérificateur la refuse).

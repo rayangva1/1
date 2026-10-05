@@ -507,6 +507,8 @@ class PersistentStockRegistry(StockRegistry):
         super().__init__(clock=clock)
         self._store = store
         self._depth = 0
+        self._receipt_by: dict[tuple[str, str], str | None] = {}
+        """Acteur (déduit du jeton) de chaque réception (SKU, référence) : adosse les coûts historiques (revue R3)."""
 
     @classmethod
     def restore(cls, store: StateJournal, *, clock: Callable[[], datetime] | None = None) -> PersistentStockRegistry:
@@ -524,6 +526,9 @@ class PersistentStockRegistry(StockRegistry):
                 args = dict(record["args"])
                 args["at"] = datetime.fromisoformat(args["at"])
                 getattr(StockRegistry, op)(registry, **args)
+                if op == "receive":
+                    by = record.get("by")
+                    registry._receipt_by[(args["sku"], args["ref"])] = by if isinstance(by, str) else None
             except (KeyError, TypeError, ValueError, StockError) as exc:
                 raise StockPersistenceError(f"journal du stock : opération {n} non rejouable ({exc})") from exc
         registry._store = store
@@ -545,35 +550,58 @@ class PersistentStockRegistry(StockRegistry):
         del self._movements[n_movements:]
         self._seq = seq
 
-    def _journaled(self, op: str, args: dict[str, Any]) -> Any:
+    def _journaled(self, op: str, args: dict[str, Any], *, by: str | None = None) -> Any:
         with self._lock:
             args["at"] = self._now(args.get("at"))
             if self._depth or self._store is None:
                 self._depth += 1
                 try:
-                    return getattr(StockRegistry, op)(self, **args)
+                    result = getattr(StockRegistry, op)(self, **args)
                 finally:
                     self._depth -= 1
+                if op == "receive" and not self._depth:
+                    self._receipt_by[(args["sku"], args["ref"])] = by
+                return result
             snap = self._snapshot()
             self._depth += 1
             try:
                 result = getattr(StockRegistry, op)(self, **args)
             finally:
                 self._depth -= 1
-            record = {"op": op, "args": {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in args.items()}}
+            record: dict[str, Any] = {
+                "op": op, "args": {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in args.items()}
+            }
+            if by is not None:
+                record["by"] = by
             try:
                 self._store.append(record)
             except StateStoreError as exc:
                 self._rollback(snap)
                 raise StockPersistenceError(f"mouvement de stock non enregistré ({exc}) : rien n'est retenu") from exc
+            if op == "receive":
+                self._receipt_by[(args["sku"], args["ref"])] = by
             return result
+
+    def receipt(self, sku: str, ref: str) -> tuple[int, str | None] | None:
+        """Réception (SKU, référence) enregistrée : (quantité, acteur) ; None si inconnue."""
+        with self._lock:
+            qty = sum(m.qty for m in self._movements if m.sku == sku and m.kind is MovementKind.RECEIPT and m.ref == ref)
+            if qty <= 0:
+                return None
+            return qty, self._receipt_by.get((sku, ref))
 
     def receive(self, sku: str, qty: int, ref: str, *, expected_version: int | None = None, at: datetime | None = None) -> StockLevel:
         """Voir :meth:`StockRegistry.receive` (persisté)."""
         return self._journaled("receive", {"sku": sku, "qty": qty, "ref": ref, "expected_version": expected_version, "at": at})
 
-    def receive_once(self, sku: str, qty: int, ref: str, *, at: datetime | None = None) -> tuple[StockLevel, bool]:
-        """Réception idempotente par (SKU, référence) : (niveau, rejouée) ; autre quantité => StockError."""
+    def receive_once(
+        self, sku: str, qty: int, ref: str, *, at: datetime | None = None, recorded_by: str | None = None
+    ) -> tuple[StockLevel, bool]:
+        """Réception idempotente par (SKU, référence) : (niveau, rejouée) ; autre quantité => StockError.
+
+        ``recorded_by`` : acteur déduit du jeton, journalisé avec la réception (revue R3 : un coût historique
+        de réception doit citer une réception déclarée par un **autre** jeton).
+        """
         if not ref or not ref.strip():
             raise StockError("référence de réception obligatoire (bon de livraison, lot)")
         with self._lock:
@@ -582,7 +610,10 @@ class PersistentStockRegistry(StockRegistry):
                 if previous[0].qty != qty:
                     raise InvalidStateError(f"réception {ref} déjà enregistrée pour {sku} avec {previous[0].qty} unité(s)")
                 return self.level(sku), True
-            return self.receive(sku, qty, ref, at=at), False
+            level = self._journaled(
+                "receive", {"sku": sku, "qty": qty, "ref": ref, "expected_version": None, "at": at}, by=recorded_by
+            )
+            return level, False
 
     def set_safety(self, sku: str, qty: int, *, ref: str = "", expected_version: int | None = None, at: datetime | None = None) -> StockLevel:
         """Voir :meth:`StockRegistry.set_safety` (persisté)."""

@@ -109,8 +109,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n08Man",
+          "name": "Pokeshop API — jeton nommé n8n-08-mandat"
         }
       },
       "retryOnFail": true,
@@ -194,11 +194,11 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n08Man",
+          "name": "Pokeshop API — jeton nommé n8n-08-mandat"
         }
       },
-      "notes": "Décision tracée au registre (record: true), idempotente par clé ; aucune exécution ici. Jeton commun : demande non attribuable => validation humaine (TREASURY_UNVERIFIED) ; incident ouvert sur « mandat-depenses » => 423 (refus).",
+      "notes": "Décision tracée au registre (record: true), idempotente par clé ; aucune exécution ici. Jeton nommé n8n-08-mandat (relais) : requested_by = rôle de l'agent (.claude/agents), non authentifié => trésorerie jamais vérifiable, validation humaine (TREASURY_UNVERIFIED) ; incident ouvert sur « mandat-depenses » => 423 (refus).",
       "notesInFlow": true,
       "onError": "continueErrorOutput"
     },
@@ -486,8 +486,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n08Man",
+          "name": "Pokeshop API — jeton nommé n8n-08-mandat"
         }
       },
       "disabled": true,
@@ -695,8 +695,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n08Man",
+          "name": "Pokeshop API — jeton nommé n8n-08-mandat"
         }
       },
       "disabled": true,
@@ -771,8 +771,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "pkshpApiToken001",
-          "name": "Pokeshop API — X-Pokeshop-Token"
+          "id": "pkshpApiN8n08Man",
+          "name": "Pokeshop API — jeton nommé n8n-08-mandat"
         }
       },
       "disabled": true,
