@@ -210,6 +210,11 @@ def test_export_structure_is_importable(name: str) -> None:
         assert settings["errorWorkflow"] == WORKFLOWS["04_incident.json"]["id"]
     if name in {"02_commande_vers_livraison.json", "06_marketing_automations.json"}:
         assert settings["saveDataSuccessExecution"] == "none"  # données personnelles : rien de conservé
+    # Revue R6 (R5C-DOC-05) : en-têtes secrets reçus => ni exécution réussie ni exécution manuelle conservée.
+    secret_hooks = [n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.webhook"
+                    and n["parameters"]["authentication"] == "headerAuth"]  # fmt: skip
+    if secret_hooks:
+        assert settings["saveDataSuccessExecution"] == "none" and settings["saveManualExecutions"] is False, name
 
 
 @pytest.mark.parametrize("name", sorted(EXPECTED_FILES))
@@ -294,9 +299,11 @@ def test_inbound_webhooks_are_authenticated_except_documented_ones() -> None:
                 unauthenticated.add((name, node["parameters"]["path"]))
             else:
                 assert auth == "headerAuth" and "httpHeaderAuth" in node["credentials"]
-    # Moteur -> n8n (réseau interne, écart signalé) et liens publics des emails (jeton unique, GET).
+    # Liens publics des emails seulement (jeton unique, GET). Revue R6 (R5C-DOC-07) : le webhook moteur -> 04 est
+    # authentifié par le secret dédié du moteur (joignable depuis la boucle locale de l'hôte, pas seulement le compose).
+    hook04 = next(n for n in WORKFLOWS["04_incident.json"]["nodes"] if n["parameters"].get("path") == "pokeshop-incidents")
+    assert hook04["credentials"]["httpHeaderAuth"]["id"] == GEN.CREDENTIALS[GEN.ENGINE_NOTIFY_CREDENTIAL][1]
     assert unauthenticated == {
-        ("04_incident.json", "pokeshop-incidents"),
         ("06_marketing_automations.json", "alertes-desinscrire"),
         ("06_marketing_automations.json", "avis-refus"),
         ("06_marketing_automations.json", "alertes-preferences"),

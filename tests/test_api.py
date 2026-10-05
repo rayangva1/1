@@ -558,7 +558,7 @@ def test_env_example_documents_every_setting_without_secret_values() -> None:
     assert set(env) == expected
     for secret in ("POKESHOP_SHOPIFY_ADMIN_TOKEN", "POKESHOP_DATABASE_URL", "POKESHOP_API_TOKEN_SHA256",
                    "POKESHOP_OWNER_TOKEN_SHA256", "POKESHOP_MANDATE_FINGERPRINT", "POSTGRES_PASSWORD", "N8N_ENCRYPTION_KEY",
-                   "POKESHOP_DB_PASSWORD", *ROLE_TOKEN_VARIABLES.values()):
+                   "POKESHOP_DB_PASSWORD", "POKESHOP_N8N_WEBHOOK_SECRET", *ROLE_TOKEN_VARIABLES.values()):
         assert env[secret] == "", secret
     assert env["POKESHOP_DRY_RUN"] == "true" and env["POKESHOP_SHOPIFY_TEST_STORE"] == "false"
     settings = load_settings({k: v for k, v in env.items() if k.startswith("POKESHOP_")})

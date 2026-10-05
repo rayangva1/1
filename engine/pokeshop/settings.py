@@ -44,6 +44,7 @@ from pydantic import Field, SecretStr, ValidationError, field_validator, model_v
 
 from .authz import AUTHZ_VERSION, KNOWN_ROLES
 from .errors import PokeshopError
+from .incidents import NOTIFY_SECRET_MIN_LENGTH, notify_secret_is_valid
 from .models import FrozenModel, VatMode
 
 __all__ = [
@@ -110,6 +111,7 @@ ENV_VARIABLES: dict[str, tuple[str, ...]] = {
     "stale_claim_minutes": ("POKESHOP_STALE_CLAIM_MINUTES",),
     "database_url": ("POKESHOP_DATABASE_URL",),
     "n8n_webhook_url": ("POKESHOP_N8N_WEBHOOK_URL",),
+    "n8n_webhook_secret": ("POKESHOP_N8N_WEBHOOK_SECRET",),
     "notify_dry_run": ("POKESHOP_NOTIFY_DRY_RUN",),
     "autonomy_level": ("POKESHOP_AUTONOMY_LEVEL",),
     "autonomy_state_path": ("POKESHOP_AUTONOMY_STATE_PATH",),
@@ -176,6 +178,9 @@ class Settings(FrozenModel):
     stale_claim_minutes: int = Field(default=10, ge=1, le=1440)
     database_url: SecretStr | None = None
     n8n_webhook_url: str | None = None
+    n8n_webhook_secret: SecretStr | None = None
+    """Secret dédié des notifications du moteur vers le workflow 04 (en-tête ``X-Pokeshop-Notify``, revue R6) ;
+    absent = aucune notification réelle envoyée (fermé par défaut, signalé par ``/health``)."""
     notify_dry_run: bool = True
     autonomy_level: int = Field(default=1, ge=1, le=4)
     """Niveau initial si aucun niveau n'est encore stocké (BP §13 : 1 = simulation)."""
@@ -277,6 +282,16 @@ class Settings(FrozenModel):
             raise ValueError("URL http(s) attendue")
         return v
 
+    @field_validator("n8n_webhook_secret")
+    @classmethod
+    def _webhook_secret(cls, v: SecretStr | None) -> SecretStr | None:
+        if v is not None and not notify_secret_is_valid(v.get_secret_value()):
+            raise ValueError(
+                f"secret attendu : {NOTIFY_SECRET_MIN_LENGTH} caractères au moins, ASCII imprimable sans espace "
+                "(openssl rand -hex 32)"
+            )
+        return v
+
     @field_validator("timezone")
     @classmethod
     def _tz(cls, v: str) -> str:
@@ -364,6 +379,7 @@ class Settings(FrozenModel):
             "database_configured": self.database_url is not None,
             "state_backend": self.state_backend,
             "notifications_webhook": self.n8n_webhook_url is not None,
+            "notifications_secret_configured": self.n8n_webhook_secret is not None,
             "notify_dry_run": self.notify_dry_run,
             "api_token_configured": self.api_token_sha256 is not None,
             "owner_token_configured": self.owner_token_sha256 is not None,

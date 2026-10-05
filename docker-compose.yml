@@ -20,7 +20,10 @@
 # scripts/compose.sh = docker compose --env-file /etc/pokeshop/api.env (interpolation seulement). La CLI lit --env-file
 # avec l'identité de l'appelant : fichier à ton nom (-o "$USER"), ton compte membre du groupe docker (sudo usermod -aG
 # docker "$USER", puis reconnexion), sinon « sudo scripts/compose.sh … ». Le compléter en place (nano), pas « sed -i ».
-# Ports publiés sur 127.0.0.1 uniquement (aucune exposition réseau).
+# Ports publiés sur la boucle locale de l'hôte seulement (127.0.0.1 : aucune exposition réseau) ; ils restent joignables
+# par TOUT processus de l'hôte (dont une flotte d'agents qui y tournerait), en plus des services du compose. Chaque
+# webhook de n8n est donc authentifié : passerelles des agents (un secret par webhook) et notifications du moteur
+# vers 04 (POKESHOP_N8N_WEBHOOK_SECRET, revue R6) ; seuls les liens des emails (jeton unique, GET) ne le sont pas.
 # Simulation par défaut : POKESHOP_DRY_RUN=true ; aucune écriture Shopify réelle sans POKESHOP_DRY_RUN=false
 # ET le niveau d'autonomie requis. Autorisations par route : docs/08-agents/MATRICE_API.md (engine/pokeshop/authz.py).
 #
@@ -30,7 +33,8 @@
 #     moteur, pour le créer) ;
 #   - api : variables POKESHOP_* seulement, connexion avec le compte `api_moteur` (membre de pokeshop_engine,
 #     jamais l'administrateur) ; ni N8N_ENCRYPTION_KEY ni POSTGRES_PASSWORD ;
-#   - n8n : sa clé de chiffrement et ses réglages ; aucun jeton ni mot de passe du moteur.
+#   - n8n : sa clé de chiffrement et ses réglages ; aucun jeton ni mot de passe du moteur (le secret des notifications
+#     du moteur vit dans un credential n8n chiffré, jamais dans l'environnement de n8n).
 
 name: pokeshop
 
@@ -151,6 +155,9 @@ services:
       # Compte de connexion du moteur créé par db-migrate (db/engine_login.sh), jamais l'administrateur.
       POKESHOP_DATABASE_URL: postgresql://api_moteur:${POKESHOP_DB_PASSWORD:?definir POKESHOP_DB_PASSWORD}@db:5432/pokeshop
       POKESHOP_N8N_WEBHOOK_URL: http://n8n:5678/webhook/pokeshop-incidents
+      # Secret dédié des notifications (en-tête X-Pokeshop-Notify, vérifié par le credential n8n « Notification moteur
+      # → 04 ») : vide = aucune notification réelle (signalé par /health et le digest 05). Revue R6 (R5C-DOC-07).
+      POKESHOP_N8N_WEBHOOK_SECRET: ${POKESHOP_N8N_WEBHOOK_SECRET:-}
       # false par défaut : les incidents partent vers le workflow 04 (n8n interne) ; un envoi raté est journalisé
       # « non livré ». true = alertes simulées (signalé par /health et le digest 05).
       POKESHOP_NOTIFY_DRY_RUN: ${POKESHOP_NOTIFY_DRY_RUN:-false}
@@ -180,6 +187,12 @@ services:
       N8N_DIAGNOSTICS_ENABLED: "false"
       N8N_PERSONALIZATION_ENABLED: "false"
       N8N_PORT: "5678"
+      # Revue R6 (R5C-DOC-05) : une exécution conservée garde les en-têtes reçus (secrets de passerelle, secret du
+      # moteur) en clair dans le volume n8n-data. Les workflows à webhook authentifié (03, 04, 06, 08) ne conservent
+      # jamais une exécution réussie ; les exécutions en échec (diagnostic) sont purgées après 7 jours (168 h), une
+      # exécution en attente d'un formulaire n'est jamais purgée. Purge, rotation : orchestration/README.md §2.
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
     volumes:
       - n8n-data:/home/node/.n8n
       - ./orchestration/n8n:/workflows:ro

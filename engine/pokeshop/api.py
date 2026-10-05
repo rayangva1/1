@@ -46,10 +46,15 @@
   ``fx_*`` accepté dans ``/sync/run`` ni ``/catalog/cost-inputs`` (422) ; sans taux : coût incomplet,
   fiche en brouillon. ``/mandate/check`` ne retient jamais le taux déclaré (contrôle à ± 1 % contre la
   référence ; sans référence : ``FX_RATE_UNVERIFIED``, validation humaine).
-* **Seuils signés** : stop-loss (``POKESHOP_STOPLOSS_FINGERPRINT``) et règles de prix
-  (``POKESHOP_RULES_FINGERPRINT``) : empreinte différente => service gelé (``CONFIG_UNSIGNED``) ;
-  absente => seuils les plus stricts entre fichier et référence du code. Un écart entre sources
-  d'une même règle (``consistency_errors``) gèle aussi le service.
+* **Seuils signés** (revue R6, R5C-DOC-09 : comportement propre à chaque empreinte, toujours fermé) :
+  - mandat (``POKESHOP_MANDATE_FINGERPRINT``) différent du fichier => **mandat inactif**
+    (``MANDATE_FINGERPRINT_MISMATCH``) : aucune dépense approuvée sans vous, aucun gel ;
+  - seuils du stop-loss (``POKESHOP_STOPLOSS_FINGERPRINT``) différents => **stop-loss non chargé** : routes du
+    stop-loss en 503, écritures réelles refusées (``STOPLOSS_UNAVAILABLE``), ``/mandate/check`` en 503, aucune
+    dépense ; pas de ``CONFIG_UNSIGNED`` (il n'y a pas de stop-loss à geler) ;
+  - règles de prix (``POKESHOP_RULES_FINGERPRINT``) différentes, ou écart entre sources d'une même règle
+    (``consistency_errors``) => valeurs les plus strictes et **service gelé** (``CONFIG_UNSIGNED``).
+  Empreinte absente => seuils et règles les plus stricts entre fichier et référence du code ; mandat jamais actif.
 * **Montants** : chaînes décimales en entrée (un nombre JSON à virgule est refusé : 422) et en
   sortie (``"209.90"``), CHF. Aucun ``float`` ne traverse l'API. NaN, Infinity, exposants
   extrêmes, montants > 10 000 000, coûts ou prix négatifs, remise > 100 % : 422 (jamais 500).
@@ -660,7 +665,8 @@ class Services:
         )
         channels: list[Notifier] = [notifier or LogNotifier()]
         if cfg.n8n_webhook_url:
-            channels.append(WebhookNotifier(cfg.n8n_webhook_url, dry_run=cfg.notify_dry_run))
+            secret = cfg.n8n_webhook_secret.get_secret_value() if cfg.n8n_webhook_secret is not None else None
+            channels.append(WebhookNotifier(cfg.n8n_webhook_url, dry_run=cfg.notify_dry_run, secret=secret))
         notify = MultiNotifier(channels) if len(channels) > 1 else channels[0]
         sink = PostgresIncidentSink(factory) if factory else None
         incidents = IncidentManager(
@@ -1692,11 +1698,25 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                     "unreadable": sorted(svc.restore_errors),
                 },
                 # Alertes d'incident en temps réel vers n8n (workflow 04) : simulées tant que
-                # POKESHOP_NOTIFY_DRY_RUN n'est pas false (le digest 05 le signale chaque matin).
+                # POKESHOP_NOTIFY_DRY_RUN n'est pas false, jamais envoyées sans le secret dédié
+                # (POKESHOP_N8N_WEBHOOK_SECRET, revue R6) ; le digest 05 le signale chaque matin, ainsi que
+                # le dernier envoi non livré (secret différent dans n8n après une rotation, 04 inactif…).
                 "notifications": {
                     "webhook_configured": cfg.n8n_webhook_url is not None,
                     "webhook_dry_run": cfg.notify_dry_run,
-                    "real_time_alerts": cfg.n8n_webhook_url is not None and not cfg.notify_dry_run,
+                    "webhook_secret_configured": cfg.n8n_webhook_secret is not None,
+                    "real_time_alerts": cfg.n8n_webhook_url is not None
+                    and not cfg.notify_dry_run
+                    and cfg.n8n_webhook_secret is not None,
+                    "last_delivery": (
+                        None
+                        if not svc.incidents.receipts
+                        else {
+                            "delivered": svc.incidents.receipts[-1].delivered,
+                            "dry_run": svc.incidents.receipts[-1].dry_run,
+                            "detail": svc.incidents.receipts[-1].detail,
+                        }
+                    ),
                 },
                 "configuration": cfg.public_summary(),
                 "real_write_blockers": cfg.real_write_blockers(),

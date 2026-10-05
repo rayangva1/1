@@ -46,6 +46,7 @@ from pokeshop.incidents import (
     IncidentManager,
     IncidentScope,
     IncidentStatus,
+    NOTIFY_SECRET_HEADER,
     LogNotifier,
     MultiNotifier,
     PostgresIncidentSink,
@@ -286,21 +287,43 @@ def test_webhook_notifier_dry_run_by_default(audit: InMemoryAuditLog, clock: Clo
     assert calls == [] and len(hook.sent) == 1 and mgr.receipts[0].dry_run and not mgr.receipts[0].delivered
 
 
+NOTIFY_SECRET = "fictif-secret-notification-0123456789abcdef"  # FICTIF (≥ 32 caractères)
+
+
 def test_webhook_notifier_posts_public_payload(audit: InMemoryAuditLog, clock: Clock) -> None:
     calls: list[dict[str, Any]] = []
+    headers: list[str | None] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(json.loads(request.content))
+        headers.append(request.headers.get(NOTIFY_SECRET_HEADER))
         return httpx.Response(200)
 
-    hook = WebhookNotifier("http://n8n:5678/webhook/pokeshop-incidents", dry_run=False, transport=httpx.MockTransport(handler))
+    hook = WebhookNotifier("http://n8n:5678/webhook/pokeshop-incidents", dry_run=False, secret=NOTIFY_SECRET,
+                           transport=httpx.MockTransport(handler))  # fmt: skip
     mgr = IncidentManager(audit=audit, notifier=hook, clock=clock)
     mgr.open(code=IncidentCode.INC_01, product_key="FICTIF-P1", cause="prix ×10", details={"landed_cost": "95.00"})
     assert len(calls) == 1 and mgr.receipts[0].delivered
+    assert headers == [NOTIFY_SECRET]  # revue R6 (R5C-DOC-07) : webhook 04 authentifié par le secret du moteur
     body = calls[0]
     assert body["sop"] == "S2" and body["code"] == "INC-01" and body["proposed_action"]
-    assert "details" not in body and "95.00" not in json.dumps(body)
+    assert "details" not in body and "95.00" not in json.dumps(body) and NOTIFY_SECRET not in json.dumps(body)
     hook.close()
+
+
+def test_webhook_notifier_never_sends_without_its_secret(audit: InMemoryAuditLog, clock: Clock) -> None:
+    """Revue R6 (R5C-DOC-07) : sans secret, aucun envoi anonyme ; accusé « non livré » honnête."""
+    calls: list[httpx.Request] = []
+    hook = WebhookNotifier("http://n8n:5678/webhook/pokeshop-incidents", dry_run=False,
+                           transport=httpx.MockTransport(lambda r: calls.append(r) or httpx.Response(200)))  # fmt: skip
+    assert hook.authenticated is False
+    mgr = IncidentManager(audit=audit, notifier=MultiNotifier([hook, LogNotifier()]), clock=clock)
+    mgr.open(code=IncidentCode.INC_03, supplier_id="fictif", cause="flux absent")
+    assert calls == [] and not mgr.receipts[0].delivered and not mgr.receipts[0].dry_run
+    assert "POKESHOP_N8N_WEBHOOK_SECRET" in mgr.receipts[0].detail
+    for weak in ("court", " " + NOTIFY_SECRET, NOTIFY_SECRET + "\n", "é" * 40):
+        with pytest.raises(IncidentError):
+            WebhookNotifier("http://n8n:5678/webhook/x", secret=weak)
 
 
 @pytest.mark.parametrize("failure", ["status", "network"])
@@ -310,7 +333,8 @@ def test_webhook_failure_never_raises(audit: InMemoryAuditLog, clock: Clock, fai
             raise httpx.ConnectError("n8n injoignable")
         return httpx.Response(500)
 
-    hook = WebhookNotifier("https://n8n.example.org/webhook/x", dry_run=False, transport=httpx.MockTransport(handler))
+    hook = WebhookNotifier("https://n8n.example.org/webhook/x", dry_run=False, secret=NOTIFY_SECRET,
+                           transport=httpx.MockTransport(handler))  # fmt: skip
     mgr = IncidentManager(audit=audit, notifier=MultiNotifier([hook]), clock=clock)
     inc = mgr.open(code=IncidentCode.INC_03, supplier_id="fictif", cause="flux absent")
     assert inc.status is IncidentStatus.OUVERT and not mgr.receipts[0].delivered

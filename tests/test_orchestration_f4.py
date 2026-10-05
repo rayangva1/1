@@ -315,13 +315,22 @@ def test_e2e10_open_incident_suspends_the_spending_check(tmp_path: Path, scope: 
 # =============================================================================== E2E-13
 
 
+NOTIFY_SECRET = "fictif-secret-notification-moteur-0123456789"  # FICTIF ; n8n (04) vérifie X-Pokeshop-Notify
+
+
 @pytest.fixture
 def webhook() -> Iterator[tuple[str, list[bytes]]]:
+    """Faux workflow 04 : comme le credential n8n, refuse (403) tout envoi sans le secret du moteur (revue R6)."""
     hits: list[bytes] = []
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802 - API http.server
-            hits.append(self.rfile.read(int(self.headers.get("content-length", 0))))
+            data = self.rfile.read(int(self.headers.get("content-length", 0)))
+            if self.headers.get("X-Pokeshop-Notify") != NOTIFY_SECRET:
+                self.send_response(403)
+                self.end_headers()
+                return
+            hits.append(data)
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b"{}")
@@ -341,10 +350,12 @@ def webhook() -> Iterator[tuple[str, list[bytes]]]:
 def test_e2e13_critical_incident_is_delivered_only_when_really_sent(tmp_path: Path, webhook: tuple[str, list[bytes]],
                                                                      dry_run: str) -> None:
     url, hits = webhook
-    client, svc, _ = boot(tmp_path, POKESHOP_N8N_WEBHOOK_URL=url, POKESHOP_NOTIFY_DRY_RUN=dry_run)
+    client, svc, _ = boot(tmp_path, POKESHOP_N8N_WEBHOOK_URL=url, POKESHOP_NOTIFY_DRY_RUN=dry_run,
+                          POKESHOP_N8N_WEBHOOK_SECRET=NOTIFY_SECRET)  # fmt: skip
     notifications = body(client.get("/health"))["notifications"]
     assert notifications == {"webhook_configured": True, "webhook_dry_run": dry_run == "true",
-                             "real_time_alerts": dry_run == "false"}
+                             "webhook_secret_configured": True, "real_time_alerts": dry_run == "false",
+                             "last_delivery": None}  # fmt: skip
     frozen = client.post("/stoploss/freeze", headers=HPHOTO, json={"actor": "n8n:07-stoploss-watch", "reason": "Gel global FICTIF"})
     assert frozen.status_code == 200
     receipt = svc.incidents.receipts[-1]
@@ -355,12 +366,37 @@ def test_e2e13_critical_incident_is_delivered_only_when_really_sent(tmp_path: Pa
     else:
         assert len(hits) == 1 and json.loads(hits[0])["sop"] == "S1"
         assert receipt.delivered is True and event["delivered"] is True
+    last = body(client.get("/health"))["notifications"]["last_delivery"]
+    assert last["delivered"] is (dry_run == "false") and last["dry_run"] is (dry_run == "true")
+
+
+@pytest.mark.parametrize("secret", [None, "fictif-autre-secret-apres-rotation-0123456789"])
+def test_r6_doc07_alert_without_the_shared_secret_is_never_delivered_and_is_reported(
+    tmp_path: Path, webhook: tuple[str, list[bytes]], secret: str | None
+) -> None:
+    """Revue R6 (R5C-DOC-07) : secret absent => rien n'est envoyé ; secret différent (rotation d'un seul côté) =>
+    n8n refuse (403) ; dans les deux cas l'incident est « non livré », /health et le digest le signalent."""
+    url, hits = webhook
+    env = {"POKESHOP_N8N_WEBHOOK_SECRET": secret} if secret else {}
+    client, svc, _ = boot(tmp_path, POKESHOP_N8N_WEBHOOK_URL=url, POKESHOP_NOTIFY_DRY_RUN="false", **env)
+    notifications = body(client.get("/health"))["notifications"]
+    assert notifications["real_time_alerts"] is (secret is not None)
+    assert notifications["webhook_secret_configured"] is (secret is not None)
+    frozen = client.post("/stoploss/freeze", headers=HPHOTO, json={"actor": "n8n:07-stoploss-watch", "reason": "Gel global FICTIF"})
+    assert frozen.status_code == 200 and hits == []
+    receipt = svc.incidents.receipts[-1]
+    assert receipt.delivered is False and receipt.dry_run is False
+    assert ("POKESHOP_N8N_WEBHOOK_SECRET" if secret is None else "HTTP 403") in receipt.detail
+    last = body(client.get("/health"))["notifications"]["last_delivery"]
+    assert last["delivered"] is False and last["dry_run"] is False
+    assert svc.audit.events(action="incident.notify")[-1].payload["delivered"] is False
 
 
 def test_e2e13_health_without_webhook_reports_no_real_time_alerts(tmp_path: Path) -> None:
     client, _, _ = boot(tmp_path)
     assert body(client.get("/health"))["notifications"] == {
-        "webhook_configured": False, "webhook_dry_run": True, "real_time_alerts": False}
+        "webhook_configured": False, "webhook_dry_run": True, "webhook_secret_configured": False,
+        "real_time_alerts": False, "last_delivery": None}  # fmt: skip
 
 
 def test_e2e08_declared_debts_reduce_cash_and_net_worth_and_are_never_assumed_zero(tmp_path: Path) -> None:

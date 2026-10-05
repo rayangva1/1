@@ -131,7 +131,7 @@ def test_r2new01_reception_gateway_secret_is_held_by_agent_11_only() -> None:
                 cid = node["credentials"]["httpHeaderAuth"]["id"]
                 assert cid not in seen, f"{name} / {node['name']} partage le secret de {seen[cid]}"
                 seen[cid] = node["name"]
-    assert len(seen) == len(N.GEN.GATEWAY_HOLDERS)
+    assert len(seen) == len(N.GEN.INBOUND_SECRET_HOLDERS)  # passerelles des agents + notification du moteur (R6)
     assert "pkshpGateway0001" not in json.dumps(N.WORKFLOWS, ensure_ascii=False)  # ancien secret commun
 
 

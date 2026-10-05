@@ -79,8 +79,9 @@ python dashboard/build.py               # régénère dashboard/out/index.html (
 # 1. Sur le serveur : fichier de variables HORS du dépôt, à ton nom et lisible par toi seule (jamais de .env à la racine) :
 sudo install -D -m 600 -o "$USER" .env.example /etc/pokeshop/api.env
 # 2. Le compléter EN PLACE depuis le coffre (nano /etc/pokeshop/api.env ; pas « sed -i » : /etc/pokeshop appartient à root) :
-#    POSTGRES_PASSWORD, POKESHOP_DB_PASSWORD, N8N_ENCRYPTION_KEY (chacun : openssl rand -hex 32), N8N_WEBHOOK_URL,
-#    POKESHOP_OWNER_TOKEN_SHA256 (B21) — empreintes sha256, jamais les jetons.
+#    POSTGRES_PASSWORD, POKESHOP_DB_PASSWORD, N8N_ENCRYPTION_KEY, POKESHOP_N8N_WEBHOOK_SECRET (chacun : openssl rand
+#    -hex 32 ; le dernier va AUSSI dans le credential n8n « Notification moteur → 04 », orchestration/README.md §4),
+#    N8N_WEBHOOK_URL, POKESHOP_OWNER_TOKEN_SHA256 (B21) — empreintes sha256, jamais les jetons.
 # 3. Empreintes des rôles (B22), produites à J2 sur TON ordinateur (Linux ou macOS : sha256sum ou, en repli,
 #    shasum -a 256 ; bloc en set -euo pipefail, 64 hexadécimaux contrôlés dès J2 ; DELEGATION_AUTONOMIE.md §10 étape 6), dont
 #    POKESHOP_ROLE_TOKEN_SHA256_N8N_07_STOPLOSS, POKESHOP_ROLE_TOKEN_SHA256_CONNECTEUR_TRESORERIE

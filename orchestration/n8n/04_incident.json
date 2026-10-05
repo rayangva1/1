@@ -5,7 +5,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## 04 — Incident (BP §12, SOP_INCIDENTS.md)\nLe moteur met en **quarantaine** la référence ou **suspend** le workflow, puis notifie ce webhook (cause + action proposée).\nS1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : test enregistré → validation par formulaire\n→ `POST /incidents/{id}/resume`. Un **S1** ne se reprend que par la propriétaire (son jeton, depuis son terminal).\n**Workflow d'erreur** de tous les autres workflows : toute exécution en échec ouvre un incident.\n**Activation** : en PREMIER, dès le niveau 1.\n**Validation humaine requise** : canal d'alerte S1 (SMS, notification, appel), reprise de chaque S1.",
+        "content": "## 04 — Incident (BP §12, SOP_INCIDENTS.md)\nLe moteur met en **quarantaine** la référence ou **suspend** le workflow, puis notifie ce webhook (cause + action proposée),\navec son **secret dédié** (en-tête `X-Pokeshop-Notify`, credential « Notification moteur → 04 ») : sans lui, 403.\nS1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : test enregistré → validation par formulaire\n→ `POST /incidents/{id}/resume`. Un **S1** ne se reprend que par la propriétaire (son jeton, depuis son terminal).\n**Workflow d'erreur** de tous les autres workflows : toute exécution en échec ouvre un incident.\n**Activation** : en PREMIER, dès le niveau 1.\n**Validation humaine requise** : canal d'alerte S1 (SMS, notification, appel), reprise de chaque S1.",
         "height": 380,
         "width": 640,
         "color": 4
@@ -25,7 +25,7 @@
         "path": "pokeshop-incidents",
         "responseMode": "onReceived",
         "options": {},
-        "authentication": "none"
+        "authentication": "headerAuth"
       },
       "id": "358db23e-1992-5bde-b7a6-2589f0c7bf2a",
       "name": "Notification d’incident du moteur",
@@ -36,7 +36,13 @@
         0
       ],
       "webhookId": "e7310f59-7076-5178-85d3-a41e538134b2",
-      "notes": "Appelé par le moteur (POKESHOP_N8N_WEBHOOK_URL=http://n8n:5678/webhook/pokeshop-incidents). Le moteur n'envoie pas encore d'en-tête secret : réseau interne docker uniquement (écart signalé).",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpNotif04Mote",
+          "name": "Notification moteur → 04 — secret du moteur (POKESHOP_N8N_WEBHOOK_SECRET)"
+        }
+      },
+      "notes": "Appelé par le moteur (POKESHOP_N8N_WEBHOOK_URL=http://n8n:5678/webhook/pokeshop-incidents) avec l'en-tête X-Pokeshop-Notify = POKESHOP_N8N_WEBHOOK_SECRET (revue R6) : joignable depuis le réseau du compose et la boucle locale de l'hôte (127.0.0.1:5678), toute requête sans ce secret est refusée (403).",
       "notesInFlow": true
     },
     {
@@ -1253,9 +1259,9 @@
   "settings": {
     "executionOrder": "v1",
     "timezone": "Europe/Zurich",
-    "saveManualExecutions": true,
+    "saveManualExecutions": false,
     "saveDataErrorExecution": "all",
-    "saveDataSuccessExecution": "all",
+    "saveDataSuccessExecution": "none",
     "saveExecutionProgress": false,
     "callerPolicy": "workflowsFromSameOwner"
   },

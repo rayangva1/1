@@ -6,6 +6,12 @@
 * R5-NEW-02 : une commande payée avec un ancien SKU après une correction du catalogue n'est jamais perdue (alias de
   SKU historiques relus du journal du catalogue, résolution vers la clé canonique) ; SKU inconnu ou ambigu : ligne
   non rattachée (coût des ventes en attente, incomplet), rattachée par la propriétaire.
+* R5C-DOC-05 (n8n) : un workflow qui reçoit un en-tête secret (passerelles, notification du moteur) ne conserve ni
+  exécution réussie ni exécution manuelle ; les exécutions en échec sont purgées par n8n (7 jours).
+* R5C-DOC-07 (n8n, moteur, compose) : le webhook moteur -> 04 est authentifié par un secret dédié
+  (``POKESHOP_N8N_WEBHOOK_SECRET``, en-tête ``X-Pokeshop-Notify``) ; sans lui, rien n'est envoyé et c'est signalé.
+* R5C-DOC-09 (moteur) : chaque empreinte reste fermée à sa manière (mandat inactif ; stop-loss non chargé, 503 ;
+  règles gelées ``CONFIG_UNSIGNED``) et la docstring de l'API le dit empreinte par empreinte.
 Données, jetons et montants FICTIFS ; bases PostgreSQL : aucune (journaux en fichiers par test, tmp_path).
 """
 
@@ -18,11 +24,20 @@ from pathlib import Path
 from typing import Any
 
 import jetons_roles as JR
+import pokeshop.api as API
+import pytest
+import test_gouvernance_f2 as G
+import test_n8n_workflows as N
 import test_orchestration_f4 as F
 import test_revue_r3 as R3
 import test_revue_r5 as R5
+import yaml
+from pokeshop.autonomy import GateReason, WriteAction
+from pokeshop.incidents import NOTIFY_SECRET_HEADER
+from pokeshop.mandate import SpendReason
 from pokeshop.northstar import UNRESOLVED_KEY_PREFIX, CostMovement, CostRegister
-from pokeshop.stoploss import AttributedOrder
+from pokeshop.rules import load_rules
+from pokeshop.stoploss import DEFAULT_STOPLOSS_PATH, AttributedOrder, stoploss_fingerprint
 from pokeshop.stoploss_snapshot import derive_attributed
 
 NOW = F.NOW
@@ -232,3 +247,121 @@ def test_r5new02_catalogue_never_takes_the_reserved_key_of_unresolved_lines(tmp_
     resp = client.post("/catalog/items", headers=JR.HCAT,
                        json={"items": [{"product_id": key, "listing": {**F.LISTING, "product_key": key}}]})  # fmt: skip
     assert resp.status_code in (409, 422) and "réservée" in body(resp)["erreur"]
+
+
+# ================================================================ R5C-DOC-05 : secrets reçus jamais conservés
+
+COMPOSE = yaml.safe_load((N.ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+ORCH_README = (N.ROOT / "orchestration" / "README.md").read_text(encoding="utf-8")
+
+
+def secret_hooks(wf: dict[str, Any]) -> list[dict[str, Any]]:
+    return [n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.webhook" and n["parameters"]["authentication"] == "headerAuth"]
+
+
+def test_r5cdoc05_workflows_receiving_a_secret_header_keep_no_successful_or_manual_execution() -> None:
+    """n8n garde la sortie du nœud webhook (en-têtes compris) dans toute exécution conservée : 03, 04, 06 et 08 n'en
+    conservent aucune réussie ni manuelle ; le générateur l'impose à tout nouveau webhook authentifié."""
+    carrying = set()
+    for name, wf in N.WORKFLOWS.items():
+        if secret_hooks(wf):
+            carrying.add(name[:2])
+            settings = wf["settings"]
+            assert settings["saveDataSuccessExecution"] == "none", name
+            assert settings["saveManualExecutions"] is False and settings["saveExecutionProgress"] is False, name
+    assert carrying == {"03", "04", "06", "08"}
+    wf = N.GEN.Workflow("pkshpTestR6Gate1", "Test", "99_test.json", api_cred="api_08", keep_success_data=True)
+    N.GEN.webhook(wf, "Passerelle de test", (0, 0), "test-r6", gateway="gateway_03")
+    exported = wf.export()["settings"]
+    assert exported["saveDataSuccessExecution"] == "none" and exported["saveManualExecutions"] is False
+    with pytest.raises(ValueError, match="sans credential propre"):
+        N.GEN.webhook(wf, "Webhook sans secret propre", (0, 1), "test-r6b", gateway="api_08")
+    env = COMPOSE["services"]["n8n"]["environment"]
+    assert env["EXECUTIONS_DATA_PRUNE"] == "true" and 0 < int(env["EXECUTIONS_DATA_MAX_AGE"]) <= 168
+    assert "ni exécution réussie ni exécution manuelle" in ORCH_README and "**changer le secret**" in ORCH_README
+
+
+# ================================================================ R5C-DOC-07 : webhook moteur -> 04 authentifié
+
+
+def test_r5cdoc07_engine_to_04_webhook_needs_the_engine_secret_and_exposure_is_written_exactly() -> None:
+    by = N.nodes(N.WORKFLOWS["04_incident.json"])
+    hook = by["Notification d’incident du moteur"]
+    key = N.GEN.ENGINE_NOTIFY_CREDENTIAL
+    assert hook["parameters"]["authentication"] == "headerAuth"
+    assert hook["credentials"]["httpHeaderAuth"]["id"] == N.GEN.CREDENTIALS[key][1]
+    assert N.GEN.ENGINE_NOTIFY_HEADER == NOTIFY_SECRET_HEADER == "X-Pokeshop-Notify"
+    assert N.GEN.INBOUND_SECRET_HOLDERS[key] == "moteur" and key not in N.GEN.GATEWAY_HOLDERS
+    api_env, n8n_env = COMPOSE["services"]["api"]["environment"], COMPOSE["services"]["n8n"]["environment"]
+    assert api_env["POKESHOP_N8N_WEBHOOK_SECRET"] == "${POKESHOP_N8N_WEBHOOK_SECRET:-}"
+    assert not any("WEBHOOK_SECRET" in str(v) or k.startswith("POKESHOP_") for k, v in n8n_env.items())
+    assert "127.0.0.1:5678:5678" in COMPOSE["services"]["n8n"]["ports"]  # boucle locale de l'hôte : d'où le secret
+    compose_text = (N.ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "aucune exposition réseau)." not in compose_text and "par TOUT processus de l'hôte" in compose_text
+    row = next(line for line in ORCH_README.splitlines() if line.startswith(f"| `{N.GEN.CREDENTIALS[key][2]}`"))
+    assert "`X-Pokeshop-Notify`" in row and "POKESHOP_N8N_WEBHOOK_SECRET" in row
+    assert "webhook limité au réseau interne docker" not in ORCH_README and "boucle locale de l'hôte" in ORCH_README
+
+
+@pytest.mark.skipif(N.NODE_BIN is None, reason="node absent : code non exécuté")
+def test_r5cdoc07_digest_names_a_missing_secret_and_an_undelivered_alert(tmp_path: Path) -> None:
+    js = N.nodes(N.WORKFLOWS["05_digest_quotidien.json"])["Composer le digest (étoile polaire en premier)"]["parameters"]["jsCode"]
+    notif = {"webhook_configured": True, "webhook_dry_run": False, "webhook_secret_configured": False,
+             "real_time_alerts": False, "last_delivery": None}  # fmt: skip
+    ctx = {
+        "Étoile polaire (GET /northstar)": {"cumulative": "0.00", "rows": []},
+        "État du stop-loss (GET /stoploss/status)": {"available": False, "error": "aucune photo", "triggers": []},
+        "Tableau de bord du jour (GET /dashboard/daily)": {"report": {}},
+        "Cycles de synchronisation (GET /sync/history)": {"consecutive_clean_runs": 0, "target": 20, "runs": []},
+        "État du moteur (GET /health)": {"notifications": notif, "persistence": {"unreadable": []}},
+    }
+    text = N.run_js(tmp_path, js, [{}], ctx)[0][0]["texte"]
+    assert "ALERTES TEMPS RÉEL INACTIVES (secret des notifications absent : POKESHOP_N8N_WEBHOOK_SECRET)" in text
+    notif.update(webhook_secret_configured=True, real_time_alerts=True,
+                 last_delivery={"delivered": False, "dry_run": False, "detail": "webhook-n8n : non livré (HTTP 403)"})
+    text = N.run_js(tmp_path, js, [{}], ctx)[0][0]["texte"]
+    assert "DERNIÈRE ALERTE NON LIVRÉE À 04 (webhook-n8n : non livré (HTTP 403))" in text
+    notif["last_delivery"] = {"delivered": True, "dry_run": False, "detail": "webhook-n8n : livré"}
+    text = N.run_js(tmp_path, js, [{}], ctx)[0][0]["texte"]
+    assert "NON LIVRÉE" not in text and "ALERTES TEMPS RÉEL INACTIVES" not in text
+
+
+# ================================================================ R5C-DOC-09 : trois empreintes, trois fermetures
+
+
+def test_r5cdoc09_each_fingerprint_fails_closed_in_its_own_documented_way(tmp_path: Path) -> None:
+    """Mandat différent => mandat inactif (pas de gel) ; seuils différents => stop-loss non chargé (503, aucune
+    écriture réelle) ; règles différentes => gel CONFIG_UNSIGNED. Choix gardé (revue R6) : chacun est fermé sur son
+    périmètre ; un gel global pour le mandat bloquerait des parcours sans rapport (commandes, réceptions) alors que
+    le mandat inactif retire déjà toute dépense autonome, et il n'y a pas de stop-loss à geler quand ses seuils sont
+    refusés (le 503 est plus strict qu'un gel)."""
+    # 1. Mandat modifié et « re-signé » dans le YAML par un tiers : l'empreinte du coffre ne correspond plus.
+    vault = G.signed_data(G.no_fees)["approval"]["fingerprint_sha256"]
+    resigned = G.signed_data(lambda d: (G.no_fees(d), d.update(mandate_version="mandat-v2-FICTIF")))
+    path = tmp_path / "mandat.yaml"
+    path.write_text(yaml.safe_dump(resigned, allow_unicode=True), encoding="utf-8")
+    client, svc = G.boot(tmp_path / "mandat", POKESHOP_MANDATE_PATH=str(path), POKESHOP_MANDATE_FINGERPRINT=vault)
+    assert SpendReason.MANDATE_FINGERPRINT_MISMATCH in svc.mandate.inactive_reasons(G.API_NOW)
+    assert body(client.get("/health"))["mandate_active"] is False
+    assert svc.stoploss_engine is not None and not svc.stoploss_engine.frozen  # aucun gel CONFIG_UNSIGNED
+    # 2. Seuils du stop-loss modifiés : stop-loss non chargé, routes en 503, écritures réelles refusées.
+    sl_path, _ = G.tampered_stoploss(tmp_path)
+    original = yaml.safe_load(DEFAULT_STOPLOSS_PATH.read_text(encoding="utf-8"))
+    client2, svc2 = G.boot(tmp_path / "seuils", POKESHOP_STOPLOSS_PATH=str(sl_path),
+                           POKESHOP_STOPLOSS_FINGERPRINT=stoploss_fingerprint(original))  # fmt: skip
+    assert svc2.stoploss_engine is None and client2.get("/stoploss/status", headers=G.H).status_code == 503
+    assert svc2.gate.authorize(WriteAction.SYNC_PRICE, dry_run=False).has(GateReason.STOPLOSS_UNAVAILABLE)
+    # 3. Règles de prix modifiées : valeurs les plus strictes et gel CONFIG_UNSIGNED.
+    rules = yaml.safe_load((DEFAULT_STOPLOSS_PATH.parent / "pricing_rules.v1.yaml").read_text(encoding="utf-8"))
+    rules["pricing"]["hard_floor_margin"] = "0.01"
+    rules_path = tmp_path / "regles.yaml"
+    rules_path.write_text(yaml.safe_dump(rules, allow_unicode=True), encoding="utf-8")
+    _, svc3 = G.boot(tmp_path / "regles", POKESHOP_RULES_PATH=str(rules_path),
+                     POKESHOP_RULES_FINGERPRINT=load_rules().content_sha256)  # fmt: skip
+    assert svc3.stoploss_engine.frozen and svc3.stoploss_engine.latch.cause == "CONFIG_UNSIGNED"
+    doc = " ".join((API.__doc__ or "").split())
+    assert "=> service gelé (``CONFIG_UNSIGNED``) ; absente" not in doc  # ancienne description inexacte
+    for phrase in ("=> **mandat inactif**", "=> **stop-loss non chargé**", "pas de ``CONFIG_UNSIGNED``",
+                   "=> valeurs les plus strictes et **service gelé** (``CONFIG_UNSIGNED``)"):
+        assert phrase in doc, phrase
+

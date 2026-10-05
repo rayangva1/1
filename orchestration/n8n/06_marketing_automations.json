@@ -3669,7 +3669,7 @@
   "settings": {
     "executionOrder": "v1",
     "timezone": "Europe/Zurich",
-    "saveManualExecutions": true,
+    "saveManualExecutions": false,
     "saveDataErrorExecution": "all",
     "saveDataSuccessExecution": "none",
     "saveExecutionProgress": false,

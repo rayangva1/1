@@ -16,7 +16,12 @@ Règles appliquées à chaque workflow :
   gel, registre du mandat, étoile polaire) ;
 * identifiants **par référence** (``credentials: {type: {id, name}}``), jamais de secret dans
   l'export ; l'URL de l'API se règle dans le nœud « Paramètres » (n8n 2.x bloque ``$env`` par défaut) ;
-* le workflow d'erreur de tous les workflows est ``04`` (déclencheur « Error Trigger »).
+* le workflow d'erreur de tous les workflows est ``04`` (déclencheur « Error Trigger ») ;
+* un workflow qui reçoit un **webhook authentifié** (en-tête secret : passerelles des agents, notifications du
+  moteur) ne conserve **jamais** une exécution réussie ni une exécution manuelle (revue R6, R5C-DOC-05 : n8n garde
+  les en-têtes reçus en clair dans les données d'exécution ; retirer l'en-tête dans un nœud suivant ne suffit pas, la
+  sortie du nœud webhook est elle-même conservée). Les exécutions en échec restent conservées pour le diagnostic,
+  purgées par n8n après 7 jours (``EXECUTIONS_DATA_MAX_AGE`` du compose).
 
 Usage ::
 
@@ -126,6 +131,9 @@ CREDENTIALS: dict[str, tuple[str, str, str]] = {
             ("operations-sav", "11", "pkshpGw08OpSav11"),
         )
     },
+    # Revue R6 (R5C-DOC-07) : notifications du moteur vers 04 (webhook « pokeshop-incidents ») authentifiées par un
+    # secret DÉDIÉ du moteur (POKESHOP_N8N_WEBHOOK_SECRET, en-tête X-Pokeshop-Notify), distinct de toute passerelle.
+    "notify_04": ("httpHeaderAuth", "pkshpNotif04Mote", "Notification moteur → 04 — secret du moteur (POKESHOP_N8N_WEBHOOK_SECRET)"),
     "owner_form": ("httpBasicAuth", "pkshpOwnerForm01", "Formulaires propriétaire — Basic Auth"),
     "smtp": ("smtp", "pkshpSmtpAgents1", "SMTP boîte des agents"),
     "slack": ("slackApi", "pkshpSlackAlert1", "Slack alertes propriétaire"),
@@ -147,6 +155,15 @@ GATEWAY_HOLDERS: dict[str, str] = {
     **{key: key.removeprefix("gateway_08_") for key in CREDENTIALS if key.startswith("gateway_08_")},
 }
 """Credential de passerelle -> SEUL rôle d'agent qui en détient le secret (vérifié par les tests : un secret par webhook)."""
+
+ENGINE_NOTIFY_CREDENTIAL = "notify_04"
+"""Credential du webhook des notifications du moteur (04) ; son secret n'est détenu que par le moteur."""
+
+ENGINE_NOTIFY_HEADER = "X-Pokeshop-Notify"
+"""Nom d'en-tête du credential :data:`ENGINE_NOTIFY_CREDENTIAL` (= ``pokeshop.incidents.NOTIFY_SECRET_HEADER``)."""
+
+INBOUND_SECRET_HOLDERS: dict[str, str] = {**GATEWAY_HOLDERS, ENGINE_NOTIFY_CREDENTIAL: "moteur"}
+"""Tout credential de webhook authentifié -> SEUL détenteur de son secret (agents des passerelles, ou le moteur)."""
 
 SPEND_RELAY_ROLES: tuple[str, ...] = tuple(sorted(GATEWAY_HOLDERS[k] for k in GATEWAY_HOLDERS if k.startswith("gateway_08_")))
 """Agents qui demandent une dépense par la passerelle 08 (un webhook chacun) = agents de ``authz.RELAYED_SPENDERS``."""
@@ -272,14 +289,24 @@ class Workflow:
         for a, b in zip(names, names[1:], strict=False):
             self.link(a, b)
 
+    def receives_secret_header(self) -> bool:
+        """Vrai si un déclencheur webhook du workflow est authentifié par un en-tête secret."""
+        return any(
+            n["type"] == "n8n-nodes-base.webhook" and n["parameters"].get("authentication") == "headerAuth"
+            for n in self.nodes
+        )
+
     def export(self) -> dict[str, Any]:
         """Format d'export n8n (importable par l'interface ou ``n8n import:workflow``)."""
+        # Revue R6 (R5C-DOC-05) : un webhook authentifié => en-tête secret dans la sortie du nœud webhook => aucune
+        # exécution réussie ni manuelle conservée (une exécution en attente d'un formulaire l'est jusqu'à sa fin).
+        carries_secret = self.receives_secret_header()
         settings: dict[str, Any] = {
             "executionOrder": "v1",
             "timezone": "Europe/Zurich",
-            "saveManualExecutions": True,
+            "saveManualExecutions": not carries_secret,
             "saveDataErrorExecution": "all",
-            "saveDataSuccessExecution": "all" if self.keep_success_data else "none",
+            "saveDataSuccessExecution": "all" if self.keep_success_data and not carries_secret else "none",
             "saveExecutionProgress": False,
             "callerPolicy": "workflowsFromSameOwner",
         }
@@ -581,12 +608,13 @@ def webhook(
 ) -> str:
     """Déclencheur webhook (passerelle d'un agent : en-tête secret par credential, **un secret par webhook**).
 
-    ``gateway`` : clé du credential de passerelle propre à ce webhook (:data:`GATEWAY_HOLDERS`), obligatoire
-    pour une passerelle authentifiée (revue R4, SEC-16 : jamais un secret commun à plusieurs rôles).
+    ``gateway`` : clé du credential propre à ce webhook (:data:`INBOUND_SECRET_HOLDERS` : passerelle d'un agent ou
+    notification du moteur), obligatoire pour un webhook authentifié (revue R4, SEC-16 : jamais un secret commun à
+    plusieurs rôles).
     """
     params: dict[str, Any] = {"httpMethod": method, "path": path, "responseMode": response_mode, "options": {}}
     params["authentication"] = auth
-    if auth == "headerAuth" and gateway not in GATEWAY_HOLDERS:
+    if auth == "headerAuth" and gateway not in INBOUND_SECRET_HOLDERS:
         raise ValueError(f"{name} : passerelle authentifiée sans credential propre (gateway={gateway!r})")
     return wf.add(
         name,
@@ -1093,7 +1121,13 @@ if (!sl.available) {
 }
 const notif = health.notifications || {};
 if (notif.real_time_alerts !== true) {
-  out.push(`   ALERTES TEMPS RÉEL INACTIVES (${notif.webhook_configured ? 'POKESHOP_NOTIFY_DRY_RUN=true' : 'webhook n8n non configuré'}) : un incident critique ne vous parvient que par ce digest.`);
+  const why = !notif.webhook_configured ? 'webhook n8n non configuré'
+    : notif.webhook_dry_run ? 'POKESHOP_NOTIFY_DRY_RUN=true'
+    : notif.webhook_secret_configured === false ? 'secret des notifications absent : POKESHOP_N8N_WEBHOOK_SECRET'
+    : 'état inconnu';
+  out.push(`   ALERTES TEMPS RÉEL INACTIVES (${why}) : un incident critique ne vous parvient que par ce digest.`);
+} else if (notif.last_delivery && notif.last_delivery.delivered === false && notif.last_delivery.dry_run === false) {
+  out.push(`   DERNIÈRE ALERTE NON LIVRÉE À 04 (${notif.last_delivery.detail || 'motif inconnu'}) : vérifier que 04 est actif et que son credential « Notification moteur → 04 » a la valeur de POKESHOP_N8N_WEBHOOK_SECRET (rotation faite des deux côtés), puis ouvrir un incident FICTIF.`);
 }
 const unreadable = (health.persistence || {}).unreadable;
 if (Array.isArray(unreadable) && unreadable.length) out.push(`   JOURNAUX D'ÉTAT ILLISIBLES (${unreadable.join(', ')}) : service gelé jusqu'à réparation.`);
@@ -1849,7 +1883,8 @@ def wf04(cmap: Mapping[str, str] | None = None) -> Workflow:
         (-1, -2.4),
         """
 ## 04 — Incident (BP §12, SOP_INCIDENTS.md)
-Le moteur met en **quarantaine** la référence ou **suspend** le workflow, puis notifie ce webhook (cause + action proposée).
+Le moteur met en **quarantaine** la référence ou **suspend** le workflow, puis notifie ce webhook (cause + action proposée),
+avec son **secret dédié** (en-tête `X-Pokeshop-Notify`, credential « Notification moteur → 04 ») : sans lui, 403.
 S1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : test enregistré → validation par formulaire
 → `POST /incidents/{id}/resume`. Un **S1** ne se reprend que par la propriétaire (son jeton, depuis son terminal).
 **Workflow d'erreur** de tous les autres workflows : toute exécution en échec ouvre un incident.
@@ -1864,9 +1899,10 @@ S1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : tes
         "Notification d’incident du moteur",
         (0, 0),
         "pokeshop-incidents",
-        auth="none",
-        notes="Appelé par le moteur (POKESHOP_N8N_WEBHOOK_URL=http://n8n:5678/webhook/pokeshop-incidents). "
-        "Le moteur n'envoie pas encore d'en-tête secret : réseau interne docker uniquement (écart signalé).",
+        gateway=ENGINE_NOTIFY_CREDENTIAL,
+        notes="Appelé par le moteur (POKESHOP_N8N_WEBHOOK_URL=http://n8n:5678/webhook/pokeshop-incidents) avec l'en-tête "
+        "X-Pokeshop-Notify = POKESHOP_N8N_WEBHOOK_SECRET (revue R6) : joignable depuis le réseau du compose et la boucle "
+        "locale de l'hôte (127.0.0.1:5678), toute requête sans ce secret est refusée (403).",
     )
     pa = params_node(wf, "Paramètres — incidents", (1, 0), WORKFLOW_KEYS["04"])
     valid = if_node(

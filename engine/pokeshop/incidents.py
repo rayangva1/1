@@ -424,12 +424,33 @@ class LogNotifier:
         return NotificationReceipt(channel=self.channel, delivered=True, dry_run=False)
 
 
+NOTIFY_SECRET_HEADER = "X-Pokeshop-Notify"
+"""En-tête secret des notifications du moteur vers le workflow 04 (``POKESHOP_N8N_WEBHOOK_SECRET``).
+
+Revue R6 (R5C-DOC-07) : le webhook ``pokeshop-incidents`` est publié sur la boucle locale de l'hôte
+(127.0.0.1:5678) et sur le réseau du compose ; sans ce secret, tout processus local pourrait y poster une
+fausse alerte. n8n le vérifie (credential « Notification moteur → 04 », même valeur) ; il est distinct de
+tous les secrets de passerelle des agents et de tous les jetons."""
+
+NOTIFY_SECRET_MIN_LENGTH = 32
+"""Longueur minimale du secret de notification (``openssl rand -hex 32`` en donne 64)."""
+
+
+def notify_secret_is_valid(secret: str) -> bool:
+    """Secret de notification utilisable comme valeur d'en-tête : assez long, ASCII imprimable, sans espace."""
+    return len(secret) >= NOTIFY_SECRET_MIN_LENGTH and all(33 <= ord(c) <= 126 for c in secret)
+
+
 class WebhookNotifier:
     """POST JSON vers un webhook n8n. ``dry_run=True`` par défaut : rien n'est envoyé.
 
     HTTPS exigé, sauf pour un hôte interne sans point (``http://n8n:5678`` dans docker compose)
     ou ``localhost``. Transport httpx injectable (tests). Un échec d'envoi est rendu dans
     l'accusé (jamais d'exception : une notification ratée ne doit pas casser le workflow).
+
+    Revue R6 (R5C-DOC-07) : chaque envoi réel porte l'en-tête :data:`NOTIFY_SECRET_HEADER` (secret dédié,
+    ``POKESHOP_N8N_WEBHOOK_SECRET``). Fermé par défaut : sans secret, **rien n'est envoyé** (accusé « non
+    livré », jamais un envoi anonyme que n8n refuserait de toute façon) ; ``/health`` et le digest 05 le signalent.
     """
 
     channel = "webhook-n8n"
@@ -439,6 +460,7 @@ class WebhookNotifier:
         url: str,
         *,
         dry_run: bool = True,
+        secret: str | None = None,
         transport: httpx.BaseTransport | None = None,
         timeout_seconds: int = 10,
     ) -> None:
@@ -449,19 +471,34 @@ class WebhookNotifier:
             raise IncidentError("URL de webhook invalide")
         if parsed.scheme == "http" and not internal:
             raise IncidentError("webhook externe en HTTPS uniquement")
+        if secret is not None and not notify_secret_is_valid(secret):
+            raise IncidentError(f"secret du webhook trop court ou mal formé ({NOTIFY_SECRET_MIN_LENGTH} caractères au moins)")
         self.url = url
         self.dry_run = dry_run
+        self._secret = secret
         self._client = httpx.Client(transport=transport, timeout=timeout_seconds)
         self.sent: list[dict[str, Any]] = []
 
+    @property
+    def authenticated(self) -> bool:
+        """Vrai si un secret de notification est configuré (sinon aucun envoi réel)."""
+        return self._secret is not None
+
     def send(self, notification: Notification) -> NotificationReceipt:
-        """Envoie la notification (ou la simule)."""
+        """Envoie la notification (ou la simule) ; jamais sans le secret de notification."""
         payload = notification.as_payload()
         if self.dry_run:
             self.sent.append(payload)
             return NotificationReceipt(channel=self.channel, delivered=False, dry_run=True, detail="simulation")
+        if self._secret is None:
+            return NotificationReceipt(
+                channel=self.channel,
+                delivered=False,
+                dry_run=False,
+                detail="secret du webhook absent (POKESHOP_N8N_WEBHOOK_SECRET) : rien n'est envoyé",
+            )
         try:
-            response = self._client.post(self.url, json=payload)
+            response = self._client.post(self.url, json=payload, headers={NOTIFY_SECRET_HEADER: self._secret})
         except httpx.HTTPError as exc:
             return NotificationReceipt(channel=self.channel, delivered=False, dry_run=False, detail=type(exc).__name__)
         if response.status_code >= 300:
