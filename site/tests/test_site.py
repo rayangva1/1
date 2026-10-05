@@ -348,3 +348,16 @@ def test_js_construction_du_payload() -> None:
 # ----------------------------------------------------------------------------- documents
 def test_documents_finissent_par_validation_humaine() -> None:
     assert vs.verifier_docs() == []
+
+
+# ----------------------------------------------------------------------------- contrat thème ↔ publication
+def test_snippets_et_publication_partagent_le_meme_contrat() -> None:
+    publish = pytest.importorskip("pokeshop.publish")
+    snippets = " ".join(p.read_text(encoding="utf-8") for p in vs.SNIPPETS.glob("*.liquid"))
+    cles_snippets = set(re.findall(r"metafields\.boutique\.(\w+)", snippets))
+    assert cles_snippets <= set(publish.PUBLIC_METAFIELDS)
+    structure = (REPO / "site" / "shopify" / "STRUCTURE_BOUTIQUE.md").read_text(encoding="utf-8")
+    assert set(re.findall(r"^\| `boutique\.(\w+)` \|", structure, re.MULTILINE)) == set(publish.PUBLIC_METAFIELDS)
+    assert {s.value for s in publish.StockStatus} == {"stock_local", "precommande", "rupture"}
+    for tag in ("statut:stock-local", "statut:precommande", "statut:rupture", "nouveaute", "cadeau", "ext:mega-evolution-nuit-noire"):
+        assert publish._TAG_RE.match(tag), tag

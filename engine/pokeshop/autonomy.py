@@ -47,7 +47,16 @@ from pydantic import Field
 from .audit import ActorKind, AuditLog, ConnectionFactory, _PgRunner
 from .errors import PokeshopError
 from .incidents import Incident, IncidentCode, IncidentManager, IncidentScope, Severity
-from .mandate import Mandate, MandateDecision, MandateOutcome, SpendLedger, SpendRequest, TreasurySnapshot, check
+from .mandate import (
+    Mandate,
+    MandateDecision,
+    MandateOutcome,
+    SpendLedger,
+    SpendReason,
+    SpendRequest,
+    TreasurySnapshot,
+    check,
+)
 from .models import FrozenModel
 from .stoploss import (
     OWNER_TOKEN_SHA256_ENV_VAR,
@@ -172,13 +181,15 @@ SPEND_ACTIONS: frozenset[WriteAction] = frozenset(
 )
 """Engagent de l'argent : ``mandate.check`` obligatoire (demande de dépense exigée)."""
 PRODUCT_SALE_ACTIONS: frozenset[WriteAction] = frozenset(
-    {WriteAction.PUBLISH_NEW_PRODUCT, WriteAction.UPDATE_APPROVED_PRODUCT, WriteAction.APPLY_PROMOTION,
-     WriteAction.LAUNCH_CAMPAIGN}
-)  # fmt: skip
-"""Rendent une référence vendable ou la promeuvent : interdites si le stop-loss produit la bloque."""
-PURCHASE_ACTIONS: frozenset[WriteAction] = frozenset(
-    {WriteAction.PROPOSE_PURCHASE, WriteAction.AUTO_REORDER}
+    {
+        WriteAction.PUBLISH_NEW_PRODUCT,
+        WriteAction.UPDATE_APPROVED_PRODUCT,
+        WriteAction.APPLY_PROMOTION,
+        WriteAction.LAUNCH_CAMPAIGN,
+    }
 )
+"""Rendent une référence vendable ou la promeuvent : interdites si le stop-loss produit la bloque."""
+PURCHASE_ACTIONS: frozenset[WriteAction] = frozenset({WriteAction.PROPOSE_PURCHASE, WriteAction.AUTO_REORDER})
 """Achats de stock : interdits si extension, produit ou trésorerie gelés."""
 
 ChangeRole = Literal["PROPRIETAIRE", "AGENT", "SYSTEME"]
@@ -314,9 +325,14 @@ class PostgresAutonomyStore:
     @staticmethod
     def _state(row: Sequence[Any]) -> AutonomyState:
         return AutonomyState(
-            scope=row[0], level=int(row[1]), previous_level=None if row[2] is None else int(row[2]),
-            changed_by=row[3], changed_by_role=row[4], reason=row[5], at=row[6],
-        )  # fmt: skip
+            scope=row[0],
+            level=int(row[1]),
+            previous_level=None if row[2] is None else int(row[2]),
+            changed_by=row[3],
+            changed_by_role=row[4],
+            reason=row[5],
+            at=row[6],
+        )
 
     def history(self, scope: str = "global") -> tuple[AutonomyState, ...]:
         """Historique (ordre des changements)."""
@@ -382,9 +398,13 @@ class AutonomyController:
         if current is not None:
             return current
         return AutonomyState(
-            scope=self.scope, level=self._default, changed_by="configuration", changed_by_role="SYSTEME",
-            reason="niveau initial (POKESHOP_AUTONOMY_LEVEL)", at=self._clock(),
-        )  # fmt: skip
+            scope=self.scope,
+            level=self._default,
+            changed_by="configuration",
+            changed_by_role="SYSTEME",
+            reason="niveau initial (POKESHOP_AUTONOMY_LEVEL)",
+            at=self._clock(),
+        )
 
     @property
     def level(self) -> AutonomyLevel:
@@ -407,9 +427,13 @@ class AutonomyController:
         current = int(level if level is not None else self.level)
         if dry_run:
             return AutonomyCheck(
-                action=act, allowed=True, required_level=required, current_level=current, dry_run=True,
+                action=act,
+                allowed=True,
+                required_level=required,
+                current_level=current,
+                dry_run=True,
                 reason="simulation : aucune écriture externe",
-            )  # fmt: skip
+            )
         allowed = current >= required
         reason = "niveau suffisant" if allowed else f"niveau {current} < niveau {int(required)} requis"
         return AutonomyCheck(
@@ -424,16 +448,26 @@ class AutonomyController:
             raise AutonomyError("auteur obligatoire")
         before = self.level
         state = AutonomyState(
-            scope=self.scope, level=level, previous_level=int(before), changed_by=actor, changed_by_role=role,
-            reason=reason.strip(), at=self._clock(),
-        )  # fmt: skip
+            scope=self.scope,
+            level=level,
+            previous_level=int(before),
+            changed_by=actor,
+            changed_by_role=role,
+            reason=reason.strip(),
+            at=self._clock(),
+        )
         stored = self._store.append(state)
         kind = {"PROPRIETAIRE": ActorKind.PROPRIETAIRE, "AGENT": ActorKind.AGENT, "SYSTEME": ActorKind.SYSTEME}[role]
         self._audit.append(
-            actor=actor, actor_kind=kind, action="autonomy.change", entity="autonomy", entity_id=self.scope,
-            dry_run=False, autonomy_level=level,
+            actor=actor,
+            actor_kind=kind,
+            action="autonomy.change",
+            entity="autonomy",
+            entity_id=self.scope,
+            dry_run=False,
+            autonomy_level=level,
             payload={"from": int(before), "to": level, "role": role, "reason": reason.strip()},
-        )  # fmt: skip
+        )
         return stored
 
     def lower(self, to_level: int, *, actor: str, role: ChangeRole = "AGENT", reason: str) -> AutonomyState:
@@ -457,7 +491,9 @@ class AutonomyController:
                 return None
             return self._write(1, actor=actor, role="SYSTEME", reason=reason)
 
-    def raise_level(self, to_level: int, *, owner_token: str, reason: str, actor: str = "propriétaire") -> AutonomyState:
+    def raise_level(
+        self, to_level: int, *, owner_token: str, reason: str, actor: str = "propriétaire"
+    ) -> AutonomyState:
         """Relève le niveau d'**un** cran (après recette) : jeton de la propriétaire exigé, refus journalisé."""
         if isinstance(to_level, bool) or not 1 <= int(to_level) <= 4:
             raise AutonomyError("niveau hors 1..4")
@@ -466,10 +502,15 @@ class AutonomyController:
             if not verify_owner_token(owner_token, self._owner_hash):
                 why = "aucune empreinte de jeton configurée" if self._owner_hash is None else "jeton invalide"
                 self._audit.append(
-                    actor=actor, actor_kind=ActorKind.AGENT, action="autonomy.raise_refused", entity="autonomy",
-                    entity_id=self.scope, dry_run=False, autonomy_level=current,
+                    actor=actor,
+                    actor_kind=ActorKind.AGENT,
+                    action="autonomy.raise_refused",
+                    entity="autonomy",
+                    entity_id=self.scope,
+                    dry_run=False,
+                    autonomy_level=current,
                     payload={"requested": int(to_level), "why": why, "reason": reason},
-                )  # fmt: skip
+                )
                 raise AutonomyRefusedError(f"hausse de niveau refusée : {why}")
             if int(to_level) <= current:
                 raise AutonomyError("utiliser lower() pour abaisser ou confirmer le niveau")
@@ -623,11 +664,13 @@ class GovernanceGate:
             self._cache = (key, state.as_of, at, status, triggers)
             return status, triggers
 
-    def _global_freeze(self, status: StopLossStatus, triggers: Sequence[Trigger], actor: str) -> str | None:
+    def _global_freeze(self, triggers: Sequence[Trigger], actor: str) -> str | None:
         self.autonomy.force_level_one(reason="stop-loss global : retour au niveau d'autonomie 1")
         if self._incidents is None:
             return None
-        reason = next((t.reason for t in triggers if t.action.value == "FREEZE_ALL"), "gel global verrouillé")
+        fallback = self._engine.latch.detail if self._engine is not None and self._engine.latch.detail else None
+        default = fallback or "gel global verrouillé"
+        reason = next((t.reason for t in triggers if t.action.value == "FREEZE_ALL"), default)
         incident = self._incidents.open(
             code=IncidentCode.INC_09,
             severity=Severity.CRITIQUE,
@@ -639,6 +682,19 @@ class GovernanceGate:
             actor=actor,
         )
         return incident.incident_id
+
+    def enforce(
+        self, *, actor: str = "systeme", now: datetime | None = None
+    ) -> tuple[StopLossStatus | None, str | None]:
+        """Applique sans attendre les effets d'un gel global (niveau 1, incident INC-09) ; renvoie (état, incident).
+
+        Le verrou du moteur suffit (gel manuel sans photo d'activité compris).
+        """
+        status, triggers = self.stoploss_status(now)
+        frozen = (status is not None and status.global_frozen) or (self._engine is not None and self._engine.frozen)
+        if not frozen:
+            return status, None
+        return status, self._global_freeze(triggers, actor)
 
     def authorize(
         self,
@@ -660,10 +716,15 @@ class GovernanceGate:
         level = int(self.autonomy.level)
         if dry_run:
             decision = GateDecision(
-                action=act, allowed=True, dry_run=True, required_level=required, current_level=level,
-                reasons=(GateReason.DRY_RUN.value,), messages=(GATE_REASON_LABELS_FR[GateReason.DRY_RUN],),
+                action=act,
+                allowed=True,
+                dry_run=True,
+                required_level=required,
+                current_level=level,
+                reasons=(GateReason.DRY_RUN.value,),
+                messages=(GATE_REASON_LABELS_FR[GateReason.DRY_RUN],),
                 decided_at=now,
-            )  # fmt: skip
+            )
             self._log(decision, actor, product_key, workflow)
             return decision
         reasons: list[GateReason] = []
@@ -682,20 +743,27 @@ class GovernanceGate:
         else:
             effective = min(level, status.autonomy_level)
             if status.global_frozen:
-                incident_id = self._global_freeze(status, triggers, actor)
+                incident_id = self._global_freeze(triggers, actor)
                 effective = 1
                 if not protective:
                     reasons.append(GateReason.STOPLOSS_GLOBAL_FREEZE)
             if not protective:
                 if act in PRODUCT_SALE_ACTIONS and product_key and product_key in status.blocked_products:
                     reasons.append(GateReason.STOPLOSS_PRODUCT)
-                if act in PURCHASE_ACTIONS or (act in SPEND_ACTIONS and spend_request is not None
-                                               and spend_request.category.value in ("STOCK", "ACCESSORIES")):
+                if act in PURCHASE_ACTIONS or (
+                    act in SPEND_ACTIONS
+                    and spend_request is not None
+                    and spend_request.category.value in ("STOCK", "ACCESSORIES")
+                ):
                     if status.purchases_and_ads_frozen:
                         reasons.append(GateReason.STOPLOSS_CASH)
                     if extension and extension in status.no_reorder_extensions:
                         reasons.append(GateReason.STOPLOSS_EXTENSION)
-                    if product_key and product_key in status.blocked_products and GateReason.STOPLOSS_PRODUCT not in reasons:
+                    if (
+                        product_key
+                        and product_key in status.blocked_products
+                        and GateReason.STOPLOSS_PRODUCT not in reasons
+                    ):
                         reasons.append(GateReason.STOPLOSS_PRODUCT)
                 if act is WriteAction.LAUNCH_CAMPAIGN:
                     if status.purchases_and_ads_frozen and GateReason.STOPLOSS_CASH not in reasons:
@@ -749,17 +817,35 @@ class GovernanceGate:
             incident_id=incident_id,
             decided_at=now,
         )
+        if (
+            mandate_decision is not None
+            and spend_request is not None
+            and not mandate_decision.replayed
+            and not mandate_decision.has(SpendReason.IDEMPOTENCY_CONFLICT)  # la clé appartient à une autre demande
+        ):
+            approved = mandate_decision.outcome is MandateOutcome.APPROVED_WITHIN_MANDATE
+            # Registre du mandat : une dépense approuvée n'y entre que si la porte l'autorise (sinon elle
+            # consommerait une enveloppe sans être payée) ; attente humaine et refus y sont toujours tracés.
+            if decision.allowed or not approved:
+                self._ledger.record(spend_request, mandate_decision, actor=actor)
         self._log(decision, actor, product_key, workflow)
         return decision
 
     def _log(self, decision: GateDecision, actor: str, product_key: str | None, workflow: str | None) -> None:
         self._audit.append(
-            actor=actor, actor_kind=ActorKind.AGENT if actor.startswith("agent") else ActorKind.SYSTEME,
-            action="gate.allow" if decision.allowed else "gate.refuse", entity="write_action",
-            entity_id=decision.action.value, dry_run=decision.dry_run, autonomy_level=decision.current_level,
+            actor=actor,
+            actor_kind=ActorKind.AGENT if actor.startswith("agent") else ActorKind.SYSTEME,
+            action="gate.allow" if decision.allowed else "gate.refuse",
+            entity="write_action",
+            entity_id=decision.action.value,
+            dry_run=decision.dry_run,
+            autonomy_level=decision.current_level,
             payload={
-                "product_key": product_key, "workflow": workflow, "reasons": list(decision.reasons),
-                "required_level": decision.required_level, "incident_id": decision.incident_id,
+                "product_key": product_key,
+                "workflow": workflow,
+                "reasons": list(decision.reasons),
+                "required_level": decision.required_level,
+                "incident_id": decision.incident_id,
                 "mandate_outcome": decision.mandate_decision.outcome.value if decision.mandate_decision else None,
             },
-        )  # fmt: skip
+        )

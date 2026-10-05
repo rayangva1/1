@@ -56,7 +56,7 @@ Variables Liquid utilisées (notifications « Confirmation de commande » et « 
 4. `salutation` = « Bonjour {prénom}, » si le prénom est renseigné, sinon « Bonjour, ».
 5. `lignes_produits_html` = concaténation des gabarits `_ligne-produit-stock-local.html` / `_ligne-produit-precommande.html` remplis par produit ; `lignes_produits_texte` = une ligne « titre · statut · CHF prix » par produit.
 6. `texte_option_annulation` (email 09), deux textes exacts possibles, choisis par calcul de dates (aucune IA) :
-   - report > `SEUIL_REPORT_PRECOMMANDE` : « Le report dépasse le délai prévu par nos conditions : vous pouvez annuler et être remboursé intégralement. Répondez simplement à cet email. »
+   - report > `SEUIL_REPORT_PRECOMMANDE` : « Le report dépasse le délai prévu par nos conditions : vous pouvez annuler et obtenir un remboursement intégral. Répondez simplement à cet email. »
    - sinon : « Vous pouvez aussi annuler sans frais selon nos conditions de précommande. »
 7. Chaque lien de désinscription est à jeton unique ; la désinscription est appliquée **à tous les outils** (emailing, Shopify, base) dans la minute, puis la page `desinscription.html` s'affiche ; l'email 14 est facultatif (§6).
 8. Journal : chaque envoi est journalisé (modèle, destinataire pseudonymisé, horodatage, segment), sans le contenu.

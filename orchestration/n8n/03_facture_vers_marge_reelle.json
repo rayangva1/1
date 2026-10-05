@@ -1,0 +1,646 @@
+{
+  "id": "pkshp03FactMarge",
+  "name": "Pokeshop 03 — Facture vers marge réelle",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 03 — Facture vers marge réelle (BP §12)\nL'agent 05 extrait la facture et le justificatif d'import (PDF/email) et l'envoie à la passerelle (en-tête secret).\n**Contrôles déterministes** (centimes, total des lignes, devise + taux sourcé) → **validation humaine** de l'extraction\n(formulaire protégé, 72 h) → ventilation des frais et **coût historique** (route moteur attendue) → **écarts > 2 %** signalés.\nJamais de modification d'une commande client déjà conclue. Paiements et remboursements : rapprochés dans 02.\n**Activation** : niveau 1 (contrôles et validation) ; enregistrement réel quand la route moteur existe.\n**Validation humaine requise** : chaque extraction (A_VALIDER_HUMAINEMENT), seuil d'écart de 2 %.",
+        "height": 340,
+        "width": 640,
+        "color": 4
+      },
+      "id": "b6dc7534-dc53-5ea8-b376-d85d59c8f1ca",
+      "name": "Note — à lire",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        -440
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-facture",
+        "responseMode": "onReceived",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "7ad25240-1046-5baf-ba38-86be2a5c639d",
+      "name": "Facture extraite par l’agent 05 (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "5809a979-8f1d-5685-b4d0-416ab5b816b5",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGateway0001",
+          "name": "Passerelle agents — X-Pokeshop-Gateway"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "58e0b4b3-3f4f-567b-9f17-61ccc336b8bf",
+              "name": "workflow",
+              "value": "03-facture-marge",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "0470bf9d-cb48-5cd9-bf77-e32489f54198",
+      "name": "Paramètres",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        0
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Montants décimaux en centimes entiers (aucun float pour un montant ; arrondi interdit).\nfunction cents(value) {\n  const text = String(value === undefined || value === null ? '' : value).trim();\n  if (!/^-?\\d+(\\.\\d{1,2})?$/.test(text)) throw new Error(`montant non décimal ou plus de 2 décimales : ${text}`);\n  const negative = text.startsWith('-');\n  const [intPart, frac = ''] = text.replace('-', '').split('.');\n  const total = Number(intPart) * 100 + Number((frac + '00').slice(0, 2));\n  return negative ? -total : total;\n}\nfunction chf(c) {\n  const sign = c < 0 ? '-' : '';\n  const a = Math.abs(c);\n  return `${sign}${Math.trunc(a / 100)}.${String(a % 100).padStart(2, '0')}`;\n}\n\n// Contrôles déterministes de la facture extraite par l'agent 05 (l'IA extrait, elle ne décide pas).\n// Entrée : { invoice_ref, supplier_id, invoice_date, currency, fx: {rate, source, date}, goods_total_chf,\n//            lines: [{ lot_id, product_key, qty, estimated_unit_cost_chf, invoice_unit_cost_chf }],\n//            fees_chf: { freight, customs, import_vat }, documents: [...] }\nconst body = $input.first().json.body || {};\nconst anomalies = [];\nfor (const field of ['invoice_ref', 'supplier_id', 'invoice_date']) if (!body[field]) anomalies.push(`champ manquant : ${field}`);\nif (body.currency !== 'CHF') {\n  const fx = body.fx || {};\n  if (!fx.rate || !fx.source || !fx.date) anomalies.push('devise étrangère : taux, source et date obligatoires (aucun taux choisi par une IA)');\n}\nconst lines = Array.isArray(body.lines) ? body.lines : [];\nif (!lines.length) anomalies.push('aucune ligne de facture');\nlet goods = 0;\nconst variances = [];\nlines.forEach((line, i) => {\n  if (!line.lot_id || !line.product_key) anomalies.push(`ligne ${i + 1} : lot ou référence manquant`);\n  if (!Number.isInteger(line.qty) || line.qty <= 0) anomalies.push(`ligne ${i + 1} : quantité invalide`);\n  let est;\n  let act;\n  try {\n    est = cents(line.estimated_unit_cost_chf);\n    act = cents(line.invoice_unit_cost_chf);\n  } catch (error) {\n    anomalies.push(`ligne ${i + 1} : ${error.message}`);\n    return;\n  }\n  if (act <= 0) anomalies.push(`ligne ${i + 1} : coût facturé nul ou négatif`);\n  goods += act * (Number.isInteger(line.qty) ? line.qty : 0);\n  // Écart > 2 % : comparaison entière exacte |réel − estimé| × 50 > estimé.\n  const flagged = est > 0 && Math.abs(act - est) * 50 > est;\n  variances.push({ lot_id: line.lot_id, product_key: line.product_key, estimated: chf(est), invoice: chf(act), flagged });\n});\nif (body.goods_total_chf !== undefined) {\n  try {\n    if (cents(body.goods_total_chf) !== goods) anomalies.push(`total des lignes ${chf(goods)} ≠ total marchandise ${body.goods_total_chf}`);\n  } catch (error) {\n    anomalies.push(`total marchandise : ${error.message}`);\n  }\n} else {\n  anomalies.push('total marchandise absent : contrôle du total impossible');\n}\nconst flaggedLines = variances.filter((v) => v.flagged);\nreturn [{ json: {\n  invoice_ref: body.invoice_ref || null,\n  supplier_id: body.supplier_id || null,\n  goods_total_chf: chf(goods),\n  lines: lines.length,\n  variances,\n  flagged_count: flaggedLines.length,\n  anomalies,\n  anomalies_count: anomalies.length,\n  resume: variances.map((v) => `${v.lot_id} ${v.product_key} : estimé ${v.estimated} / facturé ${v.invoice}${v.flagged ? ' (ÉCART > 2 %)' : ''}`).join('\\n'),\n} }];\n"
+      },
+      "id": "a4e9b7ff-f088-53f0-9515-5eaccfb93246",
+      "name": "Contrôles déterministes (centimes)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0ce522ce-bc22-5de6-a63c-f1cec7515415",
+              "leftValue": "={{ $json.anomalies_count }}",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "c1482cb7-b424-5123-935e-dd2d1a02e04f",
+      "name": "Extraction cohérente ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3e223902-0acc-518b-ab54-eabd4a84e9fb",
+              "name": "sujet",
+              "value": "=[FACTURE] Valider l'extraction {{ $json.invoice_ref }} ({{ $json.supplier_id }})",
+              "type": "string"
+            },
+            {
+              "id": "85ec63a6-36ae-54c4-9f79-c33928fc8cbb",
+              "name": "texte",
+              "value": "=Lignes extraites :\n{{ $json.resume }}\nTotal marchandise : {{ $json.goods_total_chf }} CHF.\nComparer au PDF puis répondre : {{ $execution.resumeFormUrl }}\nINTERNE — contient coûts et marges : ne jamais transférer ni publier.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "f7e36a1d-4b96-5943-a86e-4bf635f1b312",
+      "name": "Préparer la demande de validation",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1120,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "445fa0ad-04b1-55c3-9496-73f201fdece9",
+      "name": "Demander la validation de l’extraction (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1400,
+        -100
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "resume": "form",
+        "incomingAuthentication": "basicAuth",
+        "formTitle": "Validation d'une facture fournisseur",
+        "formDescription": "=Facture {{ $('Contrôles déterministes (centimes)').first().json.invoice_ref }} : les montants extraits correspondent-ils au justificatif ? (aucune commande client ne sera modifiée)",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Décision",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Conforme au justificatif"
+                  },
+                  {
+                    "option": "Non conforme"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Motif",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        },
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 72,
+        "resumeUnit": "hours",
+        "options": {}
+      },
+      "id": "af6b3054-203e-5939-8da6-22f90f381545",
+      "name": "Validation humaine de l’extraction (formulaire, 72 h)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        -100
+      ],
+      "webhookId": "ae7c0dbd-ff86-54f7-a2ab-d693ed565533",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "pkshpOwnerForm01",
+          "name": "Formulaires propriétaire — Basic Auth"
+        }
+      },
+      "notes": "Sans réponse sous 72 h : la branche « non » s'applique (statu quo sûr).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dcf0e87e-d9d1-5e6d-bbf3-a23117357da4",
+              "leftValue": "={{ $json['Décision'] }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "Conforme au justificatif"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "2ee6e812-358d-5f22-8e91-c256fc636ef3",
+      "name": "Extraction validée ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1960,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/costs/invoices",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ invoice: $('Facture extraite par l’agent 05 (passerelle)').first().json.body, validated_by: 'propriétaire', motif: $json['Motif'] }) }}"
+      },
+      "id": "e5b96ed2-9e76-5368-a47b-7796dccb629e",
+      "name": "Ventiler les frais et enregistrer le coût historique — route moteur attendue (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        -200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "disabled": true,
+      "notes": "Route à créer (agent integrations) : allocate_inbound_costs, HistoricalCostLedger.apply_invoice, sync_cost_ledger vers l'étoile polaire. Idempotente par facture.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "328fe7e1-9c5c-585a-a50b-da02cd894b46",
+              "leftValue": "={{ $('Contrôles déterministes (centimes)').first().json.flagged_count }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "4ac27149-2b11-5ad5-aeef-098665535550",
+      "name": "Écart > 2 % ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2520,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "69aed975-0676-573a-9096-8a8757ac481c",
+              "name": "sujet",
+              "value": "=[ÉCART DE COÛT] {{ $('Contrôles déterministes (centimes)').first().json.invoice_ref }}",
+              "type": "string"
+            },
+            {
+              "id": "f844823d-ace1-5d2c-9525-c2a6ba52f754",
+              "name": "texte",
+              "value": "=Écarts facture / estimation :\n{{ $('Contrôles déterministes (centimes)').first().json.resume }}\nÀ expliquer dans la revue hebdomadaire ; répercuter sur le coût de remplacement et la décision de prix.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "2caae857-7995-5707-a1a9-88659e0605ec",
+      "name": "Préparer le signalement d’écart",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2800,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "bcd57fa4-395f-5a18-80eb-b0365d4e6472",
+      "name": "Signaler les écarts (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        3080,
+        -300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "a392740c-41b6-552f-9f04-94552bec9e8c",
+      "name": "Journal : coût historique à jour",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2800,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Facture ' + $('Contrôles déterministes (centimes)').first().json.invoice_ref + ' jugée non conforme : ' + ($json['Motif'] || 'sans réponse sous 72 h'), kind: 'FACTURE_NON_CONFORME', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: '03-facture:' + $('Contrôles déterministes (centimes)').first().json.invoice_ref, proposed_action: 'Corriger l’extraction ou demander une facture rectificative ; aucun coût enregistré.', actor: 'n8n:03-facture-marge', simulation: $('Paramètres').first().json.simulation }) }}"
+      },
+      "id": "68a75adb-8efc-57b1-8c3e-8e99ce569cee",
+      "name": "Extraction refusée : incident",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        40
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Facture ' + ($json.invoice_ref || '?') + ' : ' + $json.anomalies.join(' ; '), kind: 'FACTURE_ANOMALIE', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: '03-facture:' + ($json.invoice_ref || 'inconnue'), proposed_action: 'Reprendre l’extraction (unités, total, devise et taux sourcé) puis renvoyer.', actor: 'n8n:03-facture-marge', simulation: $('Paramètres').first().json.simulation, details: { anomalies: $json.anomalies } }) }}"
+      },
+      "id": "6dc2b6db-38d7-58d0-895b-455f087f2656",
+      "name": "Ouvrir un incident facture",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Facture extraite par l’agent 05 (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Paramètres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres": {
+      "main": [
+        [
+          {
+            "node": "Contrôles déterministes (centimes)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contrôles déterministes (centimes)": {
+      "main": [
+        [
+          {
+            "node": "Extraction cohérente ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraction cohérente ?": {
+      "main": [
+        [
+          {
+            "node": "Préparer la demande de validation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ouvrir un incident facture",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer la demande de validation": {
+      "main": [
+        [
+          {
+            "node": "Demander la validation de l’extraction (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demander la validation de l’extraction (email, désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Validation humaine de l’extraction (formulaire, 72 h)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation humaine de l’extraction (formulaire, 72 h)": {
+      "main": [
+        [
+          {
+            "node": "Extraction validée ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraction validée ?": {
+      "main": [
+        [
+          {
+            "node": "Ventiler les frais et enregistrer le coût historique — route moteur attendue (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extraction refusée : incident",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ventiler les frais et enregistrer le coût historique — route moteur attendue (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Écart > 2 % ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Écart > 2 % ?": {
+      "main": [
+        [
+          {
+            "node": "Préparer le signalement d’écart",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Journal : coût historique à jour",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer le signalement d’écart": {
+      "main": [
+        [
+          {
+            "node": "Signaler les écarts (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Zurich",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "pkshp04Incidents"
+  },
+  "pinData": {},
+  "staticData": null,
+  "tags": [],
+  "versionId": "59e44bc3-3bef-5778-bb05-ed5a925a0401",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

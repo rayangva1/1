@@ -26,6 +26,7 @@ aucun stock. Chaque transition est journalisée (:mod:`pokeshop.audit`).
 
 from __future__ import annotations
 
+import builtins
 import json
 import logging
 import threading
@@ -244,8 +245,7 @@ INCIDENT_CATALOG: dict[IncidentCode, IncidentSpec] = {
         title="Agent hors mandat",
         severity=Severity.CRITIQUE,
         scope=IncidentScope.GLOBAL,
-        proposed_action="Geler l'agent concerné, retour au niveau d'autonomie 1, revue du mandat avec la "
-        "propriétaire.",
+        proposed_action="Geler l'agent concerné, retour au niveau d'autonomie 1, revue du mandat avec la propriétaire.",
     ),
     IncidentCode.INC_15: IncidentSpec(
         title="Erreurs de préparation ou pertes en série",
@@ -525,13 +525,28 @@ class PostgresIncidentSink:
         self._db.run(
             self.UPSERT_SQL,
             (
-                incident.status.value, esc, incident.resolved_at, incident.resolved_by, details, incident.incident_id,
-                incident.kind, incident.severity.value, incident.scope.value, incident.status.value, esc, workflow,
-                incident.cause, incident.proposed_action, details, incident.opened_at, incident.resolved_at,
-                incident.resolved_by, incident.fictif,
+                incident.status.value,
+                esc,
+                incident.resolved_at,
+                incident.resolved_by,
+                details,
+                incident.incident_id,
+                incident.kind,
+                incident.severity.value,
+                incident.scope.value,
+                incident.status.value,
+                esc,
+                workflow,
+                incident.cause,
+                incident.proposed_action,
+                details,
+                incident.opened_at,
+                incident.resolved_at,
+                incident.resolved_by,
+                incident.fictif,
             ),
             "none",
-        )  # fmt: skip
+        )
 
 
 # ----------------------------------------------------------------------- gestion
@@ -585,9 +600,7 @@ class IncidentManager:
         """Incidents dans l'ordre d'ouverture (filtrés)."""
         with self._lock:
             items = list(self._incidents.values())
-        return tuple(
-            i for i in items if (status is None or i.status is status) and (not open_only or i.is_open)
-        )
+        return tuple(i for i in items if (status is None or i.status is status) and (not open_only or i.is_open))
 
     def is_quarantined(self, ref: str | None) -> bool:
         """Vrai si la référence est en quarantaine."""
@@ -640,8 +653,12 @@ class IncidentManager:
         simulation: bool = False,
         fictif: bool = False,
         escalation: Escalation | str | None = None,
+        contain: bool = True,
     ) -> Incident:
-        """Ouvre un incident, applique le confinement, rétrograde si critique, notifie, journalise."""
+        """Ouvre un incident, applique le confinement, rétrograde si critique, notifie, journalise.
+
+        ``contain=False`` : signalement sans confinement (ex. lignes déjà mises en quarantaine par l'import).
+        """
         if not cause or not cause.strip():
             raise IncidentError("cause obligatoire")
         inc_code = IncidentCode(code) if code is not None else None
@@ -666,16 +683,20 @@ class IncidentManager:
             for existing in self._incidents.values():
                 if existing.is_open and existing.dedup_key == dedup:
                     self._audit.append(
-                        actor=actor, actor_kind=actor_kind, action="incident.duplicate", entity="incident",
-                        entity_id=existing.incident_id, dry_run=simulation,
+                        actor=actor,
+                        actor_kind=actor_kind,
+                        action="incident.duplicate",
+                        entity="incident",
+                        entity_id=existing.incident_id,
+                        dry_run=simulation,
                         payload={"cause": cause, "target": tgt},
-                    )  # fmt: skip
+                    )
                     return existing
             self._seq += 1
             incident_id = f"INC-{now:%Y%m%d}-{self._seq:05d}"
             containment: list[str] = []
             before = after = None
-            if not simulation:
+            if not simulation and contain:
                 containment = self._contain(sc, tgt, incident_id)
             incident = Incident(
                 incident_id=incident_id,
@@ -713,14 +734,23 @@ class IncidentManager:
                     )
                     self._incidents[incident_id] = incident
         self._audit.append(
-            actor=actor, actor_kind=actor_kind, action="incident.open", entity="incident", entity_id=incident_id,
-            dry_run=simulation, autonomy_level=after,
+            actor=actor,
+            actor_kind=actor_kind,
+            action="incident.open",
+            entity="incident",
+            entity_id=incident_id,
+            dry_run=simulation,
+            autonomy_level=after,
             payload={
-                "code": inc_code.value if inc_code else None, "severity": sev.value, "scope": sc.value,
-                "target": tgt, "cause": incident.cause, "proposed_action": action,
+                "code": inc_code.value if inc_code else None,
+                "severity": sev.value,
+                "scope": sc.value,
+                "target": tgt,
+                "cause": incident.cause,
+                "proposed_action": action,
                 "containment": list(incident.containment),
             },
-        )  # fmt: skip
+        )
         self._persist(incident)
         self._notify(incident)
         return incident
@@ -753,7 +783,7 @@ class IncidentManager:
             return "Autoriser la reprise après test (propriétaire uniquement)"
         return "aucune"
 
-    def _contain(self, scope: IncidentScope, target: str, incident_id: str) -> list[str]:
+    def _contain(self, scope: IncidentScope, target: str, incident_id: str) -> builtins.list[str]:
         if scope is IncidentScope.REFERENCE:
             self._quarantine.setdefault(target, set()).add(incident_id)
             return [f"quarantaine de {target}"]
@@ -801,10 +831,14 @@ class IncidentManager:
         receipt = self._notifier.send(self._render(incident))
         self.receipts.append(receipt)
         self._audit.append(
-            actor="systeme", actor_kind=ActorKind.SYSTEME, action="incident.notify", entity="incident",
-            entity_id=incident.incident_id, dry_run=receipt.dry_run or incident.simulation,
+            actor="systeme",
+            actor_kind=ActorKind.SYSTEME,
+            action="incident.notify",
+            entity="incident",
+            entity_id=incident.incident_id,
+            dry_run=receipt.dry_run or incident.simulation,
             payload={"channel": receipt.channel, "delivered": receipt.delivered, "detail": receipt.detail},
-        )  # fmt: skip
+        )
 
     def _persist(self, incident: Incident) -> None:
         if self._sink is not None:
@@ -815,9 +849,14 @@ class IncidentManager:
         with self._lock:
             self._incidents[incident.incident_id] = incident
         self._audit.append(
-            actor=actor, actor_kind=actor_kind, action=action, entity="incident", entity_id=incident.incident_id,
-            dry_run=incident.simulation, payload={"status": incident.status.value, **payload},
-        )  # fmt: skip
+            actor=actor,
+            actor_kind=actor_kind,
+            action=action,
+            entity="incident",
+            entity_id=incident.incident_id,
+            dry_run=incident.simulation,
+            payload={"status": incident.status.value, **payload},
+        )
         self._persist(incident)
 
     def start(self, incident_id: str, *, actor: str, actor_kind: ActorKind | str = ActorKind.AGENT) -> Incident:
@@ -848,9 +887,7 @@ class IncidentManager:
         self._update(updated, "incident.test", actor, actor_kind, test_ref=test_ref, passed=passed)
         return updated
 
-    def resume(
-        self, incident_id: str, *, actor: str, actor_kind: ActorKind | str = ActorKind.AGENT
-    ) -> Incident:
+    def resume(self, incident_id: str, *, actor: str, actor_kind: ActorKind | str = ActorKind.AGENT) -> Incident:
         """Reprise : exige un test réussi ; incident critique => propriétaire uniquement."""
         kind = ActorKind(actor_kind)
         incident = self.get(incident_id)
@@ -860,9 +897,14 @@ class IncidentManager:
             raise IncidentError("reprise refusée : aucun test réussi enregistré (correction → test → reprise)")
         if incident.severity is Severity.CRITIQUE and kind is not ActorKind.PROPRIETAIRE:
             self._audit.append(
-                actor=actor, actor_kind=kind, action="incident.resume_refused", entity="incident",
-                entity_id=incident_id, dry_run=incident.simulation, payload={"motif": "incident critique"},
-            )  # fmt: skip
+                actor=actor,
+                actor_kind=kind,
+                action="incident.resume_refused",
+                entity="incident",
+                entity_id=incident_id,
+                dry_run=incident.simulation,
+                payload={"motif": "incident critique"},
+            )
             raise IncidentError("incident critique : reprise autorisée par la propriétaire uniquement")
         lifted: list[str] = []
         with self._lock:

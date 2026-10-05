@@ -291,9 +291,19 @@ class InMemoryAuditLog:
             seq = len(self._rows) + 1
             prev = self._rows[-1][0].row_hash if self._rows else None
             row_hash = _digest(
-                prev, seq, at, actor, kind.value, action, entity, entity_id, dry_run, autonomy_level,
-                payload_json, idempotency_key,
-            )  # fmt: skip
+                prev,
+                seq,
+                at,
+                actor,
+                kind.value,
+                action,
+                entity,
+                entity_id,
+                dry_run,
+                autonomy_level,
+                payload_json,
+                idempotency_key,
+            )
             event = AuditEvent(
                 seq=seq,
                 at=at,
@@ -341,9 +351,19 @@ class InMemoryAuditLog:
             if event.prev_hash != prev:
                 problems.append(f"{event.seq} : prev_hash incohérent")
             recomputed = _digest(
-                event.prev_hash, event.seq, event.at, event.actor, event.actor_kind.value, event.action, event.entity,
-                event.entity_id, event.dry_run, event.autonomy_level, payload_json, event.idempotency_key,
-            )  # fmt: skip
+                event.prev_hash,
+                event.seq,
+                event.at,
+                event.actor,
+                event.actor_kind.value,
+                event.action,
+                event.entity,
+                event.entity_id,
+                event.dry_run,
+                event.autonomy_level,
+                payload_json,
+                event.idempotency_key,
+            )
             if recomputed != event.row_hash:
                 problems.append(f"{event.seq} : empreinte invalide (ligne modifiée)")
             prev = event.row_hash
@@ -540,7 +560,9 @@ class IdempotencyRecord(FrozenModel):
 class IdempotencyStore(Protocol):
     """Registre des clés d'idempotence (mémoire ou Postgres)."""
 
-    def claim(self, scope: str, key: str, request_sha256: str, *, now: datetime) -> tuple[ClaimStatus, IdempotencyRecord]:
+    def claim(
+        self, scope: str, key: str, request_sha256: str, *, now: datetime
+    ) -> tuple[ClaimStatus, IdempotencyRecord]:
         """Réserve la clé ; ``NEW`` = exécuter, sinon ne pas réécrire."""
         ...
 
@@ -580,7 +602,9 @@ class InMemoryIdempotencyStore:
         self._lock = threading.RLock()
         self._records: dict[tuple[str, str], IdempotencyRecord] = {}
 
-    def claim(self, scope: str, key: str, request_sha256: str, *, now: datetime) -> tuple[ClaimStatus, IdempotencyRecord]:
+    def claim(
+        self, scope: str, key: str, request_sha256: str, *, now: datetime
+    ) -> tuple[ClaimStatus, IdempotencyRecord]:
         """Réservation atomique de la clé."""
         _check_key(scope, key, request_sha256)
         with self._lock:
@@ -643,7 +667,9 @@ class PostgresIdempotencyStore:
         "UPDATE pokeshop.idempotency_keys SET status = %s, response = %s::jsonb, completed_at = %s "
         "WHERE scope = %s AND idempotency_key = %s AND status = 'EN_COURS'"
     )
-    RELEASE_SQL = "DELETE FROM pokeshop.idempotency_keys WHERE scope = %s AND idempotency_key = %s AND status = 'EN_COURS'"
+    RELEASE_SQL = (
+        "DELETE FROM pokeshop.idempotency_keys WHERE scope = %s AND idempotency_key = %s AND status = 'EN_COURS'"
+    )
 
     def __init__(self, connect: ConnectionFactory) -> None:
         self._db = _PgRunner(connect)
@@ -666,7 +692,9 @@ class PostgresIdempotencyStore:
         row = self._db.run(self.GET_SQL, (scope, key), "one")
         return None if row is None else self._record(row)
 
-    def claim(self, scope: str, key: str, request_sha256: str, *, now: datetime) -> tuple[ClaimStatus, IdempotencyRecord]:
+    def claim(
+        self, scope: str, key: str, request_sha256: str, *, now: datetime
+    ) -> tuple[ClaimStatus, IdempotencyRecord]:
         """Réservation atomique côté base (verrou de clé primaire)."""
         _check_key(scope, key, request_sha256)
         row = self._db.run(self.CLAIM_SQL, (scope, key, request_sha256), "one")
@@ -676,7 +704,9 @@ class PostgresIdempotencyStore:
             raise IdempotencyError(f"clé {scope}/{key} disparue après réservation")
         return status, record
 
-    def _finish(self, scope: str, key: str, status: str, response: Mapping[str, Any], now: datetime) -> IdempotencyRecord:
+    def _finish(
+        self, scope: str, key: str, status: str, response: Mapping[str, Any], now: datetime
+    ) -> IdempotencyRecord:
         _check_key(scope, key)
         body = _canonical(to_jsonable(dict(response)))
         self._db.run(self.FINISH_SQL, (status, body, now, scope, key), "none")

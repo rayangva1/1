@@ -39,14 +39,29 @@ from pydantic import Field
 
 from .audit import ActorKind, AuditLog
 from .autonomy import GateDecision, GovernanceGate, WriteAction
-from .catalog import CatalogIndex, CatalogProduct, ExtensionTable, MatchStatus, expected_language_for, match_offer_to_product
+from .catalog import (
+    CatalogIndex,
+    CatalogProduct,
+    ExtensionTable,
+    MatchStatus,
+    expected_language_for,
+    match_offer_to_product,
+)
 from .costs import PriceHistory, ReplacementCostBook
 from .errors import PokeshopError, PricingError
 from .importers import ImportBaseline, ImportResult, ImportStatus, MappingError, SupplierMapping, run_import
 from .incidents import IncidentCode, IncidentManager, IncidentScope, Severity, codes_for_reasons
 from .models import FrozenModel, PriceDecision, PriceEventKind, Reason, ReplacementCost, StockLevel, SupplierOffer
 from .pricing import evaluate_offer
-from .publish import CatalogListing, PlanOutcome, PriceValidation, PublicationPlan, build_publication, sensitive_violations
+from .publish import (
+    CatalogListing,
+    PlanOutcome,
+    PriceValidation,
+    PublicationPlan,
+    SensitiveFieldError,
+    build_publication,
+    sensitive_violations,
+)
 from .rules import RuleSet
 from .shopify_client import (
     InventoryChange,
@@ -205,7 +220,8 @@ class SyncReport(FrozenModel):
             f"# Synchronisation fournisseur → site — {self.supplier_id} — {self.started_at:%Y-%m-%d %H:%M} — {mode}",
             "",
             f"Règles {self.rules_version} · import {self.import_status or '—'} · lignes {self.rows_read} · "
-            f"offres {self.offers_accepted} · quarantaine {self.rows_quarantined}" + (" · **FICTIF**" if self.fictif else ""),
+            f"offres {self.offers_accepted} · quarantaine {self.rows_quarantined}"
+            + (" · **FICTIF**" if self.fictif else ""),
             f"Erreurs critiques : **{len(self.critical_errors)}**",
             "",
             "| Étape | Statut | Détail |",
@@ -214,7 +230,11 @@ class SyncReport(FrozenModel):
         for s in self.steps:
             lines.append(f"| {STEP_LABELS_FR[s.step]} | {s.status} | {s.detail.replace('|', '/')} |")
         if self.items:
-            lines += ["", "| Offre | Produit | Rapprochement | Décision | Fiche | Prix public | Écrit |", "|---|---|---|---|---|---:|---|"]
+            lines += [
+                "",
+                "| Offre | Produit | Rapprochement | Décision | Fiche | Prix public | Écrit |",
+                "|---|---|---|---|---|---:|---|",
+            ]
             for i in self.items:
                 price = f"{i.price_chf}" if i.price_chf is not None else "—"
                 written = "oui" if i.written else ("simulé" if self.dry_run and i.gate_allowed else "non")
@@ -304,9 +324,10 @@ def price_reference_24h(
         return fallback
     cutoff = now - timedelta(hours=24)
     events = [
-        e for e in history.events(product_key)
+        e
+        for e in history.events(product_key)
         if e.kind in (PriceEventKind.PUBLISHED, PriceEventKind.ROLLED_BACK) and e.price is not None
-    ]  # fmt: skip
+    ]
     before = [e for e in events if e.at <= cutoff]
     if before:
         return before[-1].price
@@ -315,9 +336,7 @@ def price_reference_24h(
     return fallback
 
 
-def stock_target(
-    local: StockLevel, remote: RemoteInventoryLevel, *, blocked: bool = False
-) -> StockTarget:
+def stock_target(local: StockLevel, remote: RemoteInventoryLevel, *, blocked: bool = False) -> StockTarget:
     """Cible ``available`` : physique − max(réservé service, engagé Shopify) − endommagé − sécurité (≥ 0).
 
     Le maximum des deux réservations évite toute promesse au-delà du stock réellement libre.
@@ -388,8 +407,11 @@ class SyncService:
         replacement_costs: ReplacementCostBook | None = None,
         clock: Callable[[], datetime] | None = None,
         actor: str = "agent-07-integrations",
+        test_store: bool = False,
     ) -> None:
         self.client = client
+        self.test_store = test_store
+        """Boutique de développement (recette) : données FICTIVES admises en écriture réelle."""
         self.gate = gate
         self.incidents = incidents
         self.audit = audit
@@ -458,27 +480,47 @@ class SyncService:
                 fictif=bool(result and result.fictif),
             )
             self.audit.append(
-                actor=self.actor, actor_kind=ActorKind.AGENT, action="sync.cycle", entity="sync_run", entity_id=rid,
-                dry_run=dry_run, autonomy_level=int(self.gate.autonomy.level),
+                actor=self.actor,
+                actor_kind=ActorKind.AGENT,
+                action="sync.cycle",
+                entity="sync_run",
+                entity_id=rid,
+                dry_run=dry_run,
+                autonomy_level=int(self.gate.autonomy.level),
                 payload={
-                    "supplier_id": report.supplier_id, "import_status": report.import_status,
-                    "items": len(items), "incidents": list(incidents), "critical_errors": list(critical),
+                    "supplier_id": report.supplier_id,
+                    "import_status": report.import_status,
+                    "items": len(items),
+                    "incidents": list(incidents),
+                    "critical_errors": list(critical),
                     "steps": {s.step.value: s.status for s in report.steps},
                 },
-            )  # fmt: skip
+            )
             with self._lock:
                 self.history.append(report)
             return report
 
-        # 1. récupérer
+        # 1. récupérer (import « réel » seulement vers la boutique de production : dictionnaire VALIDE exigé)
+        production = not dry_run and not self.test_store
         try:
-            result = run_import(mapping, source, now=at, baseline=baseline, dry_run=dry_run, source_ts=source_ts)
+            result = run_import(
+                mapping,
+                source,
+                now=at,
+                baseline=baseline,
+                dry_run=not production,
+                source_ts=source_ts,
+                extensions=ctx.table,
+            )
         except MappingError as exc:
             steps.append(StepResult(step=SyncStep.FETCH, status="ECHEC", detail=str(exc)))
             self._incident(
-                dry_run, incidents, code=IncidentCode.INC_03, supplier_id=supplier_id,
+                dry_run,
+                incidents,
+                code=IncidentCode.INC_03,
+                supplier_id=supplier_id,
                 cause=f"Dictionnaire de champs inutilisable : {exc}",
-            )  # fmt: skip
+            )
             return finish(None)
         supplier_id = result.supplier_id
         steps.append(
@@ -494,16 +536,22 @@ class SyncService:
         if result.status in (ImportStatus.FAILED, ImportStatus.QUARANTINED):
             steps.append(
                 StepResult(
-                    step=SyncStep.VALIDATE, status="ECHEC",
-                    detail=f"import {result.status.value} : offres précédentes conservées ; motifs {result.reason_counts()}",
-                )  # fmt: skip
+                    step=SyncStep.VALIDATE,
+                    status="ECHEC",
+                    detail=f"import {result.status.value} : offres précédentes conservées ; "
+                    f"motifs {result.reason_counts()}",
+                )
             )
             self._incident(
-                dry_run, incidents, code=IncidentCode.INC_03, supplier_id=supplier_id, fictif=result.fictif,
+                dry_run,
+                incidents,
+                code=IncidentCode.INC_03,
+                supplier_id=supplier_id,
+                fictif=result.fictif,
                 cause=f"Import {result.status.value} ({', '.join(result.reason_counts()) or 'source illisible'}) : "
                 "achats et nouvelles promesses bloqués pour cette source.",
                 details={"run_id": rid, "escalation": result.escalation},
-            )  # fmt: skip
+            )
             return finish(result)
         steps.append(
             StepResult(
@@ -516,10 +564,16 @@ class SyncService:
         )
         if result.escalation:
             self._incident(
-                dry_run, incidents, code=IncidentCode.INC_01, scope=IncidentScope.SOURCE, supplier_id=supplier_id,
-                fictif=result.fictif, cause=f"Import avec anomalies de prix, devise ou base TVA : {result.reason_counts()}",
+                dry_run,
+                incidents,
+                code=IncidentCode.INC_01,
+                scope=IncidentScope.SOURCE,
+                supplier_id=supplier_id,
+                fictif=result.fictif,
+                cause=f"Import avec anomalies de prix, devise ou base TVA : {result.reason_counts()}",
                 details={"run_id": rid},
-            )  # fmt: skip
+                contain=False,  # lignes fautives déjà en quarantaine ; les autres offres restent exploitables
+            )
 
         terms = set(ctx.sensitive_terms) | {supplier_id}
         for product in ctx.catalog_products:
@@ -541,18 +595,27 @@ class SyncService:
             inc_ids: list[str] = []
             if match.status is MatchStatus.AMBIGUOUS:
                 self._incident(
-                    dry_run, inc_ids, code=IncidentCode.INC_02, product_key=_offer_ref(offer), fictif=result.fictif,
+                    dry_run,
+                    inc_ids,
+                    code=IncidentCode.INC_02,
+                    product_key=_offer_ref(offer),
+                    fictif=result.fictif,
                     cause=f"Identité ambiguë ({', '.join(match.reasons)}) ; candidats {', '.join(match.candidates)}",
                     details={"run_id": rid},
-                )  # fmt: skip
+                )
                 incidents.extend(i for i in inc_ids if i not in incidents)
             items.append(
                 SyncItem(
-                    offer_ref=_offer_ref(offer), match_status=match.status.value, plan_outcome=PlanOutcome.NOT_SENT.value,
+                    offer_ref=_offer_ref(offer),
+                    match_status=match.status.value,
+                    plan_outcome=PlanOutcome.NOT_SENT.value,
                     incident_ids=tuple(inc_ids),
-                    messages=("Nouvelle référence : brouillon interne, validation de la fiche requise."
-                              if match.status is MatchStatus.NEW_DRAFT else "Identité ambiguë : brouillon, jamais publiée.",),
-                )  # fmt: skip
+                    messages=(
+                        "Nouvelle référence : brouillon interne, validation de la fiche requise."
+                        if match.status is MatchStatus.NEW_DRAFT
+                        else "Identité ambiguë : brouillon, jamais publiée.",
+                    ),
+                )
             )
         steps.append(
             StepResult(
@@ -570,30 +633,39 @@ class SyncService:
         price_counts: dict[str, int] = {}
         for pid, pairs in matched.items():
             listing = ctx.listings.get(pid)
-            reference = price_reference_24h(
-                self.price_history, pid, at, listing.current_price_chf if listing else None
-            )
+            reference = price_reference_24h(self.price_history, pid, at, listing.current_price_chf if listing else None)
             evaluated: list[tuple[SupplierOffer, PriceDecision]] = []
             for offer, _match in pairs:
                 ci = ctx.cost_inputs.get(offer.supplier_id, OfferCostInputs())
                 previous = self.replacement_costs.latest(pid, offer.supplier_id)
                 decision = evaluate_offer(
-                    offer, params, now=at, fx_rate_to_chf=ci.fx_rate_to_chf, fx_source=ci.fx_source,
-                    fx_date=ci.fx_date, inbound_freight_alloc=ci.inbound_freight_alloc,
-                    customs_and_fees=ci.customs_and_fees, import_vat=ci.import_vat, order_qty=ci.order_qty,
-                    market_ref=ctx.market_refs.get(pid), current_public=reference,
+                    offer,
+                    params,
+                    now=at,
+                    fx_rate_to_chf=ci.fx_rate_to_chf,
+                    fx_source=ci.fx_source,
+                    fx_date=ci.fx_date,
+                    inbound_freight_alloc=ci.inbound_freight_alloc,
+                    customs_and_fees=ci.customs_and_fees,
+                    import_vat=ci.import_vat,
+                    order_qty=ci.order_qty,
+                    market_ref=ctx.market_refs.get(pid),
+                    current_public=reference,
                     previous_cost=previous.unit_cost if previous else None,
                     expected_language=expected_language_for(offer.format),
                     max_age=ctx.rules.stock.max_age,
-                )  # fmt: skip
+                )
                 if decision.landed_cost is None:
                     cost_unknown += 1
                 elif decision.restock_eligible and decision.landed_cost > 0 and not decision.has(Reason.PRICE_ANOMALY):
                     self.replacement_costs.update(
                         ReplacementCost(
-                            product_key=pid, supplier_id=offer.supplier_id, unit_cost=decision.landed_cost,
-                            source_ts=offer.source_ts, offer_ref=offer.raw_ref,
-                        )  # fmt: skip
+                            product_key=pid,
+                            supplier_id=offer.supplier_id,
+                            unit_cost=decision.landed_cost,
+                            source_ts=offer.source_ts,
+                            offer_ref=offer.raw_ref,
+                        )
                     )
                 if decision.has(Reason.STALE_OFFER):
                     stale_sources.add(offer.supplier_id)
@@ -605,8 +677,8 @@ class SyncService:
             StepResult(
                 step=SyncStep.COST,
                 status="AVERTISSEMENT" if cost_unknown else "OK",
-                detail=f"{sum(len(p) for p in matched.values())} offre(s) évaluée(s), {cost_unknown} coût(s) incomplet(s) "
-                "(frais inconnus => brouillon)",
+                detail=f"{sum(len(p) for p in matched.values())} offre(s) évaluée(s), "
+                f"{cost_unknown} coût(s) incomplet(s) (frais inconnus => brouillon)",
                 count=sum(len(p) for p in matched.values()) - cost_unknown,
             )
         )
@@ -620,10 +692,15 @@ class SyncService:
         )
         for sid in sorted(stale_sources):
             self._incident(
-                dry_run, incidents, code=IncidentCode.INC_03, supplier_id=sid, fictif=result.fictif,
-                cause="Offre(s) de plus de 24 h : aucun nouveau prix, achat ni promesse ; le stock local reste vendable.",
+                dry_run,
+                incidents,
+                code=IncidentCode.INC_03,
+                supplier_id=sid,
+                fictif=result.fictif,
+                cause="Offre(s) de plus de 24 h : aucun nouveau prix, achat ni promesse ; "
+                "le stock local reste vendable.",
                 details={"run_id": rid},
-            )  # fmt: skip
+            )
 
         # 6-8. fiche, publication, vérification
         status, _triggers = self.gate.stoploss_status(at)
@@ -638,78 +715,126 @@ class SyncService:
             if listing is None:
                 items.append(
                     SyncItem(
-                        offer_ref=_offer_ref(offer), product_id=pid, match_status=MatchStatus.MATCHED.value,
-                        decision_status=decision.status.value, decision_reasons=decision.reasons,
-                        plan_outcome=PlanOutcome.NOT_SENT.value, messages=("Produit sans fiche validée : rien à publier.",),
-                    )  # fmt: skip
+                        offer_ref=_offer_ref(offer),
+                        product_id=pid,
+                        match_status=MatchStatus.MATCHED.value,
+                        decision_status=decision.status.value,
+                        decision_reasons=decision.reasons,
+                        plan_outcome=PlanOutcome.NOT_SENT.value,
+                        messages=("Produit sans fiche validée : rien à publier.",),
+                    )
                 )
                 continue
             for code in codes_for_reasons(decision.reasons):
                 if code is IncidentCode.INC_03:
                     continue  # signalé une fois par source
                 self._incident(
-                    dry_run, item_incidents, code=code, product_key=pid, fictif=result.fictif or listing.fictif,
+                    dry_run,
+                    item_incidents,
+                    code=code,
+                    product_key=pid,
+                    fictif=result.fictif or listing.fictif,
                     cause=f"Décision {decision.status.value} pour {_offer_ref(offer)} : {', '.join(decision.reasons)}",
-                    details={"run_id": rid, "rules_version": decision.rules_version, "inputs_hash": decision.inputs_hash},
-                )  # fmt: skip
+                    details={
+                        "run_id": rid,
+                        "rules_version": decision.rules_version,
+                        "inputs_hash": decision.inputs_hash,
+                    },
+                )
             usable = None if decision.has(Reason.STALE_OFFER) else decision
             reference = price_reference_24h(self.price_history, pid, at, listing.current_price_chf)
             plan = build_publication(
-                listing, usable, max_daily_change=params.max_daily_price_change, reference_price_24h=reference,
-                price_validation=ctx.price_validations.get(pid), stoploss_blocked=pid in blocked_products,
-                quarantined=self.incidents.is_quarantined(pid), sensitive_terms=sorted(terms), table=ctx.table,
-                real_shop=not dry_run,
-            )  # fmt: skip
+                listing,
+                usable,
+                max_daily_change=params.max_daily_price_change,
+                reference_price_24h=reference,
+                price_validation=ctx.price_validations.get(pid),
+                stoploss_blocked=pid in blocked_products,
+                quarantined=self.incidents.is_quarantined(pid),
+                sensitive_terms=sorted(terms),
+                table=ctx.table,
+                real_shop=production,
+            )
             listing_counts[plan.outcome.value] = listing_counts.get(plan.outcome.value, 0) + 1
             if plan.violations:
                 critical.append(f"{pid} : champ interne détecté dans la charge publique ({'; '.join(plan.violations)})")
                 self._incident(
-                    dry_run, item_incidents, code=IncidentCode.INC_07, product_key=pid,
+                    dry_run,
+                    item_incidents,
+                    code=IncidentCode.INC_07,
+                    product_key=pid,
                     cause="Champ interne ou donnée personnelle dans la charge publique (envoi bloqué).",
                     details={"run_id": rid, "violations": list(plan.violations)},
-                )  # fmt: skip
+                )
             gate: GateDecision | None = None
             written_flag = replayed = False
             verified: bool | None = None
             messages = list(plan.messages)
             if plan.send and plan.action is not None and not api_refused:
                 gate = self.gate.authorize(
-                    WriteAction(plan.action), dry_run=dry_run, actor=self.actor, product_key=pid,
+                    WriteAction(plan.action),
+                    dry_run=dry_run,
+                    actor=self.actor,
+                    product_key=pid,
                     workflow=WORKFLOW_SUPPLIER_TO_SHOP,
-                )  # fmt: skip
+                )
                 if gate.allowed:
                     try:
                         resp = self.client.product_set(
-                            plan.product_input or {}, identifier=plan.identifier,
+                            plan.product_input or {},
+                            identifier=plan.identifier,
                             idempotency_key=derive_idempotency_key("productSet", plan.identifier, plan.product_input),
-                            dry_run=dry_run, autonomy_level=gate.current_level,
-                        )  # fmt: skip
+                            dry_run=dry_run,
+                            autonomy_level=gate.current_level,
+                        )
+                    except SensitiveFieldError as exc:
+                        refused += 1
+                        critical.append(f"{pid} : charge publique refusée par le client ({exc})")
+                        self._incident(
+                            dry_run,
+                            item_incidents,
+                            code=IncidentCode.INC_07,
+                            product_key=pid,
+                            cause="Champ interne détecté au dernier contrôle avant envoi (rien n'a été envoyé).",
+                            details={"run_id": rid, "violations": list(exc.violations)},
+                        )
                     except ShopifyAccessDeniedError as exc:
                         api_refused = True
                         refused += 1
                         messages.append(str(exc))
                         self._incident(
-                            dry_run, item_incidents, code=IncidentCode.INC_08, workflow=WORKFLOW_SUPPLIER_TO_SHOP,
-                            cause=f"API boutique refusée : {exc}", details={"run_id": rid},
-                        )  # fmt: skip
+                            dry_run,
+                            item_incidents,
+                            code=IncidentCode.INC_08,
+                            workflow=WORKFLOW_SUPPLIER_TO_SHOP,
+                            cause=f"API boutique refusée : {exc}",
+                            details={"run_id": rid},
+                        )
                     except ShopifyError as exc:
                         refused += 1
                         messages.append(f"{type(exc).__name__} : {exc}")
                         self._incident(
-                            dry_run, item_incidents, code=IncidentCode.INC_08, workflow=WORKFLOW_SUPPLIER_TO_SHOP,
-                            cause=f"Écriture productSet en échec ({type(exc).__name__}) : {exc}", details={"run_id": rid},
-                        )  # fmt: skip
+                            dry_run,
+                            item_incidents,
+                            code=IncidentCode.INC_08,
+                            workflow=WORKFLOW_SUPPLIER_TO_SHOP,
+                            cause=f"Écriture productSet en échec ({type(exc).__name__}) : {exc}",
+                            details={"run_id": rid},
+                        )
                     else:
                         replayed = resp.replayed
                         if not resp.ok:
                             refused += 1
                             messages.extend(f"userError {e.code or ''} : {e.message}" for e in resp.user_errors)
                             self._incident(
-                                dry_run, item_incidents, code=IncidentCode.INC_08, workflow=WORKFLOW_SUPPLIER_TO_SHOP,
+                                dry_run,
+                                item_incidents,
+                                code=IncidentCode.INC_08,
+                                workflow=WORKFLOW_SUPPLIER_TO_SHOP,
                                 cause=f"productSet refusé pour {pid} : "
                                 + "; ".join(e.message for e in resp.user_errors),
                                 details={"run_id": rid},
-                            )  # fmt: skip
+                            )
                         else:
                             written_flag = not resp.dry_run
                             written += 1 if written_flag else 0
@@ -725,13 +850,22 @@ class SyncService:
             incidents.extend(i for i in item_incidents if i not in incidents)
             items.append(
                 SyncItem(
-                    offer_ref=_offer_ref(offer), product_id=pid, match_status=MatchStatus.MATCHED.value,
-                    decision_status=decision.status.value, decision_reasons=decision.reasons,
-                    plan_outcome=plan.outcome.value, action=plan.action, price_chf=plan.price_chf,
-                    gate_allowed=gate.allowed if gate else None, gate_reasons=gate.reasons if gate else (),
-                    written=written_flag, replayed=replayed, verified=verified, incident_ids=tuple(item_incidents),
+                    offer_ref=_offer_ref(offer),
+                    product_id=pid,
+                    match_status=MatchStatus.MATCHED.value,
+                    decision_status=decision.status.value,
+                    decision_reasons=decision.reasons,
+                    plan_outcome=plan.outcome.value,
+                    action=plan.action,
+                    price_chf=plan.price_chf,
+                    gate_allowed=gate.allowed if gate else None,
+                    gate_reasons=gate.reasons if gate else (),
+                    written=written_flag,
+                    replayed=replayed,
+                    verified=verified,
+                    incident_ids=tuple(item_incidents),
                     messages=tuple(dict.fromkeys(messages)),
-                )  # fmt: skip
+                )
             )
         steps.append(
             StepResult(
@@ -745,7 +879,9 @@ class SyncService:
             StepResult(
                 step=SyncStep.PUBLISH,
                 status="ECHEC" if api_refused else ("AVERTISSEMENT" if refused else "OK"),
-                detail=("simulation : charges journalisées, rien envoyé" if dry_run else f"{written} écriture(s) réelle(s)")
+                detail=(
+                    "simulation : charges journalisées, rien envoyé" if dry_run else f"{written} écriture(s) réelle(s)"
+                )
                 + (f", {refused} refus" if refused else "")
                 + (" ; API boutique refusée : workflow suspendu" if api_refused else ""),
                 count=written,
@@ -798,27 +934,44 @@ class SyncService:
         if problems:
             critical.append(f"{pid} : vérification après publication en échec ({'; '.join(problems)})")
             self._incident(
-                dry_run, incidents, code=IncidentCode.INC_01, severity=Severity.CRITIQUE, product_key=pid,
+                dry_run,
+                incidents,
+                code=IncidentCode.INC_01,
+                severity=Severity.CRITIQUE,
+                product_key=pid,
                 cause="Prix ou statut public différent de la décision validée : " + "; ".join(problems),
                 details={"run_id": rid},
-            )  # fmt: skip
+            )
             return False
         if not dry_run and plan.price_changed and plan.price_chf is not None:
             try:
                 self.price_history.publish(
-                    pid, plan.price_chf, at, self.actor, validated=plan.price_source == "HUMAN_VALIDATED",
+                    pid,
+                    plan.price_chf,
+                    at,
+                    self.actor,
+                    validated=plan.price_source == "HUMAN_VALIDATED",
                     decision=decision if plan.price_source == "ENGINE" else None,
                     note=f"sync {rid}",
-                )  # fmt: skip
+                )
             except PricingError as exc:
                 critical.append(f"{pid} : prix publié hors décision du moteur ({exc})")
                 return False
         self.audit.append(
-            actor=self.actor, actor_kind=ActorKind.AGENT, action="sync.verify", entity="product", entity_id=pid,
+            actor=self.actor,
+            actor_kind=ActorKind.AGENT,
+            action="sync.verify",
+            entity="product",
+            entity_id=pid,
             dry_run=dry_run,
-            payload={"run_id": rid, "outcome": plan.outcome.value, "price_chf": plan.price_chf,
-                     "rules_version": plan.rules_version, "inputs_hash": plan.inputs_hash},
-        )  # fmt: skip
+            payload={
+                "run_id": rid,
+                "outcome": plan.outcome.value,
+                "price_chf": plan.price_chf,
+                "rules_version": plan.rules_version,
+                "inputs_hash": plan.inputs_hash,
+            },
+        )
         return True
 
     # -- stock local -------------------------------------------------------------------
@@ -850,7 +1003,7 @@ class SyncService:
             if listing.public_sku != level.sku:
                 raise SyncError(f"{listing.product_key} : SKU fiche {listing.public_sku} ≠ SKU stock {level.sku}")
         remote = dict(remote_levels or {})
-        missing = [l.shopify_inventory_item_id for l, _ in items if l.shopify_inventory_item_id not in remote]
+        missing = [li.shopify_inventory_item_id for li, _ in items if li.shopify_inventory_item_id not in remote]
         if missing and self.client.configured:
             remote.update(self.client.inventory_levels([m for m in missing if m], location_id))
         status, _ = self.gate.stoploss_status(at)
@@ -872,11 +1025,14 @@ class SyncService:
             if target.oversell and not rem.assumed:
                 critical.append(f"{pid} : survente (engagé Shopify {rem.committed} > stock physique vendable)")
                 self._incident(
-                    dry_run, line_incidents, code=IncidentCode.INC_06, product_key=pid,
+                    dry_run,
+                    line_incidents,
+                    code=IncidentCode.INC_06,
+                    product_key=pid,
                     cause=f"Survente : {rem.committed} unité(s) engagée(s) sur Shopify pour "
                     f"{level.on_hand - level.damaged} en stock physique vendable.",
                     details={"run_id": rid, "sku": level.sku},
-                )  # fmt: skip
+                )
             if target.target_available > level.sellable and not blocked:
                 critical.append(f"{pid} : cible {target.target_available} > vendable local {level.sellable}")
             action: Literal["SET", "NONE", "REFUSED", "CONFLICT", "ERROR"] = "NONE"
@@ -885,52 +1041,92 @@ class SyncService:
                 # Bloquer la vente (0 publié) est protecteur ; toute autre écriture de stock exige le niveau 2.
                 protective = blocked and target.target_available < rem.available
                 gate = self.gate.authorize(
-                    WriteAction.UNPUBLISH_PRODUCT if protective else WriteAction.SYNC_STOCK, dry_run=dry_run,
-                    actor=self.actor, product_key=pid, workflow=WORKFLOW_STOCK,
-                )  # fmt: skip
+                    WriteAction.UNPUBLISH_PRODUCT if protective else WriteAction.SYNC_STOCK,
+                    dry_run=dry_run,
+                    actor=self.actor,
+                    product_key=pid,
+                    workflow=WORKFLOW_STOCK,
+                )
                 if not gate.allowed:
                     action = "REFUSED"
                     reasons.extend(gate.reasons)
                 else:
                     action, written, replayed, rem = self._set_inventory(
-                        listing, level, rem, target, location_id, dry_run, gate.current_level, max_conflict_retries,
-                        reasons, blocked=blocked,
-                    )  # fmt: skip
+                        listing,
+                        level,
+                        rem,
+                        target,
+                        location_id,
+                        dry_run,
+                        gate.current_level,
+                        max_conflict_retries,
+                        reasons,
+                        blocked=blocked,
+                    )
                     if action == "CONFLICT":
                         self._incident(
-                            dry_run, line_incidents, code=IncidentCode.INC_08, workflow=WORKFLOW_STOCK,
+                            dry_run,
+                            line_incidents,
+                            code=IncidentCode.INC_08,
+                            workflow=WORKFLOW_STOCK,
                             cause=f"Conflit de concurrence répété sur {level.sku} : quantité Shopify modifiée pendant "
                             "la synchronisation.",
                             details={"run_id": rid},
-                        )  # fmt: skip
+                        )
                     elif action == "ERROR":
                         self._incident(
-                            dry_run, line_incidents, code=IncidentCode.INC_08, workflow=WORKFLOW_STOCK,
+                            dry_run,
+                            line_incidents,
+                            code=IncidentCode.INC_08,
+                            workflow=WORKFLOW_STOCK,
                             cause=f"Écriture de stock {level.sku} refusée : {'; '.join(reasons[-1:])}",
                             details={"run_id": rid},
-                        )  # fmt: skip
+                        )
             incidents.extend(i for i in line_incidents if i not in incidents)
             lines.append(
                 StockPushLine(
-                    sku=level.sku, product_key=pid, inventory_item_id=item_id, local_on_hand=level.on_hand,
-                    local_sellable=level.sellable, remote_available=rem.available, remote_committed=rem.committed,
-                    remote_assumed=rem.assumed, target_available=target.target_available, action=action,
-                    written=written, replayed=replayed, reasons=tuple(reasons), discrepancies=target.discrepancies,
+                    sku=level.sku,
+                    product_key=pid,
+                    inventory_item_id=item_id,
+                    local_on_hand=level.on_hand,
+                    local_sellable=level.sellable,
+                    remote_available=rem.available,
+                    remote_committed=rem.committed,
+                    remote_assumed=rem.assumed,
+                    target_available=target.target_available,
+                    action=action,
+                    written=written,
+                    replayed=replayed,
+                    reasons=tuple(reasons),
+                    discrepancies=target.discrepancies,
                     incident_ids=tuple(line_incidents),
-                )  # fmt: skip
+                )
             )
         report = StockSyncReport(
-            run_id=rid, at=at, dry_run=dry_run, location_id=location_id, lines=tuple(lines),
-            incident_ids=tuple(incidents), critical_errors=tuple(critical),
-        )  # fmt: skip
+            run_id=rid,
+            at=at,
+            dry_run=dry_run,
+            location_id=location_id,
+            lines=tuple(lines),
+            incident_ids=tuple(incidents),
+            critical_errors=tuple(critical),
+        )
         self.audit.append(
-            actor=self.actor, actor_kind=ActorKind.AGENT, action="sync.stock", entity="sync_run", entity_id=rid,
-            dry_run=dry_run, autonomy_level=int(self.gate.autonomy.level),
+            actor=self.actor,
+            actor_kind=ActorKind.AGENT,
+            action="sync.stock",
+            entity="sync_run",
+            entity_id=rid,
+            dry_run=dry_run,
+            autonomy_level=int(self.gate.autonomy.level),
             payload={
-                "lines": len(lines), "written": report.written_count, "conflicts": len(report.conflicts),
-                "discrepancies": sum(len(line.discrepancies) for line in lines), "critical_errors": list(critical),
+                "lines": len(lines),
+                "written": report.written_count,
+                "conflicts": len(report.conflicts),
+                "discrepancies": sum(len(line.discrepancies) for line in lines),
+                "critical_errors": list(critical),
             },
-        )  # fmt: skip
+        )
         with self._lock:
             self.history.append(report)
         return report
@@ -954,16 +1150,22 @@ class SyncService:
         current = rem
         for attempt in range(retries + 1):
             change = InventoryChange(
-                inventory_item_id=item_id, location_id=location_id, quantity=target.target_available,
+                inventory_item_id=item_id,
+                location_id=location_id,
+                quantity=target.target_available,
                 change_from_quantity=current.available,
-            )  # fmt: skip
+            )
             uri = f"pokeshop://stock-sync/{level.sku}/v{level.version}"
             key = derive_idempotency_key("inventorySetQuantities", change, uri)
             try:
                 resp = self.client.inventory_set_quantities(
-                    [change], reason="correction", reference_document_uri=uri, idempotency_key=key,
-                    dry_run=dry_run, autonomy_level=autonomy_level,
-                )  # fmt: skip
+                    [change],
+                    reason="correction",
+                    reference_document_uri=uri,
+                    idempotency_key=key,
+                    dry_run=dry_run,
+                    autonomy_level=autonomy_level,
+                )
             except ShopifyError as exc:
                 reasons.append(f"{type(exc).__name__} : {exc}")
                 return "ERROR", False, False, current

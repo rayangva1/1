@@ -223,7 +223,10 @@
         c.message.hidden = false;
         if (!premier) { premier = c.input; }
       });
-      afficherStatut("erreur", "Le formulaire contient une erreur\u00a0: corrigez le champ indiqué.");
+      var nombre = Object.keys(erreurs).length;
+      afficherStatut("erreur", nombre > 1
+        ? "Le formulaire contient " + nombre + " erreurs\u00a0: corrigez les champs indiqués."
+        : "Le formulaire contient une erreur\u00a0: corrigez le champ indiqué.");
       if (premier) { premier.focus(); }
     }
 

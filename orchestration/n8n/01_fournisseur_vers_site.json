@@ -1,0 +1,783 @@
+{
+  "id": "pkshp01FournSite",
+  "name": "Pokeshop 01 — Fournisseur vers site (simulation)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 01 — Fournisseur vers site (BP §5, §12)\nPrix et offres **toutes les 6 h** ; stock amont **toutes les 45 min** (BP : 30 à 60 min si flux fiable).\n1. Récupérer le flux autorisé et le déposer dans le dossier d'import (nœuds désactivés : aucun accès fournisseur n'existe).\n2. `POST /imports/{fournisseur}/run` — **simulation**, quarantaine des anomalies.\n3. `POST /sync/run` avec **dry_run: true** : 8 étapes du BP §12, incidents ouverts par le moteur.\nImport rejeté (> 24 h, incomplet, ×10…) => incident **INC-03** (achats et promesses bloqués ; le stock local se vend).\n**Activation** : niveau 1 (simulation). Passer `dry_run` à false = décision C14 (niveau 2) + `POKESHOP_DRY_RUN=false`.\n**Validation humaine requise** : accès autorisé à chaque flux (B-xx), liste des fournisseurs du nœud Paramètres.",
+        "height": 380,
+        "width": 640,
+        "color": 4
+      },
+      "id": "741684ff-3cde-56ee-a281-7b3641a2d56a",
+      "name": "Note — à lire",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        -440
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "5 */6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "0fdb5f7a-c1bc-5fce-9b2c-3cb34225e2a4",
+      "name": "Toutes les 6 h — prix et offres",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 45
+            }
+          ]
+        }
+      },
+      "id": "e9512a22-afdb-5994-8c05-ab66bb4a3361",
+      "name": "Toutes les 45 min — stock amont",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8f1657da-2a3d-507e-9c97-6dfd05303f56",
+              "name": "cycle",
+              "value": "prix_offres",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "e48f7541-b3d4-5214-8548-9a46209ed27f",
+      "name": "Cycle : prix et offres",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "286b9132-1fc5-5424-9eda-ec020e9246ed",
+              "name": "cycle",
+              "value": "stock_amont",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "be1c82af-e463-5652-8fc3-fbac6239a431",
+      "name": "Cycle : stock amont",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "85f39cd8-ccbd-5780-a20a-4b3222fa5d26",
+              "name": "workflow",
+              "value": "01-fournisseur-site",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            },
+            {
+              "id": "116e8807-e554-53da-a106-60c2d0cdb5bc",
+              "name": "fournisseurs",
+              "value": "={{ [{\"supplier\": \"fictif_grossiste_a\", \"source_path\": \"FICTIF_offres_grossiste_a.csv\"}, {\"supplier\": \"fictif_grossiste_b\", \"source_path\": \"FICTIF_tarif_grossiste_b.xlsx\"}, {\"supplier\": \"fictif_grossiste_c\", \"source_path\": \"FICTIF_flux_grossiste_c.xml\"}] }}",
+              "type": "array"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "10bf51ea-0dd2-5499-9c3f-23b82cb69343",
+      "name": "Paramètres",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        560,
+        100
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/incidents?open_only=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "8de9a822-4f81-5f73-b1e9-cc3a8a69ab97",
+      "name": "Garde : incidents ouverts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "03ddf477-ee59-577f-b20a-ccbbb585a13d",
+              "leftValue": "={{ Object.keys($json.suspended || {}).some(t => t === $('Paramètres').first().json.workflow) }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "11fbbc3a-d029-5157-82e3-06eb149c8906",
+      "name": "Workflow suspendu ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        100
+      ],
+      "notes": "Suspension = incident ouvert sur ce workflow (un gel global n'arrête pas une simulation : le moteur refuse toute écriture réelle).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "467fa4bd-04c9-5dbb-95dd-d1be753fd74c",
+      "name": "Workflow suspendu : cycle ignoré",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1400,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0cf58395-d021-5d5d-8250-223f8a5eb599",
+              "name": "fournisseurs",
+              "value": "={{ $('Paramètres').first().json.fournisseurs }}",
+              "type": "array"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "b0851e09-62f0-5090-88be-893f4561a378",
+      "name": "Liste des fournisseurs",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1400,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "fournisseurs",
+        "options": {}
+      },
+      "id": "d34ec95d-dd83-58d3-bb7f-9d296207a8f6",
+      "name": "Un élément par fournisseur",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://REMPLACER-flux-autorise.exemple.invalid/{{ $('Un élément par fournisseur').item.json.supplier }}/export",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "8fca91a9-68a1-5e2b-9063-b9e9b67f9f3d",
+      "name": "Récupérer le flux autorisé — À CONFIGURER (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1960,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpSupplier001",
+          "name": "Flux fournisseur — accès autorisé"
+        }
+      },
+      "disabled": true,
+      "notes": "Priorité 1 : API ou flux documenté ; 2 : fichier fourni ; 3 : import assisté. Jamais de scraping ni de contournement d'un contrôle d'accès (BP §6). Activer seulement avec un accès écrit du fournisseur.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/data/imports/{{ $('Un élément par fournisseur').item.json.source_path }}",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "60988a9b-a0ff-5cef-9fbd-e9d1ffccfdd6",
+      "name": "Déposer le fichier dans le dossier d'import — À CONFIGURER (désactivé)",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        2240,
+        100
+      ],
+      "disabled": true,
+      "notes": "Dossier partagé avec l'API (POKESHOP_IMPORTS_DIR) : volume à ajouter au docker-compose (intégrations).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/imports/{{ $('Un élément par fournisseur').item.json.supplier }}/run",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source_path: $('Un élément par fournisseur').item.json.source_path }) }}"
+      },
+      "id": "cc7e502f-9686-5d13-b576-0fdc2e081064",
+      "name": "Import (simulation)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2520,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2113e5d8-79a4-5dff-acca-eb6b46670fff",
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "ACCEPTED"
+            },
+            {
+              "id": "6a08988d-a20a-5972-a779-0508722acc12",
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "PARTIAL"
+            }
+          ],
+          "combinator": "or"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "cc93e69d-e1c0-5811-9be6-beec99b7d3d8",
+      "name": "Import exploitable ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2800,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/sync/run",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ supplier: $('Un élément par fournisseur').item.json.supplier, source_path: $('Un élément par fournisseur').item.json.source_path, dry_run: true }) }}"
+      },
+      "id": "d04ad485-c39b-5a8f-b7ed-3f21c4ccc592",
+      "name": "Cycle fournisseur vers site (dry-run)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "notes": "dry_run: true explicite. Le moteur ouvre lui-même les incidents d'anomalie (simulation).",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "742e50cb-c346-52bb-b33a-d1fd9d5a4508",
+              "leftValue": "={{ $json.clean }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "14d24000-6843-5d0d-aae3-8add2b40b01e",
+      "name": "Cycle propre ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3360,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "97ea65a8-b955-5ffb-9baf-17f194050b0d",
+      "name": "Journal : cycle propre",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3640,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3ef33892-c676-50bb-beec-ac044318ac0e",
+              "name": "sujet",
+              "value": "=[SYNC] Cycle non propre : {{ $('Un élément par fournisseur').item.json.supplier }}",
+              "type": "string"
+            },
+            {
+              "id": "c0134c80-2656-5f73-ada8-31afed36cab5",
+              "name": "texte",
+              "value": "={{ $json.report_markdown }}\n\nINTERNE — contient coûts et marges : ne jamais transférer ni publier.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "c1238835-022e-589f-adc9-6a24e2da9d5f",
+      "name": "Préparer l'alerte de cycle",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3640,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "8e75bc3b-5ac1-5a34-91cb-29e2d4ab2545",
+      "name": "Alerter la responsable (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        3920,
+        100
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Import ' + $json.status + ' pour ' + $('Un élément par fournisseur').item.json.supplier + ' (simulation)', code: 'INC-03', supplier_id: $('Un élément par fournisseur').item.json.supplier, workflow: $('Paramètres').first().json.workflow, actor: 'n8n:01-fournisseur-site', simulation: $('Paramètres').first().json.simulation, details: { status: $json.status, reason_counts: $json.reason_counts, escalation: $json.escalation } }) }}"
+      },
+      "id": "b30785ff-d9a2-5049-8c63-a9c3cc45652f",
+      "name": "Ouvrir un incident de flux (INC-03)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        240
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "notes": "Le stock local confirmé n'est jamais touché par une panne de flux (BP §12).",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Toutes les 6 h — prix et offres": {
+      "main": [
+        [
+          {
+            "node": "Cycle : prix et offres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cycle : prix et offres": {
+      "main": [
+        [
+          {
+            "node": "Paramètres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Toutes les 45 min — stock amont": {
+      "main": [
+        [
+          {
+            "node": "Cycle : stock amont",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cycle : stock amont": {
+      "main": [
+        [
+          {
+            "node": "Paramètres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Garde : incidents ouverts": {
+      "main": [
+        [
+          {
+            "node": "Workflow suspendu ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres": {
+      "main": [
+        [
+          {
+            "node": "Garde : incidents ouverts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow suspendu ?": {
+      "main": [
+        [
+          {
+            "node": "Workflow suspendu : cycle ignoré",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Liste des fournisseurs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Liste des fournisseurs": {
+      "main": [
+        [
+          {
+            "node": "Un élément par fournisseur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Un élément par fournisseur": {
+      "main": [
+        [
+          {
+            "node": "Récupérer le flux autorisé — À CONFIGURER (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Récupérer le flux autorisé — À CONFIGURER (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Déposer le fichier dans le dossier d'import — À CONFIGURER (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Déposer le fichier dans le dossier d'import — À CONFIGURER (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Import (simulation)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Import (simulation)": {
+      "main": [
+        [
+          {
+            "node": "Import exploitable ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Import exploitable ?": {
+      "main": [
+        [
+          {
+            "node": "Cycle fournisseur vers site (dry-run)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ouvrir un incident de flux (INC-03)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cycle fournisseur vers site (dry-run)": {
+      "main": [
+        [
+          {
+            "node": "Cycle propre ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cycle propre ?": {
+      "main": [
+        [
+          {
+            "node": "Journal : cycle propre",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Préparer l'alerte de cycle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer l'alerte de cycle": {
+      "main": [
+        [
+          {
+            "node": "Alerter la responsable (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Zurich",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "pkshp04Incidents"
+  },
+  "pinData": {},
+  "staticData": null,
+  "tags": [],
+  "versionId": "46226ed6-fcfd-5205-bcc5-e562bbc8b5a8",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

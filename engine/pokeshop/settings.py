@@ -65,6 +65,7 @@ ENV_VARIABLES: dict[str, tuple[str, ...]] = {
     "shopify_api_version": ("POKESHOP_SHOPIFY_API_VERSION",),
     "shopify_admin_token": ("POKESHOP_SHOPIFY_ADMIN_TOKEN", "SHOPIFY_ADMIN_TOKEN"),
     "shopify_location_id": ("POKESHOP_SHOPIFY_LOCATION_ID",),
+    "shopify_test_store": ("POKESHOP_SHOPIFY_TEST_STORE",),
     "shopify_timeout_seconds": ("POKESHOP_SHOPIFY_TIMEOUT_SECONDS",),
     "shopify_max_retries": ("POKESHOP_SHOPIFY_MAX_RETRIES",),
     "shopify_backoff_base_ms": ("POKESHOP_SHOPIFY_BACKOFF_BASE_MS",),
@@ -108,6 +109,8 @@ class Settings(FrozenModel):
     shopify_api_version: str = DEFAULT_SHOPIFY_API_VERSION
     shopify_admin_token: SecretStr | None = None
     shopify_location_id: str | None = None
+    shopify_test_store: bool = False
+    """Vrai seulement pour une boutique de développement Shopify (recette) : données FICTIVES admises."""
     shopify_timeout_seconds: int = Field(default=30, ge=1, le=120)
     shopify_max_retries: int = Field(default=5, ge=0, le=10)
     shopify_backoff_base_ms: int = Field(default=500, ge=1, le=60_000)
@@ -227,6 +230,7 @@ class Settings(FrozenModel):
             "vat_profile": self.vat_profile.value,
             "shopify_api_version": self.shopify_api_version,
             "shopify_configured": self.shopify_configured,
+            "shopify_test_store": self.shopify_test_store,
             "database_configured": self.database_url is not None,
             "notifications_webhook": self.n8n_webhook_url is not None,
             "notify_dry_run": self.notify_dry_run,

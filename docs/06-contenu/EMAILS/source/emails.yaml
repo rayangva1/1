@@ -251,7 +251,7 @@ emails:
       - [date_initiale, "Date annoncée lors de la commande", "6.11.2026"]
       - [nouvelle_date, "Nouvelle date annoncée", "20.11.2026"]
       - [date_information, "Date à laquelle l'information a été reçue", "2.11.2026"]
-      - [texte_option_annulation, "Texte calculé par le workflow selon SEUIL_REPORT_PRECOMMANDE (deux textes possibles, voir README)", "Le report dépasse le délai prévu par nos conditions : vous pouvez annuler et être remboursé intégralement. Répondez simplement à cet email."]
+      - [texte_option_annulation, "Texte calculé par le workflow selon SEUIL_REPORT_PRECOMMANDE (deux textes possibles, voir README)", "Le report dépasse le délai prévu par nos conditions : vous pouvez annuler et obtenir un remboursement intégral. Répondez simplement à cet email."]
     blocs:
       - titre: "La date de sortie a changé"
       - p: "[[salutation]]"

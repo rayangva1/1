@@ -90,7 +90,11 @@ def convertir(markdown: str, decalage_titres: int = 0) -> str:
             trs = "".join(
                 "<tr>" + "".join(f"<td>{en_ligne(c)}</td>" for c in rangee) + "</tr>" for rangee in corps
             )
-            sortie.append(f'<div class="lp-tableau"><table><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table></div>')
+            libelle = html.escape(entetes[0] if entetes else "Tableau", quote=True)
+            sortie.append(
+                f'<div class="lp-tableau" role="region" tabindex="0" aria-label="Tableau : {libelle}">'
+                f"<table><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table></div>"
+            )
             continue
         for motif, balise in ((_PUCE, "ul"), (_NUMERO, "ol")):
             if motif.match(ligne):

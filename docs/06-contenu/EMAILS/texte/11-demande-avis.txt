@@ -13,5 +13,5 @@ Un problème avec votre commande ? Ne passez pas par l'avis : répondez à cet e
 --
 {{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
 Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
-Vous recevez cet email parce que vous avez commandé chez nous et ne vous êtes pas opposé à ce type de message. Une seule demande par commande.
+Vous recevez cet email parce que vous avez commandé chez nous, sans opposition de votre part à ce type de message. Une seule demande par commande.
 Ne plus recevoir de demande d'avis : {{ $json.url_refus_avis }} · Confidentialité : {{URL_CONFIDENTIALITE}}

@@ -116,11 +116,25 @@ IDEMPOTENT_DIRECTIVE_MUTATIONS: frozenset[str] = frozenset({"inventorySetQuantit
 """Mutations pour lesquelles ``@idempotent(key:)`` est exigé par Shopify depuis 2026-04."""
 INVENTORY_REASONS: frozenset[str] = frozenset(
     {
-        "correction", "cycle_count_available", "damaged", "movement_created", "movement_updated",
-        "movement_received", "movement_canceled", "other", "promotion", "quality_control", "received",
-        "reservation_created", "reservation_deleted", "reservation_updated", "restock", "safety_stock", "shrinkage",
+        "correction",
+        "cycle_count_available",
+        "damaged",
+        "movement_created",
+        "movement_updated",
+        "movement_received",
+        "movement_canceled",
+        "other",
+        "promotion",
+        "quality_control",
+        "received",
+        "reservation_created",
+        "reservation_deleted",
+        "reservation_updated",
+        "restock",
+        "safety_stock",
+        "shrinkage",
     }
-)  # fmt: skip
+)
 """Motifs d'ajustement d'inventaire acceptés par Shopify (liste à revérifier sur shopify.dev)."""
 CAS_STALE_CODES: frozenset[str] = frozenset({"CHANGE_FROM_QUANTITY_STALE", "COMPARE_QUANTITY_STALE"})
 """Codes ``userErrors`` d'un conflit compare-and-swap (le premier est le code attendu après 2026-04 ; à revérifier)."""
@@ -159,7 +173,9 @@ query PokeshopInventoryLevels($ids: [ID!]!, $locationId: ID!) {
     ... on InventoryItem {
       id
       sku
-      inventoryLevel(locationId: $locationId) { quantities(names: ["available", "committed", "on_hand"]) { name quantity } }
+      inventoryLevel(locationId: $locationId) {
+        quantities(names: ["available", "committed", "on_hand"]) { name quantity }
+      }
     }
   }
 }
@@ -427,7 +443,9 @@ class ShopifyClient:
         if max_retries < 0 or backoff_base_ms < 1 or backoff_max_ms < backoff_base_ms:
             raise ShopifyConfigError("paramètres de retry invalides")
         self.shop_domain = shop_domain
-        self._token = access_token if isinstance(access_token, SecretStr) or access_token is None else SecretStr(access_token)
+        self._token = (
+            access_token if isinstance(access_token, SecretStr) or access_token is None else SecretStr(access_token)
+        )
         self.api_version = api_version
         self.dry_run = dry_run
         self.max_retries = max_retries
@@ -490,14 +508,14 @@ class ShopifyClient:
 
     # -- transport --------------------------------------------------------------------
     def _backoff_ms(self, attempt: int) -> int:
-        return min(self.backoff_max_ms, self.backoff_base_ms * (2**attempt))
+        return min(self.backoff_max_ms, self.backoff_base_ms * (1 << attempt))
 
     def _throttle_wait_ms(self, body: Mapping[str, Any], attempt: int) -> int:
         cost = _cost(body)
         if cost and cost.requested is not None and cost.currently_available is not None and cost.restore_rate:
             missing = cost.requested - cost.currently_available
             if missing > 0 and cost.restore_rate > 0:
-                wait = int(math.ceil(missing * 1000 / cost.restore_rate))
+                wait = math.ceil(missing * 1000 / cost.restore_rate)
                 return max(self.backoff_base_ms, min(self.backoff_max_ms, wait))
         return self._backoff_ms(attempt)
 
@@ -531,7 +549,7 @@ class ShopifyClient:
                 if retry_after:
                     seconds = _dec(retry_after)
                     if seconds is not None and seconds >= 0:
-                        wait = max(1, int(math.ceil(seconds * 1000)))
+                        wait = max(1, math.ceil(seconds * 1000))
                 self._wait(min(wait, self.backoff_max_ms))
                 continue
             if 500 <= resp.status_code < 600:
@@ -579,9 +597,13 @@ class ShopifyClient:
             raise ShopifyConfigError("lecture Shopify impossible : domaine ou jeton absent")
         body, request_id, attempts = self._post({"query": document, "variables": to_jsonable(dict(variables or {}))})
         return ShopifyResponse(
-            operation=field, dry_run=False, data=body.get("data"), cost=_cost(body), request_id=request_id,
+            operation=field,
+            dry_run=False,
+            data=body.get("data"),
+            cost=_cost(body),
+            request_id=request_id,
             attempts=attempts,
-        )  # fmt: skip
+        )
 
     def inventory_levels(self, inventory_item_ids: Sequence[str], location_id: str) -> dict[str, RemoteInventoryLevel]:
         """Quantités ``available`` / ``committed`` / ``on_hand`` par article à l'emplacement."""
@@ -619,14 +641,20 @@ class ShopifyClient:
             item = v.get("inventoryItem") or {}
             variants.append(
                 RemoteVariant(
-                    id=str(v.get("id")), sku=v.get("sku"), price=_dec(v.get("price")), barcode=v.get("barcode"),
+                    id=str(v.get("id")),
+                    sku=v.get("sku"),
+                    price=_dec(v.get("price")),
+                    barcode=v.get("barcode"),
                     inventory_item_id=item.get("id"),
-                )  # fmt: skip
+                )
             )
         return RemoteProduct(
-            id=str(node.get("id")), handle=str(node.get("handle")), status=str(node.get("status")),
-            title=str(node.get("title")), variants=tuple(variants),
-        )  # fmt: skip
+            id=str(node.get("id")),
+            handle=str(node.get("handle")),
+            status=str(node.get("status")),
+            title=str(node.get("title")),
+            variants=tuple(variants),
+        )
 
     # -- écriture ------------------------------------------------------------------------
     def mutate(
@@ -655,11 +683,16 @@ class ShopifyClient:
         scope = f"shopify:{field}"
         if simulate:
             self.audit.append(
-                actor=self.actor, actor_kind=ActorKind.AGENT, action="shopify.dry_run", entity=entity,
-                entity_id=entity_id, dry_run=True, autonomy_level=autonomy_level,
+                actor=self.actor,
+                actor_kind=ActorKind.AGENT,
+                action="shopify.dry_run",
+                entity=entity,
+                entity_id=entity_id,
+                dry_run=True,
+                autonomy_level=autonomy_level,
                 payload={"mutation": field, "variables": clean_vars, "request_sha256": request_sha},
                 idempotency_key=idempotency_key,
-            )  # fmt: skip
+            )
             return ShopifyResponse(
                 operation=field, dry_run=True, idempotency_key=idempotency_key, request_sha256=request_sha
             )
@@ -668,7 +701,9 @@ class ShopifyClient:
         now = self._clock()
         status, record = self.idempotency.claim(scope, idempotency_key, request_sha, now=now)
         if status is ClaimStatus.CONFLICT:
-            self._audit_write("shopify.idempotency_conflict", field, entity, entity_id, idempotency_key, request_sha, {})
+            self._audit_write(
+                "shopify.idempotency_conflict", field, entity, entity_id, idempotency_key, request_sha, {}
+            )
             raise ShopifyIdempotencyError(f"clé {idempotency_key} déjà utilisée pour une autre requête {field}")
         if status in (ClaimStatus.DUPLICATE_TERMINE, ClaimStatus.DUPLICATE_ECHEC):
             stored = record.response or {}
@@ -689,19 +724,34 @@ class ShopifyClient:
             if now - record.created_at < self.stale_claim_after:
                 raise ShopifyInFlightError(f"écriture {field} {idempotency_key} déjà en cours")
             self._audit_write(
-                "shopify.resume_stale_claim", field, entity, entity_id, idempotency_key, request_sha,
+                "shopify.resume_stale_claim",
+                field,
+                entity,
+                entity_id,
+                idempotency_key,
+                request_sha,
                 {"claimed_at": record.created_at},
-            )  # fmt: skip
+            )
         payload = {"query": document, "variables": clean_vars}
         try:
             body, request_id, attempts = self._post(payload)
-        except (ShopifyThrottledError, ShopifyTransportError, ShopifyAccessDeniedError, ShopifyHTTPError,
-                ShopifyGraphQLError) as exc:  # fmt: skip
+        except (
+            ShopifyThrottledError,
+            ShopifyTransportError,
+            ShopifyAccessDeniedError,
+            ShopifyHTTPError,
+            ShopifyGraphQLError,
+        ) as exc:
             self.idempotency.release(scope, idempotency_key)
             self._audit_write(
-                "shopify.write_failed", field, entity, entity_id, idempotency_key, request_sha,
+                "shopify.write_failed",
+                field,
+                entity,
+                entity_id,
+                idempotency_key,
+                request_sha,
                 {"error": type(exc).__name__, "message": str(exc)},
-            )  # fmt: skip
+            )
             raise
         data = body.get("data") if isinstance(body.get("data"), dict) else None
         errors = _user_errors((data or {}).get(field))
@@ -711,16 +761,31 @@ class ShopifyClient:
         else:
             self.idempotency.complete(scope, idempotency_key, stored_response, now=self._clock())
         self._audit_write(
-            "shopify.write" if not errors else "shopify.user_errors", field, entity, entity_id, idempotency_key,
+            "shopify.write" if not errors else "shopify.user_errors",
+            field,
+            entity,
+            entity_id,
+            idempotency_key,
             request_sha,
-            {"attempts": attempts, "request_id": request_id,
-             "user_errors": [e.model_dump(mode="json") for e in errors], "variables": clean_vars},
+            {
+                "attempts": attempts,
+                "request_id": request_id,
+                "user_errors": [e.model_dump(mode="json") for e in errors],
+                "variables": clean_vars,
+            },
             autonomy_level=autonomy_level,
-        )  # fmt: skip
+        )
         return ShopifyResponse(
-            operation=field, dry_run=False, data=data, user_errors=errors, cost=_cost(body), request_id=request_id,
-            attempts=attempts, idempotency_key=idempotency_key, request_sha256=request_sha,
-        )  # fmt: skip
+            operation=field,
+            dry_run=False,
+            data=data,
+            user_errors=errors,
+            cost=_cost(body),
+            request_id=request_id,
+            attempts=attempts,
+            idempotency_key=idempotency_key,
+            request_sha256=request_sha,
+        )
 
     def _audit_write(
         self,
@@ -735,10 +800,16 @@ class ShopifyClient:
         autonomy_level: int | None = None,
     ) -> None:
         self.audit.append(
-            actor=self.actor, actor_kind=ActorKind.AGENT, action=action, entity=entity, entity_id=entity_id,
-            dry_run=False, autonomy_level=autonomy_level,
-            payload={"mutation": field, "request_sha256": request_sha, **payload}, idempotency_key=key,
-        )  # fmt: skip
+            actor=self.actor,
+            actor_kind=ActorKind.AGENT,
+            action=action,
+            entity=entity,
+            entity_id=entity_id,
+            dry_run=False,
+            autonomy_level=autonomy_level,
+            payload={"mutation": field, "request_sha256": request_sha, **payload},
+            idempotency_key=key,
+        )
 
     def product_set(
         self,
@@ -763,9 +834,12 @@ class ShopifyClient:
         return self.mutate(
             PRODUCT_SET_MUTATION,
             {"input": dict(product_input), "identifier": ident, "synchronous": synchronous},
-            idempotency_key=idempotency_key, dry_run=dry_run, entity="product", entity_id=handle or None,
+            idempotency_key=idempotency_key,
+            dry_run=dry_run,
+            entity="product",
+            entity_id=handle or None,
             autonomy_level=autonomy_level,
-        )  # fmt: skip
+        )
 
     def inventory_set_quantities(
         self,
@@ -808,10 +882,14 @@ class ShopifyClient:
             "idempotencyKey": idempotency_key,
         }
         return self.mutate(
-            INVENTORY_SET_QUANTITIES_MUTATION, variables, idempotency_key=idempotency_key, dry_run=dry_run,
-            entity="inventory", entity_id=changes[0].inventory_item_id if len(changes) == 1 else None,
+            INVENTORY_SET_QUANTITIES_MUTATION,
+            variables,
+            idempotency_key=idempotency_key,
+            dry_run=dry_run,
+            entity="inventory",
+            entity_id=changes[0].inventory_item_id if len(changes) == 1 else None,
             autonomy_level=autonomy_level,
-        )  # fmt: skip
+        )
 
     def metafields_set(
         self,
@@ -824,6 +902,10 @@ class ShopifyClient:
         """``metafieldsSet`` limité aux métachamps publics (mise à jour hors ``productSet``)."""
         assert_metafields_public(metafields, sensitive_terms=self.sensitive_terms, require_owner=True)
         return self.mutate(
-            METAFIELDS_SET_MUTATION, {"metafields": [dict(m) for m in metafields]},
-            idempotency_key=idempotency_key, dry_run=dry_run, entity="metafields", autonomy_level=autonomy_level,
-        )  # fmt: skip
+            METAFIELDS_SET_MUTATION,
+            {"metafields": [dict(m) for m in metafields]},
+            idempotency_key=idempotency_key,
+            dry_run=dry_run,
+            entity="metafields",
+            autonomy_level=autonomy_level,
+        )

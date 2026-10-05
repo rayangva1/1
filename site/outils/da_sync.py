@@ -61,12 +61,17 @@ def google_fonts(direction: str) -> str:
     return str(tokens["directions"][direction]["googleFonts"])
 
 
-def manifeste_attendu(direction: str) -> dict[str, object]:
-    """Manifeste que la copie doit reproduire (déterministe, sans horodatage)."""
-    fichiers = {
+def fichiers_attendus(direction: str) -> dict[str, dict[str, str]]:
+    """Chemin publié -> {source, sha256} pour une direction."""
+    return {
         publie: {"source": src.relative_to(REPO).as_posix(), "sha256": sha256(src)}
         for publie, src in sorted(plan_copie(direction).items())
     }
+
+
+def manifeste_attendu(direction: str) -> dict[str, object]:
+    """Manifeste que la copie doit reproduire (déterministe, sans horodatage)."""
+    fichiers = fichiers_attendus(direction)
     return {
         "avertissement": "Copies générées par site/outils/da_sync.py depuis docs/05-da : ne pas modifier ici.",
         "direction": direction,
@@ -120,7 +125,7 @@ def verifier(cible: Path = ASSETS_DA, racine: Path = LANDING) -> list[str]:
     attendu = manifeste_attendu(direction)
     if manifeste != attendu:
         erreurs.append("manifeste désynchronisé de docs/05-da (relancer da_sync.py)")
-    for publie, info in attendu["fichiers"].items():  # type: ignore[union-attr]
+    for publie, info in fichiers_attendus(direction).items():
         copie = cible / publie
         if not copie.exists():
             erreurs.append(f"assets/da/{publie} absent")
@@ -155,8 +160,8 @@ def main(argv: list[str] | None = None) -> int:
             direction = json.loads(MANIFESTE.read_text(encoding="utf-8"))["direction"]
         except (OSError, ValueError, KeyError):
             direction = "a"
-    manifeste = synchroniser(direction)
-    print(f"Direction {direction.upper()} : {len(manifeste['fichiers'])} fichiers copiés dans site/landing/assets/da/.")  # type: ignore[arg-type]
+    synchroniser(direction)
+    print(f"Direction {direction.upper()} : {len(plan_copie(direction))} fichiers copiés dans site/landing/assets/da/.")
     return 0
 
 

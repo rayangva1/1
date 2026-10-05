@@ -1,0 +1,85 @@
+# Pile locale « pour plus tard » — {{NOM_BOUTIQUE}} : PostgreSQL 16 + migrations + n8n + API du moteur.
+#
+# NE PAS LANCER avant décision de la propriétaire : coffre de secrets (B03), boutique Shopify
+# (B15) et niveau d'autonomie (C14). Préparation :
+#   1. cp .env.example .env   puis remplir depuis le coffre (jamais commité : .env est ignoré par git) ;
+#   2. docker compose config  (vérification sans rien lancer) ;
+#   3. docker compose up -d db db-migrate api n8n
+# Ports publiés sur 127.0.0.1 uniquement (aucune exposition réseau).
+# Simulation par défaut : POKESHOP_DRY_RUN=true dans .env.example ; aucune écriture Shopify réelle
+# sans POKESHOP_DRY_RUN=false ET le niveau d'autonomie requis (table autonomy_levels).
+
+name: pokeshop
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pokeshop
+      POSTGRES_USER: pokeshop_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?definir POSTGRES_PASSWORD dans .env (coffre)}
+      TZ: Europe/Zurich
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pokeshop_admin -d pokeshop"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Applique db/migrations/NNN_*.sql dans l'ordre (db/apply.sh, migrations seules, sans seed FICTIF).
+  db-migrate:
+    image: postgres:16
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://pokeshop_admin:${POSTGRES_PASSWORD:?definir POSTGRES_PASSWORD}@db:5432/pokeshop
+    volumes:
+      - ./db:/db:ro
+    entrypoint: ["bash", "/db/apply.sh", "none"]
+    restart: "no"
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+    env_file:
+      - path: .env
+        required: false   # sans .env : simulation, jetons absents => routes internes fermées (503)
+    environment:
+      # Compte administrateur en local uniquement ; en production : compte de connexion membre du
+      # rôle pokeshop_engine (db/README.md, « Rôles »), mot de passe au coffre.
+      POKESHOP_DATABASE_URL: postgresql://pokeshop_admin:${POSTGRES_PASSWORD:?definir POSTGRES_PASSWORD}@db:5432/pokeshop
+      POKESHOP_N8N_WEBHOOK_URL: http://n8n:5678/webhook/pokeshop-incidents
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  n8n:
+    # Épingler une version testée avant toute mise en service (tag non vérifiable depuis l'environnement de build).
+    image: ${N8N_IMAGE:-docker.n8n.io/n8nio/n8n:latest}
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?definir N8N_ENCRYPTION_KEY dans .env (coffre)}
+      GENERIC_TIMEZONE: Europe/Zurich
+      TZ: Europe/Zurich
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      N8N_PORT: "5678"
+      POKESHOP_API_URL: http://api:8000
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./orchestration/n8n:/workflows:ro
+    ports:
+      - "127.0.0.1:5678:5678"
+
+volumes:
+  db-data:
+  n8n-data:

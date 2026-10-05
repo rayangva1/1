@@ -1,0 +1,866 @@
+{
+  "id": "pkshp02CmdLivrai",
+  "name": "Pokeshop 02 — Commande vers livraison",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 02 — Commande vers livraison (BP §12)\nPaiement confirmé (webhook Shopify **orders/paid**, signature vérifiée) → **contrôle de doublon** (idempotence n8n)\n→ anomalies (CHF, Suisse, payée) → réservation (route moteur attendue) → **bon de préparation**\n→ **tâche colis HUMAINE** : un robot ne prépare pas un colis (picking, emballage, scan, dépôt : la propriétaire).\nSuivi : la propriétaire saisit le numéro dans Shopify, qui envoie l'email 07 ; colis en retard signalés chaque matin.\nRapprochement hebdomadaire : frais PSP réels → étoile polaire (`POST /northstar/entries`).\nDonnées personnelles : aucune conservée (exécutions réussies non sauvegardées).\n**Activation** : niveau 2 (l'activation inscrit le webhook chez Shopify).\n**Validation humaine requise** : délai d'expédition (DELAI_EXPEDITION), jours de dépôt, route moteur de réservation.",
+        "height": 400,
+        "width": 640,
+        "color": 4
+      },
+      "id": "7ef56c54-d3d6-5cfd-a59d-fe168137f401",
+      "name": "Note — à lire",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        -480
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "topic": "orders/paid"
+      },
+      "id": "319a0c78-c70f-59be-833b-9301adaadf3e",
+      "name": "Shopify : commande payée (orders/paid)",
+      "type": "n8n-nodes-base.shopifyTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "c3dd22eb-f83b-51d1-a25e-035daba5c016",
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "pkshpShopifyAdm1",
+          "name": "Shopify Admin — app personnalisée"
+        }
+      },
+      "notes": "L'activation du workflow inscrit ce webhook chez Shopify (écriture) : activer au niveau 2 seulement.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "ba145593-513c-530b-9b49-5d803cf5be0b",
+              "name": "workflow",
+              "value": "02-commande-livraison",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            },
+            {
+              "id": "8e3bda4f-bcf0-5aea-99f3-9ac6980679e8",
+              "name": "delai_expedition_jours_ouvres",
+              "value": 3,
+              "type": "number"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "36e87165-2cd9-5740-a7a2-dd6efbb6cb3d",
+      "name": "Paramètres — commande",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        0
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "logic": "removeItemsWithAlreadySeenKeyValues",
+        "dedupeValue": "={{ $json.id }}",
+        "options": {
+          "scope": "workflow",
+          "historySize": 10000
+        }
+      },
+      "id": "befa32df-7a56-54c5-be83-8d512ad41eaf",
+      "name": "Contrôle doublon (idempotence)",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ],
+      "notes": "Shopify peut livrer un webhook plusieurs fois : une commande n'est traitée qu'une fois.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Montants décimaux en centimes entiers (aucun float pour un montant ; arrondi interdit).\nfunction cents(value) {\n  const text = String(value === undefined || value === null ? '' : value).trim();\n  if (!/^-?\\d+(\\.\\d{1,2})?$/.test(text)) throw new Error(`montant non décimal ou plus de 2 décimales : ${text}`);\n  const negative = text.startsWith('-');\n  const [intPart, frac = ''] = text.replace('-', '').split('.');\n  const total = Number(intPart) * 100 + Number((frac + '00').slice(0, 2));\n  return negative ? -total : total;\n}\nfunction chf(c) {\n  const sign = c < 0 ? '-' : '';\n  const a = Math.abs(c);\n  return `${sign}${Math.trunc(a / 100)}.${String(a % 100).padStart(2, '0')}`;\n}\n\n// Commande Shopify payée -> données utiles à la préparation, SANS donnée personnelle (ni nom, ni adresse,\n// ni email : seul le code pays est lu pour vérifier « livraison Suisse uniquement »).\nconst out = [];\nfor (const item of $input.all()) {\n  const o = item.json;\n  const anomalies = [];\n  const currency = o.currency || o.presentment_currency || null;\n  if (currency !== 'CHF') anomalies.push(`devise ${currency} (CHF attendu)`);\n  const country = o.shipping_address && o.shipping_address.country_code ? o.shipping_address.country_code : null;\n  if (country !== 'CH') anomalies.push(`livraison hors Suisse ou pays inconnu (${country})`);\n  if (o.financial_status !== 'paid') anomalies.push(`statut de paiement ${o.financial_status}`);\n  if (o.test === true) anomalies.push('commande de test Shopify');\n  const lines = (o.line_items || []).map((l) => ({ sku: l.sku || null, quantity: l.quantity, title: l.title }));\n  if (!lines.length) anomalies.push('commande sans ligne');\n  if (lines.some((l) => !l.sku)) anomalies.push('ligne sans SKU (identité produit inconnue)');\n  const tags = String(o.tags || '').split(',').map((t) => t.trim().toLowerCase());\n  let total = 0;\n  let tax = 0;\n  try {\n    total = cents(o.current_total_price !== undefined ? o.current_total_price : o.total_price);\n    tax = cents(o.current_total_tax !== undefined ? o.current_total_tax : o.total_tax);\n  } catch (error) {\n    anomalies.push(error.message);\n  }\n  out.push({\n    json: {\n      order_id: String(o.id),\n      order_name: o.name,\n      paid_at: o.processed_at || o.created_at,\n      currency,\n      preorder: tags.includes('precommande'),\n      lines,\n      lines_count: lines.length,\n      total_ttc: chf(total),\n      tax: chf(tax),\n      net_ht: chf(total - tax),\n      anomalies,\n      anomalies_count: anomalies.length,\n    },\n  });\n}\nreturn out;\n"
+      },
+      "id": "2b1c02a7-1478-5e6e-82d0-950194ebc5b0",
+      "name": "Normaliser la commande (centimes, sans donnée personnelle)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "54859b90-a834-56a5-9f82-6ef229d98914",
+              "leftValue": "={{ $json.anomalies_count }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "8c688b8d-5e16-5700-a782-fa824dfa752d",
+      "name": "Anomalie ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — commande').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Commande ' + $json.order_name + ' : ' + $json.anomalies.join(' ; '), kind: 'COMMANDE_ANOMALIE', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: '02-commande:' + $json.order_name, proposed_action: 'Vérifier la commande dans Shopify (pays, devise, paiement) ; aucune préparation tant que l’anomalie n’est pas levée ; ne jamais modifier le prix d’une commande conclue.', actor: 'n8n:02-commande-livraison', simulation: $('Paramètres — commande').first().json.simulation, details: { order_ref: $json.order_name, anomalies: $json.anomalies } }) }}"
+      },
+      "id": "bd3b6717-7c6e-58d9-9463-33d1dff9b366",
+      "name": "Ouvrir un incident commande",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        -120
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — commande').first().json.api_base_url }}/orders/paid",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ order_id: $json.order_id, order_ref: $json.order_name, paid_at: $json.paid_at, lines: $json.lines, net_ht: $json.net_ht }) }}"
+      },
+      "id": "44a8bba7-6cd8-5b8c-aed6-8151117c15c2",
+      "name": "Réserver le stock local — route moteur attendue (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        80
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "disabled": true,
+      "notes": "Route à créer (agent integrations) : StockRegistry.reserve (contrôle de concurrence), survente => INC-06, écriture NET_SALES de l'étoile polaire. Ne pas activer avant.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0eac513f-6856-5e68-baa7-bc69ffe15957",
+              "name": "sujet",
+              "value": "=[COLIS] {{ $json.order_name }}{{ $json.preorder ? ' — PRÉCOMMANDE' : '' }}",
+              "type": "string"
+            },
+            {
+              "id": "1b1bf765-37c2-51b2-86d9-222e894d1f26",
+              "name": "texte",
+              "value": "=Commande {{ $json.order_name }} payée le {{ $json.paid_at }}.\n{{ $json.lines.map(l => '- ' + l.quantity + ' × ' + l.sku + ' — ' + l.title).join('\\n') }}\n\n{{ $json.preorder ? 'PRÉCOMMANDE : ne pas préparer avant réception du stock alloué.' : 'Remise au transporteur sous ' + $('Paramètres — commande').first().json.delai_expedition_jours_ouvres + ' jours ouvrés (hypothèse DELAI_EXPEDITION).' }}\nTâche HUMAINE (SOP_PREPARATION_COLIS.md) : picking, contrôle langue et scellé, scan, emballage, étiquette, dépôt ; puis « Traiter la commande » dans Shopify avec le numéro de suivi (Shopify envoie l'email 07).",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "dea9922c-c4e6-5b56-9dc4-aba200fb95ad",
+      "name": "Bon de préparation",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1680,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — commande').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "197e8e7c-5e94-5747-81cb-f3a44efbbe3b",
+      "name": "Tâche colis HUMAINE — notifier la responsable (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1960,
+        80
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "a77d4dcb-b6d4-5c56-b29c-da3cc2ad5322",
+      "name": "Journal : commande prise en charge",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2240,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 7 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "aa93fa61-44b9-5749-b343-50cbbb365d46",
+      "name": "Chaque jour ouvré 07:30 — colis à remettre",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "ba145593-513c-530b-9b49-5d803cf5be0b",
+              "name": "workflow",
+              "value": "02-commande-livraison",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            },
+            {
+              "id": "8e3bda4f-bcf0-5aea-99f3-9ac6980679e8",
+              "name": "delai_expedition_jours_ouvres",
+              "value": 3,
+              "type": "number"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "b3531be9-68c1-5bd4-b899-778e9996cbea",
+      "name": "Paramètres — suivi",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        400
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-boutique.myshopify.com/admin/api/2026-10/graphql.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyAccessTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: 'query { orders(first: 100, query: \"financial_status:paid fulfillment_status:unfulfilled\") { nodes { name processedAt createdAt } } }' }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b59d4144-d0ea-5bb4-b34a-0a085a62fc7c",
+      "name": "Lire les commandes payées non expédiées — Shopify (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        400
+      ],
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "pkshpShopifyAdm1",
+          "name": "Shopify Admin — app personnalisée"
+        }
+      },
+      "disabled": true,
+      "notes": "Lecture seule (Admin GraphQL). Activer avec le credential Shopify, après recette.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Commandes payées non expédiées au-delà du délai annoncé (jours ouvrés, jours fériés non comptés).\nconst params = $('Paramètres — suivi').first().json;\nconst data = $input.first().json;\nconst nodes = data && data.data && data.data.orders ? data.data.orders.nodes : null;\nif (!Array.isArray(nodes)) return []; // lecture Shopify non configurée : rien à signaler\nfunction businessDays(fromIso, to) {\n  const day = new Date(fromIso);\n  day.setUTCHours(12, 0, 0, 0);\n  const end = new Date(to);\n  end.setUTCHours(12, 0, 0, 0);\n  let count = 0;\n  while (day < end) {\n    day.setUTCDate(day.getUTCDate() + 1);\n    const w = day.getUTCDay();\n    if (w !== 0 && w !== 6) count += 1;\n  }\n  return count;\n}\nconst now = new Date();\nconst late = nodes\n  .map((o) => ({ order_name: o.name, paid_at: o.processedAt || o.createdAt, age: businessDays(o.processedAt || o.createdAt, now) }))\n  .filter((o) => o.age > Number(params.delai_expedition_jours_ouvres));\nif (!late.length) return [];\nconst lines = late.map((o) => `- ${o.order_name} : payée le ${o.paid_at}, ${o.age} jours ouvrés`);\nreturn [{ json: {\n  sujet: `[COLIS] ${late.length} commande(s) au-delà du délai d'expédition`,\n  texte: `Commandes payées non remises au transporteur :\\n${lines.join('\\n')}\\n\\nAction : préparer et déposer (SOP_PREPARATION_COLIS.md) ou informer le client du délai réel.`,\n} }];\n"
+      },
+      "id": "c7599505-814f-570c-a3bc-f7cc06c1457c",
+      "name": "Colis en retard ?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — suivi').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b681f325-f61c-5721-9243-56b6230ebb1b",
+      "name": "Alerter : colis en retard (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1120,
+        400
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 6 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "6c9adfa7-179b-56dd-a769-6e8884c72069",
+      "name": "Chaque lundi 06:30 — rapprochement des versements",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "ba145593-513c-530b-9b49-5d803cf5be0b",
+              "name": "workflow",
+              "value": "02-commande-livraison",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "e8579913-a93c-56e4-b6b2-aba3c911129a",
+      "name": "Paramètres — rapprochement",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        640
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-boutique.myshopify.com/admin/api/2026-10/graphql.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyAccessTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: 'query { shopifyPaymentsAccount { balanceTransactions(first: 100) { nodes { id type transactionDate fee { amount currencyCode } associatedOrder { id } } } } }' }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "63c65f8e-328f-597f-8f91-644a6e7cc08f",
+      "name": "Lire les transactions de versement — Shopify Payments (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        640
+      ],
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "pkshpShopifyAdm1",
+          "name": "Shopify Admin — app personnalisée"
+        }
+      },
+      "disabled": true,
+      "notes": "Lecture seule ; champs GraphQL à revérifier sur la version 2026-10 avant activation.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Frais réels du prestataire de paiement -> écritures PAYMENT de l'étoile polaire (montants en chaînes).\nconst data = $input.first().json;\nconst account = data && data.data ? data.data.shopifyPaymentsAccount : null;\nconst txs = account && account.balanceTransactions ? account.balanceTransactions.nodes : null;\nif (!Array.isArray(txs)) return []; // lecture non configurée : aucune écriture\nconst entries = txs\n  .filter((t) => t.fee && t.fee.currencyCode === 'CHF' && /^-?\\d+(\\.\\d{1,2})?$/.test(String(t.fee.amount)) && !/^-?0+(\\.0+)?$/.test(String(t.fee.amount)))\n  .map((t) => ({\n    entry_id: `psp:${t.id}:PAYMENT`,\n    at: t.transactionDate,\n    post: 'PAYMENT',\n    amount: String(t.fee.amount),\n    ref: String(t.id),\n    source: 'psp',\n    order_id: t.associatedOrder ? String(t.associatedOrder.id) : null,\n  }));\nif (!entries.length) return [];\nreturn [{ json: { entries, count: entries.length } }];\n"
+      },
+      "id": "71056c45-9ac8-5afd-b8ef-a9c0b49f3f38",
+      "name": "Frais de paiement réels vers écritures",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — rapprochement').first().json.api_base_url }}/northstar/entries",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ entries: $json.entries }) }}"
+      },
+      "id": "e859499d-12c3-579d-be83-da27508c993f",
+      "name": "Enregistrer les frais réels (étoile polaire)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        640
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "notes": "Écritures idempotentes (entry_id) : un rejeu ne double rien.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "06680f15-b793-579b-8416-aeb4e1ea0eac",
+              "name": "sujet",
+              "value": "=[RAPPROCHEMENT] {{ $json.added }} écriture(s) de frais PSP ajoutée(s)",
+              "type": "string"
+            },
+            {
+              "id": "3e16ca04-4087-5081-b8db-4cbd8bc283e9",
+              "name": "texte",
+              "value": "=Frais PSP réels enregistrés : {{ $json.added }} nouvelle(s) sur {{ $json.received }} reçue(s).\nÉcart paiement / versement : à expliquer dans la revue hebdomadaire (BL-166).",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "dd1183f7-5ec9-54ac-9155-5cd0558a94a1",
+      "name": "Résumé du rapprochement",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1400,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — rapprochement').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "fe01cd9a-0042-544a-aaad-e2281cc36d8d",
+      "name": "Envoyer le résumé du rapprochement (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1680,
+        640
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    }
+  ],
+  "connections": {
+    "Shopify : commande payée (orders/paid)": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — commande",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — commande": {
+      "main": [
+        [
+          {
+            "node": "Contrôle doublon (idempotence)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contrôle doublon (idempotence)": {
+      "main": [
+        [
+          {
+            "node": "Normaliser la commande (centimes, sans donnée personnelle)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliser la commande (centimes, sans donnée personnelle)": {
+      "main": [
+        [
+          {
+            "node": "Anomalie ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anomalie ?": {
+      "main": [
+        [
+          {
+            "node": "Ouvrir un incident commande",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Réserver le stock local — route moteur attendue (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Réserver le stock local — route moteur attendue (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Bon de préparation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bon de préparation": {
+      "main": [
+        [
+          {
+            "node": "Tâche colis HUMAINE — notifier la responsable (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tâche colis HUMAINE — notifier la responsable (email, désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Journal : commande prise en charge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chaque jour ouvré 07:30 — colis à remettre": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — suivi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — suivi": {
+      "main": [
+        [
+          {
+            "node": "Lire les commandes payées non expédiées — Shopify (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire les commandes payées non expédiées — Shopify (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Colis en retard ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Colis en retard ?": {
+      "main": [
+        [
+          {
+            "node": "Alerter : colis en retard (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chaque lundi 06:30 — rapprochement des versements": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — rapprochement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — rapprochement": {
+      "main": [
+        [
+          {
+            "node": "Lire les transactions de versement — Shopify Payments (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire les transactions de versement — Shopify Payments (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Frais de paiement réels vers écritures",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Frais de paiement réels vers écritures": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer les frais réels (étoile polaire)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer les frais réels (étoile polaire)": {
+      "main": [
+        [
+          {
+            "node": "Résumé du rapprochement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Résumé du rapprochement": {
+      "main": [
+        [
+          {
+            "node": "Envoyer le résumé du rapprochement (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Zurich",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "saveExecutionProgress": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "pkshp04Incidents"
+  },
+  "pinData": {},
+  "staticData": null,
+  "tags": [],
+  "versionId": "bfc652bf-cff0-52c5-9806-fd8947abcf5a",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

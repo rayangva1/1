@@ -25,7 +25,6 @@ import shutil
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlparse
 
 import yaml
@@ -430,7 +429,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.mode == "etat":
         lignes = etat()
-        manquants = [l for l in lignes if l[1] != "valide"]
+        manquants = [lg for lg in lignes if lg[1] != "valide"]
         for nom, statut, decideur in lignes:
             print(f"{statut:10} {nom:32} {decideur}")
         print(f"\n{len(lignes) - len(manquants)}/{len(lignes)} champ(s) validé(s).")

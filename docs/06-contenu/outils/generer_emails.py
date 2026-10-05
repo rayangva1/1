@@ -346,12 +346,12 @@ def pied(categorie: str, r: Rendu, mode_texte: bool = False) -> list[str]:
                 "Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité."]
     if categorie == "marketing":
         return [contact, identite, mention,
-                "Vous recevez cet email parce que vous vous êtes inscrit à nos alertes (confirmé le [[date_consentement]]).",
+                "Vous recevez cet email parce que cette adresse est inscrite à nos alertes (inscription confirmée le [[date_consentement]]).",
                 "[Modifier mes préférences]([[url_preferences]]) · [Me désinscrire en un clic]([[url_desinscription]])",
                 "Confidentialité : {{URL_CONFIDENTIALITE}}"]
     if categorie == "avis":
         return [identite, mention,
-                "Vous recevez cet email parce que vous avez commandé chez nous et ne vous êtes pas opposé à ce type de message. "
+                "Vous recevez cet email parce que vous avez commandé chez nous, sans opposition de votre part à ce type de message. "
                 "Une seule demande par commande.",
                 "[Ne plus recevoir de demande d'avis]([[url_refus_avis]]) · Confidentialité : {{URL_CONFIDENTIALITE}}"]
     if categorie == "inscription":
@@ -371,7 +371,7 @@ def document_html(email: dict[str, Any], r: Rendu) -> str:
     nom = _champs_fixes("{{NOM_BOUTIQUE}}", r)
     logo = _champs_fixes("{{URL_LOGO_PNG}}", r)
     blocs = "\n".join(bloc_html(b, r, email) for b in email["blocs"])
-    lignes_pied = "<br>".join(en_html(l, r) for l in pied(email["categorie"], r))
+    lignes_pied = "<br>".join(en_html(ligne, r) for ligne in pied(email["categorie"], r))
     variables = "\n".join(f"      - {v[0]} : {v[1]}" for v in email["variables"])
     entete = (
         f"  <!--\n    FICHIER GÉNÉRÉ par docs/06-contenu/outils/generer_emails.py depuis EMAILS/source/emails.yaml — ne pas modifier.\n"
@@ -469,7 +469,7 @@ def bloc_texte(bloc: dict[str, Any], r: Rendu) -> list[str]:
 def document_texte(email: dict[str, Any], r: Rendu) -> str:
     """Version texte d'un email."""
     paragraphes = [p for b in email["blocs"] for p in bloc_texte(b, r)]
-    pied_txt = [en_texte(l, r) for l in pied(email["categorie"], r)]
+    pied_txt = [en_texte(ligne, r) for ligne in pied(email["categorie"], r)]
     return f"Objet : {en_texte(email['objet'], r)}\n\n" + "\n\n".join(paragraphes) + "\n\n--\n" + "\n".join(pied_txt) + "\n"
 
 

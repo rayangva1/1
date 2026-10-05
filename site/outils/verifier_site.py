@@ -48,7 +48,7 @@ USAGE_MARQUES = REPO / "docs" / "04-legal" / "USAGE_MARQUES.md"
 HOTES_AUTORISES = {"fonts.googleapis.com", "fonts.gstatic.com"}
 VIDES = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 TERMES_INTERNES = re.compile(
-    r"\b(co[uû]ts?|marges?|margins?|costs?|prix d['’]achat|fournisseurs?|suppliers?|b2b|grossistes?|stock amont)\b",
+    r"\b(co[uû]ts?|marges?|margins?(?![-:\w])|costs?|prix d['’]achat|fournisseurs?|suppliers?|b2b|grossistes?|stock amont)\b",
     re.IGNORECASE,
 )
 PRIX_RE = re.compile(r"CHF\s*\d|\d+[.,]\d{2}\s*(CHF|\.-|fr\.)|\b\d+\.-", re.IGNORECASE)
@@ -59,7 +59,7 @@ URGENCE_RE = re.compile(
     re.IGNORECASE,
 )
 PROMESSES_RE = re.compile(
-    r"investissement|prendra\s+de\s+la\s+valeur|rare\s+garanti|garanti[e]?s?\s+rares?|hits?\s+garantis?|"
+    r"investissement|prendra\s+de\s+la\s+valeur|rares?\s+garanti(?:es?|s)?\b(?![\s\u00a0\u202f]*\?)|garanti[e]?s?\s+rares?|hits?\s+garantis?|"
     r"revendeur\s+agr[ée]{2}|partenaire\s+officiel|distributeur\s+officiel|produits?\s+officiels?",
     re.IGNORECASE,
 )
@@ -303,8 +303,8 @@ def verifier_page(chemin: Path, racine: Path, *, publication_mode: bool = False)
         err.append(f"{nom} : identité de l'exploitant absente du pied de page")
     err += [f"{nom} : espace insécable manquante « {f} »" for f in fautes(texte)]
     if publication_mode:
-        for motif, libelle in (("{{", "champ {{…}} non rempli"), ("⟦", "marque ⟦…⟧"), ("APERCU:", "bloc d'aperçu")):
-            if motif in texte:
+        for residu, libelle in (("{{", "champ {{…}} non rempli"), ("⟦", "marque ⟦…⟧"), ("APERCU:", "bloc d'aperçu")):
+            if residu in texte:
                 err.append(f"{nom} : {libelle}")
 
     # Formulaire (page principale)

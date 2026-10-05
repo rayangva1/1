@@ -122,10 +122,36 @@ PRODUCT_INPUT_SCHEMA: dict[str, Any] = {
 """Structure exacte autorisée d'un ``ProductSetInput`` public (toute autre clé = violation)."""
 
 SENSITIVE_KEY_FRAGMENTS: tuple[str, ...] = (
-    "cost", "cout", "marg", "supplier", "fournisseur", "b2b", "purchase", "achat", "landed", "contribution",
-    "floor", "plancher", "wholesale", "grossiste", "profit", "vendor", "internal", "interne", "unitcost",
-    "fx", "invoice", "facture", "customer", "client", "email", "phone", "telephone", "address", "adresse",
-)  # fmt: skip
+    "cost",
+    "cout",
+    "marg",
+    "supplier",
+    "fournisseur",
+    "b2b",
+    "purchase",
+    "achat",
+    "landed",
+    "contribution",
+    "floor",
+    "plancher",
+    "wholesale",
+    "grossiste",
+    "profit",
+    "vendor",
+    "internal",
+    "interne",
+    "unitcost",
+    "fx",
+    "invoice",
+    "facture",
+    "customer",
+    "client",
+    "email",
+    "phone",
+    "telephone",
+    "address",
+    "adresse",
+)
 """Fragments de nom de clé révélant une donnée interne ou personnelle (comparaison sans accents ni casse)."""
 
 _SENSITIVE_VALUE_RE = re.compile(
@@ -142,11 +168,24 @@ _SKU_RE = re.compile(r"^[A-Z0-9][A-Z0-9._-]{2,60}$")
 _UNSAFE_HTML_RE = re.compile(r"<\s*(script|iframe|object|embed|form)|javascript:|\son\w+\s*=", re.IGNORECASE)
 _TAG_STRIP_RE = re.compile(r"<[^>]+>")
 _CLAIMS: tuple[str, ...] = (
-    "investissement", "investir", "placement", "valeur future", "prendra de la valeur", "plus-value", "plus value",
-    "rentabilite garantie", "carte rare garantie", "hit garanti", "rare garanti", "boutique officielle",
-    "revendeur officiel", "partenaire officiel", "distributeur officiel", "stock illimite",
-)  # fmt: skip
-"""Promesses interdites (BP §7 : aucune promesse de carte rare ou de valeur financière ; BP §8 : pas de statut officiel)."""
+    "investissement",
+    "investir",
+    "placement",
+    "valeur future",
+    "prendra de la valeur",
+    "plus-value",
+    "plus value",
+    "rentabilite garantie",
+    "carte rare garantie",
+    "hit garanti",
+    "rare garanti",
+    "boutique officielle",
+    "revendeur officiel",
+    "partenaire officiel",
+    "distributeur officiel",
+    "stock illimite",
+)
+"""Promesses interdites (BP §7 : ni carte rare ni valeur financière promises ; BP §8 : pas de statut officiel)."""
 
 
 class PublishError(PokeshopError, ValueError):
@@ -286,15 +325,18 @@ def sensitive_violations(product_input: Mapping[str, Any], *, sensitive_terms: C
         if not isinstance(variant, Mapping):
             continue
         price = variant.get("price")
-        if price is not None:
-            if not isinstance(price, str) or not _PRICE_RE.match(price) or Decimal(price) <= 0:
-                out.append(f"variants[{i}].price : prix CHF > 0 au format 0.00")
+        if price is not None and (not isinstance(price, str) or not _PRICE_RE.match(price) or Decimal(price) <= 0):
+            out.append(f"variants[{i}].price : prix CHF > 0 au format 0.00")
         if variant.get("inventoryPolicy") not in (None, "DENY"):
             out.append(f"variants[{i}].inventoryPolicy : DENY obligatoire (aucune vente à découvert)")
         barcode = variant.get("barcode")
         if barcode is not None and (not isinstance(barcode, str) or not validate_gtin(barcode)):
             out.append(f"variants[{i}].barcode : GTIN invalide")
-        sku = (variant.get("inventoryItem") or {}).get("sku") if isinstance(variant.get("inventoryItem"), Mapping) else None
+        sku = (
+            (variant.get("inventoryItem") or {}).get("sku")
+            if isinstance(variant.get("inventoryItem"), Mapping)
+            else None
+        )
         if sku is not None and (not isinstance(sku, str) or not _SKU_RE.match(sku)):
             out.append(f"variants[{i}].inventoryItem.sku : SKU boutique invalide")
     for i, f in enumerate(product_input.get("files") or ()):
@@ -470,7 +512,9 @@ class CatalogListing(FrozenModel):
             raise ValueError("SKU -PRECO réservé à la fiche de précommande")
         if self.release_date is None and self.release_date_status is not ReleaseDateStatus.INCONNUE:
             raise ValueError("statut de date de sortie sans date")
-        if self.shopify_product_id is not None and not re.match(r"^gid://shopify/Product/\d+$", self.shopify_product_id):
+        if self.shopify_product_id is not None and not re.match(
+            r"^gid://shopify/Product/\d+$", self.shopify_product_id
+        ):
             raise ValueError("shopify_product_id : gid://shopify/Product/<n>")
         if self.shopify_product_id is None and self.shopify_status is not None:
             raise ValueError("statut boutique sans identifiant produit")
@@ -555,18 +599,28 @@ BLOCKER_LABELS_FR: dict[PublishBlocker, str] = {
 
 _HARD = frozenset(
     {
-        PublishBlocker.IDENTITY_INCOMPLETE, PublishBlocker.NOT_SEALED, PublishBlocker.LANGUAGE_NOT_FR,
-        PublishBlocker.INVALID_GTIN, PublishBlocker.FICTITIOUS_GTIN, PublishBlocker.FICTIF_DATA,
-        PublishBlocker.QUARANTINED, PublishBlocker.STOPLOSS_PRODUCT, PublishBlocker.FORBIDDEN_CLAIM,
+        PublishBlocker.IDENTITY_INCOMPLETE,
+        PublishBlocker.NOT_SEALED,
+        PublishBlocker.LANGUAGE_NOT_FR,
+        PublishBlocker.INVALID_GTIN,
+        PublishBlocker.FICTITIOUS_GTIN,
+        PublishBlocker.FICTIF_DATA,
+        PublishBlocker.QUARANTINED,
+        PublishBlocker.STOPLOSS_PRODUCT,
+        PublishBlocker.FORBIDDEN_CLAIM,
         PublishBlocker.UNSAFE_HTML,
     }
-)  # fmt: skip
+)
 _CONTENT = frozenset(
     {
-        PublishBlocker.CONTENT_NOT_VALIDATED, PublishBlocker.DESCRIPTION_MISSING, PublishBlocker.NO_AUTHORIZED_IMAGE,
-        PublishBlocker.IMAGE_RIGHTS_MISSING, PublishBlocker.MAX_QTY_MISSING, PublishBlocker.RELEASE_DATE_MISSING,
+        PublishBlocker.CONTENT_NOT_VALIDATED,
+        PublishBlocker.DESCRIPTION_MISSING,
+        PublishBlocker.NO_AUTHORIZED_IMAGE,
+        PublishBlocker.IMAGE_RIGHTS_MISSING,
+        PublishBlocker.MAX_QTY_MISSING,
+        PublishBlocker.RELEASE_DATE_MISSING,
     }
-)  # fmt: skip
+)
 
 
 class PlanOutcome(str, Enum):
@@ -812,7 +866,9 @@ def build_publication(
     if outcome is not PlanOutcome.NOT_SENT and title is not None and price is not None and target is not None:
         ext_name = _extension_name(ident, table)
         option, value = (
-            ("Disponibilité", "Précommande") if listing.stock_status is StockStatus.PRECOMMANDE else ("Title", "Default Title")
+            ("Disponibilité", "Précommande")
+            if listing.stock_status is StockStatus.PRECOMMANDE
+            else ("Title", "Default Title")
         )
         product_input = {
             "title": title,
@@ -861,4 +917,3 @@ def build_publication(
         rules_version=decision.rules_version if decision is not None else None,
         inputs_hash=decision.inputs_hash if decision is not None else None,
     )
-

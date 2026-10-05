@@ -1,0 +1,332 @@
+{
+  "id": "pkshp05DigestJou",
+  "name": "Pokeshop 05 — Digest quotidien",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 05 — Digest quotidien (BP §12, ROUTINES_PILOTAGE.md §3.2)\nChaque matin : **1. étoile polaire** (`GET /northstar` : contribution nette cumulée, delta de la semaine),\n**2. état du stop-loss** (`GET /stoploss/status`), puis ventes payées, contribution, cash, commandes à préparer,\nruptures, offres périmées, incidents et **décisions attendues** (`GET /dashboard/daily`).\nLecture seule. **INTERNE** : contient coûts et marges.\n**Activation** : niveau 1 (envoi à la seule responsable).\n**Validation humaine requise** : heure du digest (HEURE_DIGEST, ici 07:45) et canal.",
+        "height": 320,
+        "width": 640,
+        "color": 4
+      },
+      "id": "78bcafe9-eb81-5315-bbe4-de7fabde93e1",
+      "name": "Note — à lire",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "45 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "573bc582-79ca-5b20-9021-39099edb6a58",
+      "name": "Chaque jour 07:45 — digest",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "10efb56e-d202-58c0-825c-a59ef6790d3c",
+              "name": "workflow",
+              "value": "05-digest",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "fd4963e4-ec54-5f43-aed2-870f60c664cd",
+      "name": "Paramètres",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        0
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/northstar",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "ac8b98f1-37ef-5c12-b49e-30b76ef3cb8f",
+      "name": "Étoile polaire (GET /northstar)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/stoploss/status",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "a08b7e01-e992-5faf-bc11-a9d2a17f776e",
+      "name": "État du stop-loss (GET /stoploss/status)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/dashboard/daily",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "9e905da0-8115-526f-83c9-18a691293a66",
+      "name": "Tableau de bord du jour (GET /dashboard/daily)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Affichage CHF suisse romand à partir d'une chaîne décimale du moteur (aucun float).\nfunction fmt(value) {\n  if (value === undefined || value === null || value === '') return '—';\n  const text = String(value);\n  const negative = text.startsWith('-');\n  const [intPart, frac = ''] = text.replace('-', '').split('.');\n  const grouped = intPart.replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');\n  return `${negative ? '−' : ''}${grouped},${(frac + '00').slice(0, 2)} CHF`;\n}\n\n// Digest quotidien : 1. étoile polaire (GET /northstar), 2. stop-loss (GET /stoploss/status), puis le jour.\nconst ns = $('Étoile polaire (GET /northstar)').first().json;\nconst sl = $('État du stop-loss (GET /stoploss/status)').first().json;\nconst db = ($('Tableau de bord du jour (GET /dashboard/daily)').first().json || {}).report || {};\nconst rows = Array.isArray(ns.rows) ? ns.rows : [];\nconst last = rows.length ? rows[rows.length - 1] : null;\nconst north = db.north_star || {};\nconst out = [];\nout.push(`1. ÉTOILE POLAIRE — contribution nette cumulée : ${fmt(ns.cumulative)}`);\nif (last) {\n  out.push(`   Semaine ${last.iso_week} : ${fmt(last.net_contribution)} (delta vs semaine précédente : ${fmt(last.delta_vs_previous_week)})`);\n} else {\n  out.push('   Aucune écriture enregistrée (aucune vente ni charge).');\n}\nif (north.average_4_weeks !== undefined && north.average_4_weeks !== null) {\n  out.push(`   Moyenne des ${north.average_weeks_count} dernière(s) semaine(s) close(s) : ${fmt(north.average_4_weeks)} ; tendance ${String(north.trend || '').toLowerCase()}`);\n}\nconst LEVELS = { PRODUCT: 'produit', EXTENSION: 'extension', ADS: 'pub', CASH: 'cash', GLOBAL: 'GLOBAL', TIME: 'temps' };\nconst triggers = Array.isArray(sl.triggers) ? sl.triggers : [];\nif (!sl.available) {\n  out.push(`2. STOP-LOSS : NON ÉVALUÉ (${sl.error || 'photo absente'}) — dépenses refusées par défaut.${sl.global_frozen ? ' GEL GLOBAL VERROUILLÉ.' : ''}`);\n} else if (sl.global_frozen) {\n  out.push('2. STOP-LOSS : GEL GLOBAL — tout est gelé, autonomie niveau 1 ; réarmement par vous seule (POST /stoploss/rearm, votre jeton).');\n} else if (triggers.length) {\n  out.push(`2. STOP-LOSS : ${triggers.length} déclencheur(s)`);\n  triggers.forEach((t) => out.push(`   - ${LEVELS[t.level] || t.level} / ${t.scope} : ${t.reason}`));\n} else {\n  out.push('2. STOP-LOSS : aucun déclencheur.');\n}\nconst kpis = {};\n(db.kpis || []).forEach((k) => { kpis[k.key] = k; });\nconst order = ['ventes_payees', 'contribution_jour', 'cash_disponible', 'commandes_a_preparer', 'ruptures_locales', 'offres_perimees', 'incidents_ouverts'];\nlet n = 3;\norder.forEach((key) => {\n  const k = kpis[key];\n  if (!k) return;\n  out.push(`${n}. ${k.label} : ${k.display} [${k.status}]${k.detail ? ' — ' + k.detail : ''}`);\n  n += 1;\n});\nconst decisions = Array.isArray(db.decisions) ? db.decisions : [];\nout.push(`${n}. DÉCISIONS ATTENDUES (oui / non, avant l'échéance ; sans réponse : statu quo sûr) :`);\nif (!decisions.length) out.push('   aucune');\ndecisions.forEach((d, i) => out.push(`   ${String.fromCharCode(97 + (i % 26))}) ${d.label}${d.due ? ' — avant le ' + d.due : ''}`));\nif (Array.isArray(db.unavailable) && db.unavailable.length) out.push(`Sources non branchées : ${db.unavailable.join(' ; ')}`);\nout.push('');\nout.push('INTERNE — contient coûts et marges : ne jamais transférer ni publier.');\nconst day = db.period_label || '';\nreturn [{ json: { sujet: `DIGEST {{NOM_BOUTIQUE}} — ${day} — cumul ${fmt(ns.cumulative)}`, texte: out.join('\\n') } }];\n"
+      },
+      "id": "74b3df05-26a2-5954-bd83-0e7a6426ef35",
+      "name": "Composer le digest (étoile polaire en premier)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b256a76a-1ca3-5e6e-90bb-1f72cf0d193e",
+      "name": "Envoyer le digest à la responsable (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1680,
+        -80
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#pokeshop-alertes",
+          "mode": "name"
+        },
+        "text": "={{ $json.texte }}",
+        "otherOptions": {}
+      },
+      "id": "04b097b9-b28e-52ac-b4ba-1587fa5b4fff",
+      "name": "Envoyer le digest (Slack, désactivé)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        80
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "pkshpSlackAlert1",
+          "name": "Slack alertes propriétaire"
+        }
+      },
+      "disabled": true,
+      "notes": "Canal facultatif : la propriétaire choisit le canal d'alerte immédiate (SOP_INCIDENTS.md §1).",
+      "notesInFlow": true
+    }
+  ],
+  "connections": {
+    "Chaque jour 07:45 — digest": {
+      "main": [
+        [
+          {
+            "node": "Paramètres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres": {
+      "main": [
+        [
+          {
+            "node": "Étoile polaire (GET /northstar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Étoile polaire (GET /northstar)": {
+      "main": [
+        [
+          {
+            "node": "État du stop-loss (GET /stoploss/status)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "État du stop-loss (GET /stoploss/status)": {
+      "main": [
+        [
+          {
+            "node": "Tableau de bord du jour (GET /dashboard/daily)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tableau de bord du jour (GET /dashboard/daily)": {
+      "main": [
+        [
+          {
+            "node": "Composer le digest (étoile polaire en premier)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Composer le digest (étoile polaire en premier)": {
+      "main": [
+        [
+          {
+            "node": "Envoyer le digest à la responsable (email, désactivé)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Envoyer le digest (Slack, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Zurich",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "pkshp04Incidents"
+  },
+  "pinData": {},
+  "staticData": null,
+  "tags": [],
+  "versionId": "75de48d9-3f8c-5108-89e1-c98f5da1bae5",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

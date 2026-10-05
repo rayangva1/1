@@ -20,7 +20,7 @@ import hmac
 import json
 import re
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
@@ -77,7 +77,7 @@ from .incidents import (
     WebhookNotifier,
 )
 from .mandate import Mandate, SpendLedger, SpendRequest, TreasurySnapshot, check, load_mandate
-from .models import BasketLine, Discount, ReorderCandidate, StockLevel, VatMode, explain
+from .models import BasketLine, Discount, ReorderCandidate, VatMode, explain
 from .northstar import ContributionEntry, NorthStarError, NorthStarLedger
 from .pricing import basket_contribution, decide_price
 from .publish import CatalogListing, PriceValidation, SensitiveFieldError, build_publication
@@ -130,7 +130,7 @@ def _ok(content: Any, status: int = 200) -> PokeshopJSONResponse:
 
 
 def _reject_float(text: str) -> Any:
-    raise ValueError(f"nombre décimal JSON interdit ({text}) : écrire le montant en chaîne, ex. \"{text}\"")
+    raise ValueError(f'nombre décimal JSON interdit ({text}) : écrire le montant en chaîne, ex. "{text}"')
 
 
 async def _body(request: Request, model: type[T]) -> T:
@@ -230,17 +230,22 @@ class Services:
         else:
             store = InMemoryAutonomyStore()
         autonomy = AutonomyController(
-            store, audit=audit, owner_token_sha256=cfg.owner_token_sha256 or "", default_level=cfg.autonomy_level,
+            store,
+            audit=audit,
+            owner_token_sha256=cfg.owner_token_sha256 or "",
+            default_level=cfg.autonomy_level,
             clock=now,
-        )  # fmt: skip
+        )
         channels: list[Notifier] = [notifier or LogNotifier()]
         if cfg.n8n_webhook_url:
             channels.append(WebhookNotifier(cfg.n8n_webhook_url, dry_run=cfg.notify_dry_run))
         incidents = IncidentManager(
-            audit=audit, notifier=MultiNotifier(channels) if len(channels) > 1 else channels[0],
-            on_critical=autonomy.on_critical_incident, sink=PostgresIncidentSink(factory) if factory else None,
+            audit=audit,
+            notifier=MultiNotifier(channels) if len(channels) > 1 else channels[0],
+            on_critical=autonomy.on_critical_incident,
+            sink=PostgresIncidentSink(factory) if factory else None,
             clock=now,
-        )  # fmt: skip
+        )
         rules = load_rules(cfg.rules_path, cfg.vat_profile)
         config: StopLossConfig | None = None
         engine: StopLossEngine | None = None
@@ -256,23 +261,55 @@ class Services:
             errors["mandate"] = str(exc)
         ledger = SpendLedger()
         client = ShopifyClient.from_settings(
-            cfg, transport=shopify_transport, audit=audit, idempotency=idempotency, clock=now,
+            cfg,
+            transport=shopify_transport,
+            audit=audit,
+            idempotency=idempotency,
+            clock=now,
             **({"sleep": sleep} if sleep is not None else {}),
-        )  # fmt: skip
+        )
         holder: dict[str, Any] = {}
         gate = GovernanceGate(
-            autonomy, audit=audit, stoploss_engine=engine, state_provider=lambda: holder["svc"].stoploss_state,
-            mandate_provider=lambda: holder["svc"].mandate, spend_ledger=ledger, incidents=incidents,
-            real_writes_enabled=cfg.real_writes_enabled, clock=now,
-        )  # fmt: skip
+            autonomy,
+            audit=audit,
+            stoploss_engine=engine,
+            state_provider=lambda: holder["svc"].stoploss_state,
+            mandate_provider=lambda: holder["svc"].mandate,
+            spend_ledger=ledger,
+            incidents=incidents,
+            real_writes_enabled=cfg.real_writes_enabled,
+            clock=now,
+        )
         history = PriceHistory()
-        sync = SyncService(client=client, gate=gate, incidents=incidents, audit=audit, price_history=history, clock=now)
+        sync = SyncService(
+            client=client,
+            gate=gate,
+            incidents=incidents,
+            audit=audit,
+            price_history=history,
+            clock=now,
+            test_store=cfg.shopify_test_store,
+        )
         svc = cls(
-            settings=cfg, clock=now, audit=audit, idempotency=idempotency, autonomy=autonomy, incidents=incidents,
-            rules=rules, stoploss_config=config, stoploss_engine=engine, mandate=mandate, spend_ledger=ledger,
-            northstar=NorthStarLedger(timezone=cfg.timezone), stock=StockRegistry(clock=now), price_history=history,
-            client=client, gate=gate, sync=sync, load_errors=errors,
-        )  # fmt: skip
+            settings=cfg,
+            clock=now,
+            audit=audit,
+            idempotency=idempotency,
+            autonomy=autonomy,
+            incidents=incidents,
+            rules=rules,
+            stoploss_config=config,
+            stoploss_engine=engine,
+            mandate=mandate,
+            spend_ledger=ledger,
+            northstar=NorthStarLedger(timezone=cfg.timezone),
+            stock=StockRegistry(clock=now),
+            price_history=history,
+            client=client,
+            gate=gate,
+            sync=sync,
+            load_errors=errors,
+        )
         holder["svc"] = svc
         return svc
 
@@ -520,21 +557,40 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         require_api(request)
         body = await _body(request, QuoteIn)
         decision = decide_price(
-            body.cost_chf, params_for(body.profile), body.market_ref, body.current_public, body.unknown_fields,
-            candidate_price=body.candidate_price, small_product=body.small_product, offer_stale=body.offer_stale,
+            body.cost_chf,
+            params_for(body.profile),
+            body.market_ref,
+            body.current_public,
+            body.unknown_fields,
+            candidate_price=body.candidate_price,
+            small_product=body.small_product,
+            offer_stale=body.offer_stale,
             previous_cost=body.previous_cost,
-        )  # fmt: skip
-        return _ok({"decision": decision, "labels_fr": explain(decision.reasons), "publishable": decision.is_publishable})
+        )
+        return _ok(
+            {"decision": decision, "labels_fr": explain(decision.reasons), "publishable": decision.is_publishable}
+        )
 
     @app.post("/pricing/basket")
     async def pricing_basket(request: Request) -> PokeshopJSONResponse:
         """Contribution d'un panier ; BLOCKED sous 12 % ou 8 CHF."""
         require_api(request)
         body = await _body(request, BasketIn)
-        lines = [BasketLine(sku=ln.sku, qty=ln.qty, unit_price_ttc=ln.unit_price_ttc, unit_cost=ln.unit_cost) for ln in body.lines]
-        discount = Discount(kind=body.discount.kind, value=body.discount.value, code=body.discount.code) if body.discount else None
+        lines = [
+            BasketLine(sku=ln.sku, qty=ln.qty, unit_price_ttc=ln.unit_price_ttc, unit_cost=ln.unit_cost)
+            for ln in body.lines
+        ]
+        discount = (
+            Discount(kind=body.discount.kind, value=body.discount.value, code=body.discount.code)
+            if body.discount
+            else None
+        )
         result = basket_contribution(
-            lines, params_for(body.profile), body.shipping_charged, discount, shipping_cost_actual=body.shipping_cost_actual
+            lines,
+            params_for(body.profile),
+            body.shipping_charged,
+            discount,
+            shipping_cost_actual=body.shipping_cost_actual,
         )
         return _ok({"basket": result, "labels_fr": explain(result.reasons), "allowed": result.is_allowed})
 
@@ -562,23 +618,39 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         if not gate.allowed and gate.has("STOPLOSS_GLOBAL_FREEZE"):
             raise HTTPProblem(423, "stop-loss global : aucune proposition d'achat", gate=gate)
         status = gate.stoploss
-        reserve = svc.mandate.cash_reserve_chf if svc.mandate else (svc.stoploss_config.cash.reserve_chf if svc.stoploss_config else Decimal("1600"))
+        reserve = (
+            svc.mandate.cash_reserve_chf
+            if svc.mandate
+            else (svc.stoploss_config.cash.reserve_chf if svc.stoploss_config else Decimal("1600"))
+        )
         blocked_ext = set(status.no_reorder_extensions) if status else set()
         blocked_prod = set(status.blocked_products) if status else set()
         # Stop-loss trésorerie : plus aucun achat => budget utilisable nul (motif CASH_RESERVE).
         budget = Decimal("0") if status is not None and status.purchases_and_ads_frozen else body.budget_available
         proposal = propose_reorder(
-            body.candidates, budget_available=budget,
-            stock_budget_total=body.stock_budget_total or svc.rules.stock.stock_budget_chf, now=now,
-            extension_exposure=body.extension_exposure, extension_cap_pct=svc.rules.stock.extension_budget_cap,
-            cap_exceptions=body.cap_exceptions, max_age=svc.rules.stock.max_age, rules_version=svc.rules.rules_version,
-            blocked_extensions=sorted(blocked_ext), blocked_products=sorted(blocked_prod), cash_reserve_chf=reserve,
-        )  # fmt: skip
+            body.candidates,
+            budget_available=budget,
+            stock_budget_total=body.stock_budget_total or svc.rules.stock.stock_budget_chf,
+            now=now,
+            extension_exposure=body.extension_exposure,
+            extension_cap_pct=svc.rules.stock.extension_budget_cap,
+            cap_exceptions=body.cap_exceptions,
+            max_age=svc.rules.stock.max_age,
+            rules_version=svc.rules.rules_version,
+            blocked_extensions=sorted(blocked_ext),
+            blocked_products=sorted(blocked_prod),
+            cash_reserve_chf=reserve,
+        )
         svc.audit.append(
-            actor=body.actor, actor_kind=ActorKind.AGENT, action="reorder.proposal", entity="purchase_proposal",
-            entity_id=proposal.inputs_hash[:16], dry_run=True, autonomy_level=gate.current_level,
+            actor=body.actor,
+            actor_kind=ActorKind.AGENT,
+            action="reorder.proposal",
+            entity="purchase_proposal",
+            entity_id=proposal.inputs_hash[:16],
+            dry_run=True,
+            autonomy_level=gate.current_level,
             payload={"lines": len(proposal.lines), "total_chf": proposal.total_cost_chf, "gate": list(gate.reasons)},
-        )  # fmt: skip
+        )
         return _ok({"proposal": proposal, "gate": gate, "stoploss_known": status is not None})
 
     # -- imports --------------------------------------------------------------------
@@ -598,12 +670,24 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         if not _SUPPLIER_RE.match(supplier):
             raise HTTPProblem(422, "identifiant fournisseur invalide")
         body = await _body(request, ImportIn)
-        result = run_import(supplier, _source(body.source_path), now=svc.clock(), dry_run=True, source_ts=body.source_ts)
+        result = run_import(
+            supplier, _source(body.source_path), now=svc.clock(), dry_run=True, source_ts=body.source_ts
+        )
         svc.audit.append(
-            actor="n8n", actor_kind=ActorKind.SYSTEME, action="import.run", entity="supplier", entity_id=supplier,
-            dry_run=True, payload={"status": result.status, "rows": result.rows_read, "accepted": result.accepted_count,
-                                   "quarantined": result.quarantined_count, "sha256": result.snapshot.checksum_sha256},
-        )  # fmt: skip
+            actor="n8n",
+            actor_kind=ActorKind.SYSTEME,
+            action="import.run",
+            entity="supplier",
+            entity_id=supplier,
+            dry_run=True,
+            payload={
+                "status": result.status,
+                "rows": result.rows_read,
+                "accepted": result.accepted_count,
+                "quarantined": result.quarantined_count,
+                "sha256": result.snapshot.checksum_sha256,
+            },
+        )
         return _ok(
             {
                 "supplier_id": result.supplier_id,
@@ -635,18 +719,29 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         if body.quote is not None:
             q = body.quote
             decision = decide_price(
-                q.cost_chf, params_for(q.profile), q.market_ref, q.current_public or body.reference_price_24h,
-                q.unknown_fields, candidate_price=q.candidate_price, small_product=q.small_product,
-                offer_stale=q.offer_stale, previous_cost=q.previous_cost,
-            )  # fmt: skip
+                q.cost_chf,
+                params_for(q.profile),
+                q.market_ref,
+                q.current_public or body.reference_price_24h,
+                q.unknown_fields,
+                candidate_price=q.candidate_price,
+                small_product=q.small_product,
+                offer_stale=q.offer_stale,
+                previous_cost=q.previous_cost,
+            )
         status, _ = svc.gate.stoploss_status()
         blocked = body.stoploss_blocked or (status is not None and body.listing.product_key in status.blocked_products)
         plan = build_publication(
-            body.listing, decision, max_daily_change=svc.rules.pricing.max_daily_price_change,
-            reference_price_24h=body.reference_price_24h, price_validation=body.price_validation,
-            stoploss_blocked=blocked, quarantined=svc.incidents.is_quarantined(body.listing.product_key),
-            sensitive_terms=body.sensitive_terms, table=_table(body.listing.fictif),
-        )  # fmt: skip
+            body.listing,
+            decision,
+            max_daily_change=svc.rules.pricing.max_daily_price_change,
+            reference_price_24h=body.reference_price_24h,
+            price_validation=body.price_validation,
+            stoploss_blocked=blocked,
+            quarantined=svc.incidents.is_quarantined(body.listing.product_key),
+            sensitive_terms=body.sensitive_terms,
+            table=_table(body.listing.fictif),
+        )
         return _ok({"plan": plan, "dry_run": True})
 
     @app.post("/sync/run")
@@ -662,7 +757,9 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         ctx = SyncContext(
             rules=svc.rules,
             catalog_products=[
-                CatalogProduct(product_id=i.product_id, identity=i.listing.identity, supplier_links=tuple(i.supplier_links))
+                CatalogProduct(
+                    product_id=i.product_id, identity=i.listing.identity, supplier_links=tuple(i.supplier_links)
+                )
                 for i in body.catalog
             ],
             listings={i.product_id: i.listing for i in body.catalog},
@@ -678,7 +775,9 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
     # -- incidents --------------------------------------------------------------------
     @app.get("/incidents")
-    def incidents_list(request: Request, status: IncidentStatus | None = None, open_only: bool = False) -> PokeshopJSONResponse:
+    def incidents_list(
+        request: Request, status: IncidentStatus | None = None, open_only: bool = False
+    ) -> PokeshopJSONResponse:
         """Incidents (filtre par statut), quarantaines et suspensions en cours."""
         require_api(request)
         return _ok(
@@ -696,11 +795,20 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         require_api(request)
         body = await _body(request, IncidentIn)
         incident = svc.incidents.open(
-            cause=body.cause, code=body.code, kind=body.kind, severity=body.severity, scope=body.scope,
-            proposed_action=body.proposed_action, product_key=body.product_key, supplier_id=body.supplier_id,
-            workflow=body.workflow, details=body.details, actor=body.actor, actor_kind=ActorKind.AGENT,
+            cause=body.cause,
+            code=body.code,
+            kind=body.kind,
+            severity=body.severity,
+            scope=body.scope,
+            proposed_action=body.proposed_action,
+            product_key=body.product_key,
+            supplier_id=body.supplier_id,
+            workflow=body.workflow,
+            details=body.details,
+            actor=body.actor,
+            actor_kind=ActorKind.AGENT,
             simulation=body.simulation,
-        )  # fmt: skip
+        )
         svc.gate.invalidate()
         return _ok({"incident": incident, "notification": svc.incidents.notification_for(incident.incident_id)}, 201)
 
@@ -709,7 +817,13 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         """Enregistre le test de correction (préalable à toute reprise)."""
         require_api(request)
         body = await _body(request, IncidentTestIn)
-        return _ok({"incident": svc.incidents.record_test(incident_id, test_ref=body.test_ref, passed=body.passed, actor=body.actor)})
+        return _ok(
+            {
+                "incident": svc.incidents.record_test(
+                    incident_id, test_ref=body.test_ref, passed=body.passed, actor=body.actor
+                )
+            }
+        )
 
     @app.post("/incidents/{incident_id}/resume")
     async def incidents_resume(incident_id: str, request: Request) -> PokeshopJSONResponse:
@@ -767,7 +881,9 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
     # -- stop-loss --------------------------------------------------------------------------
     def _require_engine() -> StopLossEngine:
         if svc.stoploss_engine is None:
-            raise HTTPProblem(503, "stop-loss indisponible : " + svc.load_errors.get("stoploss", "configuration absente"))
+            raise HTTPProblem(
+                503, "stop-loss indisponible : " + svc.load_errors.get("stoploss", "configuration absente")
+            )
         return svc.stoploss_engine
 
     @app.post("/stoploss/state")
@@ -782,7 +898,8 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         status, triggers = svc.gate.stoploss_status()
         if status is None:
             raise HTTPProblem(409, f"photo refusée : {svc.gate.last_stoploss_error}")
-        return _ok({"status": status, "triggers": triggers})
+        _, incident_id = svc.gate.enforce(actor="workflow:stop-loss")
+        return _ok({"status": status, "triggers": triggers, "incident_id": incident_id})
 
     @app.get("/stoploss/status")
     def stoploss_status(request: Request) -> PokeshopJSONResponse:
@@ -812,11 +929,17 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         latch = engine.freeze(body.actor, body.reason, svc.clock())
         svc.autonomy.force_level_one(reason=f"gel manuel : {body.reason}", actor=body.actor)
         svc.gate.invalidate()
+        _, incident_id = svc.gate.enforce(actor=body.actor)
         svc.audit.append(
-            actor=body.actor, actor_kind=ActorKind.AGENT, action="stoploss.freeze", entity="stoploss", entity_id="global",
-            dry_run=False, payload={"reason": body.reason},
-        )  # fmt: skip
-        return _ok({"latch": latch})
+            actor=body.actor,
+            actor_kind=ActorKind.AGENT,
+            action="stoploss.freeze",
+            entity="stoploss",
+            entity_id="global",
+            dry_run=False,
+            payload={"reason": body.reason},
+        )
+        return _ok({"latch": latch, "incident_id": incident_id})
 
     @app.post("/stoploss/rearm")
     async def stoploss_rearm(request: Request) -> PokeshopJSONResponse:
@@ -830,18 +953,34 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             entry = engine.rearm(token or "", body.reason, now=now, state=svc.stoploss_state, rebase=body.rebase)
         except RearmRefusedError:
             svc.audit.append(
-                actor="inconnu", actor_kind=ActorKind.AGENT, action="stoploss.rearm_refused", entity="stoploss",
-                entity_id="global", dry_run=False, payload={"reason": body.reason},
-            )  # fmt: skip
+                actor="inconnu",
+                actor_kind=ActorKind.AGENT,
+                action="stoploss.rearm_refused",
+                entity="stoploss",
+                entity_id="global",
+                dry_run=False,
+                payload={"reason": body.reason},
+            )
             raise
         svc.gate.invalidate()
         svc.audit.append(
-            actor="propriétaire", actor_kind=ActorKind.PROPRIETAIRE, action="stoploss.rearm", entity="stoploss",
-            entity_id="global", dry_run=False, autonomy_level=int(svc.autonomy.level),
+            actor="propriétaire",
+            actor_kind=ActorKind.PROPRIETAIRE,
+            action="stoploss.rearm",
+            entity="stoploss",
+            entity_id="global",
+            dry_run=False,
+            autonomy_level=int(svc.autonomy.level),
             payload={"reason": body.reason, "rebase": body.rebase, "journal_seq": entry.seq},
-        )  # fmt: skip
-        return _ok({"journal_entry": entry, "latch": engine.latch, "autonomy_level": int(svc.autonomy.level),
-                    "note": "Le niveau d'autonomie n'est pas restauré : décision distincte (POST /autonomy)."})
+        )
+        return _ok(
+            {
+                "journal_entry": entry,
+                "latch": engine.latch,
+                "autonomy_level": int(svc.autonomy.level),
+                "note": "Le niveau d'autonomie n'est pas restauré : décision distincte (POST /autonomy).",
+            }
+        )
 
     # -- mandat ------------------------------------------------------------------------------
     @app.post("/mandate/check")
@@ -853,15 +992,23 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             raise HTTPProblem(503, "mandat illisible : " + svc.load_errors.get("mandate", "absent"))
         status, _ = svc.gate.stoploss_status()
         if status is None:
-            raise HTTPProblem(503, f"état du stop-loss indisponible ({svc.gate.last_stoploss_error}) : décision impossible")
+            raise HTTPProblem(
+                503, f"état du stop-loss indisponible ({svc.gate.last_stoploss_error}) : décision impossible"
+            )
         decision = check(body.request, svc.mandate, svc.spend_ledger, status, body.treasury, now=svc.clock())
-        entry = svc.spend_ledger.record(body.request, decision, actor=body.request.requested_by) if body.record else None
+        entry = (
+            svc.spend_ledger.record(body.request, decision, actor=body.request.requested_by) if body.record else None
+        )
         svc.audit.append(
-            actor=body.request.requested_by, actor_kind=ActorKind.AGENT, action="mandate.check", entity="spend_request",
-            entity_id=body.request.idempotency_key, dry_run=not body.record,
+            actor=body.request.requested_by,
+            actor_kind=ActorKind.AGENT,
+            action="mandate.check",
+            entity="spend_request",
+            entity_id=body.request.idempotency_key,
+            dry_run=not body.record,
             payload={"outcome": decision.outcome, "reasons": list(decision.reasons), "amount_chf": decision.amount_chf},
             idempotency_key=body.request.idempotency_key,
-        )  # fmt: skip
+        )
         return _ok({"decision": decision, "labels_fr": decision.labels_fr, "recorded": entry is not None})
 
     # -- étoile polaire --------------------------------------------------------------------------
@@ -893,4 +1040,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         added = sum(1 for e in body.entries if svc.northstar.record(e))
         return _ok({"added": added, "received": len(body.entries)})
 
+    from .api_dashboard import build_dashboard_router  # tableau de bord interne (lecture seule)
+
+    app.include_router(build_dashboard_router(svc))
     return app

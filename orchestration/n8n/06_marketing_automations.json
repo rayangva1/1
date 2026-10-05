@@ -1,0 +1,1441 @@
+{
+  "id": "pkshp06Marketing",
+  "name": "Pokeshop 06 — Automatisations marketing",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 06 — Automatisations marketing (BP §9, docs/06-contenu/EMAILS)\n- **Nouveau stock local** (réception contrôlée) → alerte aux inscrits **consentants** (email 04), une par produit et par personne.\n  **Garde-fous** : campagne stoppée si stock vendable < seuil, référence sous stop-loss produit (marge insuffisante),\n  gel global ou stop-loss non évaluable.\n- **Commande expédiée** → suivi (email 07 envoyé par Shopify ; alerte si aucun numéro de suivi).\n- **Livraison** → demande d'avis (email 11) **7 jours** après (hypothèse), une seule, sans réclamation ni opposition.\n- **Désinscription** → propagée à **tous** les outils (emailing, Shopify) ; page `desinscription.html`.\nAucun prix ni donnée interne dans un email : titre, statut et prix lus sur la page publique au moment de l'envoi.\n**Activation** : désinscription AVANT tout envoi ; envois au niveau 3. Pas de SMS ni d'email non sollicité.\n**Validation humaine requise** : outil d'emailing (B04), seuil de stock d'alerte, délai d'avis, notes juristes C2-C4.",
+        "height": 430,
+        "width": 700,
+        "color": 4
+      },
+      "id": "41f23e0c-d1ba-57ba-b5b5-f8b16fb73b70",
+      "name": "Note — à lire",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        -520
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-stock-recu",
+        "responseMode": "onReceived",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "8dcaac5f-4bda-590e-be14-2af5de2063b7",
+      "name": "Réception contrôlée (passerelle agent 11)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "aa0ec202-10b8-59ef-b2f5-57a95bf6b6b3",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGateway0001",
+          "name": "Passerelle agents — X-Pokeshop-Gateway"
+        }
+      },
+      "notes": "Corps : {\"product_key\", \"sku\", \"public_title\", \"public_url\", \"format_preference\"} — aucun prix.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "0cd9d981-bf47-54d0-b784-f71b80244113",
+              "name": "workflow",
+              "value": "06-marketing",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            },
+            {
+              "id": "c64365a9-c898-5729-beba-431382cf58a5",
+              "name": "seuil_stock_alerte",
+              "value": 3,
+              "type": "number"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "57aa0836-c5d7-5651-8b76-1f22583803fe",
+      "name": "Paramètres — alertes stock",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        0
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — alertes stock').first().json.api_base_url }}/stoploss/status",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "c113b429-c03a-5278-baef-5f94cb449dbc",
+      "name": "Garde : état du stop-loss",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — alertes stock').first().json.api_base_url }}/stock/sellable",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ sku: $('Réception contrôlée (passerelle agent 11)').first().json.body.sku }) }}"
+      },
+      "id": "21b9c190-0daf-598d-8e55-ec1e23854438",
+      "name": "Stock vendable local",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "74c5f5e7-27cd-5fb5-a90e-10c6814d859a",
+              "leftValue": "={{ $('Garde : état du stop-loss').first().json.available }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            },
+            {
+              "id": "5fb917b7-cb96-5e56-8d3c-800d79498791",
+              "leftValue": "={{ $('Garde : état du stop-loss').first().json.global_frozen }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              },
+              "rightValue": ""
+            },
+            {
+              "id": "e9d0a039-727a-5345-b8ce-64c95d211a9f",
+              "leftValue": "={{ ($('Garde : état du stop-loss').first().json.status || {}).blocked_products || [] }}",
+              "operator": {
+                "type": "array",
+                "operation": "notContains"
+              },
+              "rightValue": "={{ $('Réception contrôlée (passerelle agent 11)').first().json.body.product_key }}"
+            },
+            {
+              "id": "5f08bfad-84f2-5909-896b-4e30fe3188e7",
+              "leftValue": "={{ $json.sellable }}",
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              },
+              "rightValue": "={{ $('Paramètres — alertes stock').first().json.seuil_stock_alerte }}"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "caf8ac4d-a5c2-5792-a383-4737571fbdf8",
+      "name": "Garde-fous campagne (stock, marge, gel)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        0
+      ],
+      "notes": "Une campagne s'arrête si le stock passe sous le seuil ou si la marge est insuffisante (BP §9).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "464d0449-9fdc-54c8-976f-9a8f7a5e614d",
+              "name": "motif",
+              "value": "={{ !$('Garde : état du stop-loss').first().json.available ? 'stop-loss non évaluable' : $('Garde : état du stop-loss').first().json.global_frozen ? 'gel global' : (($('Garde : état du stop-loss').first().json.status || {}).blocked_products || []).includes($('Réception contrôlée (passerelle agent 11)').first().json.body.product_key) ? 'marge insuffisante (stop-loss produit)' : 'stock vendable sous le seuil' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "c84e4900-6930-5604-9472-bf6ff82775d7",
+      "name": "Campagne stoppée (motif)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1400,
+        140
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "91531b27-ca6e-5d64-a437-baccbecaee29",
+      "name": "Journal : alerte non envoyée",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/subscribers?status=confirme",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b12c951d-9248-52e8-b18b-57ee051d9d77",
+      "name": "Lire les inscrits consentants — outil d’emailing (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        -80
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Outil d'emailing à choisir (B04) ; lecture des inscrits confirmés seulement.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Inscrits consentants pour l'alerte « nouveau stock local » (email 04) : statut confirmé, non désinscrit,\n// alerte demandée sur ce produit ou préférence de format correspondante. Aucune adresse n'est manipulée ici :\n// l'outil d'emailing envoie à partir de l'identifiant d'inscrit.\nconst reception = $('Réception contrôlée (passerelle agent 11)').first().json.body || {};\nconst data = $input.first().json;\nconst subscribers = data && Array.isArray(data.subscribers) ? data.subscribers : null;\nif (!subscribers) return []; // outil d'emailing non branché : aucun envoi\nconst format = String(reception.format_preference || '').toLowerCase();\nreturn subscribers\n  .filter((s) => s.status === 'confirme' && s.unsubscribed !== true)\n  .filter((s) => (Array.isArray(s.alert_products) && s.alert_products.includes(reception.product_key))\n    || (format && Array.isArray(s.formats) && s.formats.includes(format)))\n  .map((s) => ({ json: { subscriber_id: String(s.id), product_key: reception.product_key, public_title: reception.public_title, public_url: reception.public_url } }));\n"
+      },
+      "id": "2283335f-e08f-5377-b0d5-432e8e1ca78e",
+      "name": "Filtrer : consentement confirmé et préférence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "logic": "removeItemsWithAlreadySeenKeyValues",
+        "dedupeValue": "={{ $json.product_key }}|{{ $json.subscriber_id }}",
+        "options": {
+          "scope": "workflow",
+          "historySize": 10000
+        }
+      },
+      "id": "d7c5a232-0a9e-5738-a505-dc679f7e2c0f",
+      "name": "Une alerte par produit et par personne",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8c64fee9-ccfc-5217-81c2-98a9107f6b02",
+              "name": "modele",
+              "value": "04-alerte-stock-local",
+              "type": "string"
+            },
+            {
+              "id": "dc17edd2-65c2-547b-b7fd-debe4d38d514",
+              "name": "produit_titre",
+              "value": "={{ $json.public_title }}",
+              "type": "string"
+            },
+            {
+              "id": "ca2d7daa-111d-553b-aec9-b687d6235a92",
+              "name": "url_produit",
+              "value": "={{ $json.public_url }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "3c49f983-bd48-5f7f-bb6f-20b1dec02d70",
+      "name": "Composer l’email 04 (alerte stock local)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2240,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ template: $json.modele, subscriber_id: $json.subscriber_id, variables: { produit_titre: $json.produit_titre, url_produit: $json.url_produit } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "bf595818-f169-5d40-9d49-90f69b133950",
+      "name": "Envoyer l’email 04 — outil d’emailing (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2520,
+        -80
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Niveau 3 seulement. Prix et statut relus sur la page publique au moment de l'envoi (EMAILS §4).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "topic": "orders/fulfilled"
+      },
+      "id": "5f7e17b4-f5e6-5353-aab0-a94dc19eea86",
+      "name": "Shopify : commande expédiée (orders/fulfilled)",
+      "type": "n8n-nodes-base.shopifyTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        400
+      ],
+      "webhookId": "2db8d47e-4309-5fff-a766-a864a0b82a19",
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "pkshpShopifyAdm1",
+          "name": "Shopify Admin — app personnalisée"
+        }
+      },
+      "notes": "L'activation du workflow inscrit ce webhook chez Shopify (écriture) : activer au niveau 2 seulement.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4288d84f-78d6-51c4-b45c-afc2e6653141",
+              "leftValue": "={{ ($json.fulfillments || []).some(f => (f.tracking_numbers || []).length > 0) }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "1b7669f8-deb3-5a3f-97e3-2918d00b9e94",
+      "name": "Numéro de suivi présent ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        280,
+        400
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "280f42dc-0789-5ee4-948e-119f76b34ed3",
+      "name": "Suivi envoyé au client par Shopify (email 07)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        560,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "0cd9d981-bf47-54d0-b784-f71b80244113",
+              "name": "workflow",
+              "value": "06-marketing",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "33c26fd3-083f-568b-b80a-c09016204d94",
+      "name": "Paramètres — suivi",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        560,
+        480
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "33c3465f-c8f8-5f4d-bfa1-5f034f866a88",
+              "name": "sujet",
+              "value": "=[SUIVI] Commande {{ $('Shopify : commande expédiée (orders/fulfilled)').first().json.name }} expédiée sans numéro de suivi",
+              "type": "string"
+            },
+            {
+              "id": "08cf3c6e-d4a7-5fa2-a886-a033b23e3dbe",
+              "name": "texte",
+              "value": "=Ajouter le numéro de suivi dans Shopify (le client reçoit alors l'email 07).",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "ccdcba81-9e4d-5c77-8981-81cc6c0ec9b7",
+      "name": "Préparer l’alerte sans suivi",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        840,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — suivi').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "d8f5cbe5-da52-5865-b6ab-ca0d680af5f9",
+      "name": "Alerte : expédition sans numéro de suivi (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1120,
+        480
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "topic": "fulfillment_events/create"
+      },
+      "id": "027658d2-51a2-52b3-ba85-0899cdecdc8d",
+      "name": "Shopify : événement de livraison (fulfillment_events/create)",
+      "type": "n8n-nodes-base.shopifyTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        680
+      ],
+      "webhookId": "a3cf3820-864d-5664-854b-ae76c141e202",
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "pkshpShopifyAdm1",
+          "name": "Shopify Admin — app personnalisée"
+        }
+      },
+      "notes": "L'activation du workflow inscrit ce webhook chez Shopify (écriture) : activer au niveau 2 seulement.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "eb21f455-ebb6-5c35-906a-44f470c9c133",
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "delivered"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "11f4d33e-7a8c-570f-a63e-7f0138585c82",
+      "name": "Livré ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        280,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "logic": "removeItemsWithAlreadySeenKeyValues",
+        "dedupeValue": "={{ $json.order_id }}",
+        "options": {
+          "scope": "workflow",
+          "historySize": 10000
+        }
+      },
+      "id": "11df3cca-f110-5b0c-84a7-1b7de81b9635",
+      "name": "Une seule demande par commande",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        560,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 7,
+        "unit": "days"
+      },
+      "id": "00a0967c-a923-538c-8b4b-990187197d20",
+      "name": "Attendre 7 jours après livraison (hypothèse)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        840,
+        680
+      ],
+      "webhookId": "f39864aa-cd5f-5f68-81cd-27776cdf226a"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "0cd9d981-bf47-54d0-b784-f71b80244113",
+              "name": "workflow",
+              "value": "06-marketing",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "05cda228-5113-5ac2-aa27-bea4e9838ab6",
+      "name": "Paramètres — avis",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1120,
+        680
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — avis').first().json.api_base_url }}/stoploss/status",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "1713f736-107d-5b72-bbc3-ddeb82e8226d",
+      "name": "Garde : gel global (avis)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        680
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a92c1bfa-0663-55ce-bea6-fde8c8551784",
+              "leftValue": "={{ $json.available }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            },
+            {
+              "id": "b2a8b9c4-9f9d-589b-b42c-6a2c7ea1bc35",
+              "leftValue": "={{ $json.global_frozen }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "3d606c4f-a17f-58cf-a230-2eabefa227df",
+      "name": "Envoi autorisé ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-boutique.myshopify.com/admin/api/2026-10/graphql.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyAccessTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: 'query($id: ID!) { order(id: $id) { name tags customer { id } } }', variables: { id: 'gid://shopify/Order/' + $('Une seule demande par commande').first().json.order_id } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "5a32775a-39d9-5ed0-acc1-b0580bd9dd3f",
+      "name": "Lire la commande : réclamation ou opposition ? — Shopify (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1960,
+        640
+      ],
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "pkshpShopifyAdm1",
+          "name": "Shopify Admin — app personnalisée"
+        }
+      },
+      "disabled": true,
+      "notes": "Lecture seule. L'opposition (case au checkout, note C3 du juriste) est portée par une étiquette « avis-refus ».",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Demande d'avis (email 11) : une seule par commande, aucune réclamation ouverte, client non opposé (note C3).\nconst data = $input.first().json;\nconst order = data && data.data ? data.data.order : null;\nif (!order) return []; // lecture Shopify non configurée : aucun envoi\nconst tags = (order.tags || []).map((t) => String(t).toLowerCase());\nif (tags.includes('reclamation') || tags.includes('avis-refus')) return [];\nif (!order.customer || !order.customer.id) return [];\nreturn [{ json: { customer_id: String(order.customer.id), order_name: order.name } }];\n"
+      },
+      "id": "b061c2d4-482c-536c-a163-97e3d6bb6b68",
+      "name": "Éligible à la demande d’avis ?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fd23ca68-c62d-5f66-ac65-0847cf563382",
+              "name": "modele",
+              "value": "11-demande-avis",
+              "type": "string"
+            },
+            {
+              "id": "5523e433-9e11-536b-add8-76d6f127bb03",
+              "name": "numero_commande",
+              "value": "={{ $json.order_name }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "096d0030-d029-5ab9-926b-fd084a04b0b2",
+      "name": "Composer l’email 11 (demande d’avis)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2520,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ template: $json.modele, shopify_customer_id: $json.customer_id, variables: { numero_commande: $json.numero_commande } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "200a777e-95cd-53a1-a9cb-dd01fc03fc9b",
+      "name": "Envoyer l’email 11 — outil d’emailing (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2800,
+        640
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Un seul email, avec lien de refus (note C3 du juriste à obtenir avant activation).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "86b9af24-c49b-5255-95c9-4501cbb6767e",
+      "name": "Journal : avis non envoyé (gel ou stop-loss indisponible)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1960,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "alertes-desinscrire",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "none"
+      },
+      "id": "1a65584d-c7b7-5b33-86b6-03ae0605b327",
+      "name": "Lien de désinscription (landing et emails)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1000
+      ],
+      "webhookId": "0c422456-2de8-5600-93f5-f5ea3cb0e447",
+      "notes": "Jeton unique par lien (EMAILS §4 règle 7) ; page de confirmation sans JavaScript.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "respondWith": "redirect",
+        "redirectURL": "https://REMPLACER-URL-LANDING.exemple.invalid/desinscription.html",
+        "options": {}
+      },
+      "id": "66fc3143-1d28-5aa8-b24d-48f4afa6ac42",
+      "name": "Afficher la page de désinscription",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        280,
+        1000
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "topic": "customers/update"
+      },
+      "id": "68cc81c9-45b6-5252-a773-e9f37969f7a5",
+      "name": "Shopify : client mis à jour (customers/update)",
+      "type": "n8n-nodes-base.shopifyTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        1200
+      ],
+      "webhookId": "48995153-99f3-5671-95da-c311fcf762a8",
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "pkshpShopifyAdm1",
+          "name": "Shopify Admin — app personnalisée"
+        }
+      },
+      "notes": "L'activation du workflow inscrit ce webhook chez Shopify (écriture) : activer au niveau 2 seulement.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5d7fe72e-184f-50c2-b96a-00a51f635aa3",
+              "leftValue": "={{ ($json.email_marketing_consent || {}).state }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "unsubscribed"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "be3b766a-8de7-57ae-bd48-9bce1804bf56",
+      "name": "Désinscrit dans Shopify ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        280,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Désinscription : jeton du lien (landing, emails) ou consentement retiré dans Shopify. Journal sans adresse.\nconst item = $input.first().json;\nconst token = item.query && item.query.jeton ? String(item.query.jeton) : null;\nif (token !== null && !/^[A-Za-z0-9_-]{16,128}$/.test(token)) return []; // jeton invalide : ignoré\nreturn [{ json: {\n  source: token ? 'lien_desinscription' : 'shopify',\n  jeton: token,\n  shopify_customer_id: token ? null : String(item.id || ''),\n  received_at: new Date().toISOString(),\n} }];\n"
+      },
+      "id": "a97a02a1-17dd-5a0d-a703-1920156466d9",
+      "name": "Normaliser la désinscription",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/unsubscribe",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ token: $json.jeton, shopify_customer_id: $json.shopify_customer_id, source: $json.source }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "66fe5c13-7fba-5f1f-a6fd-7959918c115f",
+      "name": "Désinscrire dans l’outil d’emailing (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        1100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "À activer en même temps que l'outil d'emailing, AVANT tout envoi (désinscription dans la minute).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-boutique.myshopify.com/admin/api/2026-10/graphql.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyAccessTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: 'mutation($input: CustomerEmailMarketingConsentUpdateInput!) { customerEmailMarketingConsentUpdate(input: $input) { userErrors { field message } } }', variables: { input: { customerId: 'gid://shopify/Customer/' + $json.shopify_customer_id, emailMarketingConsent: { marketingState: 'UNSUBSCRIBED' } } } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "2a76f87a-e820-5fb5-8513-0fa6602c7a3a",
+      "name": "Retirer le consentement marketing dans Shopify (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        1100
+      ],
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "pkshpShopifyAdm1",
+          "name": "Shopify Admin — app personnalisée"
+        }
+      },
+      "disabled": true,
+      "notes": "Mutation hors liste blanche du client du moteur : à valider (agent integrations) avant activation.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "38d8b1c9-9b73-51d7-802f-2a4eb18e85b7",
+      "name": "Journal de désinscription (sans adresse)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1400,
+        1100
+      ]
+    }
+  ],
+  "connections": {
+    "Réception contrôlée (passerelle agent 11)": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — alertes stock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — alertes stock": {
+      "main": [
+        [
+          {
+            "node": "Garde : état du stop-loss",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Garde : état du stop-loss": {
+      "main": [
+        [
+          {
+            "node": "Stock vendable local",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stock vendable local": {
+      "main": [
+        [
+          {
+            "node": "Garde-fous campagne (stock, marge, gel)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Garde-fous campagne (stock, marge, gel)": {
+      "main": [
+        [
+          {
+            "node": "Lire les inscrits consentants — outil d’emailing (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Campagne stoppée (motif)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Campagne stoppée (motif)": {
+      "main": [
+        [
+          {
+            "node": "Journal : alerte non envoyée",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire les inscrits consentants — outil d’emailing (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Filtrer : consentement confirmé et préférence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrer : consentement confirmé et préférence": {
+      "main": [
+        [
+          {
+            "node": "Une alerte par produit et par personne",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Une alerte par produit et par personne": {
+      "main": [
+        [
+          {
+            "node": "Composer l’email 04 (alerte stock local)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Composer l’email 04 (alerte stock local)": {
+      "main": [
+        [
+          {
+            "node": "Envoyer l’email 04 — outil d’emailing (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shopify : commande expédiée (orders/fulfilled)": {
+      "main": [
+        [
+          {
+            "node": "Numéro de suivi présent ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Numéro de suivi présent ?": {
+      "main": [
+        [
+          {
+            "node": "Suivi envoyé au client par Shopify (email 07)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Paramètres — suivi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — suivi": {
+      "main": [
+        [
+          {
+            "node": "Préparer l’alerte sans suivi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer l’alerte sans suivi": {
+      "main": [
+        [
+          {
+            "node": "Alerte : expédition sans numéro de suivi (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shopify : événement de livraison (fulfillment_events/create)": {
+      "main": [
+        [
+          {
+            "node": "Livré ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Livré ?": {
+      "main": [
+        [
+          {
+            "node": "Une seule demande par commande",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Une seule demande par commande": {
+      "main": [
+        [
+          {
+            "node": "Attendre 7 jours après livraison (hypothèse)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attendre 7 jours après livraison (hypothèse)": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — avis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — avis": {
+      "main": [
+        [
+          {
+            "node": "Garde : gel global (avis)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Garde : gel global (avis)": {
+      "main": [
+        [
+          {
+            "node": "Envoi autorisé ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envoi autorisé ?": {
+      "main": [
+        [
+          {
+            "node": "Lire la commande : réclamation ou opposition ? — Shopify (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Journal : avis non envoyé (gel ou stop-loss indisponible)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire la commande : réclamation ou opposition ? — Shopify (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Éligible à la demande d’avis ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Éligible à la demande d’avis ?": {
+      "main": [
+        [
+          {
+            "node": "Composer l’email 11 (demande d’avis)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Composer l’email 11 (demande d’avis)": {
+      "main": [
+        [
+          {
+            "node": "Envoyer l’email 11 — outil d’emailing (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lien de désinscription (landing et emails)": {
+      "main": [
+        [
+          {
+            "node": "Afficher la page de désinscription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Afficher la page de désinscription": {
+      "main": [
+        [
+          {
+            "node": "Normaliser la désinscription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shopify : client mis à jour (customers/update)": {
+      "main": [
+        [
+          {
+            "node": "Désinscrit dans Shopify ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Désinscrit dans Shopify ?": {
+      "main": [
+        [
+          {
+            "node": "Normaliser la désinscription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliser la désinscription": {
+      "main": [
+        [
+          {
+            "node": "Désinscrire dans l’outil d’emailing (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Désinscrire dans l’outil d’emailing (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Retirer le consentement marketing dans Shopify (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retirer le consentement marketing dans Shopify (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Journal de désinscription (sans adresse)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Zurich",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "saveExecutionProgress": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "pkshp04Incidents"
+  },
+  "pinData": {},
+  "staticData": null,
+  "tags": [],
+  "versionId": "68838607-68f0-53dc-83da-a54ec75dc085",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
