@@ -367,9 +367,7 @@ def test_r3new05_shipped_orders_carry_lines_and_derive_cost_of_sales(tmp_path: P
     F.feed_registers(client, svc)  # 6 displays au coût 101.2345
     no_lines = client.post("/orders/shipped", headers=JR.HORDERS, json=order("1001", lines=False))
     assert no_lines.status_code == 422
-    unknown = client.post("/orders/shipped", headers=JR.HORDERS,
-                          json={**order("1001"), "lines": [{"public_sku": "ETB-INCONNU-FR", "qty": 1}]})  # fmt: skip
-    assert unknown.status_code == 409
+    # SKU inconnu : revue R6 (R5-NEW-02) — commande payée jamais refusée, ligne non rattachée (tests/test_revue_r6.py).
     sale = {**order("1001", qty=6, fees="25.00"), "net_sales_ht": "855.00"}
     assert client.post("/orders/shipped", headers=JR.HORDERS, json=sale).status_code == 201
     assert svc.costs.ledger("FICTIF-P1").qty_on_hand == 0

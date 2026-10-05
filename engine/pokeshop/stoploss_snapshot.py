@@ -88,6 +88,7 @@ __all__ = [
     "ActivityRegisterPersistenceError",
     "PhotoSourcesError",
     "build_activity_photo",
+    "derive_attributed",
     "executed_ad_payments",
     "committed_ad_payments",
     "merge_ad_spends",
@@ -342,7 +343,9 @@ class AdsActivityRegister:
     (409) ; une hausse (correction du connecteur) est admise. Une commande attribuée doit être une commande
     **enregistrée par le moteur** (:class:`pokeshop.northstar.OrderRegister`) : statut et contribution sont
     plafonnés par ses données (jamais une contribution déclarée plus favorable) ; une commande ne redevient
-    jamais « payée » après annulation ou remboursement. Le déposant (déduit du jeton) est journalisé.
+    jamais « payée » après annulation ou remboursement. Le déposant (déduit du jeton) est journalisé. Revue R6
+    (R5-NEW-01) : le plafond retire le **coût des ventes** du registre de coûts du moteur, et la photo re-dérive la
+    contribution à chaque fois (:func:`derive_attributed` ; coût des ventes inconnu : 0).
     """
 
     STREAM = "ads_activity"
@@ -389,13 +392,17 @@ class AdsActivityRegister:
             self._orders[o.order_id] = o
 
     def _checked_orders(
-        self, orders: list[AttributedOrder], order_book: Any
+        self, orders: list[AttributedOrder], order_book: Any, costs: Any = None
     ) -> tuple[list[AttributedOrder], dict[str, str]]:
         """Commandes attribuées admises (plafonnées par le registre des commandes) et commandes **écartées** -> motif.
 
         Revue R5 (R4-NEW-01) : une commande inconnue du moteur (pas encore enregistrée par ``POST /orders/shipped``)
         ou en conflit est écartée **seule** — jamais les dépenses du lot (le stop-loss pub ne perd aucune dépense) ;
         le connecteur la renvoie à son prochain relevé.
+
+        Revue R6 (R5-NEW-01) : contribution retenue = min(déclarée, **dérivée** : ventes nettes − avoirs − frais −
+        logistique réelle − coût des ventes du registre de coûts ``costs``). Coût des ventes encore inconnu (en
+        attente) : plafond hors coût des ventes ici, et la photo re-dérive à chaque fois (:func:`derive_attributed`).
         """
         out: list[AttributedOrder] = []
         aside: dict[str, str] = {}
@@ -411,6 +418,9 @@ class AdsActivityRegister:
             if order_book.status(o.order_id) == "REFUNDED":
                 status = "REFUNDED"
             bound = order_book.contribution_bound(o.order_id)
+            cogs = order_book.order_cogs(o.order_id, costs) if costs is not None and bound is not None else None
+            if cogs is not None:  # revue R6 (R5-NEW-01) : coût des ventes du moteur, jamais ignoré
+                bound = min(bound - cogs, bound)
             contribution = min(o.contribution_before_acquisition, bound) if bound is not None else Decimal("0")
             previous = self._orders.get(o.order_id)
             if previous is not None:
@@ -433,11 +443,13 @@ class AdsActivityRegister:
         recorded_by: str = "inconnu",
         order_book: Any = None,
         recorded_at: datetime | None = None,
+        costs: Any = None,
     ) -> int:
         """Enregistre un lot (contrôlé, écrit d'abord) ; renvoie le nombre d'éléments reçus.
 
-        ``order_book`` : registre des commandes du moteur (``get``, ``status``, ``contribution_bound``) ;
-        sans lui, aucune commande attribuée n'est admise. Commandes écartées : :attr:`last_set_aside`.
+        ``order_book`` : registre des commandes du moteur (``get``, ``status``, ``contribution_bound``,
+        ``order_cogs``) ; sans lui, aucune commande attribuée n'est admise. ``costs`` : registre de coûts du moteur
+        (coût des ventes de la commande, revue R6). Commandes écartées : :attr:`last_set_aside`.
         """
         if any(s.day > today for s in spends):
             raise ActivityRegisterError("dépense publicitaire datée du futur")
@@ -452,7 +464,7 @@ class AdsActivityRegister:
                         f"dépense {s.campaign_id} du {s.day} déjà relevée à {current.amount} CHF : une baisse "
                         f"({s.amount}) est refusée (registre en ajout seul ; correction : la propriétaire)"
                     )
-            checked, aside = self._checked_orders(list(orders), order_book)
+            checked, aside = self._checked_orders(list(orders), order_book, costs)
             self.last_set_aside = aside
             _append(
                 self._store,
@@ -484,6 +496,31 @@ class AdsActivityRegister:
             spends = tuple(s for (_, d), s in sorted(self._spends.items()) if d >= since)
             orders = tuple(o for _, o in sorted(self._orders.items()) if o.paid_at.date() >= since)
         return spends, orders
+
+
+def derive_attributed(
+    orders: Iterable[AttributedOrder], order_book: Any, costs: Any
+) -> tuple[tuple[AttributedOrder, ...], tuple[str, ...]]:
+    """Commandes attribuées **re-dérivées des registres du moteur** à chaque photo ; (commandes, coût inconnu).
+
+    Revue R6 (R5-NEW-01) : contribution = min(valeur relevée, contribution dérivée du registre des commandes et du
+    registre de coûts : ventes nettes − avoirs − frais − logistique réelle − coût des ventes net). Coût des ventes
+    inconnu (en attente, ligne non rattachée) : **0** et commande listée (photo incomplète par ailleurs) ; commande
+    remboursée en totalité depuis le relevé : ``REFUNDED``. Sans registre des commandes : contribution 0 (fermé).
+    """
+    out: list[AttributedOrder] = []
+    unknown_cogs: list[str] = []
+    for o in orders:
+        derived = order_book.derived_contribution(o.order_id, costs) if order_book is not None else None
+        status = o.status
+        if order_book is not None and status == "PAID" and order_book.status(o.order_id) == "REFUNDED":
+            status = "REFUNDED"
+        cogs_known = order_book is not None and order_book.order_cogs(o.order_id, costs) is not None
+        if not cogs_known:
+            unknown_cogs.append(o.order_id)
+        contribution = min(o.contribution_before_acquisition, derived) if derived is not None else Decimal("0")
+        out.append(o.model_copy(update={"status": status, "contribution_before_acquisition": contribution}))
+    return tuple(out), tuple(sorted(unknown_cogs))
 
 
 def executed_ad_payments(entries: Iterable[Any], tz: Any) -> dict[tuple[str, date], Decimal]:
@@ -584,6 +621,7 @@ def build_activity_photo(
     receivables: ReceivablesStatement | None = None,
     balances_max_age: timedelta | None = None,
     incomplete: Mapping[str, str] | None = None,
+    order_book: Any = None,
 ) -> tuple[StopLossState, dict[str, Any]]:
     """Photo d'activité tirée des registres ; :class:`PhotoSourcesError` si une source manque ou est périmée.
 
@@ -596,7 +634,9 @@ def build_activity_photo(
     lui, toujours à jour. Revue R4 (R3-NEW-02) et R5 (R4-NEW-02, R4-DOC-01) : dettes = dettes déclarées + factures
     enregistrées non payées ; créances = relevé **distinct** de la propriétaire (``receivables``), jamais effacé par
     une déclaration de dettes d'un rôle. ``incomplete`` : motifs d'étoile polaire incomplète (coût des ventes en
-    attente, revue R5, R4-NEW-01), reportés dans les sources (dépenses : validation humaine).
+    attente, revue R5, R4-NEW-01), reportés dans les sources (dépenses : validation humaine). ``order_book`` :
+    registre des commandes du moteur — contribution des commandes attribuées re-dérivée avec le coût des ventes du
+    registre de coûts (revue R6, R5-NEW-01) ; absent : contribution 0 (fermé par défaut).
     """
     _aware(now, "now")
     problems: list[str] = []
@@ -716,14 +756,18 @@ def build_activity_photo(
             )  # fmt: skip
             seen.add(k)
 
-    spends, orders = ads.window(as_of.date() - timedelta(days=ads_window_days))
+    spends, attributed = ads.window(as_of.date() - timedelta(days=ads_window_days))
+    # Revue R6 (R5-NEW-01) : contribution de chaque commande attribuée re-dérivée des registres du moteur.
+    attributed, attributed_cogs_unknown = derive_attributed(
+        (o for o in attributed if o.paid_at <= as_of), order_book, costs
+    )
     state = StopLossState(
         as_of=as_of,
         products=tuple(margins),
         extensions=extensions,
         stock_budget_chf=stock_budget_chf,
         ad_spends=tuple(s for s in spends if s.day <= as_of.date()),
-        attributed_orders=tuple(o for o in orders if o.paid_at <= as_of),
+        attributed_orders=attributed,
         ads_daily_cap_chf=ads_daily_cap_chf,
         cash_available_chf=cash - balances.preorders_collected_chf,
         capital_movements=movements,
@@ -732,6 +776,11 @@ def build_activity_photo(
         ),
     )
     reasons = dict(incomplete or {})
+    for oid in attributed_cogs_unknown:  # revue R6 (R5-NEW-01) : fermé par défaut, jamais silencieux
+        reasons.setdefault(
+            f"commande {oid}",
+            "commande attribuée à une campagne sans coût des ventes connu au registre du moteur : contribution 0",
+        )
     sources = {
         "as_of": as_of,
         "cash": {"paypal": {"as_of": paypal.as_of, "recorded_by": paypal.recorded_by},
@@ -753,5 +802,7 @@ def build_activity_photo(
         "product_margins": len(margins),
         "ad_spends": len(state.ad_spends),
         "attributed_orders": len(state.attributed_orders),
+        # Revue R6 (R5-NEW-01) : commandes attribuées dont le coût des ventes est inconnu (contribution retenue : 0).
+        "attributed_orders_cost_of_sales_unknown": list(attributed_cogs_unknown),
     }  # fmt: skip
     return state, sources

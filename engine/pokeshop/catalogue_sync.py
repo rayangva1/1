@@ -34,6 +34,7 @@ from .audit import StateJournal, StateStoreError
 from .catalog import SupplierLink
 from .errors import PokeshopError
 from .models import FrozenModel
+from .northstar import is_unresolved_key
 from .publish import ENGINE_OWNED_LISTING_FIELDS, HUMAN_VALIDATION_FIELDS, CatalogListing
 from .sync import OfferCostInputs, SyncReport, SyncStep
 
@@ -199,6 +200,12 @@ class CatalogRegistry:
         self._costs: dict[str, SupplierCostEntry] = {}
         self._catalog_store = catalog_store
         self._costs_store = costs_store
+        self._sku_holders: dict[str, set[str]] = {}
+        """Revue R6 (R5-NEW-02) : SKU boutique -> clés qui l'ont **porté** (historique relu du journal ``sync_catalog``,
+        ajout seul) ; un SKU corrigé reste rattaché à sa clé pour les commandes payées avant la correction."""
+
+    def _remember(self, entry: CatalogEntry) -> None:
+        self._sku_holders.setdefault(entry.listing.public_sku, set()).add(entry.product_id)
 
     @classmethod
     def restore(cls, catalog_store: StateJournal, costs_store: StateJournal) -> CatalogRegistry:
@@ -211,6 +218,7 @@ class CatalogRegistry:
                 raise SyncRegistryPersistenceError(f"catalogue de synchronisation : enregistrement {n} illisible") from exc
             for entry in batch:
                 registry._entries[entry.product_id] = entry
+                registry._remember(entry)  # revue R6 (R5-NEW-02) : alias de SKU historiques persistés (journal)
         for n, record in enumerate(_load(costs_store, "frais fournisseurs"), start=1):
             try:
                 cost = SupplierCostEntry.model_validate(record["costs"])
@@ -235,6 +243,9 @@ class CatalogRegistry:
                 raise SyncRegistryError(
                     f"clé produit incohérente ({', '.join(bad)}) : product_id doit être égal à listing.product_key"
                 )
+            reserved = [e.product_id for e in entries if is_unresolved_key(e.product_id)]
+            if reserved:  # revue R6 (R5-NEW-02) : clé des lignes de commande non rattachées, réservée au moteur
+                raise SyncRegistryError(f"clé produit réservée au moteur ({', '.join(reserved)}) : refusée")
             after = {**self._entries, **{e.product_id: e for e in entries}}
             for label, attr in (("SKU boutique", "public_sku"), ("handle", "handle")):
                 owners: dict[str, str] = {}
@@ -264,6 +275,7 @@ class CatalogRegistry:
                 )
                 for e in changed:
                     self._entries[e.product_id] = e
+                    self._remember(e)
             return len(changed)
 
     def set_costs(self, entry: SupplierCostEntry) -> bool:
@@ -304,9 +316,35 @@ class CatalogRegistry:
             return self._entries.get(key)
 
     def by_sku(self, public_sku: str) -> CatalogEntry | None:
-        """Fiche dont le SKU boutique est ``public_sku`` (unique par construction), None sinon."""
+        """Fiche dont le SKU boutique **actuel** est ``public_sku`` (unique par construction), None sinon."""
         with self._lock:
             return next((e for e in self._entries.values() if e.listing.public_sku == public_sku), None)
+
+    def sku_holders(self, public_sku: str) -> tuple[str, ...]:
+        """Clés qui ont porté ``public_sku`` (historique du journal + fiche actuelle), triées."""
+        with self._lock:
+            holders = set(self._sku_holders.get(public_sku, ()))
+            current = self.by_sku(public_sku)
+            if current is not None:
+                holders.add(current.product_id)
+            return tuple(sorted(holders))
+
+    def resolve_sku(self, public_sku: str) -> tuple[CatalogEntry | None, tuple[str, ...]]:
+        """Fiche canonique d'un SKU de commande, **historique compris** ; (fiche ou None, clés candidates).
+
+        Revue R6 (R5-NEW-02) : une commande payée avant une correction de SKU porte l'ancien SKU ; il reste rattaché
+        à sa clé (alias historique relu du journal). Résolu seulement si **une seule** clé a jamais porté le SKU et
+        que sa fiche actuelle est canonique ; sinon (SKU inconnu, ou porté au fil du temps par plusieurs clés :
+        ambigu) None — l'appelant enregistre la ligne non rattachée (coût des ventes en attente, incomplet), jamais
+        une clé devinée.
+        """
+        with self._lock:
+            holders = self.sku_holders(public_sku)
+            if len(holders) == 1:
+                entry = self._entries.get(holders[0])
+                if entry is not None and entry.canonical:
+                    return entry, holders
+            return None, holders
 
     def incoherent(self) -> tuple[str, ...]:
         """Entrées anciennes dont ``product_id`` ≠ ``listing.product_key`` (à ré-enregistrer)."""

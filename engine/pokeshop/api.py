@@ -208,6 +208,8 @@ from .northstar import (
     OrderRefund,
     OrderRegister,
     ShippedOrder,
+    is_unresolved_key,
+    unresolved_key,
 )
 from .pricing import basket_contribution, decide_price
 from .publish import (
@@ -1121,6 +1123,13 @@ class ShippedOrderIn(_In):
     shipping_cost_actual: PositiveMoney
     shipping_label_ref: str = Field(min_length=3, max_length=120)
     source: str = Field(min_length=3, max_length=200)
+
+
+class OrderLineResolveIn(_In):
+    """Rattachement d'une ligne non rattachée (revue R6, R5-NEW-02) : SKU de la ligne, clé produit canonique."""
+
+    public_sku: str = Field(min_length=3, max_length=64)
+    product_key: str = Field(min_length=1, max_length=120)
 
 
 class OrderRefundIn(_In):
@@ -2813,6 +2822,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             (CostRegister.STREAM, "registre de coûts historiques"),
             (CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation"),
             (AdsActivityRegister.STREAM, "registre de l'activité publicitaire"),
+            (OrderRegister.STREAM, "registre des commandes"),  # revue R6 : contribution attribuée dérivée
             (PersistentPriceHistory.STREAM, "historique des prix"),
             (SupplierInvoiceBook.STREAM, "registre des factures fournisseur"),
             (BalanceStatementBook.STREAM, "registre des dettes et créances"),
@@ -2828,6 +2838,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 balances=svc.balances.debts,
                 receivables=svc.balances.receivables,
                 incomplete=svc.orders.incomplete_reasons(),
+                order_book=svc.orders,  # revue R6 (R5-NEW-01) : contribution attribuée re-dérivée des registres
                 costs=svc.costs,
                 catalog=svc.catalog,
                 price_history=svc.price_history,
@@ -3532,6 +3543,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             recorded_by=principal.name,
             order_book=svc.orders,
             recorded_at=now,
+            costs=svc.costs,  # revue R6 (R5-NEW-01) : contribution bornée par le coût des ventes du moteur
         )
         svc.audit.append(
             actor=principal.name,
@@ -3649,7 +3661,11 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         référence de l'étiquette achetée obligatoires (revue MOT-18 : une logistique supposée n'est jamais
         inscrite) ; idempotente par ``order_id`` (autre contenu : 409). Revue R5 (R4-NEW-01) : jamais refusée faute
         de stock valorisé — coût des ventes **en attente** (``cost_of_sales_pending``), étoile polaire et photo
-        signalées incomplètes (dépenses : validation humaine) jusqu'à l'inscription du coût de réception.
+        signalées incomplètes (dépenses : validation humaine) jusqu'à l'inscription du coût de réception. Revue R6
+        (R5-NEW-02) : jamais refusée pour un SKU — un SKU corrigé par le catalogue reste rattaché à sa clé (alias
+        historique du journal du catalogue) ; un SKU inconnu ou ambigu (porté par plusieurs clés) donne une ligne
+        **non rattachée** (``unresolved_lines``, coût des ventes en attente, incomplet) que la propriétaire rattache
+        (``POST /orders/{order_id}/lines/resolve``).
         """
         principal = require_api(request)
         _persistence_guard(OrderRegister.STREAM, "registre des commandes")
@@ -3661,13 +3677,14 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         if body.paid_at - now > timedelta(minutes=5):
             raise HTTPProblem(409, "commande datée du futur : horloge non fiable")
         lines: list[OrderLine] = []
+        unresolved: dict[str, list[str]] = {}
         for line in body.lines:
-            entry = svc.catalog.by_sku(line.public_sku)
-            if entry is None or not entry.canonical:
-                raise HTTPProblem(
-                    409, f"ligne {line.public_sku} : SKU inconnu du catalogue validé (clé produit canonique) — commande refusée"
-                )
-            lines.append(OrderLine(public_sku=line.public_sku, product_key=entry.product_id, qty=line.qty))
+            # Revue R6 (R5-NEW-02) : SKU actuel ou ancien SKU de la même clé ; inconnu ou ambigu : ligne non rattachée.
+            entry, holders = svc.catalog.resolve_sku(line.public_sku)
+            if entry is None:
+                unresolved[line.public_sku] = list(holders)
+            key = entry.product_id if entry is not None else unresolved_key(line.public_sku)
+            lines.append(OrderLine(public_sku=line.public_sku, product_key=key, qty=line.qty))
         data = body.model_dump(exclude={"lines"})
         try:
             order, created = svc.orders.record_shipped(
@@ -3690,13 +3707,17 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 dry_run=False,
                 payload={"net_sales_ht": order.net_sales_ht, "shipping_cost_actual": order.shipping_cost_actual,
                          "shipping_label_ref": order.shipping_label_ref,
-                         "lines": [(ln.public_sku, ln.qty) for ln in order.lines],
+                         "lines": [(ln.public_sku, ln.product_key, ln.qty) for ln in order.lines],
+                         "unresolved_lines": unresolved,
                          "cost_of_sales_pending": svc.orders.pending_cogs().get(order.order_id)},
             )  # fmt: skip
         # Revue R5 (R4-NEW-01) : enregistrée même sans stock valorisé ; coût des ventes en attente signalé.
+        # Revue R6 (R5-NEW-02) : lignes non rattachées (SKU inconnu ou ambigu) signalées, jamais un refus.
         pending = svc.orders.pending_cogs().get(order.order_id)
+        open_lines = {ln.public_sku: unresolved.get(ln.public_sku, [])
+                      for ln in order.lines if is_unresolved_key(ln.product_key)}  # fmt: skip
         return _ok({"order": order, "created": created, "cost_of_sales_pending": pending,
-                    "incomplete": pending is not None}, 201 if created else 200)  # fmt: skip
+                    "unresolved_lines": open_lines, "incomplete": pending is not None}, 201 if created else 200)  # fmt: skip
 
     @app.post("/orders/{order_id}/refunds", status_code=201)
     async def orders_refund(order_id: str, request: Request) -> PokeshopJSONResponse:
@@ -3709,11 +3730,21 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         if body.at - now > timedelta(minutes=5):
             raise HTTPProblem(409, "avoir daté du futur : horloge non fiable")
         lines: list[OrderLine] = []
+        known = svc.orders.get(order_id)
         for line in body.lines:
-            entry = svc.catalog.by_sku(line.public_sku)
-            if entry is None or not entry.canonical:
-                raise HTTPProblem(409, f"ligne retournée {line.public_sku} : SKU inconnu du catalogue validé — avoir refusé")
-            lines.append(OrderLine(public_sku=line.public_sku, product_key=entry.product_id, qty=line.qty))
+            # Revue R6 (R5-NEW-02) : la ligne retournée désigne d'abord la ligne de la commande de même SKU (rattachée
+            # ou non), puis la clé du SKU (historique du catalogue compris).
+            same = [ln.product_key for ln in (known.lines if known is not None else ()) if ln.public_sku == line.public_sku]
+            if same:
+                key = same[0]
+            else:
+                entry, _ = svc.catalog.resolve_sku(line.public_sku)
+                if entry is None:
+                    raise HTTPProblem(
+                        409, f"ligne retournée {line.public_sku} : ni ligne de la commande ni SKU du catalogue validé — avoir refusé"
+                    )
+                key = entry.product_id
+            lines.append(OrderLine(public_sku=line.public_sku, product_key=key, qty=line.qty))
         try:
             refund, created = svc.orders.record_refund(
                 OrderRefund(order_id=order_id, **body.model_dump(exclude={"lines"}), lines=tuple(lines),
@@ -3736,6 +3767,50 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                          "lines": [(ln.public_sku, ln.qty) for ln in refund.lines]},
             )  # fmt: skip
         return _ok({"refund": refund, "created": created}, 201 if created else 200)
+
+    @app.post("/orders/{order_id}/lines/resolve")
+    async def orders_line_resolve(order_id: str, request: Request) -> PokeshopJSONResponse:
+        """Rattache une ligne **non rattachée** d'une commande à sa clé produit canonique : **propriétaire** seule.
+
+        Revue R6 (R5-NEW-02) : une commande payée n'est jamais refusée pour un SKU inconnu ou ambigu (porté par
+        plusieurs clés au fil des corrections du catalogue) ; la ligne attend ce rattachement (coût des ventes en
+        attente, étoile polaire et photo incomplètes). La clé doit être une fiche canonique du catalogue ; la sortie au
+        CMP est ensuite dérivée par le moteur. Journalisé (ajout seul), rejoué au démarrage.
+        """
+        principal = require_api(request)
+        if not principal.owner:  # matrice : propriétaire seule (défense en profondeur)
+            raise HTTPProblem(403, "rattachement d'une ligne de commande : jeton propriétaire")
+        _persistence_guard(OrderRegister.STREAM, "registre des commandes")
+        _persistence_guard(CostRegister.STREAM, "registre de coûts historiques")
+        _persistence_guard(CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation")
+        body = await _body(request, OrderLineResolveIn)
+        entry = svc.catalog.entry_for(body.product_key)
+        if entry is None or not entry.canonical:
+            raise HTTPProblem(409, f"clé produit {body.product_key} : fiche canonique inconnue du catalogue validé")
+        try:
+            order, created = svc.orders.resolve_line(
+                order_id, body.public_sku, entry.product_id, recorded_by=principal.name, recorded_at=svc.clock(),
+                costs=svc.costs,
+            )  # fmt: skip
+        except NorthStarPersistenceError:
+            raise
+        except NorthStarError as exc:
+            raise HTTPProblem(409, str(exc)) from None
+        pending = svc.orders.pending_cogs().get(order_id)
+        if created:
+            svc.audit.append(
+                actor=principal.name,
+                actor_kind=ActorKind.PROPRIETAIRE,
+                action="orders.line_resolved",
+                entity="order",
+                entity_id=order_id,
+                dry_run=False,
+                payload={"public_sku": body.public_sku, "product_key": entry.product_id,
+                         "holders": list(svc.catalog.sku_holders(body.public_sku)), "cost_of_sales_pending": pending},
+            )  # fmt: skip
+        return _ok({"order": order, "created": created, "cost_of_sales_pending": pending,
+                    "unresolved_lines": svc.orders.unresolved_lines().get(order_id, ()),
+                    "incomplete": pending is not None})  # fmt: skip
 
     INVOICE_GAP_OWNER = Decimal("0.02")
     """Écart (facture, coût de réception) au-delà duquel seule la propriétaire inscrit le coût (workflow 03 : > 2 %)."""

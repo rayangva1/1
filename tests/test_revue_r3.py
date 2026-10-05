@@ -374,7 +374,8 @@ def test_r2new03_ads_register_is_append_only_and_owned_by_the_connector(tmp_path
     capped = {"attributed_orders": [{**fake["attributed_orders"][0], "order_id": "FICTIF-O1"}]}
     assert client.post("/ads/activity", headers=JR.HADS, json=capped).status_code == 200
     _, attributed = svc.ads.window((NOW - timedelta(days=7)).date())
-    assert attributed[0].contribution_before_acquisition == D("50.00")  # 60 − 1.80 − 8.20 : jamais 500
+    # 60 − 1.80 − 8.20 − coût des ventes du moteur 101.24 (revue R6, R5-NEW-01) : jamais 500, jamais 50.
+    assert attributed[0].contribution_before_acquisition == D("-51.24")
     assert svc.ads.posters() == {"connecteur-publicite"}
 
 

@@ -1,6 +1,6 @@
 # Matrice d'autorisations de l'API du moteur
 
-> Générée depuis `engine/pokeshop/authz.py` (version `2026-10-05.r5`) — ne pas modifier à la main :
+> Générée depuis `engine/pokeshop/authz.py` (version `2026-10-05.r6`) — ne pas modifier à la main :
 > `python -m pokeshop.authz > docs/08-agents/MATRICE_API.md`. Refus par défaut : une route absente
 > de la matrice est refusée (403). Le **jeton commun** n'a que la lecture et les aperçus en simulation.
 > Nom d'un jeton nommé = rôle ; son empreinte sha256 va dans `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` (une variable
@@ -39,7 +39,8 @@
 | POST | `/mandate/revoke` | WRITE | **non** | tous les rôles nommés | oui | acte protecteur |
 | GET | `/northstar` | READ | oui | tous | oui |  |
 | POST | `/northstar/entries` | WRITE | **non** | finance-pricing, n8n-02-commandes | oui | rôles : coûts positifs (PAYMENT, SAV, acquisition, charges fixes) ; propriétaire : écriture manuelle ; identifiants order:/refund:/cost: réservés au moteur ; frais d'une commande enregistrée : jamais deux fois |
-| POST | `/orders/shipped` | WRITE | **non** | n8n-02-commandes | oui | vente dérivée d'une commande (lignes SKU × quantité), coût transporteur réel ; sortie de stock et coût des ventes dérivés au CMP ; enregistrement atomique ; jamais refusée faute de stock valorisé (coût des ventes en attente, étoile polaire incomplète) |
+| POST | `/orders/shipped` | WRITE | **non** | n8n-02-commandes | oui | vente dérivée d'une commande (lignes SKU × quantité), coût transporteur réel ; sortie de stock et coût des ventes dérivés au CMP ; enregistrement atomique ; jamais refusée faute de stock valorisé (coût des ventes en attente, étoile polaire incomplète) ni pour un SKU (ancien SKU d'une clé : rattaché ; inconnu ou ambigu : ligne non rattachée, incomplète) |
+| POST | `/orders/{order_id}/lines/resolve` | WRITE | **non** | aucun | oui | rattache une ligne non rattachée (SKU inconnu ou porté par plusieurs clés) à une fiche canonique ; sortie au CMP dérivée ensuite |
 | POST | `/orders/{order_id}/refunds` | WRITE | **non** | n8n-02-commandes, operations-sav | oui | avoir sur une commande enregistrée ; lignes = unités retournées (≤ vendues − déjà retournées) |
 | GET | `/pricing/approvals` | READ | oui | tous | oui |  |
 | POST | `/pricing/approvals` | WRITE | **non** | aucun | oui | approbation d'un prix public |
@@ -94,7 +95,7 @@
 
 Écritures **propres** à chaque rôle (hors actes ouverts à tout rôle nommé). Tout rôle nommé peut en plus :
 POST `/autonomy`, POST `/incidents/{incident_id}/test`, POST `/incidents`, POST `/mandate/revoke`, POST `/stoploss/freeze` (signalement, gel, baisse de niveau, révocation ; test réussi : voir la note).
-Propriétaire seule : POST `/capital/movements`, POST `/catalog/approvals`, POST `/fx/rates`, POST `/mandate/human-decision`, POST `/pricing/approvals`, POST `/stoploss/baseline`, POST `/stoploss/capital-memory/reset`, POST `/stoploss/rearm`, POST `/stoploss/state`.
+Propriétaire seule : POST `/capital/movements`, POST `/catalog/approvals`, POST `/fx/rates`, POST `/mandate/human-decision`, POST `/orders/{order_id}/lines/resolve`, POST `/pricing/approvals`, POST `/stoploss/baseline`, POST `/stoploss/capital-memory/reset`, POST `/stoploss/rearm`, POST `/stoploss/state`.
 
 | Rôle (nom du jeton) | Écritures propres |
 |---|---|
@@ -148,7 +149,9 @@ Propriétaire seule : POST `/capital/movements`, POST `/catalog/approvals`, POST
   enregistrées non payées (paiement relevé par `connecteur-tresorerie`).
 - Étoile polaire : ventes, avoirs, coût des ventes et sortie de stock dérivés de commandes enregistrées
   (`POST /orders/shipped` avec lignes, coût transporteur réel ; jamais refusée faute de coût : coût des ventes en
-  attente, étoile et photo incomplètes, dépenses en validation humaine) ; identifiants `order:`/`refund:`/`cost:`/
+  attente, étoile et photo incomplètes, dépenses en validation humaine ; jamais refusée pour un SKU : ancien SKU
+  d'une clé rattaché par l'historique du catalogue, SKU inconnu ou ambigu en ligne non rattachée, rattachée par la
+  propriétaire) ; contribution d'une commande attribuée dérivée avec le coût des ventes ; identifiants `order:`/`refund:`/`cost:`/
   `expense:`/`fixed:` réservés au moteur ; frais PSP d'une commande comptés une fois ; écritures manuelles et
   montants négatifs (référencés) : propriétaire.
 - Test d'incident réussi : `qa-conformite` (≠ ouvreur, cycle réel lancé par un autre principal ; cycle FICTIF admis

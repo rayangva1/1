@@ -43,6 +43,12 @@ Conventions :
 * **Frais de paiement comptés une fois** (revue R4, R3-DOC-03) : un PAYMENT externe portant l'``order_id``
   d'une commande enregistrée est refusé ; une commande enregistrée après des frais externes de la même
   commande n'en dérive que le complément.
+* **Contribution d'une commande attribuée** (revue R6, R5-NEW-01) : dérivée des registres
+  (:meth:`OrderRegister.derived_contribution` : ventes nettes − avoirs − frais − logistique réelle − coût des ventes
+  net du :class:`CostRegister`), jamais la valeur de conversion transmise par le connecteur publicitaire.
+* **Commande jamais perdue pour un SKU** (revue R6, R5-NEW-02) : ancien SKU d'une clé rattaché par l'historique du
+  catalogue ; SKU inconnu ou ambigu : ligne non rattachée (:data:`UNRESOLVED_KEY_PREFIX`), coût des ventes en
+  attente, rattachée par la propriétaire (:meth:`OrderRegister.resolve_line`).
 """
 
 from __future__ import annotations
@@ -74,6 +80,9 @@ __all__ = [
     "ROLE_POSTS",
     "OrderLine",
     "OrderRegister",
+    "UNRESOLVED_KEY_PREFIX",
+    "unresolved_key",
+    "is_unresolved_key",
     "ShippedOrder",
     "OrderRefund",
     "require_actual_logistics",
@@ -980,24 +989,45 @@ class CostRegister:
                     return m.unit_cost
         return None
 
-    def order_cogs(self, sale_ref: str) -> Decimal:
+    def order_cogs(self, sale_ref: str) -> Decimal | None:
         """Coût des ventes **net** d'une commande : Σ coût des sorties (ISSUE ``sale_ref``) − Σ retours en stock au coût.
 
-        Revue R6 (R5-NEW-01) : base du plafond de contribution d'une commande attribuée (jamais une valeur déclarée).
+        Revue R6 (R5-NEW-01) : base de la contribution d'une commande attribuée (jamais une valeur déclarée). Un retour
+        est rattaché à sa vente par son **mouvement** (``sale_ref``), jamais par sa référence libre : deux retours de
+        même ``ref`` sur deux commandes ne se confondent pas (le k-ième mouvement RETURN d'une référence produit = la
+        k-ième écriture RETURN de son registre). Incohérence entre mouvements et registre : None (inconnu, fermé).
         """
         with self._lock:
             total = ZERO
-            for ledger in self._ledgers.values():
-                total += sum((e.cogs for e in ledger.journal() if e.kind == "ISSUE" and e.ref == sale_ref), ZERO)
-            returns = {(m.product_key, m.ref) for m in self._movements if m.kind == "RETURN" and m.sale_ref == sale_ref}
-            for key, ref in sorted(returns):
-                ledger = self._ledgers.get(key)
-                if ledger is not None:  # écriture RETURN : cogs = −montant remis en stock
-                    total += sum((e.cogs for e in ledger.journal() if e.kind == "RETURN" and e.ref == ref), ZERO)
+            for key, ledger in self._ledgers.items():
+                journal = ledger.journal()
+                total += sum((e.cogs for e in journal if e.kind == "ISSUE" and e.ref == sale_ref), ZERO)
+                booked = [e for e in journal if e.kind == "RETURN"]
+                moves = [m for m in self._movements if m.kind == "RETURN" and m.product_key == key]
+                if len(booked) != len(moves):
+                    return None
+                # écriture RETURN : cogs = −montant remis en stock au coût de la vente d'origine
+                total += sum((e.cogs for e, m in zip(booked, moves, strict=True) if m.sale_ref == sale_ref), ZERO)
             return total
 
 
 # ------------------------------------------------------------------- commandes enregistrées
+
+UNRESOLVED_KEY_PREFIX = "sku-non-rattache:"
+"""Revue R6 (R5-NEW-02) : clé d'une ligne de commande dont le SKU n'a **pas** pu être rattaché à une clé produit
+canonique (SKU inconnu du catalogue, ou porté au fil du temps par plusieurs références). Réservée au moteur : aucune
+fiche du catalogue ne la porte ; la ligne reste en coût des ventes en attente (étoile polaire et photo incomplètes)
+jusqu'au rattachement par la propriétaire (``POST /orders/{order_id}/lines/resolve``)."""
+
+
+def unresolved_key(public_sku: str) -> str:
+    """Clé réservée d'une ligne non rattachée (:data:`UNRESOLVED_KEY_PREFIX` + SKU)."""
+    return f"{UNRESOLVED_KEY_PREFIX}{public_sku}"
+
+
+def is_unresolved_key(key: str) -> bool:
+    """Vrai pour une clé de ligne non rattachée (jamais une clé du catalogue)."""
+    return key.startswith(UNRESOLVED_KEY_PREFIX)
 
 
 class OrderLine(FrozenModel):
@@ -1006,6 +1036,12 @@ class OrderLine(FrozenModel):
     public_sku: str = Field(min_length=3, max_length=64)
     product_key: str = Field(min_length=1, max_length=120)
     qty: int = Field(ge=1, le=10_000)
+
+
+def _posted_content(model: FrozenModel) -> dict[str, Any]:
+    data = model.model_dump(mode="json", exclude={"recorded_by", "recorded_at"})
+    data["lines"] = [{"public_sku": ln["public_sku"], "qty": ln["qty"]} for ln in data.get("lines", [])]
+    return data
 
 
 class ShippedOrder(FrozenModel):
@@ -1035,8 +1071,9 @@ class ShippedOrder(FrozenModel):
         return v
 
     def content(self) -> dict[str, Any]:
-        """Contenu comparé pour l'idempotence (hors acteur et date d'enregistrement)."""
-        return self.model_dump(mode="json", exclude={"recorded_by", "recorded_at"})
+        """Contenu comparé pour l'idempotence : champs **postés** (hors acteur, date d'enregistrement et clé produit
+        des lignes, dérivée par le moteur — revue R6, R5-NEW-02 : une ligne rattachée ensuite reste la même commande)."""
+        return _posted_content(self)
 
     @property
     def sale_ref(self) -> str:
@@ -1083,8 +1120,8 @@ class OrderRefund(FrozenModel):
         return v
 
     def content(self) -> dict[str, Any]:
-        """Contenu comparé pour l'idempotence."""
-        return self.model_dump(mode="json", exclude={"recorded_by", "recorded_at"})
+        """Contenu comparé pour l'idempotence (champs postés, comme :meth:`ShippedOrder.content`)."""
+        return _posted_content(self)
 
 
 class OrderRegister:
@@ -1121,6 +1158,11 @@ class OrderRegister:
                 if "order" in record:
                     order = ShippedOrder.model_validate(record["order"])
                     register._orders[order.order_id] = order
+                elif "line_resolution" in record:  # revue R6 (R5-NEW-02)
+                    res = record["line_resolution"]
+                    if res["order_id"] not in register._orders or is_unresolved_key(res["product_key"]):
+                        raise KeyError(res["order_id"])
+                    register._apply_resolution(res["order_id"], res["public_sku"], res["product_key"])
                 else:
                     refund = OrderRefund.model_validate(record["refund"])
                     register._refunds[refund.refund_id] = refund
@@ -1173,6 +1215,9 @@ class OrderRegister:
         pending: dict[str, int] = {}
         derived = 0
         for key, qty in order.qty_by_product().items():
+            if is_unresolved_key(key):  # revue R6 (R5-NEW-02) : ligne non rattachée, jamais une sortie devinée
+                pending[key] = qty
+                continue
             needed = qty - costs.issued_qty(key, order.sale_ref)
             if needed <= 0:
                 continue
@@ -1212,12 +1257,95 @@ class OrderRegister:
         """Motifs d'étoile polaire incomplète : écritures dérivées impossibles et coût des ventes en attente."""
         out = dict(self.derivation_errors)
         for oid, pending in self.pending_cogs().items():
-            detail = ", ".join(f"{n} × {key}" for key, n in pending.items())
-            out[f"commande {oid}"] = (
-                f"coût des ventes en attente ({detail} sans stock valorisé) : inscrire le coût de réception "
-                "(facture enregistrée, POST /costs/movements) — dérivé automatiquement ensuite"
-            )
+            unresolved = [key.removeprefix(UNRESOLVED_KEY_PREFIX) for key in pending if is_unresolved_key(key)]
+            waiting = {key: n for key, n in pending.items() if not is_unresolved_key(key)}
+            parts: list[str] = []
+            if unresolved:  # revue R6 (R5-NEW-02)
+                parts.append(
+                    f"ligne(s) {', '.join(unresolved)} non rattachée(s) à une clé produit (SKU inconnu du catalogue ou "
+                    f"porté par plusieurs références) : la propriétaire rattache la ligne (POST /orders/{oid}/lines/resolve)"
+                )
+            if waiting:
+                detail = ", ".join(f"{n} × {key}" for key, n in waiting.items())
+                parts.append(
+                    f"coût des ventes en attente ({detail} sans stock valorisé) : inscrire le coût de réception "
+                    "(facture enregistrée, POST /costs/movements) — dérivé automatiquement ensuite"
+                )
+            out[f"commande {oid}"] = " ; ".join(parts)
         return out
+
+    def unresolved_lines(self) -> dict[str, tuple[str, ...]]:
+        """Commandes dont une ligne n'est pas rattachée à une clé produit : commande -> SKU (revue R6, R5-NEW-02)."""
+        with self._lock:
+            out = {
+                oid: tuple(sorted({ln.public_sku for ln in order.lines if is_unresolved_key(ln.product_key)}))
+                for oid, order in self._orders.items()
+            }
+        return {oid: skus for oid, skus in sorted(out.items()) if skus}
+
+    def resolve_line(
+        self,
+        order_id: str,
+        public_sku: str,
+        product_key: str,
+        *,
+        recorded_by: str,
+        recorded_at: datetime,
+        costs: CostRegister | None = None,
+    ) -> tuple[ShippedOrder, bool]:
+        """Rattache une ligne non rattachée à sa clé produit canonique (propriétaire) ; (commande, nouveau ?).
+
+        Revue R6 (R5-NEW-02) : écrit d'abord (journal ``orders``, ajout seul : ``line_resolution``), puis remplace la
+        clé réservée sur les lignes de la commande **et** de ses avoirs, et dérive la sortie au CMP (coût des ventes).
+        Même rattachement rejoué : sans effet ; autre clé pour une ligne déjà rattachée : refus.
+        """
+        if is_unresolved_key(product_key):
+            raise NorthStarError(f"clé produit {product_key} réservée au moteur")
+        with self._lock:
+            order = self._orders.get(order_id)
+            if order is None:
+                raise NorthStarError(f"commande {order_id} inconnue du moteur")
+            lines = [ln for ln in order.lines if ln.public_sku == public_sku]
+            if not lines:
+                raise NorthStarError(f"commande {order_id} : aucune ligne {public_sku}")
+            open_lines = [ln for ln in lines if is_unresolved_key(ln.product_key)]
+            if not open_lines:
+                done = {ln.product_key for ln in lines}
+                if done == {product_key}:
+                    return order, False
+                raise NorthStarError(
+                    f"commande {order_id} : ligne {public_sku} déjà rattachée à {', '.join(sorted(done))}"
+                )
+            resolution = {"order_id": order_id, "public_sku": public_sku, "product_key": product_key,
+                          "recorded_by": recorded_by, "recorded_at": recorded_at.isoformat()}  # fmt: skip
+            self._append({"line_resolution": resolution})
+            order = self._apply_resolution(order_id, public_sku, product_key)
+        if costs is not None:
+            self._derive_issues(order, costs)
+        return order, True
+
+    def _apply_resolution(self, order_id: str, public_sku: str, product_key: str) -> ShippedOrder:
+        old = unresolved_key(public_sku)
+
+        def fix(lines: tuple[OrderLine, ...]) -> tuple[OrderLine, ...]:
+            return tuple(
+                ln.model_copy(update={"product_key": product_key})
+                if ln.public_sku == public_sku and ln.product_key == old else ln
+                for ln in lines
+            )  # fmt: skip
+
+        order = self._orders[order_id]
+        order = order.model_copy(update={"lines": fix(order.lines)})
+        self._orders[order_id] = order
+        for rid, refund in list(self._refunds.items()):
+            if refund.order_id == order_id:
+                self._refunds[rid] = refund.model_copy(update={"lines": fix(refund.lines)})
+        pending = self._pending.get(order_id)
+        if pending is not None:
+            pending.pop(old, None)
+            if not pending:
+                self._pending.pop(order_id, None)
+        return order
 
     @staticmethod
     def _order_entries(order: ShippedOrder, northstar: NorthStarLedger | None) -> list[ContributionEntry]:
@@ -1351,22 +1479,22 @@ class OrderRegister:
             return None
         return "REFUNDED" if self.refunded(order_id) >= order.net_sales_ht else "PAID"
 
-    def contribution_bound(self, order_id: str, cogs: Decimal = ZERO) -> Decimal | None:
-        """Plafond **hors coût des ventes** : ventes nettes − avoirs − frais de paiement − logistique réelle − ``cogs``.
+    def contribution_bound(self, order_id: str) -> Decimal | None:
+        """Plafond **hors coût des ventes** : ventes nettes − avoirs − frais de paiement − logistique réelle.
 
-        Revue R6 (R5-NEW-01) : seul, ce plafond ignore le coût des ventes ; le stop-loss pub utilise
-        :meth:`derived_contribution` (coût des ventes du registre de coûts du moteur).
+        Revue R6 (R5-NEW-01) : seul, ce plafond ignore le coût des ventes (≈ 4 × la contribution réelle pour un coût
+        produit de 60 % du panier) ; le stop-loss pub retient :meth:`derived_contribution`.
         """
         order = self.get(order_id)
         if order is None:
             return None
-        return order.net_sales_ht - self.refunded(order_id) - order.payment_fees - order.shipping_cost_actual - cogs
+        return order.net_sales_ht - self.refunded(order_id) - order.payment_fees - order.shipping_cost_actual
 
     def order_cogs(self, order_id: str, costs: CostRegister | None) -> Decimal | None:
         """Coût des ventes net de la commande tiré du registre de coûts du moteur ; None s'il n'est pas connu.
 
         Inconnu (fermé par défaut) : registre de coûts absent, commande sans lignes, coût des ventes en attente
-        (:meth:`pending_cogs`) ou ligne non résolue (revue R6, R5-NEW-02).
+        (:meth:`pending_cogs`, ligne non rattachée comprise : revue R6, R5-NEW-02) ou registre incohérent.
         """
         order = self.get(order_id)
         if order is None or costs is None or not order.lines:
@@ -1374,16 +1502,16 @@ class OrderRegister:
         with self._lock:
             if order_id in self._pending:
                 return None
-        if any(line.product_key.startswith(UNRESOLVED_KEY_PREFIX) for line in order.lines):
+        if any(is_unresolved_key(line.product_key) for line in order.lines):
             return None
         return costs.order_cogs(order.sale_ref)
 
     def derived_contribution(self, order_id: str, costs: CostRegister | None) -> Decimal | None:
-        """Contribution avant acquisition **dérivée du registre** (revue R6, R5-NEW-01) ; None si commande inconnue.
+        """Contribution avant acquisition **dérivée des registres** (revue R6, R5-NEW-01) ; None si commande inconnue.
 
         Ventes nettes − avoirs − frais de paiement − logistique réelle − coût des ventes net (ISSUE ``order:<id>``
-        − RETURN). Coût des ventes inconnu (en attente, sans lignes, ligne non résolue) : **0** (fermé par défaut ;
-        l'étoile polaire et la photo sont alors signalées incomplètes).
+        − RETURN), jamais une valeur déclarée. Coût des ventes inconnu (en attente, sans lignes, ligne non rattachée) :
+        **0** (fermé par défaut ; l'étoile polaire et la photo sont alors signalées incomplètes).
         """
         ceiling = self.contribution_bound(order_id)
         if ceiling is None:

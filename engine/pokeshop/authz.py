@@ -57,7 +57,7 @@ __all__ = [
     "matrix_markdown",
 ]
 
-AUTHZ_VERSION = "2026-10-05.r5"
+AUTHZ_VERSION = "2026-10-05.r6"
 """Version de la matrice (à changer à chaque modification ; citée par ``/health`` et la doc générée)."""
 
 OWNER = "propriétaire"
@@ -265,10 +265,15 @@ ROUTE_MATRIX: dict[tuple[str, str], RouteRule] = {
         "orders.shipped", {"n8n-02-commandes"},
         note="vente dérivée d'une commande (lignes SKU × quantité), coût transporteur réel ; sortie de stock et coût "
         "des ventes dérivés au CMP ; enregistrement atomique ; jamais refusée faute de stock valorisé (coût des ventes "
-        "en attente, étoile polaire incomplète)"),
+        "en attente, étoile polaire incomplète) ni pour un SKU (ancien SKU d'une clé : rattaché ; inconnu ou ambigu : "
+        "ligne non rattachée, incomplète)"),
     ("POST", "/orders/{order_id}/refunds"): _write(
         "orders.refund", {"n8n-02-commandes", "operations-sav"},
         note="avoir sur une commande enregistrée ; lignes = unités retournées (≤ vendues − déjà retournées)"),
+    ("POST", "/orders/{order_id}/lines/resolve"): _owner(
+        "orders.line_resolve",
+        note="rattache une ligne non rattachée (SKU inconnu ou porté par plusieurs clés) à une fiche canonique ; sortie "
+        "au CMP dérivée ensuite"),
     ("POST", "/costs/movements"): _write(
         "costs.movement", {"finance-pricing"},
         note="réception adossée à /stock/receive (autre jeton), coût ≤ 2 % d'une référence du moteur (facture "
@@ -387,7 +392,9 @@ def matrix_markdown(matrix: Mapping[tuple[str, str], RouteRule] | None = None) -
         "  enregistrées non payées (paiement relevé par `connecteur-tresorerie`).",
         "- Étoile polaire : ventes, avoirs, coût des ventes et sortie de stock dérivés de commandes enregistrées",
         "  (`POST /orders/shipped` avec lignes, coût transporteur réel ; jamais refusée faute de coût : coût des ventes en",
-        "  attente, étoile et photo incomplètes, dépenses en validation humaine) ; identifiants `order:`/`refund:`/`cost:`/",
+        "  attente, étoile et photo incomplètes, dépenses en validation humaine ; jamais refusée pour un SKU : ancien SKU",
+        "  d'une clé rattaché par l'historique du catalogue, SKU inconnu ou ambigu en ligne non rattachée, rattachée par la",
+        "  propriétaire) ; contribution d'une commande attribuée dérivée avec le coût des ventes ; identifiants `order:`/`refund:`/`cost:`/",
         "  `expense:`/`fixed:` réservés au moteur ; frais PSP d'une commande comptés une fois ; écritures manuelles et",
         "  montants négatifs (référencés) : propriétaire.",
         "- Test d'incident réussi : `qa-conformite` (≠ ouvreur, cycle réel lancé par un autre principal ; cycle FICTIF admis",
