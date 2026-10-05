@@ -74,7 +74,7 @@ Lecture : la contribution **avant charges fixes** est positive en W46 (11,14 CHF
 
 **Préparée par l'agent 05, lue par la propriétaire.**
 
-1. Vérifier que le registre de coûts interne a reçu les mouvements de la semaine close (`POST /costs/movements` : réceptions au coût rendu, ventes, retours, casse, factures ; le moteur synchronise lui-même le coût des ventes), puis les commandes, remboursements et dépenses (`POST /northstar/entries`, sans coût historique).
+1. Vérifier que le registre de coûts interne a reçu les mouvements de la semaine close (`POST /costs/movements` : réceptions au coût rendu, ventes, retours, casse, factures ; le moteur synchronise lui-même le coût des ventes), puis les commandes, remboursements et dépenses (`POST /northstar/entries`, sans coût historique). Une commande n'entre qu'avec sa **logistique réelle** (coût transporteur) : jamais l'hypothèse L du BP.
 2. Produire le tableau : `NorthStarLedger.weekly_report(...).render_markdown()`.
 3. Répondre par écrit aux quatre questions :
 
@@ -112,7 +112,8 @@ Action décidée : … | Effet attendu : … CHF/semaine | Revue : semaine suiva
 ## 6. Liens avec les stop-loss et les gates
 
 - **Stop-loss temps** : il utilise la contribution **après publicité, avant charges fixes**, sur la fenêtre de validation (`NorthStarLedger.totals(début, fin).contribution_after_acquisition`), avec le seuil « > 0 » du BP §1.
-- **Stop-loss global** (définition unique : `docs/00-pilotage/STOP_LOSS.md` §3) : il ne se calcule **pas** sur la contribution cumulée mais sur la **valeur nette** (cash + stock prudent + créances − dettes) comparée au capital engagé de référence, parce que le stock acheté et non vendu est une perte potentielle que la contribution ne voit pas encore. Gel si la perte atteint 20 % de la référence : **840 CHF** avec le point zéro recommandé (option A, 4 200 CHF, posé à J3 avec la décision de budget C03). La projection de l'agent finance (`pokeshop.forecast.north_star`) n'en est qu'une approximation, qui exclut les coûts de lancement : elle se lance avec `capital_engaged=BP_STOPLOSS_REFERENCE` (4 200 CHF ⇒ seuil 840 CHF). Un seuil « −1 600 CHF de contribution cumulée » n'est pas le stop-loss du projet.
+- **Stop-loss global** (définition unique : `docs/00-pilotage/STOP_LOSS.md` §3) : il ne se calcule **pas** sur la contribution cumulée mais sur la **valeur nette** (cash + stock prudent + créances − dettes) comparée au capital engagé de référence, parce que le stock acheté et non vendu est une perte potentielle que la contribution ne voit pas encore. Gel si la perte atteint 20 % de la référence : **840 CHF** avec le point zéro recommandé (option A, 4 200 CHF : décidé à J3 avec la décision de budget C03, posé dès la mise en service de l'API après vos apports et une première photo acceptée, `STOP_LOSS.md` §5). La projection de l'agent finance (`pokeshop.forecast.north_star`) et le classeur `docs/03-finance/modele_financier.xlsx` n'en sont qu'une approximation, qui exclut les coûts de lancement : ils appliquent **par défaut** `capital_engaged=BP_STOPLOSS_REFERENCE` (4 200 CHF ⇒ seuil 840 CHF ; gel projeté en semaine 13 au rythme du jalon). Un seuil « −1 600 CHF de contribution cumulée » n'est pas le stop-loss du projet. Les apports et retraits qui fixent la référence viennent **uniquement** de votre registre (`POST /capital/movements`).
+- **Journal illisible** : si le journal de l'étoile polaire n'a pas pu être relu au démarrage, `GET /northstar` répond 503 et le tableau de bord (`GET /dashboard/*`) affiche l'étoile polaire « indisponible (journal non relu) », statut CRITIQUE, **jamais** « aucune écriture » ni un cumul à 0 ; réparer le stockage puis redémarrer.
 - **Plan vs réalisé** : `NorthStarReport.to_forecast_weeks()` convertit le réalisé au format de la projection pour comparer semaine par semaine.
 
 ```python
@@ -121,7 +122,9 @@ from pokeshop.northstar import CostMovement, CostRegister, NorthStarLedger, Post
 
 ledger = NorthStarLedger()
 costs = CostRegister(ledger)                                 # registre de coûts interne (seule source du coût)
-ledger.record_basket("CMD-0001", paid_at, basket)          # ventes, paiement, logistique
+ledger.record_basket("CMD-0001", paid_at, basket)          # ventes, paiement, logistique RÉELLE
+# basket = pricing.basket_contribution(..., shipping_cost_actual=coût_transporteur) : un panier calculé sur
+# l'hypothèse L ou un port offert sans coût réel (SHIPPING_COST_ASSUMED / _UNKNOWN) est refusé (NorthStarError).
 costs.apply(CostMovement(kind="RECEIPT", product_key="P1", at=received_at, ref="LOT-1", qty=4, unit_cost=Decimal("140")))
 costs.apply(CostMovement(kind="ISSUE", product_key="P1", at=paid_at, ref="CMD-0001", qty=1))  # coût au CMP
 ledger.record_expense("PUB-2026-11-08", day, Post.ACQUISITION, "20.00")

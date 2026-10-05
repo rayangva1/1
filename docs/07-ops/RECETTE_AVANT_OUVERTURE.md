@@ -154,7 +154,7 @@ Testeurs : agent 12 QA + propriétaire   Résultat : ___ cas bloquants OK / ___ 
 |---|---|---|---|---|---|---|---|---|
 | R-K01 | O | — | Import FICTIF avec un prix ×10 | Lancer l'import | Référence en quarantaine ; notification avec cause et action proposée (INC-01) | | | |
 | R-K02 | O | — | Flux fournisseur coupé | Simuler la panne | Workflow suspendu ; stock local inchangé et vendable (INC-03) | | | |
-| R-K03 | O | — | Perte cumulée simulée = 20 % du capital engagé | Déclencher le stop-loss global | Achats, publicité, prix et nouvelles fiches gelés ; niveau 1 ; expéditions des commandes payées et remboursements toujours possibles ; réarmement réservé à la propriétaire | | | |
+| R-K03 | O | — | Photo simulée dont la perte de valeur nette atteint 20 % du capital engagé de référence (840 CHF avec le point zéro de 4 200 CHF) | Déclencher le stop-loss global | Achats, publicité, prix et nouvelles fiches gelés ; niveau 1 ; expéditions des commandes payées et remboursements toujours possibles ; réarmement réservé à la propriétaire | | | |
 | R-K04 | O | — | Niveau d'autonomie 2 | Simuler un incident S1 | Retour automatique au niveau 1 ; notification immédiate | | | |
 
 ## 3. Synthèse à joindre au gate G3

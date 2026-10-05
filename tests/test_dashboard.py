@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
-from pokeshop.api import API_TOKEN_HEADER, Services, create_app
+from pokeshop.api import API_TOKEN_HEADER, OWNER_TOKEN_HEADER, Services, create_app
 from pokeshop.audit import to_jsonable
 from pokeshop.dashboard import (
     DEMO_AS_OF,
@@ -71,6 +71,8 @@ ROOT = Path(__file__).resolve().parents[1]
 API_TOKEN = "FICTIF-jeton-api-dashboard-000001"
 OWNER_TOKEN = "FICTIF-jeton-proprietaire-dashboard-01"
 H = {API_TOKEN_HEADER: API_TOKEN}
+FINANCE_TOKEN = "FICTIF-jeton-agent-05-finance-dash-01"
+HF = {API_TOKEN_HEADER: FINANCE_TOKEN}  # jeton nommé : photo du stop-loss, lecture du tableau de bord (NEW-03)
 
 
 @pytest.fixture(scope="module")
@@ -584,6 +586,7 @@ def svc() -> Services:
         {
             "POKESHOP_API_TOKEN_SHA256": sha256_hex(API_TOKEN),
             "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(OWNER_TOKEN),
+            "POKESHOP_AGENT_TOKENS_SHA256": f"agent-05-finance:{sha256_hex(FINANCE_TOKEN)}",
         }
     )
     return Services.build(settings, clock=lambda: DEMO_AS_OF, notifier=LogNotifier())
@@ -636,17 +639,14 @@ def test_dashboard_routes_read_engine_state(client: TestClient) -> None:
         "stock_budget_chf": "3000",
         "cash_available_chf": "1500",
         "ads_daily_cap_chf": "33",
-        "capital_movements": [
-            {
-                "movement_id": "FICTIF_APPORT",
-                "at": (DEMO_AS_OF - timedelta(days=30)).isoformat(),
-                "kind": "CONTRIBUTION",
-                "amount": "1500",
-            }
-        ],
         "net_worth": {"as_of": DEMO_AS_OF.isoformat(), "cash_chf": "1500"},
     }
-    assert client.post("/stoploss/state", headers=H, json=payload).status_code == 200
+    # Apport : registre de la propriétaire uniquement (SEC-06), jamais dans la photo.
+    apport = {"movement_id": "FICTIF_APPORT", "at": (DEMO_AS_OF - timedelta(days=30)).isoformat(),
+              "kind": "CONTRIBUTION", "amount": "1500"}  # fmt: skip
+    owner = {**H, OWNER_TOKEN_HEADER: OWNER_TOKEN}
+    assert client.post("/capital/movements", headers=owner, json=apport).status_code == 201
+    assert client.post("/stoploss/state", headers=HF, json=payload).status_code == 200
     entries = [
         {
             "entry_id": "FICTIF-o1",

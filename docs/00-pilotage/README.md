@@ -9,7 +9,7 @@ Dossier du chef de projet (BP §11, agent 01). Source métier : BP du 4.10.2026 
 | Fichier | Rôle | Propriétaire |
 |---|---|---|
 | `PLAN_90_JOURS.md` | Plan au jour (J1-J15), puis à la semaine (S3-S13) ; responsables humain/agent ; critères de passage BP §9 et §13 | Agent pilotage |
-| `BACKLOG.csv` | 159 tâches sur tout le BP, importables dans Notion ; dépendances vérifiées sans cycle | Agent pilotage |
+| `BACKLOG.csv` | 170 tâches sur tout le BP, importables dans Notion ; dépendances vérifiées sans cycle | Agent pilotage |
 | `GATES_GO_NO_GO.md` | Gates G0 à G7, seuils chiffrés, décideur, modèle de fiche | Agent pilotage |
 | `INTERVENTIONS_HUMAINES.md` | Checklist maîtresse et exhaustive de ce qui exige une personne (A physique, B légal une fois, C validations, signatures et réarmement), chaque fiche reliée à ses tâches du backlog | Agent pilotage |
 | `REGISTRE_RISQUES.md` | 31 risques : probabilité, impact, mitigation, déclencheur, stop-loss lié | Agent pilotage |
@@ -28,7 +28,7 @@ Dans Excel : *Données → À partir d'un fichier texte/CSV*, encodage UTF-8 (65
 ## Vérifier
 
 ```bash
-python docs/00-pilotage/outils/verifier_livrables.py          # 16 contrôles de cohérence
+python docs/00-pilotage/outils/verifier_livrables.py          # 18 contrôles de cohérence
 python -m pytest -q docs/00-pilotage/outils docs/02-sourcing/outils
 ```
 
@@ -41,7 +41,9 @@ Le vérificateur contrôle notamment :
 - l'assortiment : plafond de 750 CHF par extension ;
 - les emails : liste complète du BP §2, relances J+5 et J+12 ;
 - les interventions humaines : toute tâche de la propriétaire du backlog y figure, à la même échéance que dans le backlog et le plan ;
-- les gates : une même date par gate partout (G5 : J60 avec l'option B, J64 avec l'option A) ;
+- les gates : une même date par gate partout, calendrier de contenu compris (G5 : J60 avec l'option B, J64 avec l'option A) ;
+- les échéances : aucune tâche n'échoit avant l'une de ses dépendances ;
+- les compteurs : items par catégorie d'`INTERVENTIONS_HUMAINES.md` et nombre de tâches du backlog ;
 - les écarts du BP : identifiant par domaine, gravité, traitement provisoire et décision attendue sur chaque ligne ;
 - les documents : aucun livrable livré annoncé « attendu » ; section finale « Validation humaine requise ».
 

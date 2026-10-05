@@ -11,7 +11,7 @@
 | **38 chiffres recalculés** | 35 ✅ conformes · 2 ⚠️ écarts d'arrondi (seuils 31 et 181) · 1 ⚠️ écart de 1 CHF (CA HT développement 17 577) |
 | **Mécanique du BP** | Juste. Aucun écart ne change une conclusion. |
 | **Étoile polaire** | Par mois, la contribution nette = le « résultat avant rémunération » du BP : **53 / 933 / 2 467 CHF**. Avec 4 semaines de charges fixes avant l'ouverture, le cumul part de **−369 CHF** et redevient positif en semaine **34** (prudent), **6** (central) ou **5** (développement). |
-| **Stop-loss global** | Seuil : perte cumulée de **1 600 CHF** (20 % de 8 000). Jamais atteint dans les 3 scénarios du BP. Au rythme du jalon de validation (≈ 15 commandes/mois, CAC 8), il se déclenche en **semaine 28**. |
+| **Stop-loss global** | Définition unique (moteur `pokeshop.stoploss`, `STOP_LOSS.md` §3) : perte de **valeur nette** ≥ 20 % du capital engagé **de référence**. Avec le point zéro recommandé (option A, J3, C03 : 8 000 − 2 900 de lancement − 900 de décote prudente du stock = **4 200 CHF**), le seuil est de **840 CHF**. Jamais atteint dans les 3 scénarios du BP. Au rythme du jalon de validation (≈ 15 commandes/mois, CAC 8), il se déclenche en **semaine 13**. L'ancienne lecture (1 600 CHF sur 8 000, semaine 28) est caduque. |
 | **Stop-loss cash** | Le budget de 8 000 CHF laisse 2 100 CHF en banque (dont la réserve de 1 600 et le test pub de 500). Les charges fixes d'avant l'ouverture ne sont pas budgétées : dans l'exemple FICTIF, la réserve est entamée dès la **semaine 5** et le test publicitaire tombe en stop-loss. |
 | **Risque n° 1** | Le stock de 3 000 CHF couvre **14,6 jours** de ventes du scénario central (achats consommés 6 152 CHF HT/mois). |
 | **Risque n° 2** | Le scénario central annualisé (114 000 CHF TTC) **dépasse le seuil TVA** de 100 000 CHF. |
@@ -132,7 +132,7 @@ Projection hebdomadaire d'un scénario du BP §10 (`project_north_star`, feuille
 | Prudent (40 cmd, CAC 8) | 12,31 | −369,23 (sem. 4) | semaine 34 | 221,81 | 73,8 cmd ✅ |
 | Central (100 cmd, CAC 6) | 215,40 | −369,23 (sem. 4) | semaine 6 | 9 969,91 | 184,6 cmd ✅ |
 | Développement (200 cmd, CAC 5) | 569,26 | −369,23 (sem. 4) | semaine 5 | 26 955,21 | 369,2 cmd ✅ |
-| Rythme du jalon §1 (15 cmd, CAC 8) | −53,07 | — | jamais | **gel en semaine 28** (−1 643) | 27,7 cmd ❌ |
+| Rythme du jalon §1 (15 cmd, CAC 8) | −53,07 | — | jamais | **gel en semaine 13** (−846,90 ; seuil 840) | 27,7 cmd ❌ |
 
 Contrôle : sur 52 semaines dès la semaine 1, le cumul vaut exactement 12 × le résultat mensuel du BP (640,30 / 11 200,74 / 29 601,48). Le classeur le vérifie (`Étoile polaire`, G24).
 
@@ -146,10 +146,10 @@ Au prudent, le cumul reste négatif pendant 8 mois. Un écart de 13 CHF par sema
 | Extension | > 25 % du budget stock | 750 CHF par extension au lancement (25 % de 3 000 CHF) ; le nombre d'articles dépendra des devis réels | ✅ calculé |
 | Publicité | CAC > contribution/commande | Contribution avant acquisition 19,33 CHF : la coupure n'intervient qu'à CAC > 19,33. Or le plancher produit (8 CHF après acquisition) est franchi dès CAC > **11,33**. Entre 11,33 et 19,33 CHF, la campagne continue alors que les paniers passent sous le plancher. | ⚠️ à harmoniser |
 | Cash | Cash disponible < 1 600 | Budget dépensé : 8 000 − 2 900 − 3 000 = 2 100 CHF, dont 500 de test pub. Chaque mois de charges fixes avant l'ouverture (400 CHF) entame la réserve. Exemple FICTIF : stop-loss en semaines 6, 7, 8 et 10 ; 300 CHF de publicité à bloquer. | ⚠️ budget |
-| Global | Perte cumulée ≥ 1 600 (20 % × 8 000) | Jamais atteint dans les scénarios du BP ; atteint en semaine 28 au rythme du jalon de validation | ✅ mesurable |
+| Global | Perte de valeur nette ≥ 20 % du capital engagé de référence : 840 CHF avec le point zéro de 4 200 (option A) | Jamais atteint dans les scénarios du BP ; atteint en semaine 13 au rythme du jalon de validation | ✅ mesurable |
 | Temps | 60 j sans seuils de validation | Le jalon §1 (30 commandes) correspond à ≈ 15 commandes/mois : en dessous, le dossier continuer/ajuster/arrêter arrive vers la semaine 13 (ouverture en semaine 5 + 8 semaines) | ✅ calculable |
 
-Le stop-loss global n'a de sens que sur la contribution nette (exploitation). Calculé sur la perte cash, il se déclencherait avant la première vente : les 2 900 CHF de dépenses de lancement dépassent à eux seuls 1 600 CHF.
+Le stop-loss global se mesure depuis le **point zéro** posé par la propriétaire (`POST /stoploss/baseline`, `STOP_LOSS.md` §5) : sans lui, les 2 900 CHF de dépenses de lancement dépasseraient à eux seuls 20 % des 8 000 CHF d'apports et le gel tomberait avant la première vente. Avec le point zéro de 4 200 CHF (apports − lancement assumé − décote prudente du stock), le seuil est de 840 CHF ; le classeur l'approche par la contribution nette cumulée.
 
 ## 7. Risques
 
@@ -162,7 +162,7 @@ Le stop-loss global n'a de sens que sur la contribution nette (exploitation). Ca
 | R5 | **Fragilité de la contribution** | 22 % → 15 % : seuil de 31 à 56 commandes ; CAC de 6 à 15 : seuil de 31 à 93 | Une erreur de coût, de livraison ou de CAC annule le bénéfice | Contrôle de la marge réelle par facture (BP §12) ; stop-loss pub aligné sur le plancher produit (CAC max 11,33 au central) |
 | R6 | **Réserve, précommandes et stop-loss cash** | Exemple FICTIF 13 semaines (réserve 1 600) : solde au plus bas **1 273 CHF** (semaine 6) ; 4 semaines en alerte, dont 1 où les précommandes encaissées ne sont pas couvertes ; 4 semaines ouvertes en stop-loss | Test publicitaire et réassorts bloqués au moment prévu par le plan 90 jours | Financer les charges d'avant l'ouverture (≈ 600 CHF) hors réserve, ou réduire les dépenses de lancement ; précommandes uniquement sur allocation ferme |
 | R7 | **Paiements** | Frais PSP 2,5 % + 0,30 CHF = hypothèses du BP §4 ; délai de versement inconnu | Encaissements plus tardifs ou plus chers que prévu | Paiements tests (carte, TWINT) et lecture du contrat avant ouverture |
-| R8 | **Pilote sous le seuil** | Au rythme du jalon (≈ 15 commandes/mois), −230 CHF/mois ; gel global en semaine 28 | Le test peut « réussir » ses jalons et mener quand même au gel | Fixer dès le départ le volume visé au-delà du test (≥ 31 commandes/mois) et la date de la décision continuer/arrêter |
+| R8 | **Pilote sous le seuil** | Au rythme du jalon (≈ 15 commandes/mois), −230 CHF/mois ; gel global en semaine 13 (seuil 840 CHF) | Le test peut « réussir » ses jalons et mener quand même au gel | Fixer dès le départ le volume visé au-delà du test (≥ 31 commandes/mois) et la date de la décision continuer/arrêter |
 
 ## 8. Conclusions
 
@@ -184,7 +184,7 @@ Le stop-loss global n'a de sens que sur la contribution nette (exploitation). Ca
 - [ ] Valider la convention de seuil (31 et 181 commandes, méthode BP prudente) et corriger 17 577 → 17 576 dans le BP.
 - [ ] Valider la grille d'arrondi par tranches appliquée par le moteur (`rounding_tiers` de `config/pricing_rules.v1.yaml` : X,50/X,90 sous 10 CHF, X,90 de 10 à 99,99, X4,90/X9,90 dès 100 CHF), ou la modifier dans le fichier de règles (nouvelle signature) ; le classeur suit à la régénération.
 - [ ] Arbitrer l'écart §5/§10 : la cible de 20 % s'entend-elle après acquisition, comme dans la formule du §4 ? Si oui, revoir les 22 % avant acquisition du §10.
-- [ ] Confirmer la définition du stop-loss global : perte cumulée = contribution nette cumulée (hors dépenses de lancement) et capital engagé = 8 000 CHF (seuil 1 600 CHF).
+- [ ] Confirmer le point zéro du stop-loss global (C03, J3) : définition unique = perte de valeur nette ≥ 20 % du capital engagé de référence ; avec l'option A, référence 4 200 CHF (8 000 − 2 900 de lancement − 900 de décote du stock), **seuil 840 CHF** (semaine 13 au rythme du jalon).
 - [ ] Harmoniser le stop-loss pub avec le plancher produit (couper dès que la contribution après CAC passe sous 8 CHF, soit CAC > 11,33 au panier du BP).
 - [ ] Décider du financement des charges fixes d'avant l'ouverture (≈ 400 à 600 CHF) : ligne de budget dédiée ou réduction des dépenses de lancement, pour ne pas entamer la réserve de 1 600 CHF.
 - [ ] Décider du financement du BFR (apport, crédit fournisseur, plafond de croissance) avant de viser le scénario central.

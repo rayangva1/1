@@ -95,8 +95,11 @@ enregistrée en base ». Changer de jeton = insérer une nouvelle ligne (la dern
 point zéro, journal), `stoploss_photo` (dernière photo acceptée), `mandate_ledger` (registre du mandat,
 idempotence), `northstar` (étoile polaire), `incidents` (incidents, quarantaines, suspensions),
 `price_history` (historique des prix publics), et aussi : `sync_catalog` et `sync_cost_inputs`
-(catalogue validé et frais lus par `/sync/run`), `sync_runs` (cycles de synchronisation, compteur de
-cycles propres), `capital_movements` (apports et retraits attestés par la propriétaire), `ads_activity`
+(catalogue validé et frais lus par `/sync/run`), `sync_runs` (cycles de synchronisation : statut, données
+FICTIVES ou non, empreinte et horodatage de la source, produits rapprochés ; compteur de recette et
+preuves des tests de correction d'incident), `shop_publications` (identifiant Shopify et statut des fiches
+écrites et vérifiées : base de la dépublication protectrice), `capital_movements` (apports et retraits
+attestés par la propriétaire : **seule** source des mouvements de capital du stop-loss), `ads_activity`
 (dépenses publicitaires), ainsi que les registres des lots F2 et F3 (révocations du mandat, taux,
 propositions, coûts historiques, approbations de prix, références d'import, stock local). Chaque ligne : `seq` continu par flux, `prev_hash →
 row_hash` = sha256(prev ␟ seq ␟ corps JSON), corps lisible en SQL via la colonne `record` (jsonb).
@@ -137,6 +140,7 @@ pas détectable par la chaîne seule : d'où la règle de sauvegarde ci-dessous 
 | `db/backup.sh verifier [FICHIER]` | Contrôle l'empreinte, **restaure** dans une base jetable du même serveur (supprimée ensuite) et échoue si une table n'a pas exactement les lignes de la sauvegarde, si un journal en ajout seul en a moins qu'au manifeste, si `verify_audit_chain()` ou `verify_engine_state_journal()` signale une anomalie, ou si les migrations diffèrent. Sauvegarde chiffrée : `POKESHOP_BACKUP_AGE_IDENTITY` |
 | `db/backup.sh restaurer FICHIER URL_CIBLE` | Restauration réelle dans une base **vide** (jamais la source), propriétaires et droits compris, puis les mêmes contrôles |
 | `db/backup.sh boucle` | Sauvegarde puis test de restauration toutes les `POKESHOP_BACKUP_INTERVAL_HOURS` (24) : service docker compose `db-backup` (volume `backups`) |
+| `db/backup.sh etat` | Contrôle R-I04 (sans base) : code 0 seulement si la dernière restauration **vérifiée** (trace `derniere-verification.tsv` écrite par `verifier` après succès) date de moins de `POKESHOP_BACKUP_MAX_AGE_HOURS` (défaut 1,5 × intervalle = 36 h) ; sinon code 1 (aucune trace, trace illisible ou trop ancienne). C'est le **healthcheck** du service `db-backup` : `scripts/compose.sh ps` l'affiche « unhealthy » tant qu'aucune restauration récente n'est vérifiée |
 
 Un test de restauration en échec rend la sauvegarde inutilisable : en refaire une et ouvrir un incident.
 Copier régulièrement les sauvegardes hors de la machine (support chiffré de la propriétaire). Supabase :
@@ -163,7 +167,7 @@ un autre serveur (compte superutilisateur, base d'administration).
 - [ ] Créer les comptes de connexion et ranger les mots de passe dans le coffre ; réserver `pokeshop_owner` à la propriétaire.
 - [ ] Enregistrer une fois l'empreinte de votre jeton propriétaire en base (`owner_token_fingerprint`, compte `proprietaire`) : sans elle, aucune hausse du niveau d'autonomie n'est possible.
 - [ ] Choisir où vivent les sauvegardes (`POKESHOP_BACKUP_DIR`, volume `backups`) et leur copie hors machine ; décider du chiffrement age (clé publique au service, clé privée chez vous seule).
-- [ ] Vérifier chaque mois dans le journal du service `db-backup` (ou par `db/backup.sh verifier`) que la dernière restauration est « vérifiée » ; la base porte `engine_state_journal` (gel du stop-loss, registre du mandat, incidents).
+- [ ] Vérifier chaque mois que le service `db-backup` est « healthy » (`scripts/compose.sh ps`, ou `db/backup.sh etat` : dernière restauration vérifiée depuis moins de 36 h) ; la base porte `engine_state_journal` (gel du stop-loss, registre du mandat, incidents). Recette R-I04 : bloquante tant que `etat` échoue.
 - [ ] Valider la rétention des captures brutes (`raw_snapshots.content` contient des prix B2B) et celle des sauvegardes (30 par défaut).
 - [ ] Valider le plafond par commande par défaut (`products.max_qty_per_order` = 5, hypothèse).
 - [ ] Confirmer que seule la vue `storefront.public_catalog` sera exposée au site public.

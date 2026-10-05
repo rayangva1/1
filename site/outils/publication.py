@@ -55,13 +55,23 @@ GOOGLE_FONTS_LIGNES_RE = re.compile(r"[ \t]*<link[^>]+(fonts\.googleapis\.com|fo
 MARQUEUR_RE = re.compile(r"⟦[^⟧]*⟧")
 EXCLUS_COPIE = {"README.md", "inscription.schema.json", "manifeste.json"}
 FONTS_CSP = ("https://fonts.googleapis.com", "https://fonts.gstatic.com")
+#: Message sans JavaScript de la page publiée (revue NEW-04) : en publication, le formulaire porte l'URL du
+#: webhook dans ``action`` et fonctionne sans script (redirection 303 vers merci.html, README §4). Le message
+#: d'aperçu (« n'envoie rien ») est entre marqueurs APERCU et n'est jamais publié.
+NOSCRIPT_MARQUEUR_RE = re.compile(r"[ \t]*<!-- PUBLICATION:NOSCRIPT -->[ \t]*\n?")
+NOSCRIPT_PUBLICATION = (
+    '<noscript><p class="lp-statut lp-statut--info">Sans JavaScript, le formulaire fonctionne aussi\u00a0: après '
+    "l'envoi, une page de confirmation s'affiche.</p></noscript>"
+)
 
 DEFINITIF = "définitif"
 PROVISOIRE = "provisoire autorisé"
 #: Champs exigés pour publier la landing à J10 (BL-032) : (nature, acte qui fournit la valeur).
 #: « provisoire autorisé » = valeur validée mais appelée à changer (republier après changement) ; jamais un
 #: statut « a_valider » : chaque champ doit être « valide » pour publier. Aucun champ ne dépend de la boutique
-#: Shopify (B15), du paiement (B16), du transporteur (B17) ni de la relecture complète des textes (C11).
+#: Shopify (B15), du paiement (B16), du transporteur (B17), de l'hébergement complet (B23, J26) ni de la
+#: relecture complète des textes (C11) : chaque acte cité tombe au plus tard à J9 (INTERVENTIONS_HUMAINES.md,
+#: BACKLOG.csv : BL-186 hébergement de n8n à J8, BL-187 workflow d'inscription à J9, BL-185 / C26 à J9).
 CHAMPS_LANDING: dict[str, tuple[str, str]] = {
     "NOM_BOUTIQUE": (DEFINITIF, "C06 (J7)"),
     "RAISON_SOCIALE": (DEFINITIF, "B07 (J7)"),
@@ -69,24 +79,24 @@ CHAMPS_LANDING: dict[str, tuple[str, str]] = {
     "NOM_RESPONSABLE": (DEFINITIF, "B07 (J7)"),
     "EMAIL_SUPPORT": (DEFINITIF, "B02 (J1)"),
     "EMAIL_DONNEES": (DEFINITIF, "B02 (J1)"),
-    "WEBHOOK_INSCRIPTION": (DEFINITIF, "B04 (J3) et workflow n8n testé (J9)"),
-    "DUREE_CONSERVATION_ALERTES": (DEFINITIF, "propriétaire après relecture express (J9)"),
-    "DUREE_CONSERVATION_SAV": (DEFINITIF, "propriétaire après relecture express (J9)"),
+    "WEBHOOK_INSCRIPTION": (DEFINITIF, "B27 (J8) : n8n en HTTPS, puis BL-187 (J9) : workflow d'inscription recetté"),
+    "DUREE_CONSERVATION_ALERTES": (DEFINITIF, "C26 (J9) : validée par la propriétaire après relecture express"),
+    "DUREE_CONSERVATION_SAV": (DEFINITIF, "C26 (J9) : validée par la propriétaire après relecture express"),
     "ST_HEBERGEMENT_LANDING": (DEFINITIF, "B08 (J8) : compte d'hébergement"),
     "ST_HEBERGEMENT_LANDING_PAYS": (DEFINITIF, "B08 (J8) : contrat de l'hébergeur"),
-    "ST_POLICES": (DEFINITIF, "choix Google Fonts ou polices du système (J9)"),
-    "ST_POLICES_PAYS": (DEFINITIF, "choix des polices (J9)"),
-    "ST_BASE": (DEFINITIF, "hébergement n8n (J9)"),
-    "ST_BASE_PAYS": (DEFINITIF, "hébergement n8n (J9)"),
+    "ST_POLICES": (DEFINITIF, "C26 (J9) : Google Fonts ou polices du système"),
+    "ST_POLICES_PAYS": (DEFINITIF, "C26 (J9) : choix des polices"),
+    "ST_BASE": (DEFINITIF, "B27 (J8) : hébergeur de n8n"),
+    "ST_BASE_PAYS": (DEFINITIF, "B27 (J8) : contrat de l'hébergeur de n8n"),
     "ST_EMAILING": (DEFINITIF, "B04 (J3)"),
     "ST_EMAILING_PAYS": (DEFINITIF, "B04 (J3) : contrat de l'outil d'envoi"),
     "ST_MESSAGERIE": (DEFINITIF, "B02 (J1)"),
     "ST_MESSAGERIE_PAYS": (DEFINITIF, "B02 (J1) : contrat de la messagerie"),
-    "ST_IA": (DEFINITIF, "B01 (J1) : mandat"),
-    "ST_IA_PAYS": (DEFINITIF, "B01 (J1) : contrat du fournisseur d'IA"),
+    "ST_IA": (DEFINITIF, "C26 (J9) : fournisseur d'IA accepté par la propriétaire"),
+    "ST_IA_PAYS": (DEFINITIF, "C26 (J9) : contrat du fournisseur d'IA (agent 12, juriste)"),
     "URL_LANDING": (PROVISOIRE, "B08 (J8) : adresse de l'hébergeur, puis domaine"),
     "MOIS_OUVERTURE": (PROVISOIRE, "C07 (J10) : mois visé, jamais une date ferme"),
-    "DATE_VERSION_LANDING": (PROVISOIRE, "relecture express du juriste (J9), remplacée à l'ouverture"),
+    "DATE_VERSION_LANDING": (PROVISOIRE, "C26 (J9) : relecture express du juriste, remplacée à l'ouverture"),
 }
 
 
@@ -350,12 +360,16 @@ def _transformer_html(texte: str, champs: dict[str, rc.Field], publication: bool
         texte = texte.replace(NOM_DE_TRAVAIL, nom)
     if publication:
         texte = APERCU_RE.sub("", texte)
+        texte = NOSCRIPT_MARQUEUR_RE.sub(lambda m: m.group(0).replace("<!-- PUBLICATION:NOSCRIPT -->", NOSCRIPT_PUBLICATION),
+                                         texte)
         webhook = valeur(champs, "WEBHOOK_INSCRIPTION", True) or ""
         texte = texte.replace(
             '<form class="lp-formulaire" id="lp-formulaire" method="post" action=""',
             f'<form class="lp-formulaire" id="lp-formulaire" method="post" action="{html.escape(webhook, quote=True)}"',
         )
         texte = texte.replace('type="submit" id="lp-envoyer" disabled>', 'type="submit" id="lp-envoyer">')
+    else:
+        texte = NOSCRIPT_MARQUEUR_RE.sub("", texte)
     if sans_google_fonts:
         texte = GOOGLE_FONTS_LIGNES_RE.sub("", texte)
     return typographier(texte)

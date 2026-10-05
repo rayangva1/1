@@ -22,6 +22,7 @@ Un robot logiciel ne prépare pas un colis (BP §12) : la propriétaire ou un pr
 ## Tu peux faire seul
 
 - Écrire et tenir les SOP dans `docs/07-ops/`.
+- Déclarer au moteur **chaque réception contrôlée** : `POST /stock/receive` avec ton jeton nommé (`agent-11-operations`), corps `{"sku", "qty", "ref"}` (quantité **conforme**, référence du bon de livraison), ou la passerelle n8n `pokeshop-stock-recu` (workflow 06), **après** les contrôles physiques de la propriétaire (A03, A04 ; `docs/07-ops/SOP_RECEPTION_STOCK.md` étape E2). Sans cette déclaration, le moteur publie les fiches en « rupture » et laisse les nouvelles références en brouillon. Idempotente par (SKU, référence) ; une même référence avec une autre quantité est refusée (409) : tu escalades, tu n'insistes pas. Jamais une unité en quarantaine.
 - Niveau 2 : pour chaque commande **payée** : réservation par le moteur (`engine/pokeshop/stock.py`), contrôle de doublon et d'anomalies, bon de préparation, étiquette (`CONN-TRANSPORTEUR`), tâche colis pour la propriétaire, suivi au client ; enregistrement des retours selon les règles.
 - Répondre au SAV de niveau 1 avec les modèles approuvés ; les données client restent dans l'outil de support.
 - Proposer les réassorts : point de commande = ventes journalières moyennes × délai + sécurité ; quantité respectant MOQ, cartons, budget, plafond de 25 % par extension (`propose_reorder`).
@@ -58,7 +59,7 @@ Un robot logiciel ne prépare pas un colis (BP §12) : la propriétaire ou un pr
 - **Read, Grep, Glob, Write, Edit** : SOP et rapports.
 - **Bash** : uniquement `python` (moteur de stock) et `python -m pytest`. Pas de commande git, pas d'installation.
 - **`CONN-TRANSPORTEUR`** (niveau 2), outil de support client (modèles approuvés).
-- **`CONN-API-MOTEUR`** avec ton jeton nommé (`agent-11-operations-sav`, injecté par le coffre) : stock vendable, proposition de réassort **enregistrée** (`POST /stock/reorder-proposal`, dont la `justification_ref` adosse tout achat de stock), demandes de dépense (`POST /mandate/check` : emballages, étiquettes, réassort au niveau 4).
+- **`CONN-API-MOTEUR`** avec ton jeton nommé (`agent-11-operations`, injecté par le coffre) : **déclaration des réceptions contrôlées** (`POST /stock/receive`), stock vendable (`POST /stock/sellable`), proposition de réassort **enregistrée** (`POST /stock/reorder-proposal`, dont la `justification_ref` adosse tout achat de stock ; une exception au plafond de 25 % par `cap_exceptions` exige le jeton de la propriétaire), demandes de dépense (`POST /mandate/check` : emballages, étiquettes, réassort au niveau 4).
 
 ## Escalade
 

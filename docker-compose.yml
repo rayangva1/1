@@ -2,18 +2,21 @@
 #
 # NE PAS LANCER avant décision de la propriétaire : coffre de secrets (B03), boutique Shopify
 # (B15) et niveau d'autonomie (C14). Préparation (exécutable telle quelle, voir README.md « Démarrage ») :
-#   1. cp .env.example .env   puis remplir DEPUIS LE COFFRE au minimum POSTGRES_PASSWORD,
-#      POKESHOP_DB_PASSWORD, N8N_ENCRYPTION_KEY, POKESHOP_API_TOKEN_SHA256 et POKESHOP_OWNER_TOKEN_SHA256
-#      (.env n'est jamais commité : il est ignoré par git et exclu du contexte de construction) ;
-#   2. docker compose config --quiet   (vérification sans rien lancer : échoue tant qu'un secret obligatoire manque) ;
-#   3. docker compose up -d db db-migrate db-backup api n8n
-#   4. docker compose logs db-backup   (doit afficher « restauration vérifiée » : sauvegarde ET restauration testées)
+#   1. Fichier de variables HORS DU DÉPÔT (jamais de .env à la racine : docker compose le lirait tout seul) :
+#        sudo install -D -m 600 .env.example /etc/pokeshop/api.env
+#      puis y remplir DEPUIS LE COFFRE au minimum POSTGRES_PASSWORD, POKESHOP_DB_PASSWORD, N8N_ENCRYPTION_KEY,
+#      POKESHOP_API_TOKEN_SHA256 et POKESHOP_OWNER_TOKEN_SHA256 (autre chemin : POKESHOP_ENV_FILE=…) ;
+#   2. scripts/compose.sh config --quiet   (vérification sans rien lancer : refuse un .env dans le dépôt, un
+#      fichier de variables dans le dépôt ou lisible par d'autres, et échoue tant qu'un secret obligatoire manque) ;
+#   3. scripts/compose.sh up -d db db-migrate db-backup api n8n
+#   4. scripts/compose.sh ps   (db-backup « healthy » = restauration vérifiée depuis moins de 36 h, db/backup.sh etat)
+# scripts/compose.sh = docker compose --env-file /etc/pokeshop/api.env (interpolation seulement).
 # Ports publiés sur 127.0.0.1 uniquement (aucune exposition réseau).
 # Simulation par défaut : POKESHOP_DRY_RUN=true ; aucune écriture Shopify réelle sans POKESHOP_DRY_RUN=false
 # ET le niveau d'autonomie requis.
 #
-# Moindre privilège : AUCUN service ne charge .env en entier. Docker Compose lit .env pour l'interpolation
-# ${…} ; chaque service ne reçoit que les variables listées dans son bloc `environment` :
+# Moindre privilège : AUCUN service ne charge le fichier de variables en entier. Docker Compose le lit pour
+# l'interpolation ${…} ; chaque service ne reçoit que les variables listées dans son bloc `environment` :
 #   - db, db-migrate, db-backup : mot de passe administrateur PostgreSQL (db-migrate : aussi celui du compte du
 #     moteur, pour le créer) ;
 #   - api : variables POKESHOP_* seulement, connexion avec le compte `api_moteur` (membre de pokeshop_engine,
@@ -29,7 +32,7 @@ services:
     environment:
       POSTGRES_DB: pokeshop
       POSTGRES_USER: pokeshop_admin
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?definir POSTGRES_PASSWORD dans .env (coffre)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?definir POSTGRES_PASSWORD dans /etc/pokeshop/api.env (coffre)}
       TZ: Europe/Zurich
     volumes:
       - db-data:/var/lib/postgresql/data
@@ -51,7 +54,7 @@ services:
     environment:
       DATABASE_URL: postgresql://pokeshop_admin:${POSTGRES_PASSWORD:?definir POSTGRES_PASSWORD}@db:5432/pokeshop
       POKESHOP_DB_USER: api_moteur
-      POKESHOP_DB_PASSWORD: ${POKESHOP_DB_PASSWORD:?definir POKESHOP_DB_PASSWORD dans .env (coffre)}
+      POKESHOP_DB_PASSWORD: ${POKESHOP_DB_PASSWORD:?definir POKESHOP_DB_PASSWORD dans /etc/pokeshop/api.env (coffre)}
     volumes:
       - ./db:/db:ro
     entrypoint: ["bash", "-c", "bash /db/apply.sh none && bash /db/engine_login.sh"]
@@ -59,7 +62,9 @@ services:
 
   # Sauvegarde quotidienne (pg_dump) ET test de restauration dans une base jetable (db/backup.sh) :
   # une sauvegarde dont la restauration échoue est signalée dans le journal du service (BP §6).
-  # Copier régulièrement le volume « backups » hors de la machine (disque chiffré de la propriétaire).
+  # Healthcheck = db/backup.sh etat : « unhealthy » tant qu'aucune restauration n'a été vérifiée depuis
+  # moins de 36 h (contrôle de recette R-I04, bloquant). Copier régulièrement le volume « backups » hors de
+  # la machine (disque chiffré de la propriétaire).
   db-backup:
     image: postgres:16
     restart: unless-stopped
@@ -71,11 +76,18 @@ services:
       POKESHOP_BACKUP_DIR: /sauvegardes
       POKESHOP_BACKUP_KEEP: ${POKESHOP_BACKUP_KEEP:-30}
       POKESHOP_BACKUP_INTERVAL_HOURS: ${POKESHOP_BACKUP_INTERVAL_HOURS:-24}
+      POKESHOP_BACKUP_MAX_AGE_HOURS: ${POKESHOP_BACKUP_MAX_AGE_HOURS:-36}
       TZ: Europe/Zurich
     volumes:
       - ./db:/db:ro
       - backups:/sauvegardes
     entrypoint: ["bash", "/db/backup.sh", "boucle"]
+    healthcheck:
+      test: ["CMD", "bash", "/db/backup.sh", "etat"]
+      interval: 1h
+      timeout: 30s
+      retries: 1
+      start_period: 2h
 
   api:
     build: .
@@ -95,8 +107,8 @@ services:
       POKESHOP_MANDATE_FINGERPRINT: ${POKESHOP_MANDATE_FINGERPRINT:-}
       POKESHOP_STOPLOSS_FINGERPRINT: ${POKESHOP_STOPLOSS_FINGERPRINT:-}
       POKESHOP_RULES_FINGERPRINT: ${POKESHOP_RULES_FINGERPRINT:-}
-      POKESHOP_API_TOKEN_SHA256: ${POKESHOP_API_TOKEN_SHA256:?definir POKESHOP_API_TOKEN_SHA256 dans .env (sinon routes internes fermees)}
-      POKESHOP_OWNER_TOKEN_SHA256: ${POKESHOP_OWNER_TOKEN_SHA256:?definir POKESHOP_OWNER_TOKEN_SHA256 dans .env (coffre)}
+      POKESHOP_API_TOKEN_SHA256: ${POKESHOP_API_TOKEN_SHA256:?definir POKESHOP_API_TOKEN_SHA256 dans /etc/pokeshop/api.env (sinon routes internes fermees)}
+      POKESHOP_OWNER_TOKEN_SHA256: ${POKESHOP_OWNER_TOKEN_SHA256:?definir POKESHOP_OWNER_TOKEN_SHA256 dans /etc/pokeshop/api.env (coffre)}
       POKESHOP_AGENT_TOKENS_SHA256: ${POKESHOP_AGENT_TOKENS_SHA256:-}
       POKESHOP_SHOPIFY_SHOP_DOMAIN: ${POKESHOP_SHOPIFY_SHOP_DOMAIN:-}
       POKESHOP_SHOPIFY_API_VERSION: ${POKESHOP_SHOPIFY_API_VERSION:-2026-10}
@@ -125,7 +137,7 @@ services:
     depends_on:
       - api
     environment:
-      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?definir N8N_ENCRYPTION_KEY dans .env (coffre)}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?definir N8N_ENCRYPTION_KEY dans /etc/pokeshop/api.env (coffre)}
       # URL publique HTTPS de n8n (webhooks Shopify, liens des emails, formulaires) ; vide = localhost.
       WEBHOOK_URL: ${N8N_WEBHOOK_URL:-}
       # Seul dossier lisible/inscriptible par les nœuds fichiers (dépôt du flux fournisseur du workflow 01).

@@ -1,14 +1,14 @@
 # SOP — Réception du stock
 
 > SOP v0.1 du 4.10.2026, rédigée par l'agent legal-ops. À tester à blanc par la propriétaire avant la première livraison (BL-104).
-> Sources : BP §4 (coût historique ≠ coût de remplacement), §5 (stock vendable = local après réservations, dommages, sécurité), §12 (« réception et authenticité » demandent une personne ; workflow facture → marge réelle) ; `docs/02-sourcing/CHECKLIST_DUE_DILIGENCE_FOURNISSEUR.md` §4 ; INTERVENTIONS_HUMAINES A03, A04, A05 ; BACKLOG BL-111, BL-112, BL-113.
+> Sources : BP §4 (coût historique ≠ coût de remplacement), §5 (stock vendable = local après réservations, dommages, sécurité), §12 (« réception et authenticité » demandent une personne ; workflow facture → marge réelle) ; `docs/02-sourcing/CHECKLIST_DUE_DILIGENCE_FOURNISSEUR.md` §4 ; INTERVENTIONS_HUMAINES A03, A04, A05 ; BACKLOG BL-111, BL-112, BL-113, BL-196 (déclaration de la réception au moteur) ; API `POST /stock/receive` (`docs/SPEC.md` §2.7).
 > Imprimer les pages « Bon de réception » (§5) : une par livraison.
 
 ## 1. En bref
 
 | | |
 |---|---|
-| Qui | **Propriétaire** : réception, comptage, authenticité, photos (physique). **Agent 11 Opérations** : préparation du bon, saisie, réclamation. **Agent 05 Finance** : coût historique à la facture. **Agent 04 Catalogue** : publication. |
+| Qui | **Propriétaire** : réception, comptage, authenticité, photos (physique). **Agent 11 Opérations** : préparation du bon, **déclaration de la réception contrôlée au moteur** (`POST /stock/receive`, étape E2), saisie, réclamation. **Agent 05 Finance** : coût historique à la facture. **Agent 04 Catalogue** : publication. |
 | Quand | Le jour de la livraison ; contrôle complet dans les **24 h** ; réclamation fournisseur dans les **48 h** (BL-111). |
 | Durée | 30 à 60 min par livraison, plus environ 15 min d'authenticité par lot (estimation INTERVENTIONS A03-A04, à mesurer). |
 | Matériel | Bon de réception imprimé, cutter à lame rétractable (pour le carton extérieur seulement), smartphone (photos et lecture des codes-barres), étiquettes d'emplacement, bac « QUARANTAINE », bac « ENDOMMAGÉ ». |
@@ -55,20 +55,20 @@ Pour chaque carton :
 
 | Constat | Statut de l'unité | Mouvement moteur | Action | Délai | Escalade |
 |---|---|---|---|---|---|
-| Conforme | Vendable | `RECEIPT` | Rangement | — | — |
+| Conforme | Vendable | `RECEIPT` (`POST /stock/receive`, étape E2) | Rangement | — | — |
 | Manquant (reçu < bon) | — | `RECEIPT` de la quantité reçue seulement | Réclamation fournisseur avec photos (modèle §6) ; la facture ne doit pas compter les manquants | 48 h | — |
 | Excédent (reçu > bon) | Non vendable « à régulariser » | aucun avant accord | Informer le fournisseur ; vendre seulement après facture ou accord écrit | 48 h | — |
 | Langue différente du FR | QUARANTAINE | aucun | Réclamation ; fiche en brouillon ; jamais vendue comme FR | 48 h | Propriétaire si le fournisseur refuse la reprise |
 | Produit différent (extension, format, contenu) | QUARANTAINE | aucun | Réclamation et retour fournisseur | 48 h | idem |
 | Doute d'authenticité (scellé, impression) | **Tout le lot** en QUARANTAINE | aucun | Incident INC-11 ; réclamation ; aucune vente de ce lot | même jour | **Propriétaire, toujours** (C18) |
-| Endommagé (enfoncement, film déchiré) | ENDOMMAGÉ (non vendable comme neuf) | `RECEIPT` puis `MARK_DAMAGED` | Réclamation avec photos : remplacement, avoir ou reprise | 48 h | Vente déclassée éventuelle : décision de la propriétaire (fiche et prix distincts, jamais vendue comme neuve) |
+| Endommagé (enfoncement, film déchiré) | ENDOMMAGÉ (non vendable comme neuf) | aucun (hors du stock déclaré par `POST /stock/receive`, étape E2) | Réclamation avec photos : remplacement, avoir ou reprise | 48 h | Vente déclassée éventuelle : décision de la propriétaire (fiche et prix distincts, jamais vendue comme neuve) |
 | Colis extérieur abîmé, contenu intact | Vendable | `RECEIPT` | Garder les photos (preuve) | — | — |
 
 ### E. Saisie (agent 11, avec les photos de la propriétaire)
 
 - [ ] E1. Créer le lot de coût : `LOT-AAAAMMJJ-[FOURNISSEUR]-NN`, une ligne par référence (`CostLot` : référence produit, date de réception, quantité **conforme**, coût unitaire estimé à partir du bon de commande, base `ESTIMATE`, référence du bon).
-- [ ] E2. Enregistrer les mouvements : `RECEIPT` (conformes et endommagés), puis `MARK_DAMAGED` pour les endommagés. Les unités en quarantaine ne sont pas saisies.
-- [ ] E3. Vérifier le stock vendable calculé : `on_hand − réservé − endommagé − sécurité` (`sellable_local`).
+- [ ] E2. **Déclarer au moteur chaque réception contrôlée** (agent 11, après les contrôles C et les décisions D) : `POST /stock/receive` avec **son** jeton nommé `agent-11-operations` (jamais le jeton commun), corps `{"sku": "…", "qty": …, "ref": "<réf. du bon de livraison ou du lot>"}`, une ligne par référence ; ou par la passerelle n8n du workflow 06 « Passerelle agent 11 (réception contrôlée) » (webhook `pokeshop-stock-recu`), qui appelle la même route. La déclaration est idempotente par (SKU, référence) : la rejouer ne double rien ; la même référence avec une autre quantité est refusée (409) : ne pas insister, ouvrir une fiche E2. **Sans cette déclaration, le moteur publie les fiches en « rupture » et laisse les nouvelles références en brouillon.** Quantité déclarée = unités **conformes** seulement : l'API n'expose pas de mouvement `MARK_DAMAGED`, donc les unités endommagées restent hors du stock déclaré (bac ENDOMMAGÉ, photos, réclamation) jusqu'à la décision de la propriétaire ; les unités en quarantaine ne sont **jamais** déclarées.
+- [ ] E3. Vérifier le stock vendable calculé : `on_hand − réservé − endommagé − sécurité` (`POST /stock/sellable` avec le SKU : `source = registre`).
 - [ ] E4. Si des précommandes attendent ce produit : les servir **avant** toute nouvelle vente (PRECOMMANDES §2.3).
 - [ ] E5. Classer les photos : `réceptions/AAAA-MM-JJ/[LOT]/` (aucune donnée personnelle).
 - [ ] E6. Signaler à l'agent 04 que les fiches peuvent passer de « alerte réassort » à « stock local » (après photos réelles si nécessaires, A06).

@@ -51,6 +51,7 @@ from pokeshop.models import DecisionStatus, PriceDecision
 from pokeshop.northstar import ContributionEntry, NorthStarLedger, NorthStarPersistenceError, Post
 from pokeshop.settings import STATE_DIR_MEMORY, Settings, SettingsError, default_state_dir, load_settings, sha256_hex
 from pokeshop.stoploss import (
+    CapitalMovement,
     GlobalLatch,
     RearmReferenceMismatchError,
     RearmRefusedError,
@@ -104,19 +105,26 @@ def settings(state_dir: Path, **extra: str) -> Settings:
     return load_settings(env)
 
 
-def boot(state_dir: Path, *, clock: Clock | None = None, mandate: Mandate | None = None, **extra: str) -> tuple[TestClient, Services]:
-    """Démarre (ou redémarre) le service sur le dossier d'état donné."""
+OWNER_APPORT = CapitalMovement(movement_id="FICTIF_APPORT", at=NOW - timedelta(days=30), kind="CONTRIBUTION",
+                               amount=D("8000"))  # fmt: skip
+"""Apport FICTIF attesté par la propriétaire : registre POST /capital/movements, jamais la photo (SEC-06)."""
+
+
+def boot(state_dir: Path, *, clock: Clock | None = None, mandate: Mandate | None = None, capital: bool = True,
+         **extra: str) -> tuple[TestClient, Services]:  # fmt: skip
+    """Démarre (ou redémarre) le service sur le dossier d'état donné (apport de la propriétaire au registre)."""
     svc = Services.build(settings(state_dir, **extra), clock=clock or Clock(), notifier=LogNotifier())
     if mandate is not None:
         svc.mandate = mandate
+    if capital and "capital_movements" not in svc.restore_errors:
+        svc.capital.record(OWNER_APPORT, now=NOW)  # idempotent : même mouvement => sans effet
     return TestClient(create_app(services=svc)), svc
 
 
 def photo(cash: str = "8000", *, at: datetime = NOW, available: str = "5000") -> dict[str, Any]:
+    """Photo déposée (POST /stoploss/state) : sans mouvement de capital (registre de la propriétaire)."""
     return {
         "as_of": at.isoformat(), "stock_budget_chf": "3000", "cash_available_chf": available, "ads_daily_cap_chf": "33",
-        "capital_movements": [{"movement_id": "FICTIF_APPORT", "at": (at - timedelta(days=30)).isoformat(),
-                               "kind": "CONTRIBUTION", "amount": "8000"}],
         "net_worth": {"as_of": at.isoformat(), "cash_chf": cash},
     }
 
@@ -236,7 +244,7 @@ def test_manual_freeze_survives_restart_and_still_blocks_spending(tmp_path: Path
     assert [e.event for e in svc2.stoploss_engine.journal].count("MANUAL_FREEZE") == 1
     assert svc2.autonomy.level == 1
     # métriques saines, nouvelle photo : le gel reste verrouillé, les dépenses restent refusées
-    assert body(client2.post("/stoploss/state", headers=H, json=photo()))["status"]["global_frozen"] is True
+    assert body(client2.post("/stoploss/state", headers=HF, json=photo()))["status"]["global_frozen"] is True
     after = body(client2.post("/mandate/check", headers=HOPS, json=spend(2, "20")))["decision"]
     assert after["outcome"] == "REJECTED" and "STOPLOSS_GLOBAL_FREEZE" in after["reasons"]
     # MOT-07 / SEC-05 : le rejeu de la dépense approuvée avant le gel n'est jamais APPROVED pendant le gel
@@ -264,7 +272,7 @@ def test_threshold_trip_and_point_zero_survive_restart(tmp_path: Path) -> None:
     no_photo = client.post("/stoploss/baseline", headers=HO, json={"reason": "J1 : lancement assumé (FICTIF)",
                                                                      "reference_chf": "4200"})
     assert no_photo.status_code == 409
-    client.post("/stoploss/state", headers=H, json=photo())
+    client.post("/stoploss/state", headers=HF, json=photo())
     agent = client.post("/stoploss/baseline", headers=H, json={"reason": "J1 : lancement assumé (FICTIF)",
                                                                 "reference_chf": "4200"})
     assert agent.status_code == 403
@@ -277,21 +285,21 @@ def test_threshold_trip_and_point_zero_survive_restart(tmp_path: Path) -> None:
     baseline = svc2.stoploss_engine.latch.baseline
     assert baseline is not None and baseline.origin == "POINT_ZERO" and baseline.net_value_chf == D("4200")
     # 20 % de 4 200 = 840 : valeur nette 3 360 => gel verrouillé (mesuré depuis le point zéro, pas depuis 8 000)
-    assert body(client2.post("/stoploss/state", headers=H, json=photo("3360.01")))["status"]["global_frozen"] is False
-    assert body(client2.post("/stoploss/state", headers=H, json=photo("3360")))["status"]["global_frozen"] is True
+    assert body(client2.post("/stoploss/state", headers=HF, json=photo("3360.01")))["status"]["global_frozen"] is False
+    assert body(client2.post("/stoploss/state", headers=HF, json=photo("3360")))["status"]["global_frozen"] is True
 
     client3, svc3 = boot(tmp_path)
     assert svc3.stoploss_engine.frozen and svc3.stoploss_engine.latch.cause == "THRESHOLD"
     events = [e.event for e in svc3.stoploss_engine.journal]
     assert "BASELINE_SET" in events and events.count("GLOBAL_TRIP") == 1
-    assert body(client3.post("/stoploss/state", headers=H, json=photo("9000")))["status"]["global_frozen"] is True
+    assert body(client3.post("/stoploss/state", headers=HF, json=photo("9000")))["status"]["global_frozen"] is True
 
 
 def test_refused_photo_never_replaces_the_valid_one_even_after_restart(tmp_path: Path) -> None:
     """E2E-15 : une photo refusée (409) ne remplace pas la dernière photo valide, qui est relue au démarrage."""
     client, svc = boot(tmp_path)
-    assert client.post("/stoploss/state", headers=H, json=photo()).status_code == 200
-    stale = client.post("/stoploss/state", headers=H, json=photo(at=NOW - timedelta(days=3)))
+    assert client.post("/stoploss/state", headers=HF, json=photo()).status_code == 200
+    stale = client.post("/stoploss/state", headers=HF, json=photo(at=NOW - timedelta(days=3)))
     assert stale.status_code == 409 and body(stale)["previous_photo_kept"] is True
     status = body(client.get("/stoploss/status", headers=H))
     assert status["available"] is True and status["rearm_reference"]["net_worth_chf"] == "8000"
@@ -407,7 +415,7 @@ def test_incident_ids_are_unique_across_processes(tmp_path: Path) -> None:
 def test_unreadable_state_journal_starts_frozen(tmp_path: Path, stream: str) -> None:
     """Journal d'état configuré mais illisible => démarrage gelé (RESTORE_FAILED), réarmement impossible."""
     client, _ = boot(tmp_path)
-    client.post("/stoploss/state", headers=H, json=photo())
+    client.post("/stoploss/state", headers=HF, json=photo())
     (tmp_path / f"{stream}.jsonl").open("a", encoding="utf-8").write('{"seq": 99, "pas": "une ligne valide"}\n')
 
     client2, svc2 = boot(tmp_path, mandate=signed_mandate())
@@ -430,7 +438,7 @@ def test_unreadable_state_journal_starts_frozen(tmp_path: Path, stream: str) -> 
         assert svc2.incidents.all_writes_suspended and RESTORE_HOLD in svc2.incidents.suspended()["*"]
     if stream == "stoploss_photo":
         assert svc2.stoploss_state is None
-        assert client2.post("/stoploss/state", headers=H, json=photo()).status_code == 503
+        assert client2.post("/stoploss/state", headers=HF, json=photo()).status_code == 503
 
 
 def test_unreadable_autonomy_history_starts_frozen_at_level_one(tmp_path: Path) -> None:
@@ -455,7 +463,7 @@ class FlakyJournal(InMemoryStateJournal):
 
 
 def state(cash: str = "8000") -> StopLossState:
-    return StopLossState.model_validate(photo(cash))
+    return StopLossState.model_validate({**photo(cash), "capital_movements": [OWNER_APPORT.model_dump(mode="json")]})
 
 
 def test_storage_failure_keeps_freezes_and_never_applies_relaxation() -> None:
@@ -544,12 +552,12 @@ def test_price_history_reference_survives_restart(tmp_path: Path) -> None:
 def test_rearm_needs_attested_reference_and_resists_a_poisoned_photo(tmp_path: Path) -> None:
     """SEC-07 : la référence du réarmement rebasé est attestée par la propriétaire, pas la dernière photo d'un agent."""
     client, svc = boot(tmp_path)
-    tripped = body(client.post("/stoploss/state", headers=H, json=photo("4000")))
+    tripped = body(client.post("/stoploss/state", headers=HF, json=photo("4000")))
     assert tripped["status"]["global_frozen"] is True
     examined = body(client.get("/stoploss/status", headers=H))["rearm_reference"]
     assert examined["net_worth_chf"] == "4000"
     # un agent dépose une photo minorée juste avant le réarmement
-    assert client.post("/stoploss/state", headers=H, json=photo("100")).status_code == 200
+    assert client.post("/stoploss/state", headers=HF, json=photo("100")).status_code == 200
     mismatch = client.post("/stoploss/rearm", headers=HO, json={"reason": "réarmement après examen de la valeur nette",
                                                                 "reference_chf": "4000"})
     assert mismatch.status_code == 409 and "100,00 CHF" in body(mismatch)["erreur"] and svc.stoploss_engine.frozen
@@ -559,7 +567,7 @@ def test_rearm_needs_attested_reference_and_resists_a_poisoned_photo(tmp_path: P
     journal = [e.event for e in svc.stoploss_engine.journal]
     assert journal.count("REARM_REFUSED") == 2 and len(svc.audit.events(action="stoploss.rearm_refused")) == 2
     # la photo honnête revient : le réarmement attesté passe, rebasé sur 4 000
-    client.post("/stoploss/state", headers=H, json=photo("4000"))
+    client.post("/stoploss/state", headers=HF, json=photo("4000"))
     ok = client.post("/stoploss/rearm", headers=HO, json={"reason": "réarmement après examen de la valeur nette",
                                                           "reference_chf": "4000.40"})
     assert ok.status_code == 200 and body(ok)["latch"]["baseline"]["net_value_chf"] == "4000"
@@ -586,7 +594,7 @@ def test_short_owner_token_never_rearms(tmp_path: Path) -> None:
     """SEC-24 : un jeton de moins de 16 caractères est refusé au réarmement comme pour l'autonomie."""
     short = "1234"
     client, svc = boot(tmp_path, POKESHOP_OWNER_TOKEN_SHA256=sha256_hex(short))
-    client.post("/stoploss/state", headers=H, json=photo())
+    client.post("/stoploss/state", headers=HF, json=photo())
     client.post("/stoploss/freeze", headers=H, json={"actor": "agent-12", "reason": "gel de test FICTIF"})
     headers = {API_TOKEN_HEADER: API_TOKEN, OWNER_TOKEN_HEADER: short}
     rearm = client.post("/stoploss/rearm", headers=headers, json={"reason": "réarmement avec jeton court",
@@ -604,7 +612,7 @@ def test_short_owner_token_never_rearms(tmp_path: Path) -> None:
 def test_every_owner_token_refusal_is_logged(tmp_path: Path) -> None:
     """SEC-26 : en-tête absent ou identique au jeton d'API => refus journalisé (audit + journal du stop-loss)."""
     client, svc = boot(tmp_path)
-    client.post("/stoploss/state", headers=H, json=photo())
+    client.post("/stoploss/state", headers=HF, json=photo())
     client.post("/stoploss/freeze", headers=H, json={"actor": "agent-12", "reason": "gel de test FICTIF"})
     absent = client.post("/stoploss/rearm", headers=H, json={"reason": "sondage de la route de réarmement"})
     assert absent.status_code == 403
@@ -628,11 +636,16 @@ def test_every_owner_token_refusal_is_logged(tmp_path: Path) -> None:
 def test_restore_hold_is_never_persisted(tmp_path: Path) -> None:
     """Le gel de démarrage (journal illisible) n'est pas enregistré : réparer puis redémarrer suffit."""
     client, _ = boot(tmp_path)
-    client.post("/stoploss/state", headers=H, json=photo())
+    client.post("/stoploss/state", headers=HF, json=photo())
     bad = tmp_path / "northstar.jsonl"
     bad.write_text("garbage\n", encoding="utf-8")
-    _, svc = boot(tmp_path)
+    client_hold, svc = boot(tmp_path)
     assert svc.stoploss_engine.latch.cause == "RESTORE_FAILED"
+    # NEW-02 : le workflow 07 continue de déposer des photos pendant le gel ; l'évaluation est journalisée
+    # avec le verrou ENREGISTRÉ, jamais avec le gel de démarrage.
+    assert client_hold.post("/stoploss/state", headers=HF, json=photo()).status_code == 200
+    assert svc.stoploss_engine.journal[-1].event == "EVALUATION" and not svc.stoploss_engine.persisted_latch.frozen
+    assert "RESTORE_FAILED" not in (tmp_path / "stoploss.jsonl").read_text(encoding="utf-8")
     bad.unlink()  # réparation (ex. restauration de sauvegarde)
     _, svc2 = boot(tmp_path)
     assert not svc2.stoploss_engine.frozen and svc2.stoploss_engine.restore_hold is None

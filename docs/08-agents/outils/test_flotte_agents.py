@@ -687,3 +687,80 @@ def test_attendu_for_missing_path_is_not_stale(root):
         encoding="utf-8",
     )
     assert v.check_stale_guidance(root) == []
+
+
+# ------------------------------------------------------------------------------------------- revue round 2
+def _own_copy(root: Path, rel: str) -> Path:
+    """Remplace un lien symbolique du dépôt temporaire par une copie modifiable (ne jamais écrire le vrai fichier)."""
+    path = root / rel
+    parent = path.parent
+    while parent != root and not parent.is_symlink():
+        parent = parent.parent
+    if parent != root and parent.is_symlink():  # dossier relié : le recopier entièrement
+        target = parent.resolve()
+        parent.unlink()
+        shutil.copytree(target, parent)
+    if path.is_symlink():
+        target = path.resolve()
+        path.unlink()
+        shutil.copy2(target, path)
+    return path
+
+
+def test_secret_file_guidance_detected(root):
+    """SEC-13 : aucun document ne fait créer le fichier de secrets dans le dépôt."""
+    doc = root / v.DOCS_DIR / "NOTE_TEST.md"
+    doc.write_text(
+        "cp .env.example .env\n"
+        "Remplir POSTGRES_PASSWORD dans .env avant de lancer.\n"
+        "docker compose --env-file .env up -d\n"
+        "Les règles deny bloquent la lecture de `.env` (filet de sécurité).\n"
+        "sudo install -D -m 600 .env.example /etc/pokeshop/api.env\n",
+        encoding="utf-8",
+    )
+    errors = v.check_secret_file_guidance(root)
+    flagged = sorted(e.split(" : ")[0] for e in errors)
+    assert flagged == [f"{v.DOCS_DIR}/NOTE_TEST.md:{n}" for n in (1, 2, 3)]
+
+
+def test_api_route_missing_from_spec_and_brief_detected(root):
+    """NEW-02 : une route de l'API absente de SPEC §2.7 ou de BRIEF_COMMUN §10 est signalée."""
+    spec = _own_copy(root, "docs/SPEC.md")
+    edit(spec, "| `POST /capital/movements` |", "| `POST /capital/mouvements` |")
+    edit(root / v.DOCS_DIR / "BRIEF_COMMUN.md", "`POST /stock/receive`", "`POST /stock/recu`", count=-1)
+    errors = v.check_api_routes_documented(root)
+    assert "docs/SPEC.md §2.7 : route POST /capital/movements absente" in errors
+    assert f"{v.DOCS_DIR}/BRIEF_COMMUN.md §10 : route POST /stock/receive absente" in errors
+
+
+def test_owner_route_missing_from_interventions_detected(root):
+    """NEW-01 : chaque acte réservé à la propriétaire a sa fiche dans la checklist maîtresse."""
+    path = _own_copy(root, str(v.INTERVENTIONS_FILE))
+    edit(path, "POST /pricing/approvals", "POST /prix/approbations", count=-1)
+    errors = v.check_api_routes_documented(root)
+    assert any("« POST /pricing/approvals » sans fiche" in e for e in errors)
+
+
+def test_api_routes_are_read_from_the_code():
+    routes = v.api_routes()
+    for route in ("GET /health", "POST /pricing/approvals", "POST /stock/receive", "POST /capital/movements",
+                  "POST /treasury/balance-items", "GET /sync/history", "GET /dashboard/daily"):  # fmt: skip
+        assert route in routes, route
+    assert len(routes) == len(set(routes)) >= 45
+
+
+def test_reception_declaration_is_cited_where_agent_11_works():
+    """NEW-03 : l'agent 11 sait qu'il doit déclarer chaque réception contrôlée au moteur."""
+    for rel in (".claude/agents/operations-sav.md", "docs/08-agents/11_operations-sav.md",
+                "docs/07-ops/SOP_RECEPTION_STOCK.md"):  # fmt: skip
+        text = (REPO / rel).read_text(encoding="utf-8")
+        assert "POST /stock/receive" in text and "pokeshop-stock-recu" in text, rel
+        assert "agent-11-operations" in text, rel
+
+
+def test_finance_agent_describes_the_price_approval_circuit():
+    """NEW-02 : un prix REVIEW devient publiable par l'approbation de la propriétaire, pas par l'agent."""
+    for rel in (".claude/agents/finance-pricing.md", "docs/08-agents/05_finance-pricing.md"):
+        text = (REPO / rel).read_text(encoding="utf-8")
+        assert "POST /pricing/approvals" in text and "48 h par défaut" in text, rel
+        assert "POST /treasury/balance-items" in text and "agent-05-finance" in text, rel

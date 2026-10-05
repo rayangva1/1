@@ -6,6 +6,7 @@
 #   DATABASE_URL=… db/backup.sh verifier [FICHIER]      # défaut : dernière sauvegarde du dossier
 #   DATABASE_URL=… db/backup.sh restaurer FICHIER URL_CIBLE
 #   DATABASE_URL=… db/backup.sh boucle                  # service docker compose « db-backup »
+#   db/backup.sh etat                                   # contrôle R-I04 : dernière restauration vérifiée récente ?
 #
 # sauvegarde : pg_dump au format personnalisé (-Fc) dans POKESHOP_BACKUP_DIR (défaut
 #   ~/pokeshop-sauvegardes, JAMAIS dans le dépôt : la base contient prix B2B, coûts et marges), fichiers en
@@ -20,14 +21,22 @@
 #   POKESHOP_BACKUP_AGE_IDENTITY (fichier de clé privée de la propriétaire).
 # restaurer : restauration réelle dans une base cible VIDE (jamais la base source), avec propriétaires et
 #   droits (compte superutilisateur ou membre des rôles pokeshop_*), puis les mêmes contrôles.
+# etat : lit la trace écrite par `verifier` après une restauration conforme (POKESHOP_BACKUP_DIR/
+#   derniere-verification.tsv : époque, date, fichier, sha256) ; code 0 seulement si elle date de moins de
+#   POKESHOP_BACKUP_MAX_AGE_HOURS (défaut : 1,5 × POKESHOP_BACKUP_INTERVAL_HOURS, soit 36 h). Sans trace, trace
+#   illisible ou trop ancienne : code 1 (fermé par défaut). Contrôle de recette R-I04 et healthcheck du service
+#   db-backup (docker compose ps : « unhealthy » tant qu'aucune restauration n'a été vérifiée). Pas de base requise.
 #
 # Le compte de DATABASE_URL doit pouvoir tout lire (y compris owner_token_fingerprint) et créer une base
 # (verifier) : compte administrateur, jamais le compte de l'API. Aucun mot de passe n'est affiché.
 set -euo pipefail
 umask 077
 
-: "${DATABASE_URL:?Définir DATABASE_URL (compte administrateur de la base du moteur)}"
+if [ "${1:-}" != "etat" ]; then
+    : "${DATABASE_URL:?Définir DATABASE_URL (compte administrateur de la base du moteur)}"
+fi
 BACKUP_DIR="${POKESHOP_BACKUP_DIR:-$HOME/pokeshop-sauvegardes}"
+STATE_FILE="$BACKUP_DIR/derniere-verification.tsv"
 KEEP="${POKESHOP_BACKUP_KEEP:-30}"
 APPEND_ONLY="audit_log engine_state_journal stock_movements price_events price_decisions supplier_offers autonomy_levels"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -202,6 +211,11 @@ cmd_verifier() {
         die "restauration NON conforme ($status anomalie(s)) : sauvegarde inutilisable, en refaire une et ouvrir un incident"
     fi
     log "restauration vérifiée : $(basename "$file") (lignes, migrations, chaînes sha256)"
+    # Trace lue par `etat` (R-I04, healthcheck) : écrite seulement après une restauration conforme.
+    printf '%s\t%s\t%s\t%s\n' "$(date -u +%s)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$file")" \
+        "$(awk -F'\t' '$1 == "sha256" { print $2 }' "$manifest")" > "$STATE_FILE.partial"
+    chmod 600 "$STATE_FILE.partial"
+    mv "$STATE_FILE.partial" "$STATE_FILE"
     cleanup
     SCRATCH=""
     WORK=""
@@ -222,6 +236,25 @@ cmd_restaurer() {
     log "base restaurée et vérifiée"
 }
 
+cmd_etat() {
+    local interval max_age epoch stamp file now age
+    interval="${POKESHOP_BACKUP_INTERVAL_HOURS:-24}"
+    max_age="${POKESHOP_BACKUP_MAX_AGE_HOURS:-$(( interval * 3 / 2 ))}"
+    [[ "$max_age" =~ ^[0-9]+$ ]] && [ "$max_age" -gt 0 ] || die "POKESHOP_BACKUP_MAX_AGE_HOURS : entier > 0 attendu"
+    [ -f "$STATE_FILE" ] || die "aucune restauration vérifiée dans $BACKUP_DIR (lancer db/backup.sh verifier) : R-I04 non satisfait"
+    IFS=$'\t' read -r epoch stamp file _ < "$STATE_FILE" || true
+    [[ "${epoch:-}" =~ ^[0-9]+$ ]] || die "trace de vérification illisible ($STATE_FILE) : R-I04 non satisfait"
+    now="$(date -u +%s)"
+    age=$(( (now - epoch) / 3600 ))
+    if [ "$epoch" -gt "$(( now + 300 ))" ]; then
+        die "trace de vérification datée du futur ($stamp) : horloge ou trace non fiable"
+    fi
+    if [ "$(( now - epoch ))" -gt "$(( max_age * 3600 ))" ]; then
+        die "dernière restauration vérifiée le $stamp ($file), il y a ${age} h > ${max_age} h : R-I04 non satisfait"
+    fi
+    echo "OK : restauration vérifiée le $stamp ($file), il y a ${age} h (≤ ${max_age} h)"
+}
+
 cmd_boucle() {
     local hours="${POKESHOP_BACKUP_INTERVAL_HOURS:-24}" file
     while true; do
@@ -240,5 +273,6 @@ case "${1:-}" in
     verifier) shift; cmd_verifier "${1:-}" ;;
     restaurer) shift; cmd_restaurer "$@" ;;
     boucle) cmd_boucle ;;
-    *) echo "usage : db/backup.sh sauvegarde | verifier [FICHIER] | restaurer FICHIER URL_CIBLE | boucle" >&2; exit 2 ;;
+    etat) cmd_etat ;;
+    *) echo "usage : db/backup.sh sauvegarde | verifier [FICHIER] | restaurer FICHIER URL_CIBLE | boucle | etat" >&2; exit 2 ;;
 esac

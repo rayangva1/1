@@ -365,7 +365,7 @@
           "name": "Passerelle agents — X-Pokeshop-Gateway"
         }
       },
-      "notes": "Corps : {\"incident_id\": \"...\", \"test_ref\": \"...\", \"passed\": true, \"actor\": \"agent-12-qa\"}",
+      "notes": "Corps : {\"incident_id\": \"...\", \"actor\": \"agent-12-qa\"}. Le test réussi est enregistré AVANT, par l'agent 12 QA avec SON jeton nommé (POST /incidents/{id}/test, différent de l'ouvreur) ou par la propriétaire : la passerelle (jeton commun) ne peut pas l'attester (403, revue NEW-01).",
       "notesInFlow": true
     },
     {
@@ -414,19 +414,16 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "={{ $('Paramètres — reprise').first().json.api_base_url }}/incidents/{{ $('Demande de reprise (passerelle agents)').first().json.body.incident_id }}/test",
+        "method": "GET",
+        "url": "={{ $('Paramètres — reprise').first().json.api_base_url }}/incidents?open_only=true",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
           "timeout": 30000
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ test_ref: $('Demande de reprise (passerelle agents)').first().json.body.test_ref, passed: $('Demande de reprise (passerelle agents)').first().json.body.passed === true, actor: $('Demande de reprise (passerelle agents)').first().json.body.actor }) }}"
+        }
       },
-      "id": "cb69c4a8-fa4c-5546-9663-5e511101db8b",
-      "name": "Enregistrer le test de correction",
+      "id": "4c589fea-6594-5660-85e2-f26046ef8b87",
+      "name": "Lire le test enregistré (GET /incidents)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -439,9 +436,24 @@
           "name": "Pokeshop API — X-Pokeshop-Token"
         }
       },
+      "notes": "Lecture seule : le test de correction est enregistré par l'agent 12 QA (jeton nommé) ou la propriétaire.",
+      "notesInFlow": true,
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Retrouve l'incident de la demande de reprise dans GET /incidents (test enregistré par l'agent 12 QA\n// avec SON jeton nommé, ou par la propriétaire : la passerelle n'enregistre jamais un test réussi).\nconst wanted = $('Demande de reprise (passerelle agents)').first().json.body.incident_id;\nconst all = ($input.first().json.incidents || []);\nconst incident = all.find((i) => i.incident_id === wanted);\nif (!incident) {\n  return [{ json: { incident: { incident_id: wanted, test_passed: false, test_ref: null, title: 'incident inconnu', cause: 'incident introuvable' } } }];\n}\nreturn [{ json: { incident } }];\n"
+      },
+      "id": "fb6ec801-936d-5287-b3b9-55e0efc07c9f",
+      "name": "Retrouver l’incident et son test",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        440
+      ]
     },
     {
       "parameters": {
@@ -489,9 +501,9 @@
               "type": "string"
             },
             {
-              "id": "4e780eed-9167-5fd1-8eb5-7aa926681aa7",
+              "id": "31c8a25d-320d-508b-9ca8-08f4d0df5c88",
               "name": "texte",
-              "value": "=Le test {{ $json.incident.test_ref }} a échoué : confinement maintenu, correction à reprendre.",
+              "value": "=Aucun test réussi enregistré pour {{ $json.incident.incident_id }} (test {{ $json.incident.test_ref || 'absent' }}) : confinement maintenu. L'agent 12 QA enregistre le test avec SON jeton nommé (POST /incidents/{id}/test, cycle /sync/run PROPRE sur la référence), ou la propriétaire l'atteste.",
               "type": "string"
             }
           ]
@@ -601,7 +613,7 @@
         "resume": "form",
         "incomingAuthentication": "basicAuth",
         "formTitle": "Reprise après incident",
-        "formDescription": "=Incident {{ $('Enregistrer le test de correction').first().json.incident.incident_id }} : test réussi. Reprendre depuis le dernier état vérifié ?",
+        "formDescription": "=Incident {{ $('Retrouver l’incident et son test').first().json.incident.incident_id }} : test réussi. Reprendre depuis le dernier état vérifié ?",
         "formFields": {
           "values": [
             {
@@ -1048,14 +1060,25 @@
       "main": [
         [
           {
-            "node": "Enregistrer le test de correction",
+            "node": "Lire le test enregistré (GET /incidents)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Enregistrer le test de correction": {
+    "Lire le test enregistré (GET /incidents)": {
+      "main": [
+        [
+          {
+            "node": "Retrouver l’incident et son test",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrouver l’incident et son test": {
       "main": [
         [
           {

@@ -26,7 +26,7 @@ Qu'aucune erreur critique n'atteigne un client et qu'aucune perte ne dépasse le
 | `tests/`, `scripts/run_all_tests.sh`, `docs/00-pilotage/outils/verifier_livrables.py`, `docs/05-da/tools/verifier_da.py`, `docs/08-agents/outils/verifier_agents.py` | Exécution |
 | Classeurs générés (`generer_comparateur.py`, `generer_classeurs.py`) : **uniquement** via `docs/08-agents/outils/controle_generateurs.py`, qui les exécute avec `--sortie` dans un dossier temporaire hors du dépôt et compare au dépôt | Exécution (lecture seule du dépôt) |
 | `engine/pokeshop/stoploss.py` (`StopLossEngine`, `GET /stoploss/status`) : seule source de l'état des six stop-loss ; `engine/pokeshop/treasury.py` (projection du cash sur 13 semaines) | Exécution |
-| `engine/pokeshop/incidents.py` via `CONN-API-MOTEUR` (jeton nommé `agent-12-qa-conformite`) : `POST /incidents`, `POST /stoploss/freeze`, `POST /autonomy` (baisse), `POST /mandate/revoke`, `POST /incidents/{id}/test` | Gel, quarantaine, suspension, rétrogradation, attestation des tests |
+| `engine/pokeshop/incidents.py` via `CONN-API-MOTEUR` (jeton nommé `agent-12-qa`) : `POST /incidents`, `POST /stoploss/freeze`, `POST /autonomy` (baisse), `POST /mandate/revoke`, `POST /pricing/approvals/{id}/revoke`, `POST /incidents/{id}/test` (test réussi : cycle `/sync/run` PROPRE en simulation du journal `GET /sync/history`, postérieur à l'ouverture, sur la cible ; jamais un incident ouvert par ton jeton ; jeton commun : 403), `POST /incidents/{id}/close`, lecture `GET /sync/history` (gate 3.6) | Gel, quarantaine, suspension, rétrogradation, attestation des tests, suivi des 20 synchronisations |
 | `CONN-N8N` | Suspension de workflow |
 | `CONN-DB-LECTURE`, `CONN-PAYPAL` (lecture) | Rapprochements |
 
@@ -85,7 +85,7 @@ A-12 répond des tests, de la surveillance et du gel (RACI L56, L58, L60) et val
 - **Lundi, et après toute modification d'un générateur** : `python docs/08-agents/outils/controle_generateurs.py` (classeurs du dépôt = régénération en dossier temporaire ; tout écart est signalé à A-05, qui régénère).
 - **Lundi** : rapprochements ; revue des accès ; rapport de conformité.
 - **Mensuel** : test de restauration ; revue des secrets et des accès délégués.
-- Tâches : BL-033, BL-046, BL-082, BL-083, BL-092, BL-095, BL-098, BL-099, BL-103, BL-160, BL-161.
+- Tâches : BL-033, BL-046, BL-082, BL-083, BL-092 (`GET /sync/history` : 20 cycles PROPRES sur livraisons réelles distinctes), BL-095, BL-098, BL-099, BL-103, BL-160, BL-161, BL-187 (recette du workflow d'inscription avant le GO C07).
 
 ## 12. Modèle de rapport (état des stop-loss)
 

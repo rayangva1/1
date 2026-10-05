@@ -1045,6 +1045,18 @@ memo.dernier_etat = 'aucun';
 return $input.all();
 """
 
+JS_FIND_INCIDENT = r"""
+// Retrouve l'incident de la demande de reprise dans GET /incidents (test enregistré par l'agent 12 QA
+// avec SON jeton nommé, ou par la propriétaire : la passerelle n'enregistre jamais un test réussi).
+const wanted = $('Demande de reprise (passerelle agents)').first().json.body.incident_id;
+const all = ($input.first().json.incidents || []);
+const incident = all.find((i) => i.incident_id === wanted);
+if (!incident) {
+  return [{ json: { incident: { incident_id: wanted, test_passed: false, test_ref: null, title: 'incident inconnu', cause: 'incident introuvable' } } }];
+}
+return [{ json: { incident } }];
+"""
+
 JS_PAYPAL_BALANCE = r"""
 // Réponse PayPal « List all balances » (GET v1/reporting/balances) -> relevé CHF du compte dédié.
 // Aucun montant inventé : sans réponse, sans solde CHF ou sans date du relevé, rien n'est déposé.
@@ -1739,19 +1751,22 @@ S1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : tes
         "Demande de reprise (passerelle agents)",
         (0, 2.2),
         "pokeshop-incident-reprise",
-        notes='Corps : {"incident_id": "...", "test_ref": "...", "passed": true, "actor": "agent-12-qa"}',
+        notes='Corps : {"incident_id": "...", "actor": "agent-12-qa"}. Le test réussi est enregistré AVANT, par '
+        "l'agent 12 QA avec SON jeton nommé (POST /incidents/{id}/test, différent de l'ouvreur) ou par la "
+        "propriétaire : la passerelle (jeton commun) ne peut pas l'attester (403, revue NEW-01).",
     )
     pb = params_node(wf, "Paramètres — reprise", (1, 2.2), WORKFLOW_KEYS["04"])
     body_ref = f"{ref('Demande de reprise (passerelle agents)')}.first().json.body"
-    test = engine(
+    read = engine(
         wf,
-        "Enregistrer le test de correction",
-        "POST",
-        f"/incidents/{{{{ {body_ref}.incident_id }}}}/test",
+        "Lire le test enregistré (GET /incidents)",
+        "GET",
+        "/incidents?open_only=true",
         (2, 2.2),
         params="Paramètres — reprise",
-        body=f"{{ test_ref: {body_ref}.test_ref, passed: {body_ref}.passed === true, actor: {body_ref}.actor }}",
+        notes="Lecture seule : le test de correction est enregistré par l'agent 12 QA (jeton nommé) ou la propriétaire.",
     )
+    test = code_node(wf, "Retrouver l’incident et son test", (2.5, 2.2), JS_FIND_INCIDENT)
     passed = if_node(wf, "Test réussi ?", (3, 2.2), [condition("={{ $json.incident.test_passed }}", "boolean", "true")])
     fail_msg = set_node(
         wf,
@@ -1761,7 +1776,9 @@ S1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : tes
             ("sujet", "=[INCIDENT] Test en échec : {{ $json.incident.incident_id }}", "string"),
             (
                 "texte",
-                "=Le test {{ $json.incident.test_ref }} a échoué : confinement maintenu, correction à reprendre.",
+                "=Aucun test réussi enregistré pour {{ $json.incident.incident_id }} (test {{ $json.incident.test_ref || 'absent' }}) : "
+                "confinement maintenu. L'agent 12 QA enregistre le test avec SON jeton nommé (POST /incidents/{id}/test, "
+                "cycle /sync/run PROPRE sur la référence), ou la propriétaire l'atteste.",
                 "string",
             ),
         ],
@@ -1793,7 +1810,7 @@ S1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : tes
         "Validation de la reprise (formulaire, 48 h)",
         (6, 1.8),
         title="Reprise après incident",
-        description="=Incident {{ $('Enregistrer le test de correction').first().json.incident.incident_id }} : "
+        description="=Incident {{ $('Retrouver l’incident et son test').first().json.incident.incident_id }} : "
         "test réussi. Reprendre depuis le dernier état vérifié ?",
         choices=("Reprendre", "Maintenir le confinement"),
         hours=48,
@@ -1835,7 +1852,7 @@ S1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : tes
         wf, "Reprise S1 : instructions à la propriétaire (email, désactivé)", (10, 1.8), params="Paramètres — reprise"
     )
     kept = noop(wf, "Reprise refusée : confinement maintenu", (8, 2.4))
-    wf.chain(rh, pb, test, passed)
+    wf.chain(rh, pb, read, test, passed)
     wf.link(passed, ask, 0)
     wf.link(passed, fail_msg, 1)
     wf.link(fail_msg, fail_mail)

@@ -41,7 +41,7 @@
 | 4. Prix et stock | §5 | A-05, A-11 | Coût rendu, règles versionnées, référence marché | Décisions de prix, stock vendable, quotas de précommande | G3 (3.3, 3.5) |
 | 5. Site | §7 | A-07, A-08, A-04 | Catalogue validé, composants DA | Fiches, checkout, 20 synchronisations sans erreur critique | G3 (3.4, 3.6, 3.7) |
 | En parallèle dès J1 | §11 | A-06 | BP §8 | Naming, directions, charte | C06, C10 |
-| Publication marketing | §11 | A-09, A-10 | Stock reçu **ou** allocation ferme ; composants approuvés | Contenus, emails, campagnes | G4 (J45), G5 (J60) |
+| Publication marketing | §11 | A-09, A-10 | Stock reçu **ou** allocation ferme ; composants approuvés | Contenus, emails, campagnes | G4 (J45), G5 (J60 option B / J64 option A, recommandée) |
 | Transverse | §11 | A-12 | Tous les livrables | Tests, recette, surveillance, gel | Tous |
 | Pilotage | §11 | A-01 | Rapports, exceptions | Fiches de gate, arbitrages | Tous ; G6, G7 |
 

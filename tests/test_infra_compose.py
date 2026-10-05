@@ -6,6 +6,10 @@
 * ``WEBHOOK_URL`` et ``N8N_RESTRICT_FILE_ACCESS_TO`` sont réellement câblés dans n8n.
 * ``.dockerignore`` : secrets et caches hors du contexte de construction.
 * Le démarrage du README est exécutable tel quel : chaque variable obligatoire est nommée.
+* Revue SEC-13 : le fichier de secrets vit **hors du dépôt** (``/etc/pokeshop/api.env``) ; aucun document
+  de démarrage ne fait créer un ``.env`` à la racine ; ``scripts/compose.sh`` refuse un ``.env`` dans le dépôt,
+  un fichier de variables dans le dépôt ou lisible par d'autres ; ``.gitignore`` couvre les secrets.
+* Revue CON-10 : le service ``db-backup`` a un healthcheck ``db/backup.sh etat`` (R-I04).
 ``docker compose config`` est exécuté si Docker Compose est présent (aucun conteneur lancé).
 """
 
@@ -86,7 +90,8 @@ def test_every_required_variable_is_documented_in_env_example_and_readme() -> No
     for var in REQUIRED:
         assert re.search(rf"^{var}=$", example, re.M), f".env.example : {var}= (vide, à remplir depuis le coffre)"
         assert var in readme, f"README : {var} à remplir avant docker compose"
-    for step in ("cp .env.example .env", "docker compose config --quiet", "docker compose up -d db db-migrate db-backup api n8n"):
+    for step in ("sudo install -D -m 600 .env.example /etc/pokeshop/api.env", "scripts/compose.sh config --quiet",
+                 "scripts/compose.sh up -d db db-migrate db-backup api n8n"):
         assert step in readme, step
     assert re.search(r"^N8N_WEBHOOK_URL=$", example, re.M)
     # E2E-13 : avec la configuration documentée, les incidents partent réellement vers le workflow 04.
@@ -159,3 +164,108 @@ def test_docker_compose_config_with_documented_variables(tmp_path: Path) -> None
     n8n_env = services["n8n"]["environment"]
     assert not any(v in json.dumps(n8n_env) for v in (FAKE_VARS["POKESHOP_DB_PASSWORD"], FAKE_VARS["POSTGRES_PASSWORD"]))
     assert n8n_env["N8N_RESTRICT_FILE_ACCESS_TO"] == "/data/imports" and "WEBHOOK_URL" in n8n_env
+
+
+# =============================================================================== SEC-13 : secrets hors du dépôt
+
+START_DOCS = ("README.md", "docker-compose.yml", ".env.example", "orchestration/README.md", "db/README.md")
+
+
+def test_sec13_no_startup_doc_creates_a_secret_file_inside_the_repository() -> None:
+    for rel in START_DOCS:
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        for bad in ("cp .env.example .env", "Copier en .env", "dans `.env`", "de `.env`", "dans .env ("):
+            assert bad not in text, f"{rel} : « {bad} » ferait créer le fichier de secrets dans le dépôt"
+    assert "/etc/pokeshop/api.env" in (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "sudo install -D -m 600 .env.example /etc/pokeshop/api.env" in (ROOT / ".env.example").read_text(encoding="utf-8")
+
+
+def _git_ignored(rel: str) -> bool:
+    out = subprocess.run(["git", "-C", str(ROOT), "check-ignore", "-q", "--no-index", rel], check=False)
+    return out.returncode == 0
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git absent")
+def test_sec13_gitignore_covers_secret_files_but_keeps_the_example() -> None:
+    for rel in (".env", ".env.local", ".env.prod", "prod.env", "api.env", "secrets/coffre.txt", "config/cle.key",
+                "certs/serveur.pem"):
+        assert _git_ignored(rel), f"{rel} doit être ignoré par git"
+    assert not _git_ignored(".env.example")
+
+
+COMPOSE_SH = ROOT / "scripts" / "compose.sh"
+
+
+def _compose_sh(env_file: Path, *args: str, repo_env: bool = False) -> subprocess.CompletedProcess[str]:
+    env = {"PATH": "/usr/bin:/bin", "POKESHOP_ENV_FILE": str(env_file), "POKESHOP_DOCKER_BIN": "echo"}
+    return subprocess.run(["bash", str(COMPOSE_SH), *args], capture_output=True, text=True, env=env, check=False)
+
+
+def test_sec13_compose_wrapper_uses_an_env_file_outside_the_repository(tmp_path: Path) -> None:
+    assert COMPOSE_SH.stat().st_mode & 0o111, "scripts/compose.sh exécutable"
+    missing = _compose_sh(tmp_path / "absent.env", "config")
+    assert missing.returncode == 1 and "introuvable" in missing.stderr
+    env_file = tmp_path / "api.env"
+    env_file.write_text("POSTGRES_PASSWORD=fictif\n", encoding="utf-8")
+    env_file.chmod(0o644)
+    loose = _compose_sh(env_file, "config")
+    assert loose.returncode == 1 and "mode 644" in loose.stderr and "fictif" not in loose.stderr
+    env_file.chmod(0o600)
+    ok = _compose_sh(env_file, "config", "--quiet")
+    assert ok.returncode == 0, ok.stderr
+    assert ok.stdout.split() == ["compose", "--project-directory", str(ROOT), "-f", str(ROOT / "docker-compose.yml"),
+                                 "--env-file", str(env_file), "config", "--quiet"]
+    inside = ROOT / "tests" / "__fictif_api.env"
+    try:
+        inside.write_text("X=1\n", encoding="utf-8")
+        inside.chmod(0o600)
+        refused = _compose_sh(inside, "config")
+        assert refused.returncode == 1 and "dans le dépôt" in refused.stderr
+    finally:
+        inside.unlink(missing_ok=True)
+
+
+def test_sec13_compose_wrapper_refuses_a_dotenv_at_the_repository_root(tmp_path: Path) -> None:
+    env_file = tmp_path / "api.env"
+    env_file.write_text("X=1\n", encoding="utf-8")
+    env_file.chmod(0o600)
+    stray = ROOT / ".env"
+    if stray.exists():
+        pytest.skip(".env présent à la racine du dépôt : à déplacer hors du dépôt (SEC-13)")
+    try:
+        stray.write_text("POSTGRES_PASSWORD=fictif\n", encoding="utf-8")
+        refused = _compose_sh(env_file, "up", "-d")
+        assert refused.returncode == 1 and "dépôt" in refused.stderr and refused.stdout == ""
+    finally:
+        stray.unlink(missing_ok=True)
+
+
+# =============================================================================== CON-10 : R-I04 vérifiable
+
+
+def test_con10_backup_service_health_is_the_last_verified_restore() -> None:
+    backup = SERVICES["db-backup"]
+    assert backup["healthcheck"]["test"] == ["CMD", "bash", "/db/backup.sh", "etat"]
+    assert _env("db-backup")["POKESHOP_BACKUP_MAX_AGE_HOURS"] == "${POKESHOP_BACKUP_MAX_AGE_HOURS:-36}"
+
+
+def _etat(backup_dir: Path, **env: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["bash", str(ROOT / "db" / "backup.sh"), "etat"], capture_output=True, text=True,
+                          env={"PATH": "/usr/bin:/bin", "POKESHOP_BACKUP_DIR": str(backup_dir), **env}, check=False)
+
+
+def test_con10_backup_state_is_fail_closed_without_a_recent_verified_restore(tmp_path: Path) -> None:
+    import time
+
+    none = _etat(tmp_path)
+    assert none.returncode == 1 and "aucune restauration vérifiée" in none.stderr
+    trace = tmp_path / "derniere-verification.tsv"
+    trace.write_text(f"{int(time.time())}\t2026-10-05T06:00:00Z\tpokeshop-x.dump\t{'a' * 64}\n", encoding="utf-8")
+    ok = _etat(tmp_path)
+    assert ok.returncode == 0 and ok.stdout.startswith("OK : restauration vérifiée")
+    trace.write_text(f"{int(time.time()) - 40 * 3600}\tancienne\tpokeshop-x.dump\t{'a' * 64}\n", encoding="utf-8")
+    old = _etat(tmp_path)
+    assert old.returncode == 1 and "R-I04 non satisfait" in old.stderr
+    assert _etat(tmp_path, POKESHOP_BACKUP_MAX_AGE_HOURS="48").returncode == 0
+    trace.write_text("illisible\n", encoding="utf-8")
+    assert _etat(tmp_path).returncode == 1

@@ -447,7 +447,7 @@ def test_projection_central_with_opening_week_5() -> None:
     assert r2(report.rows[4].net_contribution) == D("215.40")
     assert r2(report.rows[4].net_contribution * fc.WEEKS_PER_MONTH) == D("933.40")
     assert not report.frozen and report.first_global_stoploss_week is None
-    assert report.max_cumulative_loss == D(1600)
+    assert report.max_cumulative_loss == D(840)  # COH-01 : 20 % du point zéro de 4 200 (définition du moteur)
     check = report.validation()
     assert (check.first_week, check.last_week, check.complete) == (5, 12, True)
     assert r2(check.orders) == D("184.62") and check.passed
@@ -463,21 +463,24 @@ def test_projection_prudent_and_development_recovery() -> None:
 
 
 def test_pilot_pace_triggers_global_stoploss() -> None:
-    """Au rythme du jalon BP §1 (≈ 15 commandes/mois, CAC 8), le gel global tombe en semaine 28."""
+    """Au rythme du jalon BP §1 (≈ 15 commandes/mois, CAC 8), le gel global tombe en semaine 13 (seuil 840 CHF)."""
     pilot = ScenarioAssumptions("pilote_validation", 15, D(8))
     report = fc.north_star(fc.project_north_star(pilot, weeks=104, opening_week=5))
-    assert report.first_global_stoploss_week == 28
-    assert report.rows[26].cumulative > D(-1600) >= report.rows[27].cumulative
+    assert report.first_global_stoploss_week == 13  # COH-01 : définition unique (point zéro 4 200 => 840 CHF)
+    assert report.rows[11].cumulative > D(-840) >= report.rows[12].cumulative
+    # L'ancienne approximation (8 000 CHF littéraux, seuil 1 600) gelait en semaine 28 : explicite seulement.
+    legacy = fc.north_star(fc.project_north_star(pilot, weeks=104, opening_week=5), capital_engaged=fc.BP_CAPITAL_ENGAGED)
+    assert legacy.first_global_stoploss_week == 28
     assert r2(report.rows[10].net_contribution) == D("-53.07")
     assert report.frozen and report.recovery_week is None
     assert not report.validation().orders_ok  # 27,7 commandes sur 8 semaines < 30
 
 
 def test_global_stoploss_is_sticky_and_threshold_inclusive() -> None:
-    weeks = [nsw(1, fixed="1000"), nsw(2, fixed="600"), nsw(3, net="5000", cost="2000")]
+    weeks = [nsw(1, fixed="600"), nsw(2, fixed="240"), nsw(3, net="5000", cost="2000")]
     report = fc.north_star(weeks)
-    assert [r.cumulative for r in report.rows] == [D(-1000), D(-1600), D(1400)]
-    assert [r.global_stoploss for r in report.rows] == [False, True, True]  # −1 600 = seuil ⇒ gel
+    assert [r.cumulative for r in report.rows] == [D(-600), D(-840), D(2160)]
+    assert [r.global_stoploss for r in report.rows] == [False, True, True]  # −840 = seuil ⇒ gel
     assert report.first_global_stoploss_week == 2 and report.frozen
     assert report.recovery_week == 3
     lenient = fc.north_star(weeks, capital_engaged=D(10000), global_stoploss_pct=D("0.25"))
@@ -721,7 +724,7 @@ def test_model_pub_stoploss_row(model_values) -> None:
 def test_model_north_star_projection_matches_engine(model_values) -> None:
     ws = model_values["Étoile polaire"]
     assert ws["E6"].value == "Central" and ws["E7"].value == 100 and ws["E8"].value == 6
-    assert ws["E13"].value == -1600 and ws["E14"].value == 1600
+    assert ws["E13"].value == -840 and ws["E14"].value == 1600  # COH-01 : seuil global 840, réserve cash 1 600
     assert ws["R12"].value == "OK — cohérent"
     central = fc.bp_scenarios()[1]
     report = fc.north_star(fc.project_north_star(central, opening_week=5))
@@ -745,7 +748,7 @@ def test_model_north_star_projection_matches_engine(model_values) -> None:
     assert ws["E26"].value == "oui" and ws["E28"].value == "oui"
     assert ws["E27"].value == pytest.approx(float(check.contribution_after_acquisition), abs=1e-6)
     assert ws["G25"].value.startswith("Semaines 5 à 12 (56 jours")
-    assert [ws[f"H{r}"].value for r in (33, 35, 36, 37)] == [750, 1600, -1600, "60 jours"]
+    assert [ws[f"H{r}"].value for r in (33, 35, 36, 37)] == [750, 1600, -840, "60 jours"]
 
 
 #: Saisie FICTIVE du réel (semaines 1 à 10) : colonnes M à T de la feuille Étoile polaire.
@@ -799,7 +802,9 @@ def test_model_north_star_actuals_match_engine(generator: ModuleType, tmp_path: 
     assert values["F20"].value == pytest.approx(float(report.lowest.cumulative), abs=1e-6)
     assert values["F21"].value == report.lowest.week.week
     assert values["F22"].value == "pas encore"
-    assert values["F23"].value == "non"
+    # COH-01 : au seuil unique de 840 CHF, l'exemple FICTIF gèle en semaine 8 (l'ancien seuil 1 600 ne gelait pas).
+    assert report.first_global_stoploss_week == 8
+    assert values["F23"].value == "OUI — semaine 8 : TOUT GELER"
     check = report.validation()
     assert not check.complete  # 6 semaines saisies sur 8 : jalon provisoire
     assert values["F25"].value == float(check.orders) == 31
@@ -809,12 +814,14 @@ def test_model_north_star_actuals_match_engine(generator: ModuleType, tmp_path: 
 
 
 def test_model_north_star_global_freeze(generator: ModuleType, tmp_path: Path) -> None:
-    """Une perte cumulée de 1 600 CHF déclenche le gel global, qui reste actif ensuite."""
+    """Une perte cumulée de 840 CHF (20 % du point zéro de 4 200) déclenche le gel global, qui reste actif."""
     from openpyxl import load_workbook
 
     wb = generator.build_financial_model()
     ws = wb["Étoile polaire"]
-    for r, fixed in ((41, 1000), (42, 700), (43, 0)):
+    hyp = wb["Hypothèses"]
+    assert hyp["B46"].value == "=Capital_engage*StopLoss_global_pct" and "point zéro" in hyp["A44"].value
+    for r, fixed in ((41, 600), (42, 300), (43, 0)):
         ws[f"T{r}"] = fixed
     ws["N43"] = 2000
     src = tmp_path / "gel.xlsx"

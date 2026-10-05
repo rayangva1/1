@@ -26,7 +26,7 @@ Notre boutique n'est pas encore ouverte. Cette déclaration couvre uniquement ce
 | Origine de votre visite | Source, support et campagne du lien suivi (paramètres « utm ») ; adresse de la page d'inscription | Savoir, de façon agrégée, quels canaux amènent des inscriptions | Même durée que l'inscription |
 | Lecture de nos emails | Ouvertures et clics mesurés par l'outil d'envoi | Cesser d'écrire aux personnes qui ne lisent plus nos emails ; mesurer, de façon agrégée, l'intérêt de nos envois | Même durée que l'inscription |
 | Désinscription | Adresse email et date de la désinscription | Ne plus jamais vous écrire (liste d'exclusion) | Tant que nécessaire pour respecter votre désinscription |
-| Protection du formulaire | Adresse IP et heure de l'envoi du formulaire | Limiter les envois abusifs ou automatisés | Non enregistrées avec votre inscription ; effacées après le contrôle |
+| Protection du formulaire | Adresse IP et heure de l'envoi du formulaire | Limiter les envois abusifs ou automatisés | Non enregistrées avec votre inscription ; effacées après le contrôle (au plus 1 heure), au plus 24 heures dans les journaux techniques du serveur qui reçoit le formulaire |
 | Visite de la page | Données techniques transmises par votre navigateur (adresse IP, type de navigateur, page demandée) | Afficher la page et la sécuriser ; charger les polices de caractères | Selon les règles de l'hébergeur et du fournisseur des polices (ch. 4) |
 | Messages que vous nous envoyez | Vos messages, nos réponses | Vous répondre | {{DUREE_CONSERVATION_SAV}} |
 
@@ -95,18 +95,20 @@ Nous pouvons adapter cette déclaration. La version en vigueur est publiée sur 
 |---|---|---|
 | N1 | Réponses facultatives et analyse agrégée | Base suffisante : information claire au moment de la collecte (aide sous la case de consentement et ch. 2) et caractère facultatif ? Faut-il une case distincte pour l'usage agrégé (H2 à H4 du protocole landing) ? |
 | N2 | Polices Google Fonts | Le chargement transmet l'adresse IP à Google. Option sans transfert : publication avec `--sans-google-fonts` et `ST_POLICES` = « aucun : polices du système ». `publication.py` refuse une notice incohérente avec le choix fait. |
-| N3 | Adresse IP du formulaire | Limitation des envois abusifs par le workflow n8n, sans enregistrement avec l'inscription (`site/landing/README.md` §4) : formulation et durée suffisantes ? |
+| N3 | Adresse IP du formulaire | Limitation des envois abusifs par le workflow n8n, sans enregistrement avec l'inscription ; aucune exécution n8n conservée (réglages `none`), compteur effacé sous 1 heure, journaux d'accès du proxy sans IP complète ou purgés sous 24 h (`site/landing/README.md` §4, contrôlé par `site/outils/verifier_site.py` dès la livraison du workflow) : formulation et durées suffisantes ? |
 | N4 | Messages et IA | Mêmes questions que C5 et C6 de `CONFIDENTIALITE.md` (sous-traitance, transfert, entraînement exclu, réexamen par une personne sur demande). |
 | N5 | Âge de 16 ans | Même question que C8 de `CONFIDENTIALITE.md`. |
 | N6 | Durée de validité | Notice limitée à la période d'avant ouverture (J10 à J38 visés) : remplacement par la déclaration complète à l'ouverture, annoncé aux inscrits. |
 
 ### B. Champs exigés pour publier la landing
 
-La liste fermée est `CHAMPS_LANDING` dans `site/outils/publication.py` (commande `python site/outils/publication.py etat`). Chaque champ doit avoir le statut `valide` ; aucun ne dépend de la boutique Shopify, du prestataire de paiement, du transporteur ni de la relecture complète des textes (C11). Champs **provisoires autorisés** (valeur validée mais appelée à changer, republier après changement) : `URL_LANDING` (adresse de l'hébergeur avant le domaine), `MOIS_OUVERTURE` (mois visé, jamais une date ferme), `DATE_VERSION_LANDING` (version de cette notice, remplacée à l'ouverture).
+La liste fermée est `CHAMPS_LANDING` dans `site/outils/publication.py` (commande `python site/outils/publication.py etat`). Chaque champ doit avoir le statut `valide` ; aucun ne dépend de la boutique Shopify, du prestataire de paiement, du transporteur, de l'hébergement complet (B23, J26) ni de la relecture complète des textes (C11) : chacun est fourni par un acte planifié au plus tard à J10 (n8n hébergé à J8, B27 ; workflow d'inscription recetté à J9, BL-187 ; relecture express, fournisseur d'IA et durées à J9, C26), ce que contrôle `site/outils/verifier_site.py` (contrôle 14). Champs **provisoires autorisés** (valeur validée mais appelée à changer, republier après changement) : `URL_LANDING` (adresse de l'hébergeur avant le domaine), `MOIS_OUVERTURE` (mois visé, jamais une date ferme), `DATE_VERSION_LANDING` (version de cette notice, remplacée à l'ouverture).
 
 ## Validation humaine requise
 
 - [ ] Juriste : relecture express de ce texte et des notes N1 à N6 avant le GO de publication de la landing (C07).
-- [ ] Propriétaire : valider les durées (`DUREE_CONSERVATION_ALERTES`, `DUREE_CONSERVATION_SAV`) et dater la version (`DATE_VERSION_LANDING`).
+- [ ] Propriétaire : valider les durées (`DUREE_CONSERVATION_ALERTES`, `DUREE_CONSERVATION_SAV`) et dater la version (`DATE_VERSION_LANDING`) à J9 (C26).
+- [ ] Propriétaire : accepter explicitement le fournisseur d'IA qui trie et rédige les réponses aux messages (`ST_IA`, `ST_IA_PAYS`, note N4) à J9 (C26) ; à défaut, pas de publication à J10.
+- [ ] Propriétaire et agent 07 : héberger n8n en HTTPS à J8 (B27, `ST_BASE`, `ST_BASE_PAYS`) avec des journaux d'accès conformes à N3.
 - [ ] Agent 12 QA puis juriste : remplir les prestataires de la landing et leurs pays à partir des contrats réellement acceptés (hébergeur, polices, n8n, emailing, messagerie, IA) ; aucun pays ne doit être supposé.
 - [ ] Propriétaire : choisir Google Fonts ou les polices du système (`--sans-google-fonts`) et renseigner `ST_POLICES` en conséquence.

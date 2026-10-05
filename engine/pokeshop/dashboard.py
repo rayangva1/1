@@ -67,6 +67,9 @@ from .stoploss import (
 )
 from .treasury import CASH_STOPLOSS_RESERVE
 
+NORTHSTAR_STREAM = NorthStarLedger.STREAM
+"""Flux d'état de l'étoile polaire (non relu au démarrage => KPI indisponibles)."""
+
 __all__ = [
     "INTERNAL_BANNER",
     "KpiStatus",
@@ -525,6 +528,9 @@ class DashboardInputs(FrozenModel):
     time_entries: tuple[TimeEntry, ...] | None = None
     turnover: tuple[MonthlyTurnover, ...] | None = None
     tool_expenses: tuple[ToolExpense, ...] | None = None
+    unreadable: tuple[str, ...] = ()
+    """Journaux d'état **non relus au démarrage** (``Services.restore_errors``) : leurs KPI sont indisponibles,
+    jamais « aucune écriture » ni zéro (revue NEW-03)."""
 
     @field_validator("as_of")
     @classmethod
@@ -798,12 +804,23 @@ def north_star_block(
     period_end: date,
     period_label: str,
     history_weeks: int = 12,
+    unreadable: bool = False,
 ) -> NorthStarBlock:
     """Étoile polaire arrêtée à ``cutoff`` : cumul, semaine en cours, dernière semaine close, période détaillée.
 
     Les écritures postérieures à ``cutoff`` sont ignorées (aucune anticipation). Moyenne sur les
     4 dernières semaines **closes** (ROUTINES §1) ; alerte si elle est négative (ROUTINES §6).
+    ``unreadable`` : journal non relu au démarrage => indisponible (CRITIQUE), jamais « aucune écriture ».
     """
+    if unreadable:
+        return NorthStarBlock(
+            available=False,
+            reason="Indisponible : journal de l'étoile polaire non relu au démarrage (réparer le stockage puis "
+            "redémarrer) — le cumul n'est pas connu, ce n'est pas « aucune écriture ».",
+            status="CRITIQUE",
+            period_label=period_label,
+            headline="Étoile polaire indisponible : journal non relu (service gelé).",
+        )
     if entries is None:
         return NorthStarBlock(
             available=False,
@@ -1188,7 +1205,9 @@ def _base_unavailable(inputs: DashboardInputs, names: Sequence[str]) -> tuple[st
         "turnover": "CA déterminant mensuel de l'entité (comptabilité)",
         "tool_expenses": "dépenses outils (comptabilité)",
     }
-    return tuple(labels[n] for n in names if getattr(inputs, n) is None)
+    missing = [labels[n] for n in names if getattr(inputs, n) is None]
+    missing += [f"journal d'état non relu au démarrage : {stream} (réparer puis redémarrer)" for stream in inputs.unreadable]
+    return tuple(missing)
 
 
 # ---------------------------------------------------------------------------------- jour
@@ -1221,6 +1240,7 @@ def daily_report(
         period_end=target + timedelta(days=1),
         period_label=label,
         history_weeks=cfg.history_weeks,
+        unreadable=NORTHSTAR_STREAM in inputs.unreadable,
     )
     stop = stoploss_block(inputs.stoploss, autonomy_level=inputs.autonomy_level)
     kpis: list[Kpi] = []
@@ -1520,6 +1540,7 @@ def weekly_report(
         period_end=sunday_end,
         period_label=label,
         history_weeks=cfg.history_weeks,
+        unreadable=NORTHSTAR_STREAM in inputs.unreadable,
     )
     stop = stoploss_block(inputs.stoploss, autonomy_level=inputs.autonomy_level)
     kpis: list[Kpi] = []
@@ -2020,6 +2041,7 @@ def monthly_report(
         period_end=after,
         period_label=label,
         history_weeks=cfg.history_weeks,
+        unreadable=NORTHSTAR_STREAM in inputs.unreadable,
     )
     stop = stoploss_block(inputs.stoploss, autonomy_level=inputs.autonomy_level)
     kpis: list[Kpi] = []

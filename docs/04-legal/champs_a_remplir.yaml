@@ -234,7 +234,7 @@ champs:
     description: "Durée de conservation des échanges du service client"
     valeur_proposee: "24 mois après le dernier échange"
     statut: a_valider
-    decideur: "Propriétaire + juriste"
+    decideur: "Propriétaire + juriste (validation C26, J9, avant la landing)"
     source: "LPD art. 6 al. 4 (proportionnalité)"
   DUREE_CONSERVATION_COMPTE:
     description: "Suppression d'un compte client inactif"
@@ -246,7 +246,7 @@ champs:
     description: "Conservation des inscriptions aux alertes et à l'email récapitulatif"
     valeur_proposee: "jusqu'à la désinscription, ou 24 mois sans ouverture ni clic"
     statut: a_valider
-    decideur: "Propriétaire + juriste"
+    decideur: "Propriétaire + juriste (validation C26, J9, avant la landing)"
     source: "LPD art. 6 al. 4"
   DUREE_CONSERVATION_PANIER:
     description: "Conservation des paniers non finalisés (email saisi en caisse, articles, consentement marketing coché) ; à aligner sur la durée réelle de conservation des paniers abandonnés dans la boutique en ligne"
@@ -314,7 +314,7 @@ champs:
   ST_IA:
     description: "Fournisseur des modèles d'IA utilisés par les agents pour trier et rédiger les réponses SAV"
     statut: a_remplir
-    decideur: "Propriétaire (mandat) ; juriste"
+    decideur: "Propriétaire (acceptation explicite C26, J9, avant la landing) ; juriste"
     source: "Modèle d'opération ; LPD art. 9 (sous-traitance)"
   ST_IA_PAYS:
     description: "Pays de traitement et garantie (certification Swiss-US DPF ou clauses contractuelles) du fournisseur d'IA ; usage des données pour l'entraînement exclu par contrat"
@@ -324,7 +324,7 @@ champs:
   ST_BASE:
     description: "Hébergement de la base de données interne (PostgreSQL) et de l'orchestrateur (n8n)"
     statut: a_remplir
-    decideur: "Agent 07 Site"
+    decideur: "Propriétaire (B27, J8 : hébergement de n8n au nom de l'entité) ; agent 07 Site"
     source: "SPEC §1"
   ST_BASE_PAYS:
     description: "Pays d'hébergement de la base et de l'orchestrateur"

@@ -105,7 +105,8 @@ Un signal ROUGE ne bloque pas un gate à lui seul. Il est porté au dossier G3 (
 - [ ] Aucun prix, stock, compteur ni bouton d'achat ou de précommande.
 - [ ] Aucun logo ni personnage Pokémon ; mention d'indépendance présente.
 - [ ] Identité, adresse et email de contact de l'exploitant visibles ; notice de confidentialité de la landing (`CONFIDENTIALITE_LANDING.md`) en lien, relue par le juriste (relecture express) et datée (`DATE_VERSION_LANDING`).
-- [ ] `python site/outils/publication.py etat` : les champs de la liste fermée sont tous `valide` (aucun ne dépend de la boutique, du paiement, du transporteur ni de la relecture complète J28).
+- [ ] `python site/outils/publication.py etat` : les champs de la liste fermée sont tous `valide` (aucun ne dépend de la boutique, du paiement, du transporteur, de l'hébergement complet J26 ni de la relecture complète J28 ; chacun est fourni au plus tard à J9 : n8n hébergé B27, fournisseur d'IA et durées C26).
+- [ ] Workflow n8n « inscription aux alertes » recetté (BL-187, `site/landing/README.md` §4) : double opt-in, aucune exécution conservée.
 - [ ] Case de consentement non pré-cochée ; double opt-in testé ; désinscription testée en un clic.
 - [ ] Aucune donnée interne dans le code source (coûts, fournisseurs, notes).
 - [ ] Mesure d'audience conforme (consentement si cookies).

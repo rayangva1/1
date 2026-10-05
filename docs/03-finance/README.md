@@ -29,7 +29,7 @@ Dossier de l'agent « Finance et pricing » (BP §11, mission 5). Toutes les val
 1. Choisir le scénario projeté en `Hypothèses!B49` (1 prudent, 2 central, 3 développement) et la semaine d'ouverture des ventes en `B48` (5 par défaut, BP §9).
 2. Chaque lundi, saisir le **réel de la semaine écoulée** dans les colonnes jaunes **M à T** (commandes payées, ventes nettes HT, coût historique, paiement, logistique, SAV, acquisition, charges fixes ; montants HT en CHF, coûts en positif). Une semaine non saisie reste vide.
 3. Lire le **cumul réel** (colonne W) et la **synthèse** (lignes 18 à 28) : cumul à date, creux, retour au positif, jalons BP §1 (30 commandes et contribution positive après publicité sur 8 semaines pleines).
-4. **Stop-loss global** : dès que le cumul réel atteint −1 600 CHF (20 % du capital engagé de 8 000), la colonne Y affiche « GEL GLOBAL » et le reste jusqu'au réarmement par la propriétaire. Le tableau des lignes 31 à 37 rappelle les six stop-loss du mandat et leurs seuils.
+4. **Stop-loss global** : définition unique du moteur (`STOP_LOSS.md` §3) = perte de valeur nette ≥ 20 % du capital engagé de référence. Avec le point zéro recommandé (option A, 4 200 CHF = 8 000 − 2 900 de lancement − 900 de décote prudente du stock ; Hypothèses B44), le seuil est de **840 CHF** : dès que le cumul réel atteint −840 CHF, la colonne Y affiche « GEL GLOBAL » et le reste jusqu'au réarmement par la propriétaire. Le tableau des lignes 31 à 37 rappelle les six stop-loss du mandat et leurs seuils. L'ancien seuil de 1 600 CHF (20 % de 8 000) est caduc.
 
 ### Trésorerie 13 semaines (`tresorerie_13_semaines.xlsx`)
 
@@ -93,7 +93,7 @@ Le recalcul exige LibreOffice **avec le module Calc** (paquet `libreoffice-calc`
 | Délai de versement PSP 7 jours | Hypothèses B40 ; trésorerie B10 | — (FICTIF) | Délai constaté lors des paiements tests | Site |
 | Prépaiement fournisseur 14 j, stock 30 j, crédit 0 j | Hypothèses B37 à B39 | — (FICTIF) | Conditions de paiement et délais réels du fournisseur | Sourcing |
 | Préparation 15 min/colis | Hypothèses B22 | — (FICTIF) | Temps mesuré lors des commandes tests | Opérations |
-| Capital engagé 8 000 CHF (base du stop-loss global) | Hypothèses B44 | §3 | Capital réellement engagé, validé par la propriétaire | Propriétaire |
+| Capital engagé de référence 4 200 CHF = point zéro du stop-loss global (8 000 − 2 900 − 900 ; seuil 840 CHF) | Hypothèses B44 (formule liée au Budget initial) | §3 + `STOP_LOSS.md` §5 option A | Référence réellement posée par la propriétaire (`POST /stoploss/baseline`, C19) ; apports lus au registre `POST /capital/movements` | Propriétaire |
 | Ouverture des ventes en semaine 5 | Hypothèses B48 | §9 | Date réelle de l'ouverture douce | Chef de projet |
 | Réserve 1 600 CHF = stop-loss cash | Budget initial B11 ; trésorerie B7 | §3 + mandat | Décision de la propriétaire uniquement | Propriétaire |
 | Arrondi du prix public : grille par tranches du moteur (`rounding_tiers`) ; lecture BP pas 10 / 9,90 à titre de comparaison | Prix plancher B26 (moteur) ; B19-B20 (lecture BP) | §4 (ambigu) | Validation de la grille par tranche de prix (`config/pricing_rules.v1.yaml`, règles signées) | Propriétaire |
@@ -111,7 +111,7 @@ Le recalcul exige LibreOffice **avec le module Calc** (paquet `libreoffice-calc`
 ## Validation humaine requise
 
 - [ ] Remplacer chaque hypothèse du tableau ci-dessus par un devis, un contrat ou une mesure, puis relancer `generer_classeurs.py`.
-- [ ] Confirmer la base du stop-loss global : contribution nette cumulée (hors dépenses de lancement) et capital engagé de 8 000 CHF, soit un gel à −1 600 CHF.
+- [ ] Confirmer le point zéro du stop-loss global (C03, J3 ; `POST /stoploss/baseline`) : référence 4 200 CHF (option A), soit un gel à −840 CHF ; reporter la référence réellement posée en Hypothèses B44.
 - [ ] Confirmer le seuil du stop-loss cash (1 600 CHF) et décider du financement des charges fixes d'avant l'ouverture, qui l'entament sinon dès la semaine 5.
 - [ ] Faire confirmer par la fiduciaire le statut TVA, la méthode et l'échéancier des décomptes.
 - [ ] Valider la règle d'arrondi du prix public (voir `NOTE_VERIFICATION_BP.md` §4.4).

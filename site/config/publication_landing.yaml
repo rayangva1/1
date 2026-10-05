@@ -22,5 +22,5 @@ champs:
   WEBHOOK_INSCRIPTION:
     description: "URL https du webhook n8n de production « inscription aux alertes » (contrat : site/landing/inscription.schema.json)"
     statut: a_remplir
-    decideur: "Agent 07 Site, après création du workflow n8n et de l'outil d'envoi (B04)"
+    decideur: "Agent 07 Site, après l'hébergement de n8n en HTTPS (B27, J8), l'outil d'envoi (B04) et la recette du workflow d'inscription (BL-187, J9)"
     source: "site/landing/README.md §4"

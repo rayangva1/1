@@ -112,7 +112,7 @@ DIGEST {{NOM_BOUTIQUE}} — jj.mm.aaaa
 
 | Indicateur | Définition | Source | Fréquence | Seuil ou alerte |
 |---|---|---|---|---|
-| Étoile polaire | §1 | Moteur (coûts historiques, commandes, SAV, acquisition) + charges fixes | Jour, semaine, cumul | Moyenne sur 4 semaines < 0 : alerte ; perte cumulée = 20 % du capital engagé : stop-loss global |
+| Étoile polaire | §1 | Moteur (coûts historiques, commandes, SAV, acquisition) + charges fixes | Jour, semaine, cumul | Moyenne sur 4 semaines < 0 : alerte. Le stop-loss global ne se lit **pas** ici : perte de valeur nette ≥ 20 % du capital engagé de référence (840 CHF avec le point zéro recommandé), `GET /stoploss/status` |
 | Ventes payées | Commandes payées, nettes d'annulations | Shopify | Jour | — |
 | Contribution par commande | Ventes nettes − coût historique − paiement − logistique − SAV − acquisition | `pokeshop.pricing.basket_contribution` | Jour | < 12 % ou < 8 CHF : stop-loss produit |
 | Cash disponible | Solde − précommandes encaissées non livrées | `pokeshop.treasury` | Jour | < 1 600 CHF : stop-loss cash |

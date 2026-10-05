@@ -58,12 +58,12 @@ Règles d'usage :
 | REF-02 | Bundle 30ᵉ Anniversaire (6 boosters) – FR | Bundles/tripacks | E1 | STOCK | 250 | A |
 | REF-08 | Tripack Méga-Évolution – Nuit Noire – FR (existence à confirmer) | Bundles/tripacks | E2 | STOCK | 100 | B |
 | REF-19 | Tripack ou bundle Méga-Évolution – Chaos Ascendant – FR (selon offres) | Bundles/tripacks | E3 | STOCK | 250 | B |
-| REF-04 | Coffret 30ᵉ Anniversaire Nymphali-ex – FR (ou REF-05 selon la marge) | Coffrets | E1 | STOCK | 250 | A |
+| REF-04 | Coffret 30ᵉ Anniversaire Nymphali-ex – FR (variante Amphinobi-ex acceptée au même prix, relevée elle aussi : selon offre) | Coffrets | E1 | STOCK | 250 | A |
 | REF-20 | Coffret ou collection – Équilibre Parfait ou Héros Transcendants – FR (selon offres) | Coffrets | E4 | STOCK | 350 | B |
 | REF-16 | Protège-cartes format standard (marque proposée par le fournisseur) | Accessoires | — | STOCK | 150 | A |
 | REF-17 | Classeur 9 cases (marque proposée par le fournisseur) | Accessoires | — | STOCK | 150 | B |
 | REF-03 | Mini-Tin 30ᵉ Anniversaire – FR | Coffrets | E1 | ALERTE | 0 | C |
-| REF-05 | Collection Classeur 30ᵉ Anniversaire – FR | Coffrets | E1 | ALERTE (alternative à REF-04) | 0 | C |
+| REF-05 | Collection Classeur 30ᵉ Anniversaire – FR | Coffrets | E1 | ALERTE (prix demandé pour comparaison ; jamais achetée au pilote ni substituée à REF-04 : aucun relevé de marché prévu) | 0 | C |
 | REF-10 | ETB Méga-Évolution – Chaos Ascendant – FR | ETB | E3 | ALERTE | 0 | C |
 | REF-12 | ETB Méga-Évolution – Héros Transcendants – FR | ETB | E4 | ALERTE | 0 | C |
 | REF-13 | Display 36 boosters Méga-Évolution – Règne Delta – FR | Displays | E5 | COND. | 0 (≤ 750 si exception) | B |

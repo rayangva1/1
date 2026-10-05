@@ -33,7 +33,7 @@ Faire en sorte que **chaque vente contribue** et que **le cash ne manque jamais*
 | `docs/02-sourcing/COMPARATEUR_OFFRES.xlsx`, `docs/02-sourcing/outils/generer_comparateur.py` | Écriture (saisie des devis structurés de A-02) |
 | `docs/01-marche/GRILLE_CONCURRENCE.csv` | Lecture (référence marché) |
 | `docs/08-agents/modeles/REGISTRE_MANDAT.csv`, `docs/08-agents/modeles/DEMANDE_ENGAGEMENT.md` | Écriture du registre ; lecture des demandes |
-| `CONN-PAYPAL`, `CONN-DB-LECTURE`, `CONN-API-MOTEUR` (jeton nommé `agent-05-finance-pricing`) | Paiement par passerelle ; lectures ; dépôt de la photo d'activité (`POST /stoploss/state`), du solde PayPal relevé (`POST /treasury/paypal-balance`), des écritures de l'étoile polaire (`POST /northstar/entries`) et des coûts historiques (`POST /costs/movements`) ; **jamais** de demande de dépense (`POST /mandate/check`) à son propre nom |
+| `CONN-PAYPAL`, `CONN-DB-LECTURE`, `CONN-API-MOTEUR` (jeton nommé `agent-05-finance`) | Paiement par passerelle ; lectures (`GET /stoploss/status`, `GET /capital/movements`, `GET /pricing/approvals`, `GET /catalog`) ; **chaque jour**, dépôt des dettes et créances (`POST /treasury/balance-items` : précommandes encaissées, factures non payées, TVA due ; listes vides attestées) ; frais par fournisseur (`POST /catalog/cost-inputs`, jamais de taux de change) ; écritures de l'étoile polaire (`POST /northstar/entries`) et coûts historiques (`POST /costs/movements`). La photo du stop-loss est construite par le moteur (`POST /stoploss/state/refresh`, workflow 07) ; les soldes PayPal et bancaire viennent des connecteurs en lecture seule (`n8n-07-stoploss`) ; le jeton commun ne dépose aucune de ces valeurs (403). **Jamais** de demande de dépense (`POST /mandate/check`) à son propre nom |
 
 ## 4. Format de sortie
 
@@ -75,8 +75,8 @@ A-05 valide ses calculs (RACI L24, L25) sous contrôle de A-12. La propriétaire
 
 | Déclencheur | Niveau | Destinataire | Délai |
 |---|---|---|---|
-| Décision `REVIEW` (marché + 10 %, variation > 5 %/jour) | E2 | Propriétaire, options chiffrées | 48 h ; prix public inchangé entre-temps |
-| Décision `BLOCKED` (sous plancher dur) sur une référence en stock | E2 | Propriétaire (démarque, retrait, exception) | 48 h |
+| Décision `REVIEW` (marché + 10 %, variation > 5 %/jour) | E2 | Propriétaire, options chiffrées ; circuit d'un prix `REVIEW` : dossier de l'agent 05 (prix proposé, plancher, relevé marché, motif) → approbation par la **propriétaire seule**, `POST /pricing/approvals` avec son jeton (`reason` d'au moins 10 caractères, `valid_hours` de 1 à 168, **48 h par défaut** ; sous le plancher dur, référence écrite d'exception C18 `floor_exception_ref`) → le moteur lit l'approbation dans son registre (`GET /pricing/approvals`, `POST /publish/preview`) : le prix devient publiable sans aucune déclaration d'agent ; expirée ou retirée (`POST /pricing/approvals/{id}/revoke`), la fiche repasse en brouillon | 48 h ; prix public inchangé (brouillon) tant qu'aucune approbation n'est inscrite |
+| Décision `BLOCKED` (sous plancher dur) sur une référence en stock | E2 | Propriétaire (démarque, retrait, exception écrite C18 puis approbation `POST /pricing/approvals` avec `floor_exception_ref`) | 48 h |
 | Demande d'engagement hors plafond, bénéficiaire nouveau, catégorie épuisée | E2 | Propriétaire | 24 h (expiration du workflow 08 ; statu quo sûr) |
 | Coordonnées de paiement différentes de celles du mandat | E3 | A-12 (gel) + propriétaire | Immédiat ; pas de paiement |
 | Cash disponible projeté < 1 600 CHF sur l'une des 13 semaines | E2 | Propriétaire, avec plan (décaler, réduire) | 48 h |
@@ -98,6 +98,7 @@ Sources PayPal (index de recherche, pages non ouvertes depuis l'environnement de
 
 ## 11. Routines et tâches du backlog
 
+- **Chaque jour, dès la mise en service de l'API** : dettes et créances déclarées avec le jeton `agent-05-finance` (`POST /treasury/balance-items`, BL-190) ; sans déclaration de moins de 24 h, pas de photo du stop-loss.
 - **Lundi** : trésorerie 13 semaines (BL-165), étoile polaire, rapprochements (BL-166), temps de supervision (BL-171).
 - **À chaque devis** : saisie au comparateur (BL-048), décisions de prix pilote (BL-081), contrôle contre devis (BL-082 avec A-12).
 - **À chaque réception** : coût historique (BL-113) ; **à chaque facture** : marge réelle (BL-122, BL-145).

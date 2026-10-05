@@ -13,10 +13,18 @@
 * **Valeurs décisives jamais auto-déclarées** : ``/mandate/check`` ignore toute trésorerie du corps
   et lit les registres du moteur (photo stop-loss acceptée, solde PayPal relevé, taux de référence,
   propositions de réassort enregistrées) ; une photo déposée par le jeton qui demande la dépense
-  (ou par le jeton commun) n'est pas vérifiable (``TREASURY_UNVERIFIED`` => validation humaine).
+  n'est pas vérifiable (``TREASURY_UNVERIFIED`` => validation humaine). Le **jeton commun** ne fournit
+  jamais de valeur décisive (revue 2ᵉ passe) : photo du stop-loss et relevés de trésorerie
+  (``/stoploss/state``, ``/treasury/*``) exigent un jeton nommé (403 sinon) ; un test de correction
+  **réussi** d'incident exige un jeton nommé différent de l'ouvreur ou le jeton propriétaire.
   ``/stoploss/state`` remplace plafond jour pub et budget stock de la photo par ceux du mandat
-  signé et des règles. ``/northstar/entries`` refuse tout coût historique (registre interne
-  ``/costs/movements`` uniquement) ; un lot est atomique.
+  signé et des règles, et **refuse tout mouvement de capital** (422) : apports et retraits viennent
+  uniquement du registre de la propriétaire (``POST /capital/movements``). ``/northstar/entries``
+  refuse tout coût historique (registre interne ``/costs/movements`` uniquement) ; un lot est atomique.
+* **Taux de change** : uniquement le registre de la propriétaire (``POST /fx/rates``) ; aucun champ
+  ``fx_*`` accepté dans ``/sync/run`` ni ``/catalog/cost-inputs`` (422) ; sans taux : coût incomplet,
+  fiche en brouillon. ``/mandate/check`` ne retient jamais le taux déclaré (contrôle à ± 1 % contre la
+  référence ; sans référence : ``FX_RATE_UNVERIFIED``, validation humaine).
 * **Seuils signés** : stop-loss (``POKESHOP_STOPLOSS_FINGERPRINT``) et règles de prix
   (``POKESHOP_RULES_FINGERPRINT``) : empreinte différente => service gelé (``CONFIG_UNSIGNED``) ;
   absente => seuils les plus stricts entre fichier et référence du code. Un écart entre sources
@@ -41,7 +49,12 @@
   moteur (``POST /catalog/items``, ``POST /catalog/cost-inputs`` ; taux de la propriétaire) quand le
   corps n'en fournit pas ; aucun des deux : 409. ``clean`` n'est vrai que pour un cycle **PROPRE**
   (aucune erreur critique et au moins une offre au coût rendu calculé) ; ``GET /sync/history`` expose
-  les cycles persistés et ``consecutive_clean_runs`` (critère de recette BP §13).
+  les cycles persistés et ``consecutive_clean_runs`` (critère de recette BP §13) qui ne compte que les
+  cycles **réels** : données non FICTIVES, catalogue du registre, source datée, une fois par contenu.
+* **Dépublication protectrice** (revue SEC-09) : après chaque écriture vérifiée, identifiant Shopify et
+  statut sont inscrits (journal ``shop_publications``) ; une référence en quarantaine ou bloquée par le
+  stop-loss produit est dépubliée (``{"status": "DRAFT"}``) même si la fiche du registre n'a pas
+  d'identifiant ; inconnue du registre en écriture réelle : relue par handle sur la boutique.
 * **Photo du stop-loss construite par le moteur** (revue E2E-08) : ``POST /stoploss/state/refresh``
   l'assemble à partir de ses registres — apports et retraits attestés par la propriétaire
   (``POST /capital/movements``, jeton propriétaire), soldes PayPal et banque relevés par des
@@ -55,7 +68,8 @@
   et journal du stop-loss (point zéro compris), dernière photo stop-loss **acceptée**, registre du
   mandat, étoile polaire, incidents et confinements, historique des prix, niveau d'autonomie,
   approbations de prix, références « dernier import », mouvements du stock local, catalogue de
-  synchronisation et frais, cycles de synchronisation, apports de capital, activité publicitaire.
+  synchronisation et frais, cycles de synchronisation, apports de capital, activité publicitaire,
+  fiches publiées (identifiant Shopify et statut).
   Base si ``POKESHOP_DATABASE_URL``, sinon fichiers JSON Lines dans ``POKESHOP_STATE_DIR``.
   :meth:`Services.build` les relit ; un journal illisible => service gelé (``RESTORE_FAILED``),
   mandat et étoile polaire en 503, jusqu'à réparation et redémarrage (fermé par défaut).
@@ -114,6 +128,7 @@ from .autonomy import (
 )
 from .catalog import DEFAULT_EXTENSIONS_PATH, CatalogProduct, SupplierLink, load_extension_table
 from .catalogue_sync import (
+    ACCEPTANCE_DEFINITION,
     CLEAN_RUNS_TARGET,
     CatalogEntry,
     CatalogRegistry,
@@ -213,6 +228,8 @@ from .sync import (
     BaselinePersistenceError,
     ImportBaselineStore,
     OfferCostInputs,
+    ShopPublicationBook,
+    ShopStatePersistenceError,
     SyncContext,
     SyncError,
     SyncService,
@@ -504,6 +521,8 @@ class Services:
     """Dépenses publicitaires et commandes attribuées (journal ``ads_activity``)."""
     bank_balance: BankBalanceReading | None = None
     """Dernier solde bancaire relevé (mémoire : à relever de nouveau après redémarrage, fermé par défaut)."""
+    publications: ShopPublicationBook = field(default_factory=ShopPublicationBook)
+    """Fiches écrites et vérifiées sur la boutique (journal ``shop_publications``) : dépublication protectrice."""
     balance_statement: BalanceStatement | None = None
     """Dernière déclaration des dettes et créances (mémoire, comme les soldes ; jamais supposée nulle)."""
 
@@ -726,6 +745,10 @@ class Services:
         except SyncRegistryPersistenceError as exc:
             sync_runs = SyncRunLog(store=failed(SyncRunLog.STREAM, exc))
         try:
+            publications = ShopPublicationBook.restore(journal_for(ShopPublicationBook.STREAM))
+        except ShopStatePersistenceError as exc:
+            publications = ShopPublicationBook(store=failed(ShopPublicationBook.STREAM, exc))
+        try:
             capital = CapitalRegister.restore(journal_for(CapitalRegister.STREAM))
         except ActivityRegisterPersistenceError as exc:
             capital = CapitalRegister(store=failed(CapitalRegister.STREAM, exc))
@@ -779,6 +802,7 @@ class Services:
             test_store=cfg.shopify_test_store,
             stock=stock,
             baselines=baselines,
+            publications=publications,
         )
         svc = cls(
             settings=cfg,
@@ -815,6 +839,7 @@ class Services:
             sync_runs=sync_runs,
             capital=capital,
             ads=ads,
+            publications=publications,
         )
         if photo is not None:  # plafond pub et budget stock du moteur, jamais ceux de la photo relue
             svc.stoploss_state, _ = svc.authoritative_photo(photo, now())
@@ -1001,19 +1026,35 @@ class AdsActivityIn(_In):
     attributed_orders: list[AttributedOrder] = Field(default_factory=list, max_length=5000)
 
 
+class SyncCostInputsIn(_In):
+    """Frais d'un fournisseur fournis dans le corps de ``/sync/run`` (**simulation seulement**).
+
+    Aucun champ de taux de change (``fx_rate_to_chf``, ``fx_source``, ``fx_date`` : 422) : le taux vient
+    toujours du registre de la propriétaire (``POST /fx/rates``), sinon le coût reste incomplet (brouillon).
+    """
+
+    currency: str = Field(default="CHF", pattern=r"^[A-Z]{3}$")
+    inbound_freight_alloc: NonNegativeMoney | None = None
+    customs_and_fees: NonNegativeMoney | None = None
+    import_vat: NonNegativeMoney | None = None
+    order_qty: int | None = Field(default=None, ge=1, le=100_000)
+
+
 class SyncIn(_In):
     """Cycle fournisseur → site (simulation par défaut).
 
     Sans ``catalog`` dans le corps, le moteur lit son catalogue validé (``POST /catalog/items``) ; sans
     l'un ni l'autre : 409 « catalogue requis ». Sans ``cost_inputs``, frais du registre
-    (``POST /catalog/cost-inputs``) et taux de la propriétaire (``POST /fx/rates``).
+    (``POST /catalog/cost-inputs``). Taux de change : **toujours** celui de la propriétaire
+    (``POST /fx/rates``), jamais celui de l'appelant (revue MOT-02) ; ``cost_inputs`` du corps :
+    simulation seulement (écriture réelle => 409).
     """
 
     supplier: str
     source_path: str
     dry_run: bool = True
     catalog: list[CatalogItemIn] = Field(default_factory=list)
-    cost_inputs: dict[str, OfferCostInputs] = Field(default_factory=dict)
+    cost_inputs: dict[str, SyncCostInputsIn] = Field(default_factory=dict)
     market_refs: dict[str, PositiveMoney] = Field(default_factory=dict)
     source_ts: datetime | None = None
     """Horodatage déclaré par l'appelant pour une source non datée : il ne peut que la vieillir."""
@@ -1169,6 +1210,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         (StateStoreError, 503),
         (PriceApprovalPersistenceError, 503),
         (BaselinePersistenceError, 503),
+        (ShopStatePersistenceError, 503),
         (StockPersistenceError, 503),
         (SyncRegistryPersistenceError, 503),
         (ActivityRegisterPersistenceError, 503),
@@ -1233,6 +1275,29 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             )
             raise HTTPProblem(403, "acteur « propriétaire » réservé au jeton de la propriétaire (X-Pokeshop-Owner-Token)")
         return name
+
+    def require_named(principal: Principal, request: Request, *, route: str, what: str) -> None:
+        """Valeur décisive (trésorerie, photo du stop-loss) : jeton **nommé** obligatoire, jamais le jeton commun.
+
+        Le jeton commun n'est attribuable à personne : il ne peut pas fournir une valeur dont dépendent
+        le gel du stop-loss ou une dépense (principe « aucune valeur décisive auto-déclarée »).
+        """
+        if principal.named:
+            return
+        svc.audit.append(
+            actor=principal.name,
+            actor_kind=ActorKind.AGENT,
+            action=f"{route}.common_token_refused",
+            entity="token",
+            entity_id=request.url.path,
+            dry_run=False,
+            payload={"motif": "jeton commun non attribuable"},
+        )
+        raise HTTPProblem(
+            403,
+            f"{what} : valeur décisive, jeton nommé obligatoire (connecteur ou agent, POKESHOP_AGENT_TOKENS_SHA256) ; "
+            "le jeton commun n'est attribuable à personne",
+        )
 
     def owner_token(
         request: Request,
@@ -1760,20 +1825,38 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             }
         )
 
+    def _owner_rated(entry: SupplierCostEntry, mapping: Any, now: datetime) -> OfferCostInputs:
+        """Frais + taux de la propriétaire (``POST /fx/rates``) seulement ; sans taux : coût incomplet (brouillon)."""
+        rate = svc.fx_rates.reference(entry.currency, now) if entry.currency != "CHF" else None
+        return entry.to_offer_inputs(
+            allowed_currencies=tuple(mapping.allowed_currencies),
+            fx_rate=rate.rate_to_chf if rate is not None else None,
+            fx_source=rate.source if rate is not None else None,
+            fx_date=rate.rate_date if rate is not None else None,
+        )
+
     def _registry_cost_inputs(mapping: Any, now: datetime) -> dict[str, OfferCostInputs]:
         """Frais du registre ; taux de la propriétaire (``POST /fx/rates``) seulement, sinon coût incomplet."""
         entry = svc.catalog.costs(mapping.supplier_id)
         if entry is None:
             return {}
-        rate = svc.fx_rates.reference(entry.currency, now) if entry.currency != "CHF" else None
-        return {
-            mapping.supplier_id: entry.to_offer_inputs(
-                allowed_currencies=tuple(mapping.allowed_currencies),
-                fx_rate=rate.rate_to_chf if rate is not None else None,
-                fx_source=rate.source if rate is not None else None,
-                fx_date=rate.rate_date if rate is not None else None,
+        return {mapping.supplier_id: _owner_rated(entry, mapping, now)}
+
+    def _body_cost_inputs(
+        body: dict[str, SyncCostInputsIn], mapping: Any, now: datetime, actor: str
+    ) -> dict[str, OfferCostInputs]:
+        """Frais du corps (simulation) avec le taux de la propriétaire, jamais un taux de l'appelant."""
+        out: dict[str, OfferCostInputs] = {}
+        for supplier_id, item in body.items():
+            entry = SupplierCostEntry(
+                supplier_id=supplier_id,
+                **item.model_dump(),
+                source="corps de POST /sync/run (simulation)",
+                recorded_by=actor,
+                recorded_at=now,
             )
-        }
+            out[supplier_id] = _owner_rated(entry, mapping, now)
+        return out
 
     @app.post("/sync/run")
     async def sync_run(request: Request) -> PokeshopJSONResponse:
@@ -1794,6 +1877,8 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             (PriceApprovalBook.STREAM, "registre des approbations de prix"),
             (PersistentStockRegistry.STREAM, "journal du stock local"),
             (SyncRunLog.STREAM, "journal des cycles de synchronisation"),
+            (ShopPublicationBook.STREAM, "registre des fiches publiées"),
+            (FxRateBook.STREAM, "registre des taux de change"),
         ):
             _persistence_guard(stream, what)
         mapping = load_mapping(body.supplier)
@@ -1820,13 +1905,15 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                     "corps — un cycle sans catalogue n'évalue aucune offre et ne compte pas pour la recette",
                 )
         if body.cost_inputs:
-            cost_inputs = dict(body.cost_inputs)
+            if not body.dry_run:
+                raise HTTPProblem(
+                    409,
+                    "frais fournis dans le corps : simulation seulement ; une écriture réelle lit les frais du "
+                    "registre (POST /catalog/cost-inputs) et le taux de la propriétaire (POST /fx/rates)",
+                )
+            cost_inputs = _body_cost_inputs(dict(body.cost_inputs), mapping, now, principal.name)
         else:
-            for stream, what in (
-                (CatalogRegistry.COSTS_STREAM, "frais fournisseurs"),
-                (FxRateBook.STREAM, "registre des taux de change"),
-            ):
-                _persistence_guard(stream, what)
+            _persistence_guard(CatalogRegistry.COSTS_STREAM, "frais fournisseurs")
             cost_inputs = _registry_cost_inputs(mapping, now)
         fictif = mapping.fictif or any(listing.fictif for _, _, listing in items)
         table = extension_table_for(mapping, _table(fictif))
@@ -1851,8 +1938,11 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         except SyncError as exc:
             raise HTTPProblem(409, str(exc)) from None
         summary = svc.sync_runs.record(
-            SyncRunSummary.from_report(report, catalog_source=catalog_source, recorded_by=principal.name)
+            SyncRunSummary.from_report(
+                report, catalog_source=catalog_source, recorded_by=principal.name, fictif=fictif
+            )
         )
+        verdict = svc.sync_runs.acceptance()
         return _ok(
             {
                 "report": report,
@@ -1860,7 +1950,9 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 "cycle_status": summary.status,
                 "offers_costed": summary.offers_costed,
                 "catalog_source": catalog_source,
-                "consecutive_clean_runs": svc.sync_runs.consecutive_clean_runs(),
+                "counted_for_acceptance": verdict.get(summary.run_id, "?") is None,
+                "acceptance_exclusion": verdict.get(summary.run_id),
+                "consecutive_clean_runs": sum(1 for reason in verdict.values() if reason is None),
                 "report_markdown": report.render_markdown(),
             }
         )
@@ -1870,15 +1962,25 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         """Cycles de synchronisation persistés et cycles PROPRES consécutifs (critère de recette BP §13)."""
         require_api(request)
         _persistence_guard(SyncRunLog.STREAM, "journal des cycles de synchronisation")
-        streak = svc.sync_runs.consecutive_clean_runs()
+        counted = svc.sync_runs.counted_runs()
+        streak = len(counted)
+        verdict = svc.sync_runs.acceptance()
+        runs = svc.sync_runs.runs(limit=max(1, min(limit, 500)))
         return _ok(
             {
                 "consecutive_clean_runs": streak,
                 "target": CLEAN_RUNS_TARGET,
                 "criterion_met": streak >= CLEAN_RUNS_TARGET,
-                "definition": "PROPRE = aucune erreur critique et au moins une offre au coût rendu calculé ; "
-                "VIDE (rien évalué) ne compte pas et n'interrompt pas la série ; ANOMALIES la remet à zéro.",
-                "runs": svc.sync_runs.runs(limit=max(1, min(limit, 500))),
+                "definition": ACCEPTANCE_DEFINITION,
+                "counted_run_ids": [r.run_id for r in counted],
+                "runs": [
+                    {
+                        **r.model_dump(mode="json"),
+                        "counted_for_acceptance": verdict.get(r.run_id, "?") is None,
+                        "acceptance_exclusion": verdict.get(r.run_id),
+                    }
+                    for r in runs
+                ],
             }
         )
 
@@ -1926,10 +2028,13 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
     async def incidents_test(incident_id: str, request: Request) -> PokeshopJSONResponse:
         """Enregistre le test de correction (préalable à toute reprise).
 
-        Un test **réussi** déclaré par un agent doit désigner (``test_ref``) un cycle de synchronisation
-        en simulation (``POST /sync/run``) exécuté **après** l'ouverture de l'incident, sans erreur
-        critique, et par un autre jeton nommé que celui qui a ouvert l'incident ; la propriétaire
-        (jeton propriétaire) peut attester librement.
+        Un test **réussi** est une valeur décisive (il ouvre la reprise) : soit la propriétaire l'atteste
+        (jeton propriétaire), soit un **jeton nommé différent de celui qui a ouvert l'incident** (agent 12
+        QA) le déclare ; le jeton commun ne le peut jamais (revue NEW-01). ``test_ref`` désigne alors un
+        cycle ``POST /sync/run`` du **journal persisté** (``sync_runs``) : simulation PROPRE (au moins une
+        offre au coût rendu calculé, aucune erreur critique), postérieure à l'ouverture, et portant sur
+        la cible de l'incident (référence rapprochée dans le cycle, ou même fournisseur). Un test échoué
+        peut être déclaré par tout porteur de jeton.
         """
         principal = require_api(request)
         body = await _body(request, IncidentTestIn)
@@ -1940,17 +2045,41 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             raise HTTPProblem(403, "jeton propriétaire invalide")
         actor = "propriétaire" if owner else actor_of(principal, body.actor, request, route="incidents.test")
         if body.passed and not owner:
-            run = next((r for r in reversed(svc.sync.history) if r.run_id == body.test_ref), None)
-            started = getattr(run, "started_at", None) or getattr(run, "at", None)
-            problem = None
-            if run is None or started is None:
-                problem = "test_ref doit être l'identifiant d'un cycle POST /sync/run en simulation de ce service"
-            elif not run.dry_run or run.critical_errors:
-                problem = "le cycle cité n'est pas une simulation propre (erreurs critiques ou écriture réelle)"
-            elif started < incident.opened_at:
-                problem = "le cycle cité précède l'ouverture de l'incident : rejouer après la correction"
-            elif principal.named and incident.opened_by == principal.name:
-                problem = "test auto-attesté : un autre agent (agent 12 QA) doit enregistrer le test"
+            status_code, problem = 409, None
+            if not principal.named:
+                status_code = 403
+                problem = (
+                    "test réussi déclaré avec le jeton commun (non attribuable) : jeton nommé de l'agent 12 QA "
+                    "(différent de l'ouvreur) ou jeton propriétaire exigé"
+                )
+            elif incident.opened_by in (principal.name, f"agent:{principal.name}"):
+                status_code = 403
+                problem = "test auto-attesté : un autre agent (agent 12 QA) ou la propriétaire doit enregistrer le test"
+            else:
+                _persistence_guard(SyncRunLog.STREAM, "journal des cycles de synchronisation")
+                run = svc.sync_runs.get(body.test_ref)
+                if run is None:
+                    problem = "test_ref doit être l'identifiant d'un cycle POST /sync/run enregistré par ce service"
+                elif not run.dry_run or run.status != "PROPRE":
+                    problem = (
+                        f"le cycle cité n'est pas une simulation PROPRE (statut {run.status}, "
+                        f"{'simulation' if run.dry_run else 'écriture réelle'}) : aucune offre évaluée ou erreur critique"
+                    )
+                elif run.started_at < incident.opened_at:
+                    problem = "le cycle cité précède l'ouverture de l'incident : rejouer après la correction"
+                elif incident.product_key is not None and incident.product_key not in run.product_ids:
+                    problem = f"le cycle cité ne porte pas sur la référence de l'incident ({incident.product_key})"
+                elif incident.product_key is None and incident.supplier_id is not None and (
+                    run.supplier_id != incident.supplier_id
+                ):
+                    problem = f"le cycle cité ne porte pas sur le fournisseur de l'incident ({incident.supplier_id})"
+                elif incident.product_key is None and incident.supplier_id is None and (
+                    incident.workflow != WORKFLOW_SUPPLIER_TO_SHOP
+                ):
+                    problem = (
+                        "incident sans référence ni fournisseur hors du workflow fournisseur → site : aucun cycle "
+                        "ne le prouve, attestation de la propriétaire requise"
+                    )
             if problem is not None:
                 svc.audit.append(
                     actor=actor,
@@ -1959,9 +2088,9 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                     entity="incident",
                     entity_id=incident_id,
                     dry_run=incident.simulation,
-                    payload={"test_ref": body.test_ref, "motif": problem},
+                    payload={"test_ref": body.test_ref, "motif": problem, "token": principal.name},
                 )
-                raise HTTPProblem(409, f"test non vérifiable : {problem}")
+                raise HTTPProblem(status_code, f"test non vérifiable : {problem}")
         return _ok(
             {
                 "incident": svc.incidents.record_test(
@@ -2045,17 +2174,37 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
     @app.post("/stoploss/state")
     async def stoploss_state(request: Request) -> PokeshopJSONResponse:
-        """Dépose la photo d'activité (construite par les workflows) puis l'évalue.
+        """Dépose la photo d'activité (construite par les workflows) puis l'évalue — **jeton nommé** (403 sinon).
 
-        La photo est d'abord évaluée à part : refusée (périmée, datée du futur, sans apport ou avec des
-        apports en baisse : fermé par défaut), elle ne remplace **jamais** la dernière photo valide (409).
-        Plafond jour pub et budget stock sont ceux du moteur (mandat signé actif, règles), jamais ceux
-        postés (``overridden`` liste les écarts). Acceptée, elle est enregistrée (journal d'état
-        ``stoploss_photo``, avec l'acteur déduit du jeton) avant de devenir la photo en vigueur.
+        La photo ne déclare **jamais** de mouvements de capital (``capital_movements`` non vide : 422) :
+        apports et retraits sont ceux du registre de la propriétaire (``POST /capital/movements``) à la date
+        de la photo (revue SEC-06). Elle est d'abord évaluée à part : refusée (périmée, datée du futur, sans
+        apport ou avec des apports en baisse : fermé par défaut), elle ne remplace **jamais** la dernière
+        photo valide (409). Plafond jour pub et budget stock sont ceux du moteur (mandat signé actif,
+        règles), jamais ceux postés (``overridden`` liste les écarts). Acceptée, elle est enregistrée
+        (journal d'état ``stoploss_photo``, avec l'acteur déduit du jeton) avant de devenir la photo en vigueur.
         """
         principal = require_api(request)
+        require_named(principal, request, route="stoploss.state", what="photo du stop-loss")
         engine = _require_engine()
         posted = await _body(request, StopLossState)
+        if posted.capital_movements:
+            # Revue SEC-06 : un faux retrait réduisait le capital de référence et taisait le gel global.
+            svc.audit.append(
+                actor=principal.name,
+                actor_kind=ActorKind.AGENT,
+                action="stoploss.state.capital_movements_refused",
+                entity="stoploss",
+                entity_id="photo",
+                dry_run=False,
+                payload={"movements": [m.movement_id for m in posted.capital_movements]},
+            )
+            raise HTTPProblem(
+                422,
+                "capital_movements interdit dans la photo : apports et retraits viennent uniquement du registre de "
+                "la propriétaire (POST /capital/movements, jeton propriétaire)",
+                previous_photo_kept=svc.stoploss_state is not None,
+            )
         return _accept_photo(principal, engine, posted, origin="déposée")
 
     def _accept_photo(
@@ -2066,8 +2215,14 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         origin: str,
         sources: dict[str, Any] | None = None,
     ) -> PokeshopJSONResponse:
-        """Évalue à part, enregistre puis met en vigueur une photo (déposée ou construite par le moteur)."""
+        """Évalue à part, enregistre puis met en vigueur une photo (déposée ou construite par le moteur).
+
+        Apports et retraits : **toujours** ceux du registre de la propriétaire à la date de la photo,
+        jamais ceux d'une photo (revue SEC-06).
+        """
         now = svc.clock()
+        _persistence_guard(CapitalRegister.STREAM, "registre des apports")
+        posted = posted.replace(capital_movements=svc.capital.movements(until=posted.as_of))
         body, overridden = svc.authoritative_photo(posted, now)
         try:
             engine.validate_photo(body, now)
@@ -2158,22 +2313,24 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             ) from None
         return _accept_photo(principal, engine, state, origin="registres du moteur", sources=sources)
 
+    def _rearm_reference(engine: StopLossEngine) -> dict[str, Any] | None:
+        """Valeur à attester au réarmement (valeur nette de la photo en vigueur, date, empreinte)."""
+        state = svc.stoploss_state
+        if state is None:
+            return None
+        return {
+            "net_worth_chf": net_worth(state.net_worth, engine.config).total,
+            "photo_as_of": state.as_of,
+            "photo_sha256": canonical_hash(state),
+        }
+
     @app.get("/stoploss/status")
     def stoploss_status(request: Request) -> PokeshopJSONResponse:
         """État des six stop-loss sur la dernière photo ; verrou global toujours rapporté."""
         require_api(request)
         engine = _require_engine()
         status, triggers = svc.gate.stoploss_status()
-        state = svc.stoploss_state
-        reference = (
-            {
-                "net_worth_chf": net_worth(state.net_worth, engine.config).total,
-                "photo_as_of": state.as_of,
-                "photo_sha256": canonical_hash(state),
-            }
-            if state is not None
-            else None
-        )
+        reference = _rearm_reference(engine)
         return _ok(
             {
                 "available": status is not None,
@@ -2275,6 +2432,11 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         except (RearmRefusedError, RearmReferenceMismatchError) as exc:
             refused(type(exc).__name__)
             raise
+        except StopLossPersistenceError:
+            raise
+        except StopLossError as exc:
+            # Revue SEC-07 : sans référence attestée, la réponse donne la valeur ET l'empreinte de la photo à citer.
+            raise HTTPProblem(409, str(exc), rearm_reference=_rearm_reference(engine)) from None
         svc.gate.invalidate()
         svc.audit.append(
             actor="propriétaire",
@@ -2510,8 +2672,9 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
     @app.post("/treasury/paypal-balance")
     async def treasury_paypal_balance(request: Request) -> PokeshopJSONResponse:
-        """Dépose le solde du compte PayPal dédié relevé par un connecteur (acteur déduit du jeton)."""
+        """Dépose le solde du compte PayPal dédié relevé par un connecteur (jeton nommé obligatoire)."""
         principal = require_api(request)
+        require_named(principal, request, route="treasury.paypal_balance", what="solde PayPal")
         body = await _body(request, PayPalBalanceIn)
         now = svc.clock()
         if body.as_of - now > timedelta(minutes=5):
@@ -2535,8 +2698,9 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
     @app.post("/treasury/bank-balance")
     async def treasury_bank_balance(request: Request) -> PokeshopJSONResponse:
-        """Dépose le solde du compte bancaire de l'activité relevé par un connecteur (acteur déduit du jeton)."""
+        """Dépose le solde du compte bancaire de l'activité relevé par un connecteur (jeton nommé obligatoire)."""
         principal = require_api(request)
+        require_named(principal, request, route="treasury.bank_balance", what="solde bancaire")
         body = await _body(request, BankBalanceIn)
         now = svc.clock()
         if body.as_of - now > timedelta(minutes=5):
@@ -2560,8 +2724,12 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
     @app.post("/treasury/balance-items")
     async def treasury_balance_items(request: Request) -> PokeshopJSONResponse:
-        """Déclare les dettes et créances à date (précommandes encaissées, factures non payées, TVA, transit)."""
+        """Déclare les dettes et créances à date (précommandes encaissées, factures non payées, TVA, transit).
+
+        Jeton nommé obligatoire (agent finance ou connecteur) : valeur décisive de la photo du stop-loss.
+        """
         principal = require_api(request)
+        require_named(principal, request, route="treasury.balance_items", what="dettes et créances")
         body = await _body(request, BalanceItemsIn)
         now = svc.clock()
         if body.as_of - now > timedelta(minutes=5):
@@ -2761,5 +2929,5 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
     from .api_dashboard import build_dashboard_router  # tableau de bord interne (lecture seule)
 
-    app.include_router(build_dashboard_router(svc))
+    app.include_router(build_dashboard_router(svc, require_api=require_api))
     return app

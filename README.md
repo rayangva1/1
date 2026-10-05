@@ -18,8 +18,8 @@ La propriétaire intervient seulement pour :
 | Type | Exemples | Fréquence |
 |---|---|---|
 | A. Physique | réception du stock, contrôle d'authenticité, colis, photos et vidéos réelles | récurrent après ouverture |
-| B. Légal et identité | KYC, ouverture de comptes, signatures, statut TVA, jetons et empreintes au coffre, hébergement | une seule fois |
-| C. Hors mandat | dépense au-delà des plafonds, signature des seuils, point zéro, **réarmement du stop-loss global** | ponctuel |
+| B. Légal et identité | KYC, ouverture de comptes, signatures, statut TVA, jetons et empreintes au coffre, hébergement (n8n dès J8, puis API et base), accès en lecture seule banque et PayPal, enregistrement des apports de capital | une seule fois |
+| C. Hors mandat | dépense au-delà des plafonds, signature des seuils, point zéro, approbation d'un prix hors règles, taux de change du jour, recette signée, **réarmement du stop-loss global** | ponctuel |
 
 👉 La checklist ordonnée et exhaustive (chaque acte relié à sa tâche du backlog et à son échéance) : `docs/00-pilotage/INTERVENTIONS_HUMAINES.md`.
 👉 Le mandat à remplir et signer : `docs/00-pilotage/DELEGATION_AUTONOMIE.md` + `config/mandate.v1.yaml`.
@@ -67,28 +67,29 @@ uvicorn pokeshop.api:create_app --factory --app-dir engine --port 8000   # API d
 python dashboard/build.py               # régénère dashboard/out/index.html (données FICTIVES)
 ```
 
-- API sans base : les états de sécurité (gel du stop-loss, registre du mandat, incidents, étoile polaire, catalogue de synchronisation…) sont persistés par défaut dans `~/.local/state/pokeshop` (`POKESHOP_STATE_DIR`) ; sans `POKESHOP_API_TOKEN_SHA256`, les routes internes répondent 503.
+- API sans base : les états de sécurité (gel du stop-loss, registre du mandat, incidents, étoile polaire, catalogue de synchronisation…) sont persistés par défaut dans `~/.local/state/pokeshop` (`POKESHOP_STATE_DIR`) ; sans aucune empreinte de jeton d'API (commun `POKESHOP_API_TOKEN_SHA256` ou nommés `POKESHOP_AGENT_TOKENS_SHA256`), les routes internes répondent 503. Routes et jetons par rôle : `docs/SPEC.md` §2.7.
 - Tableau de bord réel (coûts et marges) : `python dashboard/build.py --api http://127.0.0.1:8000 --out ~/pokeshop/tableau.html` ; une sortie dans le dépôt est refusée.
 - Landing : ouvrir `site/landing/index.html` (le formulaire reste désactivé tant que l'URL n8n n'est pas configurée).
 - Charte : ouvrir `docs/05-da/CHARTE.html`.
 - Plateforme complète (Postgres + n8n + API), commandes exécutables telles quelles :
 
 ```bash
-cp .env.example .env
-# Remplir depuis le coffre : POSTGRES_PASSWORD, POKESHOP_DB_PASSWORD, N8N_ENCRYPTION_KEY,
+# Fichier de variables HORS du dépôt, lisible par toi seule (jamais de .env à la racine du dépôt) :
+sudo install -D -m 600 .env.example /etc/pokeshop/api.env
+# Y remplir depuis le coffre : POSTGRES_PASSWORD, POKESHOP_DB_PASSWORD, N8N_ENCRYPTION_KEY,
 # POKESHOP_API_TOKEN_SHA256, POKESHOP_OWNER_TOKEN_SHA256 (empreintes sha256, jamais les jetons).
-docker compose config --quiet           # échoue en nommant la variable manquante ; rien n'est lancé
-docker compose up -d db db-migrate db-backup api n8n
-docker compose logs db-backup           # « restauration vérifiée » : sauvegarde quotidienne ET restauration testée
+scripts/compose.sh config --quiet       # échoue en nommant la variable manquante (ou un .env dans le dépôt) ; rien n'est lancé
+scripts/compose.sh up -d db db-migrate db-backup api n8n
+scripts/compose.sh ps                   # db-backup « healthy » : restauration vérifiée depuis moins de 36 h (db/backup.sh etat)
 ```
 
-  Chaque conteneur ne reçoit que ses variables (en-tête de `docker-compose.yml`). Ordre d'activation des workflows : `orchestration/README.md` ; sauvegardes : `db/README.md`.
+  `scripts/compose.sh` = `docker compose --env-file /etc/pokeshop/api.env` (autre chemin : `POKESHOP_ENV_FILE`) ; il refuse un `.env` dans le dépôt et un fichier de variables lisible par d'autres. Chaque conteneur ne reçoit que ses variables (en-tête de `docker-compose.yml`). Ordre d'activation des workflows : `orchestration/README.md` ; sauvegardes : `db/README.md`.
 
 ## Décisions qui t'attendent
 
 1. **Nom et direction visuelle** : A « Quai » ou B « Pochette » (`docs/05-da/`), une seule validation.
 2. **Mandat** : montants, fournisseurs autorisés, signature **et empreinte au coffre** (`docs/00-pilotage/DELEGATION_AUTONOMIE.md`) ; puis tes jetons (le tien, un par agent) et la signature des seuils.
-3. **Point zéro du stop-loss global** à J3 avec le budget : sans lui, le gel tombe avant la première vente (`docs/00-pilotage/STOP_LOSS.md` §5).
+3. **Point zéro du stop-loss global** : le décider à J3 avec le budget, puis le poser avec ton jeton dès la mise en service de l'API, après l'enregistrement de tes apports et une première photo acceptée ; sans lui, le gel tombe avant la première vente (`docs/00-pilotage/STOP_LOSS.md` §5).
 4. **Écarts bloquants du BP** : `docs/00-pilotage/ECARTS_BP.md` (ex. distributeur suisse Carletto AG absent du BP).
 5. **Statut exploitant et TVA** avec la fiduciaire : le moteur a deux profils, il ne choisit pas.
 

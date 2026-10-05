@@ -107,17 +107,20 @@ def test_e2e07_registry_catalog_and_owner_fx_make_a_clean_counted_cycle(tmp_path
     register_catalog(client)
     data = body(client.post("/sync/run", headers=H, json=N8N_SYNC_BODY))
     assert data["catalog_source"] == "registre" and data["cycle_status"] == "PROPRE" and data["clean"] is True
-    assert data["offers_costed"] >= 1 and data["consecutive_clean_runs"] == 1
+    # Revue E2E-07 (2ᵉ passe) : un cycle PROPRE sur données FICTIVES ne compte jamais pour la recette.
+    assert data["offers_costed"] >= 1 and data["consecutive_clean_runs"] == 0
+    assert data["counted_for_acceptance"] is False and data["acceptance_exclusion"] == "données FICTIVES"
     p1 = next(i for i in data["report"]["items"] if i["product_id"] == "FICTIF-P1")
     assert p1["match_status"] == "MATCHED" and p1["decision_status"] is not None
     # Redémarrage : catalogue, frais et compteur relus depuis les journaux d'état.
     client2, svc2, _ = boot(tmp_path)
     assert [e.product_id for e in svc2.catalog.entries()] == ["FICTIF-P1"] and svc2.catalog.costs("fictif_grossiste_a")
     history = body(client2.get("/sync/history", headers=H))
-    assert history["consecutive_clean_runs"] == 1 and history["target"] == 20 and not history["criterion_met"]
-    assert [r["status"] for r in history["runs"]] == ["PROPRE"]
+    assert history["consecutive_clean_runs"] == 0 and history["target"] == 20 and not history["criterion_met"]
+    assert [r["status"] for r in history["runs"]] == ["PROPRE"] and history["runs"][0]["fictif"] is True
+    assert history["runs"][0]["acceptance_exclusion"] == "données FICTIVES" and "FICTIF" in history["definition"]
     again = body(client2.post("/sync/run", headers=H, json=N8N_SYNC_BODY))
-    assert again["clean"] is True and again["consecutive_clean_runs"] == 2
+    assert again["clean"] is True and again["consecutive_clean_runs"] == 0
 
 
 def test_e2e07_cycle_without_evaluated_offer_is_empty_and_never_counted(tmp_path: Path) -> None:
@@ -147,7 +150,8 @@ def test_e2e07_streak_counts_clean_runs_ignores_empty_and_resets_on_anomaly() ->
     def run(i: int, status: str) -> SyncRunSummary:
         return SyncRunSummary(run_id=f"r{i}", supplier_id="s", dry_run=True, started_at=NOW, finished_at=NOW, status=status,
                               offers_costed=1 if status == "PROPRE" else 0, items=1, catalog_source="registre",
-                              recorded_by="api", critical_errors=("x",) if status == "ANOMALIES" else ())  # fmt: skip
+                              recorded_by="api", critical_errors=("x",) if status == "ANOMALIES" else (),
+                              fictif=False, source_sha256=f"{i:064x}", source_ts=NOW - timedelta(hours=10 - i))  # fmt: skip
 
     for i, status in enumerate(["PROPRE", "ANOMALIES", "PROPRE", "VIDE", "PROPRE"]):
         log.record(run(i, status))

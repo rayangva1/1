@@ -115,11 +115,19 @@ def settings(tmp_path: Path, **extra: str):
     return load_settings(env)
 
 
-def boot(tmp_path: Path, *, mandate=None, **extra: str) -> tuple[TestClient, Services]:
+OWNER_APPORT = {"movement_id": "FICTIF_APPORT", "at": (API_NOW - timedelta(days=30)).isoformat(),
+                "kind": "CONTRIBUTION", "amount": "8000"}  # fmt: skip
+
+
+def boot(tmp_path: Path, *, mandate=None, capital: bool = True, **extra: str) -> tuple[TestClient, Services]:
+    """Démarre le service ; ``capital`` : apport FICTIF attesté par la propriétaire (POST /capital/movements, SEC-06)."""
     svc = Services.build(settings(tmp_path, **extra), clock=lambda: API_NOW, notifier=LogNotifier())
     if mandate is not None:
         svc.mandate = mandate
-    return TestClient(create_app(services=svc)), svc
+    client = TestClient(create_app(services=svc))
+    if capital:
+        assert client.post("/capital/movements", headers=HO, json=OWNER_APPORT).status_code in (200, 201)
+    return client, svc
 
 
 def api_mandate():
@@ -130,8 +138,6 @@ def api_mandate():
 def photo(cash: str = "8000", *, available: str = "5000", at: datetime = API_NOW, **extra: Any) -> dict[str, Any]:
     data = {
         "as_of": at.isoformat(), "stock_budget_chf": "3000", "cash_available_chf": available, "ads_daily_cap_chf": "33",
-        "capital_movements": [{"movement_id": "FICTIF_APPORT", "at": (at - timedelta(days=30)).isoformat(),
-                               "kind": "CONTRIBUTION", "amount": "8000"}],
         "net_worth": {"as_of": at.isoformat(), "cash_chf": cash},
     }
     data.update(extra)
@@ -408,8 +414,8 @@ def test_mot09_staleness_is_judged_on_the_photo_date_not_the_evaluation_time() -
 
 
 def test_sec06_photo_without_contribution_is_refused_and_spending_blocked(tmp_path: Path) -> None:
-    client, svc = boot(tmp_path, mandate=api_mandate())
-    no_capital = client.post("/stoploss/state", headers=HF, json=photo("100", capital_movements=[]))
+    client, svc = boot(tmp_path, mandate=api_mandate(), capital=False)  # aucun apport au registre de la propriétaire
+    no_capital = client.post("/stoploss/state", headers=HF, json=photo("100"))
     assert no_capital.status_code == 409 and "aucun apport" in body(no_capital)["erreur"]
     assert svc.stoploss_state is None
     assert client.post("/mandate/check", headers=HOPS, json=spend_payload("FICTIF-SL-1", "40")).status_code == 503
@@ -418,18 +424,23 @@ def test_sec06_photo_without_contribution_is_refused_and_spending_blocked(tmp_pa
 
 
 def test_mot12_omitted_contributions_are_refused_until_owner_reset(tmp_path: Path) -> None:
-    client, svc = boot(tmp_path)
-    two = photo(capital_movements=[
-        {"movement_id": "FICTIF_A1", "at": (API_NOW - timedelta(days=30)).isoformat(), "kind": "CONTRIBUTION",
-         "amount": "8000"},
-        {"movement_id": "FICTIF_A2", "at": (API_NOW - timedelta(days=2)).isoformat(), "kind": "CONTRIBUTION",
-         "amount": "2000"},
-    ])
-    assert client.post("/stoploss/state", headers=HF, json=two).status_code == 200
+    client, svc = boot(tmp_path, capital=False)
+    for movement_id, days, amount in (("FICTIF_A1", 30, "8000"), ("FICTIF_A2", 2, "2000")):
+        apport = {"movement_id": movement_id, "at": (API_NOW - timedelta(days=days)).isoformat(),
+                  "kind": "CONTRIBUTION", "amount": amount}  # fmt: skip
+        assert client.post("/capital/movements", headers=HO, json=apport).status_code == 201
+    assert client.post("/stoploss/state", headers=HF, json=photo()).status_code == 200
     assert svc.stoploss_engine.latch.contributions_seen_chf == D("10000")
-    omitted = client.post("/stoploss/state", headers=HF, json=photo("6000"))  # apport de 2 000 omis : perte masquée
+    # SEC-06 : une photo ne déclare jamais de mouvements de capital (apport omis ou faux retrait) : 422.
+    declared = client.post("/stoploss/state", headers=HF, json=photo("6000", capital_movements=[OWNER_APPORT]))
+    assert declared.status_code == 422 and body(declared)["previous_photo_kept"] is True
+    # Registre des apports restauré d'une sauvegarde plus ancienne (apport de 2 000 perdu) : perte masquée => refus.
+    journal = tmp_path / "capital_movements.jsonl"
+    journal.write_text(journal.read_text(encoding="utf-8").splitlines(keepends=True)[0], encoding="utf-8")
+    client_b, _ = boot(tmp_path, capital=False)
+    omitted = client_b.post("/stoploss/state", headers=HF, json=photo("6000"))
     assert omitted.status_code == 409 and body(omitted)["previous_photo_kept"] is True
-    _, svc2 = boot(tmp_path)  # la mémoire des apports survit au redémarrage
+    _, svc2 = boot(tmp_path, capital=False)  # la mémoire des apports survit au redémarrage
     assert svc2.stoploss_engine.latch.contributions_seen_chf == D("10000")
     client2 = TestClient(create_app(services=svc2))
     refused = client2.post("/stoploss/capital-memory/reset", headers=H, json={"reason": "apport erroné FICTIF corrigé"})
@@ -437,6 +448,7 @@ def test_mot12_omitted_contributions_are_refused_until_owner_reset(tmp_path: Pat
     reset = client2.post("/stoploss/capital-memory/reset", headers=HO, json={"reason": "apport erroné FICTIF corrigé"})
     assert reset.status_code == 200 and svc2.stoploss_engine.latch.contributions_seen_chf is None
     assert client2.post("/stoploss/state", headers=HF, json=photo("8000")).status_code == 200
+    assert svc2.stoploss_engine.latch.contributions_seen_chf == D("8000")
 
 
 def test_mot12_point_zero_remembers_contributions() -> None:
@@ -712,13 +724,18 @@ def test_sec16_named_tokens_derive_the_actor_and_owner_cannot_be_impersonated(tm
                                                                "identity": {"gtin": "2000000001012", "language": "FR",
                                                                             "extension": "FICTIF_ALPHA", "format": "DISPLAY",
                                                                             "content": "36 BOOSTERS", "sealed": True},
-                                                               "fictif": True}}]}))["report"]  # E2E-07 : catalogue requis
+                                                               "fictif": True}}]}))  # E2E-07 : catalogue requis
     self_test = client.post(f"/incidents/{inc['incident_id']}/test", headers=HOPS,
-                            json={"test_ref": run["run_id"], "passed": True, "actor": "x1"})
-    assert self_test.status_code == 409 and "auto-attesté" in body(self_test)["erreur"]
-    qa_test = client.post(f"/incidents/{inc['incident_id']}/test", headers=HQA,
-                          json={"test_ref": run["run_id"], "passed": True, "actor": "x1"})
-    assert qa_test.status_code == 200 and body(qa_test)["incident"]["test_passed"] is True
+                            json={"test_ref": run["report"]["run_id"], "passed": True, "actor": "x1"})
+    assert self_test.status_code == 403 and "auto-attesté" in body(self_test)["erreur"]
+    # NEW-01 : le flux FICTIF du 4.10 est périmé au 10.11 => cycle non PROPRE, il ne prouve pas la correction.
+    assert run["cycle_status"] != "PROPRE"
+    weak = client.post(f"/incidents/{inc['incident_id']}/test", headers=HQA,
+                       json={"test_ref": run["report"]["run_id"], "passed": True, "actor": "x1"})
+    assert weak.status_code == 409 and "PROPRE" in body(weak)["erreur"]
+    owner_test = client.post(f"/incidents/{inc['incident_id']}/test", headers=HO,
+                             json={"test_ref": "contrôle manuel FICTIF", "passed": True, "actor": "x1"})
+    assert owner_test.status_code == 200 and body(owner_test)["incident"]["test_passed"] is True
     resumed = body(client.post(f"/incidents/{inc['incident_id']}/resume", headers=HQA, json={"actor": "propriétaire"}))
     assert resumed["incident"]["resolved_by"] == "agent:agent-12-qa"
     resume_events = svc.audit.events(action="incident.resume")
@@ -784,6 +801,7 @@ def test_f2_registries_survive_restart_in_postgres(pg: dict[str, Any], tmp_path:
             "offer": {"supplier_id": "fictif_grossiste_a", "supplier_sku": "FICTIF-A-001", "availability_status": "IN_STOCK",
                       "available_qty": 24, "moq": 1, "carton_qty": 1, "source_ts": API_NOW.isoformat(),
                       "raw_ref": "FICTIF:1"}}  # fmt: skip
+    assert client.post("/capital/movements", headers=HO, json=OWNER_APPORT).status_code == 201  # SEC-06
     assert client.post("/stoploss/state", headers=HF, json=photo()).status_code == 200  # F3 (MOT-24)
     ref = body(client.post("/stock/reorder-proposal", headers=HF,
                            json={"candidates": [cand], "budget_available": "5000"}))["justification_ref"]

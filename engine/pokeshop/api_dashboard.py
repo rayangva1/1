@@ -1,9 +1,14 @@
 """Routes du tableau de bord interne, **lecture seule** : ``GET /dashboard/daily|weekly|monthly``.
 
 **INTERNE — contient coûts et marges, ne jamais publier.** Mêmes règles que le reste de l'API
-(:mod:`pokeshop.api`) : en-tête ``X-Pokeshop-Token`` obligatoire (503 si aucune empreinte n'est
-configurée, 401 si absent ou faux), montants en chaînes, aucun ``float``. Réponses marquées
-``Cache-Control: no-store`` et ``X-Robots-Tag: noindex, nofollow``.
+(:mod:`pokeshop.api`), avec **la même fonction d'authentification** (revue NEW-03) : en-tête
+``X-Pokeshop-Token`` = jeton commun ou jeton nommé d'un agent (``POKESHOP_AGENT_TOKENS_SHA256``) ; 503
+si aucune empreinte n'est configurée, 401 si absent ou faux. Montants en chaînes, aucun ``float``.
+Réponses marquées ``Cache-Control: no-store`` et ``X-Robots-Tag: noindex, nofollow``.
+
+Restauration (revue NEW-03) : un journal d'état non relu au démarrage (``Services.restore_errors``) rend
+ses KPI **indisponibles** (étoile polaire « indisponible (journal non relu) », jamais « aucune
+écriture » ni un cumul à 0) et figure dans ``unavailable``.
 
 Sources lues dans les :class:`~pokeshop.api.Services` : journal de l'étoile polaire, stop-loss
 évalué par la porte de gouvernance (verrou global compris), dernière photo d'activité (cash,
@@ -22,10 +27,15 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from datetime import date, datetime
+from typing import Any
 
 from fastapi import APIRouter, Request
 
-from .api import API_TOKEN_HEADER, HTTPProblem, PokeshopJSONResponse, Services, _token_ok
+from .api import HTTPProblem, PokeshopJSONResponse, Services
+from .incidents import IncidentManager
+from .mandate import SpendLedger
+from .northstar import NorthStarLedger
+from .stock import PersistentStockRegistry
 from .dashboard import (
     INTERNAL_BANNER,
     CashPosition,
@@ -61,19 +71,22 @@ def inputs_from_services(svc: Services, now: datetime) -> DashboardInputs:
         else None
     )
     state = svc.stoploss_state
-    skus = sorted({m.sku for m in svc.stock.movements()})
+    unreadable = set(svc.restore_errors)
+    skus = sorted({m.sku for m in svc.stock.movements()}) if PersistentStockRegistry.STREAM not in unreadable else []
     return DashboardInputs(
         as_of=now,
         autonomy_level=int(svc.autonomy.level),
-        entries=svc.northstar.entries(),
+        # Journal non relu au démarrage : source indisponible (None), jamais vide ni zéro (revue NEW-03).
+        entries=svc.northstar.entries() if NorthStarLedger.STREAM not in unreadable else None,
         stoploss=view,
         cash=CashPosition(as_of=state.as_of, cash_available_chf=state.cash_available_chf) if state else None,
         stock_levels=tuple(svc.stock.level(s) for s in skus) if skus else None,
-        incidents=svc.incidents.list(),
-        spend_entries=svc.spend_ledger.entries(),
+        incidents=svc.incidents.list() if IncidentManager.STREAM not in unreadable else None,
+        spend_entries=svc.spend_ledger.entries() if SpendLedger.STREAM not in unreadable else None,
         extensions=state.extensions if state else None,
         ad_spends=state.ad_spends if state else None,
         attributed_orders=state.attributed_orders if state else None,
+        unreadable=tuple(sorted(unreadable)),
     )
 
 
@@ -86,16 +99,14 @@ def _parse_date(text: str | None, name: str) -> date | None:
         raise HTTPProblem(422, f"{name} : date AAAA-MM-JJ attendue (reçu {text!r})") from None
 
 
-def build_dashboard_router(svc: Services) -> APIRouter:
-    """Routeur ``/dashboard`` (GET uniquement) ; inclus par :func:`pokeshop.api.create_app`."""
+def build_dashboard_router(svc: Services, *, require_api: Callable[[Request], Any]) -> APIRouter:
+    """Routeur ``/dashboard`` (GET uniquement) ; inclus par :func:`pokeshop.api.create_app`.
+
+    ``require_api`` : **la** fonction d'authentification de l'API (jeton commun ou nommé, 503/401),
+    passée par :func:`pokeshop.api.create_app` pour qu'aucune route n'ait sa propre règle.
+    """
     router = APIRouter(prefix="/dashboard", tags=["tableau de bord interne"])
     cfg = svc.settings
-
-    def require_api(request: Request) -> None:
-        if cfg.api_token_sha256 is None:
-            raise HTTPProblem(503, "jeton d'API non configuré (POKESHOP_API_TOKEN_SHA256) : routes internes fermées")
-        if not _token_ok(request.headers.get(API_TOKEN_HEADER), cfg.api_token_sha256):
-            raise HTTPProblem(401, f"en-tête {API_TOKEN_HEADER} absent ou invalide")
 
     def config() -> DashboardConfig:
         return DashboardConfig.from_engine(rules=svc.rules, stoploss=svc.stoploss_config, timezone=cfg.timezone)

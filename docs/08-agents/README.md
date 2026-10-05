@@ -43,7 +43,7 @@ Choix de moindre privilège : seul le chef de projet délègue ; sourcing, SEO e
 ## Vérifier
 
 ```bash
-python docs/08-agents/outils/verifier_agents.py      # contrôles de cohérence (code de sortie 1 si erreur)
+python docs/08-agents/outils/verifier_agents.py      # contrôles de cohérence, dont routes de l'API documentées et fichier de secrets hors du dépôt (code de sortie 1 si erreur)
 python docs/08-agents/outils/controle_generateurs.py # classeurs du dépôt = régénération en dossier temporaire
 python -m pytest -q docs/08-agents/outils            # tests du vérificateur et de l'outil de contrôle
 ```

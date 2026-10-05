@@ -20,7 +20,7 @@ Notre boutique n'est pas encore ouverte. Cette déclaration couvre uniquement ce
 | Origine de votre visite | Source, support et campagne du lien suivi (paramètres « utm ») ; adresse de la page d'inscription | Savoir, de façon agrégée, quels canaux amènent des inscriptions | Même durée que l'inscription |
 | Lecture de nos emails | Ouvertures et clics mesurés par l'outil d'envoi | Cesser d'écrire aux personnes qui ne lisent plus nos emails ; mesurer, de façon agrégée, l'intérêt de nos envois | Même durée que l'inscription |
 | Désinscription | Adresse email et date de la désinscription | Ne plus jamais vous écrire (liste d'exclusion) | Tant que nécessaire pour respecter votre désinscription |
-| Protection du formulaire | Adresse IP et heure de l'envoi du formulaire | Limiter les envois abusifs ou automatisés | Non enregistrées avec votre inscription ; effacées après le contrôle |
+| Protection du formulaire | Adresse IP et heure de l'envoi du formulaire | Limiter les envois abusifs ou automatisés | Non enregistrées avec votre inscription ; effacées après le contrôle (au plus 1 heure), au plus 24 heures dans les journaux techniques du serveur qui reçoit le formulaire |
 | Visite de la page | Données techniques transmises par votre navigateur (adresse IP, type de navigateur, page demandée) | Afficher la page et la sécuriser ; charger les polices de caractères | Selon les règles de l'hébergeur et du fournisseur des polices (ch. 4) |
 | Messages que vous nous envoyez | Vos messages, nos réponses | Vous répondre | 24 mois après le dernier échange ⟦à valider⟧ |
 

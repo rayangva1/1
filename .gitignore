@@ -2,9 +2,17 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
+# Secrets : jamais dans le dépôt. Le fichier de variables vit HORS du dépôt (/etc/pokeshop/api.env,
+# scripts/compose.sh) ; ces motifs ne sont qu'un filet de sécurité. Seul .env.example (vide) est suivi.
 .env
+.env.*
+!.env.example
+*.env
 *.env.local
 secrets/
+**/secrets/
+*.pem
+*.key
 *.pyc
 # Données réelles jamais versionnées : tableaux de bord produits depuis l'API (seul l'exemple FICTIF
 # dashboard/out/index.html est suivi), sauvegardes de la base (coûts, marges, prix B2B), flux importés.

@@ -10,10 +10,11 @@ logistique − SAV − acquisition − charges fixes), suivie chaque semaine, av
 référence** (apports − retraits, ou point zéro posé par la propriétaire + apports ultérieurs −
 retraits). La projection ne connaît pas la valeur nette : elle l'approche par la contribution
 cumulée, ce qui n'est cohérent qu'une fois les coûts de lancement assumés par le point zéro.
-Pour rester sur la même définition, passer ``capital_engaged=BP_STOPLOSS_REFERENCE`` (point zéro
-recommandé, option A de ``STOP_LOSS.md`` §5 : 4 200 CHF, seuil 840 CHF) ; la valeur par défaut
-``BP_CAPITAL_ENGAGED`` (8 000, seuil 1 600) ne reproduit que l'ancien classeur et **sous-estime**
-la prudence du moteur d'un facteur ≈ 2 (gel projeté en semaine 28 au lieu de 13 au rythme du jalon).
+Par défaut, :func:`north_star` applique cette définition avec ``capital_engaged=BP_STOPLOSS_REFERENCE``
+(point zéro recommandé, option A de ``STOP_LOSS.md`` §5 : 4 200 CHF, **seuil 840 CHF** ; gel projeté en
+semaine 13 au rythme du jalon). L'ancienne approximation (8 000 CHF de capital littéral, seuil
+1 600 CHF, semaine 28) est **caduque** (revue COH-01) : elle sous-estimait la prudence du moteur d'un
+facteur ≈ 2 ; ``capital_engaged=BP_CAPITAL_ENGAGED`` ne sert plus qu'à une comparaison explicite.
 
 Module autonome de l'agent finance : il ne dépend ni de ``pokeshop.pricing`` ni de
 ``pokeshop.stoploss`` (agent gouvernance, qui fait foi pour l'application des stop-loss).
@@ -814,15 +815,15 @@ def global_stoploss_threshold(
 def north_star(
     weeks: Sequence[NorthStarWeek],
     *,
-    capital_engaged: Decimal = BP_CAPITAL_ENGAGED,
+    capital_engaged: Decimal = BP_STOPLOSS_REFERENCE,
     global_stoploss_pct: Decimal = GLOBAL_STOPLOSS_PCT,
 ) -> NorthStarReport:
     """Cumule la contribution nette semaine par semaine depuis la semaine 1 du lancement.
 
     Le stop-loss global est *collant* : une fois la perte cumulée ≥ seuil, il reste
     actif même si le cumul remonte (seule la propriétaire peut le réarmer).
-    ``capital_engaged`` = capital engagé **de référence** (voir l'en-tête du module) : passer
-    :data:`BP_STOPLOSS_REFERENCE` pour la définition du moteur (point zéro, seuil 840 CHF).
+    ``capital_engaged`` = capital engagé **de référence** (voir l'en-tête du module) : par défaut
+    :data:`BP_STOPLOSS_REFERENCE`, la définition du moteur (point zéro 4 200 CHF, seuil 840 CHF).
     """
     if not weeks:
         raise ForecastError("au moins une semaine est requise")

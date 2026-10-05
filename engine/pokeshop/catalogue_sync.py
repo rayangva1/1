@@ -13,7 +13,12 @@ sans qu'aucun prix ne soit jamais calculé. Ce module fournit :
 * :class:`SyncRunLog` — résumé persisté de chaque cycle (journal ``sync_runs``) et compteur
   :meth:`SyncRunLog.consecutive_clean_runs` : un cycle n'est **PROPRE** que sans erreur critique **et**
   avec au moins une offre rapprochée dont le coût rendu a été calculé ; un cycle **VIDE** (rien évalué)
-  ne compte pas et n'interrompt pas la série ; un cycle **ANOMALIES** la remet à zéro.
+  ne compte pas et n'interrompt pas la série ; un cycle **ANOMALIES** sur des données réelles la remet à zéro.
+
+Critère de recette (revue E2E-07, 2ᵉ passe) : seuls les cycles **réels** comptent — données non FICTIVES
+(fournisseur et catalogue), catalogue lu dans le registre du moteur (jamais fourni dans le corps), source
+fournisseur datée, et **un seul cycle par contenu de source distinct** (même fichier rejoué, même
+horodatage de source : compté une fois). Vingt appels identiques ne remplissent donc plus le critère.
 """
 
 from __future__ import annotations
@@ -43,10 +48,20 @@ __all__ = [
     "CycleStatus",
     "cycle_status",
     "CLEAN_RUNS_TARGET",
+    "ACCEPTANCE_DEFINITION",
 ]
 
 CLEAN_RUNS_TARGET = 20
-"""Critère de recette BP §13 : 20 cycles consécutifs sans erreur critique (gate 3.6)."""
+"""Critère de recette BP §13 : 20 cycles réels consécutifs sans erreur critique (gate 3.6)."""
+
+ACCEPTANCE_DEFINITION = (
+    "Compte : cycles PROPRES (aucune erreur critique et au moins une offre au coût rendu calculé) sur des "
+    "données réelles (ni fournisseur ni catalogue FICTIF), catalogue lu dans le registre du moteur (POST "
+    "/catalog/items, jamais le corps), source fournisseur datée ; un seul cycle par contenu de source distinct "
+    "(même fichier ou même horodatage rejoué : compté une fois). VIDE et cycles non admissibles : ignorés ; "
+    "ANOMALIES sur données réelles : remise à zéro."
+)
+"""Définition affichée par ``GET /sync/history`` (et lue par la gate 3.6)."""
 
 CycleStatus = Literal["PROPRE", "VIDE", "ANOMALIES"]
 
@@ -265,9 +280,24 @@ class SyncRunSummary(FrozenModel):
     incident_ids: tuple[str, ...] = ()
     catalog_source: Literal["corps", "registre"]
     recorded_by: str = Field(min_length=2)
+    fictif: bool = True
+    """Données FICTIVES (fournisseur ou catalogue) ; défaut prudent pour un enregistrement ancien : vrai."""
+    source_sha256: str | None = None
+    """Empreinte du contenu de la source ; None (ancien enregistrement, source illisible) : jamais compté."""
+    source_ts: datetime | None = None
+    """Horodatage effectif de la source (fournisseur, ou première capture du contenu)."""
+    product_ids: tuple[str, ...] = ()
+    """Produits du catalogue rapprochés (cible d'un test de correction d'incident)."""
 
     @classmethod
-    def from_report(cls, report: SyncReport, *, catalog_source: Literal["corps", "registre"], recorded_by: str) -> SyncRunSummary:
+    def from_report(
+        cls,
+        report: SyncReport,
+        *,
+        catalog_source: Literal["corps", "registre"],
+        recorded_by: str,
+        fictif: bool | None = None,
+    ) -> SyncRunSummary:
         status, costed = cycle_status(report)
         return cls(
             run_id=report.run_id,
@@ -282,7 +312,23 @@ class SyncRunSummary(FrozenModel):
             incident_ids=report.incident_ids,
             catalog_source=catalog_source,
             recorded_by=recorded_by,
+            fictif=report.fictif if fictif is None else (fictif or report.fictif),
+            source_sha256=report.source_sha256,
+            source_ts=report.source_ts,
+            product_ids=report.product_ids,
         )
+
+    def acceptance_exclusion(self) -> str | None:
+        """Motif pour lequel ce cycle ne compte pas pour la recette (None = cycle réel admissible)."""
+        if self.fictif:
+            return "données FICTIVES"
+        if self.catalog_source != "registre":
+            return "catalogue fourni dans le corps de la requête (registre du moteur exigé)"
+        if self.source_sha256 is None:
+            return "contenu de la source inconnu"
+        if self.source_ts is None:
+            return "source non datée"
+        return None
 
 
 class SyncRunLog:
@@ -320,13 +366,54 @@ class SyncRunLog:
             items = self._runs[-limit:] if limit else self._runs
             return tuple(items)
 
-    def consecutive_clean_runs(self) -> int:
-        """Cycles PROPRES consécutifs depuis la dernière anomalie (les cycles VIDES ne comptent pas)."""
-        count = 0
+    def get(self, run_id: str) -> SyncRunSummary | None:
+        """Cycle persisté par identifiant (None si inconnu)."""
         with self._lock:
-            for run in reversed(self._runs):
-                if run.status == "ANOMALIES":
-                    break
-                if run.status == "PROPRE":
-                    count += 1
-        return count
+            return next((r for r in reversed(self._runs) if r.run_id == run_id), None)
+
+    def acceptance(self) -> dict[str, str | None]:
+        """Pour chaque cycle : None s'il compte pour le critère de recette, sinon le motif (en français).
+
+        Une source n'est « nouvelle » que si son contenu (empreinte) **et** son horodatage n'ont jamais été
+        vus dans un cycle antérieur du même fournisseur : un fichier rejoué ou ré-horodaté ne compte jamais.
+        En partant du plus récent, une anomalie sur des données réelles arrête la série.
+        """
+        with self._lock:
+            runs = list(self._runs)
+        fresh: dict[str, bool] = {}
+        contents: set[tuple[str, str]] = set()
+        stamps: set[tuple[str, datetime]] = set()
+        for run in runs:  # du plus ancien au plus récent
+            content = (run.supplier_id, run.source_sha256) if run.source_sha256 else None
+            stamp = (run.supplier_id, run.source_ts) if run.source_ts else None
+            fresh[run.run_id] = content is not None and stamp is not None and content not in contents and stamp not in stamps
+            if content is not None:
+                contents.add(content)
+            if stamp is not None:
+                stamps.add(stamp)
+        out: dict[str, str | None] = {}
+        broken = False
+        for run in reversed(runs):
+            if broken:
+                out[run.run_id] = "antérieur à la dernière anomalie sur données réelles"
+            elif run.status == "ANOMALIES":
+                out[run.run_id] = "anomalies (erreur critique)"
+                broken = not run.fictif
+            elif run.status != "PROPRE":
+                out[run.run_id] = "cycle VIDE (aucune offre au coût rendu calculé)"
+            else:
+                reason = run.acceptance_exclusion()
+                if reason is None and not fresh[run.run_id]:
+                    reason = "source déjà vue (même contenu ou même horodatage) : un seul cycle par livraison"
+                out[run.run_id] = reason
+        return out
+
+    def counted_runs(self) -> tuple[SyncRunSummary, ...]:
+        """Cycles retenus pour le critère de recette, du plus récent au plus ancien (voir :meth:`acceptance`)."""
+        verdict = self.acceptance()
+        with self._lock:
+            return tuple(r for r in reversed(self._runs) if verdict.get(r.run_id, "?") is None)
+
+    def consecutive_clean_runs(self) -> int:
+        """Cycles PROPRES **réels et distincts** consécutifs depuis la dernière anomalie (critère de recette)."""
+        return len(self.counted_runs())

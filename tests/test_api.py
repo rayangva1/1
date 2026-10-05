@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from pokeshop.api import API_TOKEN_HEADER, OWNER_TOKEN_HEADER, Services, create_app
 from pokeshop.incidents import LogNotifier
 from pokeshop.settings import ENV_VARIABLES, Settings, SettingsError, load_settings, sha256_hex
-from pokeshop.stoploss import hash_owner_token
+from pokeshop.stoploss import CapitalMovement, hash_owner_token
 
 TZ = ZoneInfo("Europe/Zurich")
 NOW = datetime(2026, 10, 4, 12, 0, tzinfo=TZ)
@@ -28,6 +28,11 @@ API_TOKEN = "FICTIF-jeton-api-0000000000000001"
 OWNER_TOKEN = "FICTIF-jeton-proprietaire-tres-long-0001"
 H = {API_TOKEN_HEADER: API_TOKEN}
 HO = {API_TOKEN_HEADER: API_TOKEN, OWNER_TOKEN_HEADER: OWNER_TOKEN}
+# Jetons nommés : photo et relevés de trésorerie (agent finance), test de correction (agent 12 QA).
+FINANCE_TOKEN = "FICTIF-jeton-agent-05-finance-0001"
+QA_TOKEN = "FICTIF-jeton-agent-12-qa-00000001"
+HF = {API_TOKEN_HEADER: FINANCE_TOKEN}
+HQA = {API_TOKEN_HEADER: QA_TOKEN}
 
 
 def reject_float(text: str) -> Any:
@@ -39,14 +44,25 @@ def body(resp: Any) -> Any:
 
 
 def make_settings(**extra: str) -> Settings:
-    env = {"POKESHOP_API_TOKEN_SHA256": sha256_hex(API_TOKEN), "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(OWNER_TOKEN)}
+    env = {"POKESHOP_API_TOKEN_SHA256": sha256_hex(API_TOKEN), "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(OWNER_TOKEN),
+           "POKESHOP_AGENT_TOKENS_SHA256": f"agent-05-finance:{sha256_hex(FINANCE_TOKEN)},agent-12-qa:{sha256_hex(QA_TOKEN)}"}
     env.update(extra)
     return load_settings(env)
 
 
+def seed_owner_capital(svc: Services, amount: str = "8000") -> None:
+    """Apport FICTIF attesté par la propriétaire (registre POST /capital/movements, SEC-06)."""
+    from decimal import Decimal
+
+    svc.capital.record(CapitalMovement(movement_id="FICTIF_APPORT", at=NOW - timedelta(days=30), kind="CONTRIBUTION",
+                                       amount=Decimal(amount)), now=NOW)  # fmt: skip
+
+
 @pytest.fixture
 def svc() -> Services:
-    return Services.build(make_settings(), clock=lambda: NOW, notifier=LogNotifier())
+    built = Services.build(make_settings(), clock=lambda: NOW, notifier=LogNotifier())
+    seed_owner_capital(built)
+    return built
 
 
 @pytest.fixture
@@ -57,8 +73,6 @@ def client(svc: Services) -> TestClient:
 def state_payload(cash: str = "8000", available: str = "5000", at: datetime = NOW) -> dict[str, Any]:
     return {
         "as_of": at.isoformat(), "stock_budget_chf": "3000", "cash_available_chf": available, "ads_daily_cap_chf": "33",
-        "capital_movements": [{"movement_id": "FICTIF_APPORT", "at": (at - timedelta(days=30)).isoformat(),
-                               "kind": "CONTRIBUTION", "amount": "8000"}],
         "net_worth": {"as_of": at.isoformat(), "cash_chf": cash},
     }
 
@@ -185,7 +199,7 @@ def test_reorder_proposal_is_a_proposal_to_validate(client: TestClient) -> None:
     # MOT-24 : sans photo stop-loss, les gels sont inconnus => aucune proposition (fermé par défaut)
     unknown = client.post("/stock/reorder-proposal", headers=H, json={"candidates": [candidate()], "budget_available": "5000"})
     assert unknown.status_code == 409 and "stop-loss" in body(unknown)["erreur"]
-    assert client.post("/stoploss/state", headers=H, json=state_payload()).status_code == 200
+    assert client.post("/stoploss/state", headers=HF, json=state_payload()).status_code == 200
     resp = client.post("/stock/reorder-proposal", headers=H, json={"candidates": [candidate()], "budget_available": "5000"})
     data = body(resp)
     assert resp.status_code == 200
@@ -196,10 +210,10 @@ def test_reorder_proposal_is_a_proposal_to_validate(client: TestClient) -> None:
 
 
 def test_reorder_proposal_respects_stoploss(client: TestClient) -> None:
-    assert client.post("/stoploss/state", headers=H, json=state_payload(available="1000")).status_code == 200
+    assert client.post("/stoploss/state", headers=HF, json=state_payload(available="1000")).status_code == 200
     cash = body(client.post("/stock/reorder-proposal", headers=H, json={"candidates": [candidate()], "budget_available": "5000"}))
     assert cash["proposal"]["lines"] == [] and cash["proposal"]["skipped"][0]["reason"] == "CASH_RESERVE"
-    client.post("/stoploss/state", headers=H, json=state_payload(cash="5000"))
+    client.post("/stoploss/state", headers=HF, json=state_payload(cash="5000"))
     frozen = client.post("/stock/reorder-proposal", headers=H, json={"candidates": [candidate()], "budget_available": "5000"})
     assert frozen.status_code == 423 and "global" in body(frozen)["erreur"]
 
@@ -262,13 +276,17 @@ def test_publish_preview_refuses_leaks(client: TestClient) -> None:
     assert bad.status_code == 422
 
 
+OWNER_FX = {"currency": "EUR", "rate_to_chf": "0.9375", "rate_date": "2026-10-04", "source": "BNS FICTIF 11:00"}
+BODY_COSTS = {"fictif_grossiste_a": {"currency": "EUR", "inbound_freight_alloc": "2.00", "customs_and_fees": "0",
+                                     "import_vat": "0"}}
+
+
 def test_sync_run_is_a_dry_run_by_default(client: TestClient) -> None:
     receive_stock(client)
+    assert client.post("/fx/rates", headers=HO, json=OWNER_FX).status_code == 200  # taux de la propriétaire
     resp = client.post("/sync/run", headers=H, json={
         "supplier": "fictif_grossiste_a", "source_path": "FICTIF_offres_grossiste_a.csv",
-        "catalog": [{"product_id": "FICTIF-P1", "listing": LISTING}],
-        "cost_inputs": {"fictif_grossiste_a": {"inbound_freight_alloc": "2.00", "customs_and_fees": "0", "import_vat": "0",
-                                               "fx_rate_to_chf": "0.9375", "fx_source": "FICTIF", "fx_date": "2026-10-04"}},
+        "catalog": [{"product_id": "FICTIF-P1", "listing": LISTING}], "cost_inputs": BODY_COSTS,
     })
     data = body(resp)
     assert resp.status_code == 200 and data["report"]["dry_run"] is True and data["clean"] is True
@@ -295,11 +313,13 @@ def test_sync_run_real_mode_with_fictif_data_is_refused_safely(client: TestClien
 
 
 def dry_run_id(client: TestClient) -> str:
-    """Cycle de synchronisation en simulation (preuve de test vérifiable par le moteur)."""
-    report = body(client.post("/sync/run", headers=H, json={
+    """Cycle de synchronisation PROPRE en simulation sur FICTIF-P1 (preuve de test vérifiable par le moteur)."""
+    assert client.post("/fx/rates", headers=HO, json=OWNER_FX).status_code == 200
+    data = body(client.post("/sync/run", headers=H, json={
         "supplier": "fictif_grossiste_a", "source_path": "FICTIF_offres_grossiste_a.csv",
-        "catalog": [{"product_id": "FICTIF-P1", "listing": LISTING}]}))["report"]
-    assert report["dry_run"] is True and report["critical_errors"] == []
+        "catalog": [{"product_id": "FICTIF-P1", "listing": LISTING}], "cost_inputs": BODY_COSTS}))
+    report = data["report"]
+    assert report["dry_run"] is True and report["critical_errors"] == [] and data["cycle_status"] == "PROPRE"
     return report["run_id"]
 
 
@@ -313,13 +333,17 @@ def test_incident_lifecycle_through_the_api(client: TestClient) -> None:
     assert listing["quarantined"] == {"FICTIF-P1": [inc["incident_id"]]} and listing["summary"]["OUVERT"] == 1
     early = client.post(f"/incidents/{inc['incident_id']}/resume", headers=H, json={"actor": "agent-12"})
     assert early.status_code == 409
-    # SEC-16 : un test « réussi » auto-déclaré sans preuve est refusé ; il doit citer un cycle en simulation.
-    free_text = client.post(f"/incidents/{inc['incident_id']}/test", headers=H,
+    # SEC-16 / NEW-01 : le jeton commun n'atteste jamais un test réussi ; un jeton nommé (QA) doit citer un
+    # cycle PROPRE en simulation portant sur la référence de l'incident.
+    common = client.post(f"/incidents/{inc['incident_id']}/test", headers=H,
+                         json={"test_ref": dry_run_id(client), "passed": True, "actor": "agent-12"})
+    assert common.status_code == 403 and "jeton commun" in body(common)["erreur"]
+    free_text = client.post(f"/incidents/{inc['incident_id']}/test", headers=HQA,
                             json={"test_ref": "dry-run OK", "passed": True, "actor": "agent-12"})
     assert free_text.status_code == 409 and "non vérifiable" in body(free_text)["erreur"]
-    tested = client.post(f"/incidents/{inc['incident_id']}/test", headers=H,
+    tested = client.post(f"/incidents/{inc['incident_id']}/test", headers=HQA,
                          json={"test_ref": dry_run_id(client), "passed": True, "actor": "agent-12"})
-    assert tested.status_code == 200
+    assert tested.status_code == 200 and body(tested)["incident"]["test_passed"] is True
     resumed = body(client.post(f"/incidents/{inc['incident_id']}/resume", headers=H, json={"actor": "agent-12"}))
     assert resumed["incident"]["status"] == "RESOLU" and resumed["incident"]["resolved_by"] == "agent:agent-12"
     closed = body(client.post(f"/incidents/{inc['incident_id']}/close", headers=H, json={"actor": "agent-01"}))
@@ -374,11 +398,11 @@ def test_stoploss_status_without_state(client: TestClient) -> None:
 
 
 def test_stoploss_state_status_freeze_and_owner_rearm(client: TestClient, svc: Services) -> None:
-    ok = body(client.post("/stoploss/state", headers=H, json=state_payload()))
+    ok = body(client.post("/stoploss/state", headers=HF, json=state_payload()))
     assert ok["status"]["global_frozen"] is False
-    stale = client.post("/stoploss/state", headers=H, json=state_payload(at=NOW - timedelta(days=3)))
+    stale = client.post("/stoploss/state", headers=HF, json=state_payload(at=NOW - timedelta(days=3)))
     assert stale.status_code == 409
-    client.post("/stoploss/state", headers=H, json=state_payload())
+    client.post("/stoploss/state", headers=HF, json=state_payload())
     frozen = body(client.post("/stoploss/freeze", headers=H, json={"actor": "agent-12", "reason": "débit inconnu FICTIF"}))
     assert frozen["latch"]["frozen"] is True and frozen["incident_id"] is not None
     assert svc.incidents.get(frozen["incident_id"]).code.value == "INC-09" and svc.autonomy.level == 1
@@ -409,7 +433,7 @@ def test_stoploss_state_status_freeze_and_owner_rearm(client: TestClient, svc: S
 
 def test_global_loss_state_is_reported(client: TestClient, svc: Services) -> None:
     svc.autonomy.raise_level(2, owner_token=OWNER_TOKEN, reason="C14 FICTIF")
-    data = body(client.post("/stoploss/state", headers=H, json=state_payload(cash="6000")))
+    data = body(client.post("/stoploss/state", headers=HF, json=state_payload(cash="6000")))
     assert data["status"]["global_frozen"] is True and data["status"]["autonomy_level"] == 1
     assert svc.stoploss_engine.frozen and svc.autonomy.level == 1
     incident = svc.incidents.get(data["incident_id"])
@@ -431,7 +455,7 @@ def spend_payload(key: str = "FICTIF-SPEND-API-1") -> dict[str, Any]:
 def test_mandate_check_needs_stoploss_state_then_applies_unsigned_mandate(client: TestClient, svc: Services) -> None:
     unavailable = client.post("/mandate/check", headers=H, json=spend_payload())
     assert unavailable.status_code == 503
-    client.post("/stoploss/state", headers=H, json=state_payload())
+    client.post("/stoploss/state", headers=HF, json=state_payload())
     data = body(client.post("/mandate/check", headers=H, json={**spend_payload(), "record": True}))
     assert data["decision"]["outcome"] == "NEEDS_HUMAN_APPROVAL" and "MANDATE_NOT_SIGNED" in data["decision"]["reasons"]
     assert data["recorded"] is True and svc.spend_ledger.get("FICTIF-SPEND-API-1") is not None
@@ -481,7 +505,8 @@ def parse_env_example() -> dict[str, str]:
 def test_env_example_documents_every_setting_without_secret_values() -> None:
     env = parse_env_example()
     expected = {names[0] for names in ENV_VARIABLES.values()} | {
-        "POSTGRES_PASSWORD", "POKESHOP_DB_PASSWORD", "N8N_ENCRYPTION_KEY", "N8N_WEBHOOK_URL", "N8N_IMAGE"}
+        "POSTGRES_PASSWORD", "POKESHOP_DB_PASSWORD", "N8N_ENCRYPTION_KEY", "N8N_WEBHOOK_URL", "N8N_IMAGE",
+        "POKESHOP_BACKUP_KEEP", "POKESHOP_BACKUP_INTERVAL_HOURS", "POKESHOP_BACKUP_MAX_AGE_HOURS"}
     assert set(env) == expected
     for secret in ("POKESHOP_SHOPIFY_ADMIN_TOKEN", "POKESHOP_DATABASE_URL", "POKESHOP_API_TOKEN_SHA256",
                    "POKESHOP_OWNER_TOKEN_SHA256", "POKESHOP_MANDATE_FINGERPRINT", "POSTGRES_PASSWORD", "N8N_ENCRYPTION_KEY",

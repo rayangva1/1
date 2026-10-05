@@ -89,7 +89,15 @@ from .audit import StateJournal, StateStoreError
 from .costs import HistoricalCostLedger
 from .errors import PokeshopError
 from .forecast import GLOBAL_STOPLOSS_PCT
-from .models import FrozenModel, PriceDecision, PricingParams, StockParams, canonical_hash, canonical_json
+from .models import (
+    DEFAULT_ROUNDING_TIERS,
+    FrozenModel,
+    PriceDecision,
+    PricingParams,
+    StockParams,
+    canonical_hash,
+    canonical_json,
+)
 
 __all__ = [
     "STOPLOSS_ENV_VAR",
@@ -695,16 +703,35 @@ REFERENCE_PRICE_RULES: dict[str, dict[str, tuple[Decimal | int, Literal["max", "
         "staleness_hours": (24, "min"),
         "extension_budget_cap": (Decimal("0.25"), "min"),
         "stock_budget_chf": (Decimal("3000"), "min"),
+        "reorder_coverage_days": (14, "min"),
+        "future_skew_minutes": (5, "min"),
     },
 }
 """Seuils de prix de référence (BP §4-5, §1, §3) : sans signature des règles, chacun vaut au moins
 aussi strict que cette valeur (coûts et planchers au moins aussi hauts, tolérances au plus aussi larges)."""
 
+REFERENCE_VAT_RATES: dict[str, Decimal] = {"EFFECTIVE": Decimal("0.081"), "NOT_REGISTERED": Decimal("0")}
+"""TVA sur ventes de référence par profil (taux normal CH au 4.10.2026 ; non assujetti : 0). Sans signature,
+le taux appliqué vaut **au moins** ce taux (une TVA minorée baisse le prix sous le plancher réel : revue COH-02)."""
+
+PRICE_RULE_KEYS_HANDLED: frozenset[str] = frozenset(
+    {"vat_rate_sales", "rounding_tiers", "small_product_min_order_ttc", "small_product_max_shipping_ttc",
+     "rules_version", "vat_mode"}
+)  # fmt: skip
+"""Clés de :class:`PricingParams` traitées hors de :data:`REFERENCE_PRICE_RULES` (TVA, grille d'arrondi de
+référence, règle petits produits neutralisée par :func:`pokeshop.api.guard_rules`, identifiants). Un test
+vérifie que **toute** clé décisive des règles figure dans l'une ou l'autre liste."""
+
 
 def strictest_price_rules(
     pricing: PricingParams, stock: StockParams
 ) -> tuple[PricingParams, StockParams, tuple[str, ...]]:
-    """Règles de prix non signées (``POKESHOP_RULES_FINGERPRINT`` absent) : valeurs les plus strictes."""
+    """Règles de prix non signées (``POKESHOP_RULES_FINGERPRINT`` absent) : valeurs les plus strictes.
+
+    Toutes les valeurs décisives sont couvertes (revue COH-02) : coûts, marges, planchers, tolérances,
+    budgets et horizons de stock (:data:`REFERENCE_PRICE_RULES`), **TVA du profil** (au moins
+    :data:`REFERENCE_VAT_RATES`) et grille d'arrondi (celle du code, :data:`pokeshop.models.DEFAULT_ROUNDING_TIERS`).
+    """
     tightened: list[str] = []
     out: dict[str, Any] = {}
     for section, model in (("pricing", pricing), ("stock", stock)):
@@ -717,6 +744,15 @@ def strictest_price_rules(
             if chosen != current:
                 changes[name] = chosen
                 tightened.append(f"{section}.{name} : {current} -> {chosen}")
+        if section == "pricing":
+            mode = getattr(model.vat_mode, "value", model.vat_mode)
+            vat_ref = REFERENCE_VAT_RATES.get(str(mode))
+            if vat_ref is not None and model.vat_rate_sales < vat_ref:
+                changes["vat_rate_sales"] = vat_ref
+                tightened.append(f"pricing.vat_rate_sales ({mode}) : {model.vat_rate_sales} -> {vat_ref}")
+            if model.rounding_tiers != DEFAULT_ROUNDING_TIERS:
+                changes["rounding_tiers"] = DEFAULT_ROUNDING_TIERS
+                tightened.append("pricing.rounding_tiers : grille du fichier -> grille de référence du code")
         out[section] = model.replace(**changes) if changes else model
     return out["pricing"], out["stock"], tuple(tightened)
 
@@ -1656,7 +1692,10 @@ class StopLossEngine:
                 raise StopLossError("empreinte du jeton propriétaire invalide (sha256 hexadécimal attendu)")
         self.config = config
         self._owner_hash = expected
-        self._latch = latch or GlobalLatch()
+        self._persisted = latch or GlobalLatch()
+        """Verrou tel qu'enregistré (journal d'état) : seul état jamais écrit avec un gel de démarrage."""
+        self._hold_latch: GlobalLatch | None = None
+        """Gel de démarrage (RESTORE_FAILED, CONFIG_UNSIGNED) superposé **en mémoire** au verrou enregistré."""
         self._journal: list[JournalEntry] = list(journal)
         for i, entry in enumerate(self._journal, start=1):
             if entry.seq != i:
@@ -1709,8 +1748,8 @@ class StopLossEngine:
         _require_aware(now, "now")
         with self._lock:
             self._restore_hold = reason if self._restore_hold is None else f"{self._restore_hold} ; {reason}"
-            if not self._latch.frozen:
-                self._latch = self._latch.replace(frozen=True, since=now, cause=cause, trigger=None, detail=detail)
+            if self._hold_latch is None:  # premier motif conservé (date et cause du gel de démarrage)
+                self._hold_latch = GlobalLatch(frozen=True, since=now, cause=cause, detail=detail)
             return self._latch
 
     @property
@@ -1720,9 +1759,27 @@ class StopLossEngine:
 
     # -- lecture ----------------------------------------------------------------
     @property
+    def _latch(self) -> GlobalLatch:
+        """Verrou **effectif** : verrou enregistré, ou gel de démarrage superposé en mémoire.
+
+        Un gel déjà enregistré est conservé tel quel ; sinon le gel de démarrage s'applique (fermé par
+        défaut) sans jamais être écrit : chaque écriture du journal porte le verrou **enregistré**
+        (:attr:`_persisted`), si bien qu'une réparation suivie d'un redémarrage lève le gel de démarrage.
+        """
+        hold = self._hold_latch
+        if hold is None or self._persisted.frozen:
+            return self._persisted
+        return self._persisted.replace(frozen=True, since=hold.since, cause=hold.cause, trigger=None, detail=hold.detail)
+
+    @property
     def latch(self) -> GlobalLatch:
-        """État du verrou global (à persister)."""
+        """État effectif du verrou global (gel de démarrage compris, jamais enregistré)."""
         return self._latch
+
+    @property
+    def persisted_latch(self) -> GlobalLatch:
+        """Verrou tel qu'enregistré dans le journal d'état (sans le gel de démarrage)."""
+        return self._persisted
 
     @property
     def frozen(self) -> bool:
@@ -1744,8 +1801,14 @@ class StopLossEngine:
         *,
         latch: GlobalLatch | None = None,
     ) -> JournalEntry:
-        """Écrit la ligne et le verrou résultant dans le journal d'état **puis** les applique en mémoire."""
-        new_latch = latch if latch is not None else self._latch
+        """Écrit la ligne et le verrou résultant dans le journal d'état **puis** les applique en mémoire.
+
+        ``latch`` (défaut : verrou enregistré) est toujours dérivé du verrou **enregistré**, jamais du
+        gel de démarrage : celui-ci n'est donc jamais écrit (revue NEW-02).
+        """
+        new_latch = latch if latch is not None else self._persisted
+        if new_latch.cause in ("RESTORE_FAILED", "CONFIG_UNSIGNED"):
+            raise StopLossError("gel de démarrage : jamais enregistré (réparer puis redémarrer)")
         entry = JournalEntry(
             seq=len(self._journal) + 1, at=at, event=event, actor=actor, detail=detail, triggers_hash=triggers_hash
         )
@@ -1757,7 +1820,7 @@ class StopLossEngine:
             except StateStoreError as exc:
                 raise StopLossPersistenceError(f"stop-loss : {event} non enregistré ({exc})") from exc
         self._journal.append(entry)
-        self._latch = new_latch
+        self._persisted = new_latch
         return entry
 
     def _log_restrictive(
@@ -1767,7 +1830,7 @@ class StopLossEngine:
         try:
             self._log(at, event, actor, detail, latch=latch, **kw)
         except StopLossPersistenceError:
-            self._latch = latch
+            self._persisted = latch
             raise
 
     def _log_refusal(self, at: datetime, event: Any, actor: str, detail: str) -> None:
@@ -1833,8 +1896,9 @@ class StopLossEngine:
             triggers = evaluate_levels(state, now, self.config, baseline=self._latch.baseline)
             contributions = self._check_capital_memory(state)
             current = next((t for t in triggers if t.level is StopLossLevel.GLOBAL), None)
-            if current is not None and not self._latch.frozen:
-                tripped = self._latch.replace(
+            # Déclenchement réel enregistré même pendant un gel de démarrage (il survivra à la réparation).
+            if current is not None and not self._persisted.frozen:
+                tripped = self._persisted.replace(
                     frozen=True, since=now, cause="THRESHOLD", trigger=current, detail=current.reason
                 )
                 self._log_restrictive(
@@ -1845,10 +1909,10 @@ class StopLossEngine:
                 triggers.append(self._latched_trigger(current))
             triggers = _sorted(triggers)
             digest = canonical_hash(triggers)
-            seen = self._latch.contributions_seen_chf
-            latch = self._latch
+            seen = self._persisted.contributions_seen_chf
+            latch = self._persisted
             if seen is None or contributions > seen:
-                latch = self._latch.replace(contributions_seen_chf=contributions)
+                latch = self._persisted.replace(contributions_seen_chf=contributions)
             self._log(now, "EVALUATION", "moteur", f"{len(triggers)} déclencheur(s)", digest, latch=latch)
             return triggers
 
@@ -1878,10 +1942,11 @@ class StopLossEngine:
         if not actor.strip() or not reason.strip():
             raise StopLossError("acteur et motif obligatoires pour un gel manuel")
         with self._lock:
-            if self._latch.frozen:
+            if self._persisted.frozen:
                 self._log(now, "MANUAL_FREEZE", actor, f"déjà gelé ; motif ajouté : {reason}")
                 return self._latch
-            frozen = self._latch.replace(frozen=True, since=now, cause="MANUAL", trigger=None, detail=reason)
+            # Pendant un gel de démarrage, le gel manuel est enregistré (il survivra à la réparation).
+            frozen = self._persisted.replace(frozen=True, since=now, cause="MANUAL", trigger=None, detail=reason)
             self._log_restrictive(now, "MANUAL_FREEZE", actor, reason, frozen)
             return self._latch
 
@@ -1967,7 +2032,9 @@ class StopLossEngine:
                     )
             basis = f"rebasé sur {format_chf(baseline.net_value_chf)}" if rebase and baseline else "référence inchangée"
             detail = f"réarmé ({basis}) : {reason}"
-            rearmed = self._latch.replace(frozen=False, since=None, cause=None, trigger=None, detail="", baseline=baseline)
+            rearmed = self._persisted.replace(
+                frozen=False, since=None, cause=None, trigger=None, detail="", baseline=baseline
+            )
             return self._log(now, "REARM", actor, detail, latch=rearmed)
 
     def reset_capital_memory(
@@ -1992,7 +2059,7 @@ class StopLossEngine:
                 "CAPITAL_MEMORY_RESET",
                 actor,
                 f"mémoire des apports ({seen}) réinitialisée : {reason}",
-                latch=self._latch.replace(contributions_seen_chf=None),
+                latch=self._persisted.replace(contributions_seen_chf=None),
             )
 
 
@@ -2062,7 +2129,7 @@ class StopLossEngine:
                 "BASELINE_SET",
                 actor,
                 f"point zéro {format_chf(baseline.net_value_chf)} : {reason}",
-                latch=self._latch.replace(baseline=baseline),
+                latch=self._persisted.replace(baseline=baseline),
             )
 
 

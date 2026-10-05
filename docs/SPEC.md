@@ -101,20 +101,58 @@ Dataclasses `frozen=True` ou modèles pydantic. Minimum :
   (test qui échoue si un champ coût/marge/fournisseur fuit).
 
 ### 2.7 `pokeshop/api.py` (integrations)
-FastAPI, appelée par n8n, le tableau de bord et les agents. Toutes les routes sauf `/health` exigent `X-Pokeshop-Token` :
-jeton **nommé** d'un agent ou d'un workflow (`POKESHOP_AGENT_TOKENS_SHA256`, l'acteur journalisé est le nom du jeton) ou
-jeton commun (`POKESHOP_API_TOKEN_SHA256`, acteur « api », aucune dépense autonome). Sans empreinte configurée : 503.
-- Calculs et simulation : `/pricing/quote`, `/pricing/basket`, `/stock/sellable`, `/stock/reorder-proposal` (proposition
-  enregistrée), `/imports/{supplier}/run` (toujours en simulation), `/publish/preview`, `/sync/run` (simulation par défaut).
-- Incidents et autonomie : `/incidents` (GET, POST), `/incidents/{id}/test`, `/incidents/{id}/resume`, `/incidents/{id}/close`,
-  `/autonomy` (GET ; POST : baisse par tout jeton, hausse avec le jeton de la propriétaire).
-- Stop-loss : `/stoploss/state` (photo d'activité), `/stoploss/status`, `/stoploss/freeze` ; actes de la propriétaire :
-  `/stoploss/rearm` (avec `reference_chf` attestée), `/stoploss/baseline` (point zéro), `/stoploss/capital-memory/reset`.
-- Mandat et registres : `/mandate/check` (trésorerie lue dans les registres, jamais dans la demande), `/mandate/revoke`,
-  `/treasury/paypal-balance`, `/fx/rates` (jeton de la propriétaire), `/northstar` (GET), `/northstar/entries`, `/costs/movements`.
-- Tableau de bord : `/dashboard/daily`, `/dashboard/weekly`, `/dashboard/monthly`.
-- Actes réservés à la propriétaire : en-tête `X-Pokeshop-Owner-Token` en plus (`POKESHOP_OWNER_TOKEN_SHA256`), distinct du jeton
-  d'API ; tout refus est journalisé. Détail et répartition par agent : `docs/08-agents/BRIEF_COMMUN.md` §10.
+FastAPI, appelée par n8n, le tableau de bord et les agents. Liste **exhaustive** des routes (`engine/pokeshop/api.py`
+et `api_dashboard.py`), contrôlée par `docs/08-agents/outils/verifier_agents.py` (`check_api_routes_documented`).
+
+Jetons (empreintes sha256 seulement dans l'environnement ; acteur journalisé **déduit du jeton**, jamais déclaré) :
+- **API** = en-tête `X-Pokeshop-Token` : jeton **commun** (`POKESHOP_API_TOKEN_SHA256`, acteur « api », attribuable
+  à personne) ou jeton **nommé** (`POKESHOP_AGENT_TOKENS_SHA256`, `nom:empreinte`, acteur = nom du jeton). Aucune
+  empreinte configurée : 503 ; jeton absent ou faux : 401.
+- **NOMMÉ** = jeton nommé obligatoire (valeur décisive) ; le jeton commun reçoit 403, journalisé.
+- **PROPRIO** = en plus, `X-Pokeshop-Owner-Token` valide (`POKESHOP_OWNER_TOKEN_SHA256`), distinct du jeton d'API.
+  Partout, un acteur « propriétaire » déclaré sans ce jeton est refusé (403, journalisé).
+
+| Route | Jeton | Appelant (rôle) |
+|---|---|---|
+| `GET /health` | aucun (public, sans secret) | tous ; workflow 05 |
+| `POST /pricing/quote`, `POST /pricing/basket` | API | agents 04, 05 |
+| `POST /pricing/approvals` | API + PROPRIO (motif ≥ 10 caractères, `valid_hours` 1-168, 48 par défaut ; `floor_exception_ref` sous plancher) | propriétaire (C27) |
+| `GET /pricing/approvals` | API | agents 04, 05, 12 |
+| `POST /pricing/approvals/{approval_id}/revoke` | API (acte protecteur, tout jeton) | agent 12, propriétaire |
+| `POST /stock/sellable` | API | agent 11 ; workflow 06 |
+| `POST /stock/receive` | API (jeton nommé `agent-11-operations` recommandé) | agent 11 ; workflow 06 (passerelle `pokeshop-stock-recu`) |
+| `POST /stock/reorder-proposal` | API ; `cap_exceptions` non vide : + PROPRIO | agent 11 ; exceptions de plafond : propriétaire (C18) |
+| `POST /imports/{supplier}/run` | API (toujours en simulation) | agent 03 ; workflow 01 |
+| `POST /publish/preview` | API (aperçu) | agents 04, 07 |
+| `POST /catalog/items`, `POST /catalog/cost-inputs` | API (aucun champ `fx_*` : 422) | agent 04 (catalogue validé) ; agent 05 (frais) |
+| `GET /catalog` | API | agents 04, 05, 07 |
+| `POST /sync/run` | API ; simulation par défaut ; `dry_run:false` : porte de gouvernance + `POKESHOP_DRY_RUN=false` ; `cost_inputs` du corps sans `fx_*`, simulation seulement | workflow 01 ; agents 07, 12 |
+| `GET /sync/history` | API (`consecutive_clean_runs` : cycles réels et distincts seulement) | agent 12 (gate 3.6) ; workflow 05 |
+| `GET /incidents`, `POST /incidents` | API | workflows 01 à 04, 06, 08 ; agent 12 |
+| `POST /incidents/{incident_id}/test` | API ; `passed:true` : PROPRIO, ou NOMMÉ différent de l'ouvreur avec `test_ref` = `run_id` d'un cycle PROPRE en simulation, postérieur à l'ouverture, sur la cible ; jeton commun ou ouvreur : 403 | agent 12 (`agent-12-qa`) ; propriétaire |
+| `POST /incidents/{incident_id}/resume` | API ; incident critique : + PROPRIO | workflow 04 ; propriétaire (critique) |
+| `POST /incidents/{incident_id}/close` | API | agent 12 ; workflow 04 |
+| `GET /autonomy`, `POST /autonomy` | API ; hausse de niveau : + PROPRIO | tous (lecture, baisse) ; propriétaire (hausse) |
+| `POST /stoploss/state` | NOMMÉ ; `capital_movements` non vide : 422 (apports lus au registre) | aucun workflow (07 utilise `/refresh`) |
+| `POST /stoploss/state/refresh` | API (photo construite par le moteur à partir des registres) | workflow 07 (`n8n-07-stoploss`) |
+| `GET /stoploss/status`, `POST /stoploss/freeze` | API (geler : acte protecteur) | tous ; workflows 05, 06, 07 ; agent 12 |
+| `POST /stoploss/rearm` | API + PROPRIO (`reference_chf` attestée ; sans elle, 409 avec `rearm_reference`) | propriétaire (C18) |
+| `POST /stoploss/baseline` | API + PROPRIO (photo acceptée requise, sinon 409) | propriétaire (C19) |
+| `POST /stoploss/capital-memory/reset` | API + PROPRIO | propriétaire (C23) |
+| `POST /mandate/check` | API ; jeton nommé : `requested_by` = nom du jeton ; jeton commun : `TREASURY_UNVERIFIED` | agents demandeurs (07, 10, 11) ; workflow 08 |
+| `POST /mandate/revoke` | API (acte protecteur, tout jeton) | agent 12 ; propriétaire |
+| `POST /treasury/paypal-balance`, `POST /treasury/bank-balance` | NOMMÉ | workflow 07 (`n8n-07-stoploss`, connecteurs en lecture seule, B26) |
+| `POST /treasury/balance-items` | NOMMÉ | agent 05 (`agent-05-finance`), chaque jour |
+| `POST /capital/movements` | API + PROPRIO (seule source des apports et retraits) | propriétaire (B25) |
+| `GET /capital/movements` | API | agents 05, 12 |
+| `POST /ads/activity` | API | connecteur publicitaire (agent 10) |
+| `POST /fx/rates` | API + PROPRIO (seule source des taux) | propriétaire (C23) |
+| `GET /northstar` | API (journal illisible : 503) | agent 05 ; workflow 05 |
+| `POST /northstar/entries`, `POST /costs/movements` | API (coût historique déclaré : refusé) | agent 05 ; workflows 02, 03 |
+| `GET /dashboard/daily`, `GET /dashboard/weekly`, `GET /dashboard/monthly` | API (journal non relu : KPI indisponibles, statut CRITIQUE) | tableau de bord (`dashboard/build.py`) ; workflow 05 |
+
+Tout refus est journalisé (jamais le jeton). Répartition par agent et actes réservés : `docs/08-agents/BRIEF_COMMUN.md` §10 ;
+actes de la propriétaire : `docs/00-pilotage/INTERVENTIONS_HUMAINES.md` (B25, C18, C19, C23, C27).
 
 ### 2.8 `pokeshop/treasury.py` + `pokeshop/forecast.py` (finance)
 - Prévisionnel glissant **13 semaines** (solde, achats engagés, TVA, livraisons, remboursements, pub, versements PSP).

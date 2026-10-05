@@ -69,11 +69,13 @@ from .incidents import IncidentCode, IncidentManager, IncidentScope, Severity, c
 from .models import FrozenModel, PriceDecision, PriceEventKind, Reason, ReplacementCost, StockLevel, SupplierOffer
 from .pricing import evaluate_offer
 from .publish import (
+    HARD_BLOCKER_CODES,
     CatalogListing,
     PlanOutcome,
     PriceValidation,
     PublicationPlan,
     SensitiveFieldError,
+    ShopStatus,
     StockStatus,
     _fold,
     assert_protective_payload,
@@ -108,6 +110,9 @@ __all__ = [
     "StockSyncReport",
     "ImportBaselineStore",
     "BaselinePersistenceError",
+    "ShopPublication",
+    "ShopPublicationBook",
+    "ShopStatePersistenceError",
     "supplier_terms",
     "price_reference_24h",
     "stock_target",
@@ -228,11 +233,29 @@ class SyncReport(FrozenModel):
     incident_ids: tuple[str, ...] = ()
     critical_errors: tuple[str, ...] = ()
     fictif: bool = False
+    source_sha256: str | None = None
+    """Empreinte du contenu de la source importée (None si la source n'a pas été lue)."""
+
+    @property
+    def offers_costed(self) -> int:
+        """Offres rapprochées dont le coût rendu a été calculé (étape 4)."""
+        return next((s.count for s in self.steps if s.step is SyncStep.COST), 0)
 
     @property
     def clean(self) -> bool:
-        """Vrai si aucune « erreur critique » (``GATES_GO_NO_GO.md`` §1) n'a été détectée."""
-        return not self.critical_errors
+        """Cycle **PROPRE** : aucune « erreur critique » (``GATES_GO_NO_GO.md`` §1) **et** au moins une
+        offre au coût rendu calculé. Un cycle qui n'a rien évalué (VIDE) n'est pas propre (revue E2E-07)."""
+        return not self.critical_errors and self.offers_costed > 0
+
+    @property
+    def empty(self) -> bool:
+        """Cycle **VIDE** : aucune erreur critique mais aucune offre évaluée (ni compté, ni remis à zéro)."""
+        return not self.critical_errors and self.offers_costed == 0
+
+    @property
+    def product_ids(self) -> tuple[str, ...]:
+        """Produits du catalogue rapprochés dans ce cycle (cible d'un test de correction d'incident)."""
+        return tuple(sorted({i.product_id for i in self.items if i.product_id}))
 
     def step(self, step: SyncStep) -> StepResult:
         """Résultat d'une étape."""
@@ -400,6 +423,84 @@ class ImportBaselineStore:
             return updated
 
 
+class ShopStatePersistenceError(SyncError, StateStoreError):
+    """État publié non enregistré ou non relu : dépublication protectrice par le registre impossible."""
+
+
+class ShopPublication(FrozenModel):
+    """État d'une fiche **réellement écrit et vérifié** sur la boutique (aucun coût, aucun fournisseur)."""
+
+    product_id: str = Field(min_length=1)
+    shopify_product_id: str = Field(pattern=r"^gid://shopify/Product/\d+$")
+    status: Literal["DRAFT", "ACTIVE"]
+    handle: str = Field(min_length=1)
+    run_id: str
+    recorded_at: datetime
+
+
+class ShopPublicationBook:
+    """Fiches publiées par le moteur (journal d'état ``shop_publications``), relues au démarrage.
+
+    Pourquoi (revue SEC-09) : avec le flux standard, le catalogue vient du registre
+    (``POST /catalog/items``) sans ``shopify_product_id`` ni ``shopify_status`` ; la dépublication
+    protectrice (quarantaine, stop-loss produit) n'était donc jamais atteinte et une fiche publiée
+    restait achetable. Après chaque écriture **vérifiée**, le moteur inscrit ici l'identifiant
+    Shopify et le statut ; une référence bloquée est alors dépubliée par son identifiant.
+    """
+
+    STREAM = "shop_publications"
+
+    def __init__(self, *, store: StateJournal | None = None) -> None:
+        self._lock = threading.RLock()
+        self._items: dict[str, ShopPublication] = {}
+        self._store = store
+
+    @classmethod
+    def restore(cls, store: StateJournal) -> ShopPublicationBook:
+        """Relit le journal (:class:`ShopStatePersistenceError` s'il est illisible)."""
+        book = cls()
+        try:
+            records = store.load()
+        except StateStoreError as exc:
+            raise ShopStatePersistenceError(f"fiches publiées : {exc}") from exc
+        for n, record in enumerate(records, start=1):
+            try:
+                item = ShopPublication.model_validate(record["publication"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ShopStatePersistenceError(f"fiches publiées : enregistrement {n} illisible") from exc
+            book._items[item.product_id] = item
+        book._store = store
+        return book
+
+    def get(self, product_id: str) -> ShopPublication | None:
+        """Dernier état écrit et vérifié de la fiche (None = jamais publiée par le moteur)."""
+        with self._lock:
+            return self._items.get(product_id)
+
+    def all(self) -> tuple[ShopPublication, ...]:
+        """Fiches connues, par produit."""
+        with self._lock:
+            return tuple(self._items[k] for k in sorted(self._items))
+
+    def record(self, item: ShopPublication) -> ShopPublication:
+        """Inscrit l'état publié (écrit d'abord, appliqué ensuite ; sans effet si identique)."""
+        with self._lock:
+            current = self._items.get(item.product_id)
+            if current is not None and (current.shopify_product_id, current.status, current.handle) == (
+                item.shopify_product_id,
+                item.status,
+                item.handle,
+            ):
+                return current
+            if self._store is not None:
+                try:
+                    self._store.append({"publication": item.model_dump(mode="json")})
+                except StateStoreError as exc:
+                    raise ShopStatePersistenceError(f"état publié non enregistré ({exc})") from exc
+            self._items[item.product_id] = item
+            return item
+
+
 _GENERIC_SUPPLIER_WORDS = frozenset(
     {"suisse", "schweiz", "svizzera", "swiss", "france", "europe", "sarl", "gmbh", "distribution", "fictif",
      "grossiste", "generic", "generique", "modele", "trading", "games", "store", "shop", "boutique", "essai"}
@@ -476,14 +577,20 @@ def stock_target(local: StockLevel, remote: RemoteInventoryLevel, *, blocked: bo
 
 
 def consecutive_clean_runs(reports: Sequence[SyncReport | StockSyncReport]) -> int:
-    """Nombre de synchronisations consécutives sans erreur critique, en partant de la plus récente.
+    """Synchronisations PROPRES consécutives (diagnostic en mémoire), en partant de la plus récente.
 
-    Critère de recette BP §13 (semaines 3-4) : 20 synchronisations sans erreur critique.
+    Un cycle VIDE (rien évalué) ne compte pas et n'interrompt pas la série ; une erreur critique la
+    remet à zéro. Le **critère de recette** BP §13 (20 synchronisations sans erreur critique) n'est
+    pas ce diagnostic : c'est :meth:`pokeshop.catalogue_sync.SyncRunLog.consecutive_clean_runs`
+    (journal persisté, cycles réels seulement : données non FICTIVES, catalogue du registre, source
+    datée et de contenu distinct), exposé par ``GET /sync/history``.
     """
     count = 0
     for report in reversed(reports):
-        if not report.clean:
+        if report.critical_errors:
             break
+        if isinstance(report, SyncReport) and report.empty:
+            continue
         count += 1
     return count
 
@@ -523,8 +630,11 @@ class SyncService:
         test_store: bool = False,
         stock: StockRegistry | None = None,
         baselines: ImportBaselineStore | None = None,
+        publications: ShopPublicationBook | None = None,
     ) -> None:
         self.client = client
+        self.publications = publications if publications is not None else ShopPublicationBook()
+        """Fiches écrites et vérifiées (identifiant Shopify, statut) : base de la dépublication protectrice."""
         self.stock = stock
         """Registre du stock local (statut public recalculé) ; None = stock inconnu, donc ``rupture``."""
         self.baselines = baselines if baselines is not None else ImportBaselineStore()
@@ -609,6 +719,7 @@ class SyncService:
                 incident_ids=tuple(incidents),
                 critical_errors=tuple(critical),
                 fictif=bool(result and result.fictif),
+                source_sha256=result.snapshot.checksum_sha256 if result else None,
             )
             self.audit.append(
                 actor=self.actor,
@@ -880,21 +991,38 @@ class SyncService:
                 )
             usable = None if decision.has(Reason.STALE_OFFER) else decision
             reference = price_reference_24h(self.price_history, pid, at, listing.current_price_chf)
-            plan = build_publication(
-                listing,
-                usable,
-                max_daily_change=params.max_daily_price_change,
-                reference_price_24h=reference,
-                price_validation=ctx.price_validations.get(pid),
-                params=params,
-                now=at,
-                stoploss_blocked=pid in blocked_products,
-                quarantined=self.incidents.is_quarantined(pid),
-                sensitive_terms=sorted(terms),
-                table=ctx.table,
-                real_shop=production,
-                stock_status=self.stock_status(listing, [o for o, _ in matched.get(pid, ())], at, ctx),
-            )
+            stock_now = self.stock_status(listing, [o for o, _ in matched.get(pid, ())], at, ctx)
+
+            def plan_for(lst: CatalogListing) -> PublicationPlan:
+                return build_publication(
+                    lst,
+                    usable,  # noqa: B023 - fermeture évaluée dans l'itération courante
+                    max_daily_change=params.max_daily_price_change,
+                    reference_price_24h=reference,  # noqa: B023
+                    price_validation=ctx.price_validations.get(pid),  # noqa: B023
+                    params=params,
+                    now=at,
+                    stoploss_blocked=pid in blocked_products,  # noqa: B023
+                    quarantined=self.incidents.is_quarantined(pid),  # noqa: B023
+                    sensitive_terms=sorted(terms),
+                    table=ctx.table,
+                    real_shop=production,
+                    stock_status=stock_now,  # noqa: B023
+                )
+
+            plan = plan_for(listing)
+            if plan.outcome is PlanOutcome.NOT_SENT and listing.shopify_product_id is None and (
+                set(plan.blockers) & HARD_BLOCKER_CODES
+            ):
+                # Revue SEC-09 : fiche du registre sans identifiant Shopify mais bloquée (quarantaine,
+                # stop-loss produit…) : l'état réel publié est relu (registre des fiches publiées, sinon
+                # lecture de la boutique en écriture réelle) ; publiée => dépublication protectrice.
+                known = self._known_shop_state(pid, plan.handle, dry_run, critical, item_incidents, rid)
+                if known is not None:
+                    gid, shop_status = known
+                    plan = plan_for(
+                        listing.model_copy(update={"shopify_product_id": gid, "shopify_status": ShopStatus(shop_status)})
+                    )
             listing_counts[plan.outcome.value] = listing_counts.get(plan.outcome.value, 0) + 1
             if plan.violations:
                 critical.append(f"{pid} : champ interne détecté dans la charge publique ({'; '.join(plan.violations)})")
@@ -987,6 +1115,8 @@ class SyncService:
                             verified = self._verify(plan, pid, decision, at, simulated, critical, item_incidents, rid)
                             if verified:
                                 verify_ok += 1
+                                if written_flag:
+                                    self._remember_publication(plan, pid, resp, at, rid, critical)
                             else:
                                 verify_ko += 1
                 else:
@@ -1042,6 +1172,60 @@ class SyncService:
             )
         )
         return finish(result)
+
+    def _known_shop_state(
+        self,
+        pid: str,
+        handle: str,
+        dry_run: bool,
+        critical: list[str],
+        incidents: list[str],
+        rid: str,
+    ) -> tuple[str, str] | None:
+        """(identifiant Shopify, statut) d'une fiche bloquée : registre du moteur, sinon boutique (écriture réelle).
+
+        Lecture impossible en écriture réelle : erreur critique (la fiche pourrait rester achetable).
+        """
+        known = self.publications.get(pid)
+        if known is not None:
+            return known.shopify_product_id, known.status
+        if dry_run:
+            return None
+        try:
+            remote = self.client.product_by_handle(handle)
+        except ShopifyError as exc:
+            critical.append(f"{pid} : état réel de la fiche illisible ({exc}) : dépublication protectrice impossible")
+            self._incident(
+                dry_run,
+                incidents,
+                code=IncidentCode.INC_08,
+                workflow=WORKFLOW_SUPPLIER_TO_SHOP,
+                cause=f"Lecture de la fiche {handle} impossible avant dépublication protectrice : {exc}",
+                details={"run_id": rid},
+            )
+            return None
+        if remote is None or remote.status not in ("DRAFT", "ACTIVE"):
+            return None
+        return remote.id, remote.status
+
+    def _remember_publication(
+        self, plan: PublicationPlan, pid: str, resp: Any, at: datetime, rid: str, critical: list[str]
+    ) -> None:
+        """Inscrit l'identifiant Shopify et le statut d'une écriture réelle vérifiée (revue SEC-09)."""
+        gid = (plan.identifier or {}).get("id") or ((resp.root().get("product") or {}).get("id"))
+        status = plan.target_status.value if plan.target_status is not None else None
+        if not isinstance(gid, str) or status is None:
+            return
+        try:
+            self.publications.record(
+                ShopPublication(
+                    product_id=pid, shopify_product_id=gid, status=status, handle=plan.handle, run_id=rid, recorded_at=at
+                )
+            )
+        except ShopStatePersistenceError as exc:
+            critical.append(f"{pid} : état publié non enregistré ({exc}) : dépublication protectrice compromise")
+        except ValueError:
+            return
 
     def stock_status(
         self, listing: CatalogListing, offers: Sequence[SupplierOffer], at: datetime, ctx: SyncContext

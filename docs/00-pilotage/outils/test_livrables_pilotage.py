@@ -423,3 +423,63 @@ def test_no_stale_expected_detected(tmp_path):
     errors = " | ".join(v.check_no_stale_expected(bad))
     assert "`docs/07-ops/` est livré" in errors
     assert "sans chemin exact" in errors
+
+
+# ---------------------------------------------------------------- revue round 2 (NEW-01, NEW-06, NEW-07, COH-04)
+def test_dependency_dates_detect_task_due_before_dependency(tmp_path):
+    """NEW-06 : BL-182 (J85) dépendait de BL-147 (J90) ; BL-002 (J1) exigeait le coffre créé à J2."""
+
+    def mutate(rows):
+        for r in rows:
+            if r["ID"] == "BL-182":
+                r["Dépendances"] = "BL-147"
+            if r["ID"] == "BL-005":
+                r["Échéance"] = "J2"
+        return rows
+
+    bad = _rewrite_csv(v.PILOTAGE / "BACKLOG.csv", tmp_path / "BACKLOG.csv", mutate)
+    errors = " | ".join(v.check_dependency_dates(bad))
+    assert "BL-182 (J85) échoit avant sa dépendance BL-147 (J90)" in errors
+    assert "BL-002 (J1) échoit avant sa dépendance BL-005 (J2)" in errors
+    assert v.check_dependency_dates() == []
+
+
+def test_counts_detect_wrong_category_count(tmp_path):
+    """NEW-01 : les compteurs du tableau suivent le nombre de fiches."""
+    src = (v.PILOTAGE / "INTERVENTIONS_HUMAINES.md").read_text(encoding="utf-8")
+    bad = src.replace("| B. Légal et identité, une fois | 27 |", "| B. Légal et identité, une fois | 24 |")
+    assert bad != src
+    errors = v.check_counts(interventions=_copy(tmp_path, "I.md", bad))
+    assert errors == ["INTERVENTIONS : catégorie B annoncée à 24 items, 27 fiches"]
+    readme = _copy(tmp_path, "README.md", "| `BACKLOG.csv` | 159 tâches sur tout le BP |")
+    assert any("159 tâches annoncées" in e for e in v.check_counts(readme=readme))
+
+
+def test_gate_dates_detect_calendar_with_g5_at_j60_only(tmp_path):
+    """COH-04 : le calendrier de contenu doit porter G5 à J60 (option B) et à J64 (option A)."""
+
+    def mutate(rows):
+        return [r for r in rows if not (r["Nom"].startswith("Gate G5") and r["J"] == "J64")]
+
+    cal = _rewrite_csv(v.CALENDRIER, tmp_path / "CAL.csv", mutate)
+    errors = v.check_gate_dates(calendrier=cal)
+    assert any("dates de G5 divergentes" in e and "CAL.csv J[60]" in e for e in errors)
+
+
+def test_interventions_cover_every_owner_route_and_sequence():
+    """NEW-01 / NEW-07 : chaque acte réservé de l'API a sa fiche ; le point zéro est décidé à J3, posé après la photo."""
+    text = (v.PILOTAGE / "INTERVENTIONS_HUMAINES.md").read_text(encoding="utf-8")
+    for route in ("POST /capital/movements", "POST /pricing/approvals", "cap_exceptions", "POST /fx/rates",
+                  "POST /stoploss/baseline", "POST /stoploss/rearm", "POST /stoploss/capital-memory/reset",
+                  "POST /autonomy", "POST /incidents/{id}/resume", "POST /incidents/{id}/test"):  # fmt: skip
+        assert route in text, route
+    for act in ("lecture seule", "Basic Auth", "age", "R-I04", "R-E03", "checklist LCD", "canal d'alerte",
+                "petits produits", "agent-12-qa", "n8n-07-stoploss", "/etc/pokeshop/api.env"):  # fmt: skip
+        assert act in text, act
+    days, _ = v.interventions_tables(text)
+    assert days["C19"] == {3, 27} and days["B03"] == {1} and days["B01"] == {1} and days["B27"] == {8}
+    _, rows = v.read_csv(v.PILOTAGE / "BACKLOG.csv")
+    by = {r["ID"]: r for r in rows}
+    assert {"BL-188", "BL-189", "BL-190"} <= set(v.split_ids(by["BL-191"]["Dépendances"]))
+    assert {"BL-186", "BL-187"} <= set(v.split_ids(by["BL-032"]["Dépendances"]))
+    assert "BL-005" in v.split_ids(by["BL-002"]["Dépendances"])

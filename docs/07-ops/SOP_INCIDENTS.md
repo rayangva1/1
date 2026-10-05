@@ -80,7 +80,7 @@ Seuils fixés par le modèle d'opération ; le calcul fait foi dans `engine/poke
 | Extension | > 25 % du budget stock, ou 45 jours sans vente | plus de réassort ; proposition de démarque |
 | Pub | CAC > contribution sur 7 jours glissants, ou plafond jour atteint | campagne coupée |
 | Cash | cash disponible < réserve de 1 600 CHF | plus d'achat ni de publicité |
-| Global | perte cumulée = 20 % du capital engagé | tout gelé, retour au niveau d'autonomie 1, alerte ; **réarmement par la propriétaire uniquement** |
+| Global | perte de valeur nette ≥ 20 % du capital engagé de référence (définition unique, `STOP_LOSS.md` §3 ; 840 CHF avec le point zéro recommandé de 4 200 CHF) ; photo non évaluable = toute écriture et toute dépense refusées | tout gelé, retour au niveau d'autonomie 1, alerte ; **réarmement par la propriétaire uniquement** |
 | Temps | 60 jours sans atteindre les seuils de validation | dossier continuer / ajuster / arrêter |
 
 **Ce qu'un gel, même global, n'arrête jamais** (obligations envers les clients) :

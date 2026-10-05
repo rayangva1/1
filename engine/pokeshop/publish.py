@@ -76,6 +76,7 @@ from .models import (
 from .pricing import is_price_anomaly, price_floor_violations, q2, small_product_rule_active
 
 __all__ = [
+    "HARD_BLOCKER_CODES",
     "PUBLIC_METAFIELD_NAMESPACE",
     "PUBLIC_METAFIELDS",
     "PRODUCT_INPUT_SCHEMA",
@@ -890,6 +891,8 @@ _HARD = frozenset(
         PublishBlocker.UNSAFE_HTML,
     }
 )
+HARD_BLOCKER_CODES: frozenset[str] = frozenset(b.value for b in _HARD)
+"""Codes des blocages durs (quarantaine, stop-loss produit, identité…) : jamais publiés, dépubliés si actifs."""
 _CONTENT = frozenset(
     {
         PublishBlocker.CONTENT_NOT_VALIDATED,

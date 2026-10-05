@@ -91,8 +91,11 @@ Le workflow appartient à l'agent integrations (`orchestration/n8n/`). La landin
 | Double opt-in | Envoyer **uniquement** l'email `docs/06-contenu/EMAILS/` n° 01 (confirmation). Lien `GET …/alertes-confirmer?jeton=…` → statut `confirme`, email n° 02 (bienvenue et préférences), redirection vers `inscription-confirmee.html` |
 | Désinscription | Lien `GET …/alertes-desinscrire?jeton=…` dans chaque email → propagation à **tous** les outils (emailing, Shopify, base), liste d'exclusion, redirection vers `desinscription.html` (BP §9, BL-103) |
 | Données | Jamais de copie dans un tableur partagé ; pas d'envoi à un prompt d'IA ; conservation selon `DUREE_CONSERVATION_ALERTES` (registre légal) ; réponses facultatives et UTM exploitées **seulement en agrégé** ; l'adresse IP sert uniquement à limiter les appels et n'est **jamais enregistrée avec l'inscription** (promesse de la notice `CONFIDENTIALITE_LANDING.md`, ch. 2) |
+| Effacement de l'IP (promesse « effacées après le contrôle ») | Le workflow d'inscription ne conserve **aucune exécution** : réglages `saveDataSuccessExecution` = `none`, `saveDataErrorExecution` = `none`, `saveManualExecutions` = `false` (une exécution conservée garderait les en-têtes `x-forwarded-for` et le corps) ; compteur de limitation en mémoire ou sur une empreinte salée de l'IP, effacé au plus tard 1 heure après l'envoi ; un échec ouvre un incident (`POST /incidents`) **sans** IP ni email ; journaux d'accès du proxy HTTPS de n8n (B27) sans adresse IP complète ou purgés sous 24 h. Contrôle automatique dès que l'export est livré dans `orchestration/n8n/` (`site/outils/verifier_site.py`, contrôle 15) |
 
-**Tests de recette du contrat** (agent 12, avant le GO C07) : inscription JS → `200` et email 01 reçu ; inscription sans JS → `303` vers `merci.html` ; consentement absent → rejet ; champ piège rempli → aucun email ; double envoi → un seul email ; lien de confirmation → page de confirmation et email 02 ; désinscription → plus aucun envoi, sur chaque outil ; origine non autorisée → refus CORS.
+**Tests de recette du contrat** (agent 12, avant le GO C07 ; tâche BL-187, J9) : inscription JS → `200` et email 01 reçu ; inscription sans JS → `303` vers `merci.html` ; consentement absent → rejet ; champ piège rempli → aucun email ; double envoi → un seul email ; lien de confirmation → page de confirmation et email 02 ; désinscription → plus aucun envoi, sur chaque outil ; origine non autorisée → refus CORS ; après un envoi réussi **et** après une erreur provoquée, aucune exécution du workflow d'inscription n'apparaît dans la liste des exécutions de n8n, et l'incident ouvert ne contient ni IP ni email.
+
+**Calendrier (publication à J10).** n8n est hébergé en HTTPS au nom de l'entité dès J8 (intervention B27, BL-186), avant l'hébergement complet de J26 (B23) ; le workflow d'inscription est construit et recetté à J9 (BL-187). Sans eux, `WEBHOOK_INSCRIPTION` reste non validé et `publication.py` refuse la publication (fermé par défaut).
 
 ## 5. Mesure (protocole landing §6)
 
@@ -114,6 +117,8 @@ python -m pytest site/tests -q
 - [ ] Aucun logo ni personnage Pokémon ; mention d'indépendance présente sur chaque page.
 - [ ] Exploitant, adresse et email de contact visibles ; lien de confidentialité sur chaque page.
 - [ ] Case de consentement non pré-cochée et obligatoire ; double opt-in et désinscription testés de bout en bout (§4).
+- [ ] n8n hébergé en HTTPS (B27, J8) ; workflow d'inscription recetté sans exécution conservée (BL-187, J9 ; §4 « Effacement de l'IP »).
+- [ ] Page publiée : le message sans JavaScript dit que le formulaire fonctionne aussi sans script (contrôle 13 de `verifier_site.py`).
 - [ ] Aucune donnée interne dans le code source.
 - [ ] Notice de la landing relue par le juriste (relecture express) et datée ; `publication.py etat` : tous les champs de la liste fermée `valide`.
 - [ ] Affichage mobile (390 px) et ordinateur (1280 px), clair et sombre, vérifié.

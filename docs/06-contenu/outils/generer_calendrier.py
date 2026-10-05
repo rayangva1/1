@@ -160,11 +160,17 @@ LIGNES: tuple[Ligne, ...] = (
           "[Format] [extension] : de retour en stock local.", "Voir la fiche", VIS_PRODUIT, COND_NOUV, "A-09"),
     Ligne(60, "Email", "Email aux inscrits", "Email 05", "Preuve de service", "S15", "Récapitulatif hebdomadaire",
           "Délais, suivi, cadeaux : ce qu'il faut savoir.", "Voir le stock local", VIS_PRODUIT, COND_RECAP, "A-09"),
-    Ligne(60, "Publicité", "Interne", "Bilan", "—", "—", "Gate G5 : CAC 7 jours contre contribution",
-          "—", "—", "—", "7 jours de données ; commandes payées nettes", "A-10, A-05, H (C16)"),
+    Ligne(60, "Publicité", "Interne", "Bilan", "—", "—", "Gate G5 (option B seulement) : CAC 7 jours contre contribution",
+          "—", "—", "—", "Seulement si l'option B a été retenue au G4 (test dès J46, plafond quotidien divisé par deux "
+          "jusqu'au 30.11) ; 7 jours complets de données ; commandes payées nettes", "A-10, A-05, H (C16)",
+          "Option A (recommandée) : G5 à J64, voir la ligne du 7.12 (GATES_GO_NO_GO.md G5)"),
     # --- J61-90 : réassort, SEO extensions, scénarios email, bilan ---------------------------------
     Ligne(61, "Publication", RS, "Carrousel 4:5", "Preuve de service", "S15", "Votre colis : délais, suivi, colis abîmé",
           "Commande passée : et maintenant ?", "Lire Livraison et retours", VIS_GABARIT, "Dates d'expédition de fin d'année confirmées par le transporteur avant de les citer", "A-09"),
+    Ligne(64, "Publicité", "Interne", "Bilan", "—", "—", "Gate G5 (option A, recommandée) : CAC 7 jours contre contribution",
+          "—", "—", "—", "Option A retenue au G4 : test démarré après le Black Friday (premier jour complet le 30.11, J57) ; "
+          "7 jours complets de données (J57-J63) ; commandes payées nettes", "A-10, A-05, H (C16)",
+          "Option B : G5 à J60, voir la ligne du 3.12 (GATES_GO_NO_GO.md G5)"),
     Ligne(64, "SEO", "Site", "Pages d'extension", "Guide", "S03", "Pages SEO par extension en stock (BL-143)",
           "—", "Voir l'extension", VIS_PRODUIT, "Une page par extension réellement proposée ; faits sourcés", "A-08", "SEO.md §2"),
     Ligne(64, "Publication", RS + " + site", "Article SEO + carrousel", "Guide", "S03", "Comprendre une extension (page d'extension)",

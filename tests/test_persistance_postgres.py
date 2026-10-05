@@ -36,6 +36,8 @@ API_TOKEN = "FICTIF-jeton-api-0000000000000001"
 OWNER_TOKEN = "FICTIF-jeton-proprietaire-tres-long-0001"
 H = {API_TOKEN_HEADER: API_TOKEN}
 HO = {API_TOKEN_HEADER: API_TOKEN, OWNER_TOKEN_HEADER: OWNER_TOKEN}
+FINANCE_TOKEN = "FICTIF-jeton-agent-05-finance-0001"
+HF = {API_TOKEN_HEADER: FINANCE_TOKEN}  # photo du stop-loss : jeton nommé (valeur décisive)
 
 Factory = Callable[[], Any]
 
@@ -89,16 +91,21 @@ def query(factory: Factory, sql: str, params: tuple[Any, ...] = ()) -> list[tupl
 def boot(pg: dict[str, Factory]) -> tuple[TestClient, Services]:
     """(Re)démarrage de l'API sur la même base, avec le compte de production (membre de pokeshop_engine)."""
     settings = load_settings({"POKESHOP_API_TOKEN_SHA256": sha256_hex(API_TOKEN),
-                              "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(OWNER_TOKEN)})
+                              "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(OWNER_TOKEN),
+                              "POKESHOP_AGENT_TOKENS_SHA256": f"agent-05-finance:{sha256_hex(FINANCE_TOKEN)}"})
     svc = Services.build(settings, clock=lambda: NOW, notifier=LogNotifier(), connect=pg["engine"])
-    return TestClient(create_app(services=svc)), svc
+    client = TestClient(create_app(services=svc))
+    # Apport attesté par la propriétaire (registre en base, SEC-06) : idempotent d'un démarrage à l'autre.
+    apport = {"movement_id": "FICTIF_APPORT", "at": (NOW - timedelta(days=30)).isoformat(), "kind": "CONTRIBUTION",
+              "amount": "8000"}  # fmt: skip
+    assert client.post("/capital/movements", headers={**H, OWNER_TOKEN_HEADER: OWNER_TOKEN}, json=apport).status_code in (
+        200, 201)
+    return client, svc
 
 
 def photo(cash: str = "8000") -> dict[str, Any]:
     return {
         "as_of": NOW.isoformat(), "stock_budget_chf": "3000", "cash_available_chf": "5000", "ads_daily_cap_chf": "33",
-        "capital_movements": [{"movement_id": "FICTIF_APPORT", "at": (NOW - timedelta(days=30)).isoformat(),
-                               "kind": "CONTRIBUTION", "amount": "8000"}],
         "net_worth": {"as_of": NOW.isoformat(), "cash_chf": cash},
     }
 
@@ -122,7 +129,7 @@ def test_postgres_state_journal_is_chained_and_refuses_a_second_writer(pg: dict[
 def test_restart_on_postgres_keeps_freeze_photo_ledger_northstar_and_quarantine(pg: dict[str, Factory]) -> None:
     """MOT-01 / SEC-01 / E2E-01/02/03/06 avec la base : tout survit au redémarrage du conteneur."""
     client, svc = boot(pg)
-    assert client.post("/stoploss/state", headers=H, json=photo()).status_code == 200
+    assert client.post("/stoploss/state", headers=HF, json=photo()).status_code == 200
     spend = {"request": {"amount": "40", "currency": "CHF", "supplier_id": "FICTIF_EMBALLAGES", "category": "PACKAGING",
                          "payment_method": "PAYPAL", "purpose": "Étuis FICTIFS", "idempotency_key": "FICTIF-PG-SPEND-1",
                          "requested_by": "agent-05", "requested_at": NOW.isoformat(), "amount_source": "devis FICTIF"},

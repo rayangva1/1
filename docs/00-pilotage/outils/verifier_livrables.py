@@ -460,6 +460,7 @@ OWNER_ROLE_PREFIX = "Propriétaire"
 ECART_ID_RE = re.compile(r"^EC-(?:\d{2}|(?:F|M|G|L|DA|D|S|I|O|A)-\d{2})$")
 ECART_GRAVITIES = ("Bloquant", "Important", "Mineur")
 PUBLICITE_TEST = REPO / "docs" / "06-contenu" / "PUBLICITE_TEST.md"
+CALENDRIER = REPO / "docs" / "06-contenu" / "CALENDRIER_90J.csv"
 
 
 def cells(line: str) -> list[str]:
@@ -568,10 +569,13 @@ def check_gate_dates(
     backlog: Path = PILOTAGE / "BACKLOG.csv",
     interventions: Path = PILOTAGE / "INTERVENTIONS_HUMAINES.md",
     publicite: Path = PUBLICITE_TEST,
+    calendrier: Path = CALENDRIER,
 ) -> list[str]:
     """Une même date par gate partout : titre et synthèse des gates, tâches « Gate Gx », checklist (COH-04).
 
-    Pour G5, la date de décision du plan de test publicitaire (« Décision G5 ») doit aussi concorder.
+    Pour G5, la date de décision du plan de test publicitaire (« Décision G5 ») doit aussi concorder, de même
+    que l'ensemble des lignes « Gate Gx » du calendrier de contenu (`docs/06-contenu/CALENDRIER_90J.csv`, une
+    ligne par option : J60 option B et J64 option A pour G5).
     """
     text = gates.read_text(encoding="utf-8")
     sources: dict[str, dict[str, set[int]]] = {}
@@ -601,12 +605,42 @@ def check_gate_dates(
         for line in publicite.read_text(encoding="utf-8").splitlines():
             if line.startswith("| Décision G5 |"):
                 add("G5", publicite.name, j_values(cells(line)[1]))
+    if calendrier.is_file():
+        planned: dict[str, set[int]] = {}
+        for r in read_csv(calendrier)[1]:
+            match = re.match(r"Gate (G\d)\b", r.get("Nom", ""))
+            if match:
+                planned.setdefault(match.group(1), set()).update(j_values(r.get("J", "")))
+        for gate, values in planned.items():
+            add(gate, calendrier.name, values)
     errors = []
     for gate, found in sorted(sources.items()):
         distinct = {frozenset(v) for v in found.values()}
         if len(distinct) > 1:
             detail = " ; ".join(f"{where} J{sorted(v)}" for where, v in found.items())
             errors.append(f"GATES : dates de {gate} divergentes ({detail})")
+    return errors
+
+
+def check_dependency_dates(backlog: Path = PILOTAGE / "BACKLOG.csv") -> list[str]:
+    """Aucune tâche n'échoit avant l'une de ses dépendances (revue NEW-06).
+
+    Seules les échéances datées « Jn » sont comparées (« Quotidien », « Si déclenché », « J_V1+60 » sont
+    ignorées) ; une échéance à options (« J60 (option B) ou J64 (option A) ») vaut son jour le plus tôt.
+    """
+    _, rows = read_csv(backlog)
+    by_id = {r["ID"]: r for r in rows}
+    errors: list[str] = []
+    for r in rows:
+        due = j_values(r["Échéance"])
+        if not due:
+            continue
+        for dep in split_ids(r["Dépendances"]):
+            dep_due = j_values(by_id[dep]["Échéance"]) if dep in by_id else set()
+            if dep_due and min(due) < min(dep_due):
+                errors.append(
+                    f"BACKLOG {r['ID']} ({r['Échéance']}) échoit avant sa dépendance {dep} ({by_id[dep]['Échéance']})"
+                )
     return errors
 
 
@@ -644,6 +678,30 @@ def check_ecarts(path: Path = PILOTAGE / "ECARTS_BP.md") -> list[str]:
                 errors.append(f"ECARTS {ident} : {label} vide")
     if count == 0:
         errors.append("ECARTS : aucun écart enregistré")
+    return errors
+
+
+def check_counts(
+    interventions: Path = PILOTAGE / "INTERVENTIONS_HUMAINES.md",
+    backlog: Path = PILOTAGE / "BACKLOG.csv",
+    readme: Path = PILOTAGE / "README.md",
+) -> list[str]:
+    """Les compteurs annoncés sont exacts (revue NEW-01) : items par catégorie, tâches du backlog."""
+    errors: list[str] = []
+    text = interventions.read_text(encoding="utf-8")
+    details = text.split("## 2.", 1)[-1]
+    found = {cat: len(set(re.findall(rf"^\| ({cat}\d{{2}}) \|", details, re.M))) for cat in "ABC"}
+    for line in text.split("## 1.", 1)[0].splitlines():
+        match = re.match(r"^\| ([ABC])\. [^|]+\| (\d+) \|", line)
+        if match and int(match.group(2)) != found[match.group(1)]:
+            errors.append(
+                f"INTERVENTIONS : catégorie {match.group(1)} annoncée à {match.group(2)} items, {found[match.group(1)]} fiches"
+            )
+    _, rows = read_csv(backlog)
+    if readme.is_file():
+        match = re.search(r"`BACKLOG\.csv` \| (\d+) tâches", readme.read_text(encoding="utf-8"))
+        if match and int(match.group(1)) != len(rows):
+            errors.append(f"README : {match.group(1)} tâches annoncées, {len(rows)} dans BACKLOG.csv")
     return errors
 
 
@@ -697,6 +755,8 @@ ALL_CHECKS = (
     check_interventions_backlog,
     check_plan_owner_dates,
     check_gate_dates,
+    check_dependency_dates,
+    check_counts,
     check_ecarts,
     check_no_stale_expected,
     check_validation_sections,

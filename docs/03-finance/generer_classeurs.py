@@ -311,12 +311,16 @@ def _sheet_hypotheses(wb: Workbook) -> None:
     section(ws, 42, "Étoile polaire et stop-loss du mandat — décisions de la propriétaire", 5)
     header(ws, 43, ["Paramètre", "Valeur", "Unité", "Source / statut", "Nom défini"])
     mandate: list[tuple[str, object, str, str, str, str, bool]] = [
-        ("Capital engagé de référence", f"={q(S_BUD, 'B12')}", NF_CHF, "CHF",
-         "Lien Budget initial (BP §3) — HYPOTHÈSE : remplacer par le capital réellement engagé", "Capital_engage", True),
-        ("Stop-loss global : perte cumulée maximale", 0.20, NF_PCT1, "% capital",
+        ("Capital engagé de référence = point zéro du stop-loss global",
+         f"={q(S_BUD, 'B12')}-SUM({q(S_BUD, 'B6:B9')})-(1-0.7)*{q(S_BUD, 'B5')}", NF_CHF, "CHF",
+         "HYPOTHÈSE — STOP_LOSS.md §5 option A (décision C03 à J3) : apports (Budget l. 12) − lancement assumé "
+         "(l. 6 à 9) − décote prudente du stock de 30 % (ratio de liquidation 0,70) = 4 200 CHF ; remplacer par le "
+         "point zéro réellement posé (POST /stoploss/baseline)", "Capital_engage", True),
+        ("Stop-loss global : perte de valeur nette maximale", 0.20, NF_PCT1, "% référence",
          "Mandat propriétaire — gel total, réarmement par la propriétaire uniquement", "StopLoss_global_pct", False),
-        ("Perte cumulée déclenchant le gel global", "=Capital_engage*StopLoss_global_pct", NF_CHF, "CHF",
-         "Calcul — comparée à la contribution nette cumulée", "Perte_max", False),
+        ("Perte déclenchant le gel global (840 CHF au BP)", "=Capital_engage*StopLoss_global_pct", NF_CHF, "CHF",
+         "Calcul — définition unique du moteur (pokeshop.stoploss) ; approchée ici par la contribution nette "
+         "cumulée depuis le point zéro (l'ancien seuil de 1 600 CHF sur 8 000 est caduc)", "Perte_max", False),
         ("Réserve de trésorerie = seuil du stop-loss cash", f"={q(S_BUD, 'B11')}", NF_CHF, "CHF",
          "Lien Budget initial (BP §3) — sous ce seuil : plus d'achat ni de pub", "Reserve_cash", True),
         ("Semaine d'ouverture des ventes", 5, "0", "n° semaine",
@@ -869,8 +873,9 @@ def _sheet_north_star(wb: Workbook) -> None:
          "=Panier_HT*(1-Taux_contribution-Cout_produit_pct)-(Frais_paiement_pct*Panier_TTC+Frais_paiement_fixe)"
          "-Provision_SAV", NF_CHF2,
          "Solde des 8 % de CA HT restant après coût produit 70 % et contribution 22 % (BP §10), moins paiement et SAV"),
-        (13, "Seuil du stop-loss global (contribution nette cumulée)", "=-Perte_max", NF_CHF2_RED,
-         "20 % du capital engagé ⇒ tout gelé, retour au niveau d'autonomie 1"),
+        (13, "Seuil du stop-loss global (perte ≥ 20 % de la référence du point zéro)", "=-Perte_max", NF_CHF2_RED,
+         "Perte de valeur nette ≥ 20 % du capital engagé de référence (point zéro 4 200 ⇒ 840 CHF), approchée par "
+         "la contribution nette cumulée ⇒ tout gelé, retour au niveau d'autonomie 1"),
         (14, "Réserve de trésorerie = seuil du stop-loss cash", "=Reserve_cash", NF_CHF,
          "Suivi dans tresorerie_13_semaines.xlsx (lignes 50-51)"),
     ]
@@ -950,7 +955,7 @@ def _sheet_north_star(wb: Workbook) -> None:
          "Scénarios l. 26 ; tableau de bord acquisition"),
         ("Cash", "Cash disponible (solde − précommandes) < réserve", "=Reserve_cash", NF_CHF,
          "Plus d'achat ni de publicité", "tresorerie_13_semaines.xlsx l. 49 à 51"),
-        ("Global", "Perte cumulée ≥ 20 % du capital engagé", "=-Perte_max", NF_CHF2_RED,
+        ("Global", "Perte de valeur nette ≥ 20 % du capital engagé de référence (point zéro)", "=-Perte_max", NF_CHF2_RED,
          "TOUT gelé, retour au niveau d'autonomie 1, alerte ; réarmement par la propriétaire", "Cette feuille, colonne Y"),
         ("Temps", "60 jours sans atteindre les seuils de validation", '=Jours_validation&" jours"', "@",
          "Dossier continuer / ajuster / arrêter", "Cette feuille, lignes 25 à 28"),

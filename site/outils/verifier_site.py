@@ -20,6 +20,13 @@ Contrôles :
 11. Notice de confidentialité : chaque champ du formulaire d'inscription y est déclaré (liste fermée
     CHAMPS_NOTICE : un nouveau champ sans entrée fait échouer le contrôle).
 12. Nom de travail : jamais dans un modèle Shopify (fiches, snippets) hors des notes d'en-tête.
+13. Message sans JavaScript exact (revue NEW-04) : la page publiée ne dit jamais que le formulaire « nécessite
+    JavaScript » (il fonctionne sans script, redirection 303).
+14. Landing publiable à J10 (revue CON-06) : chaque champ de ``CHAMPS_LANDING`` est fourni par une intervention
+    ou une tâche planifiée au plus tard à J10 (``INTERVENTIONS_HUMAINES.md``, ``BACKLOG.csv``).
+15. Workflow d'inscription (revue NEW-05) : dès que son export existe dans ``orchestration/n8n/``, il ne conserve
+    aucune exécution (``saveDataSuccessExecution`` et ``saveDataErrorExecution`` = ``none``), condition de la
+    promesse de la notice sur l'adresse IP (« effacées après le contrôle »).
 
 Usage :
     python site/outils/verifier_site.py                         # dépôt
@@ -30,6 +37,7 @@ Code de sortie 1 si une erreur est trouvée.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 import sys
@@ -50,6 +58,10 @@ LANDING = SITE / "landing"
 SNIPPETS = SITE / "shopify" / "snippets"
 SCHEMA = LANDING / "inscription.schema.json"
 USAGE_MARQUES = REPO / "docs" / "04-legal" / "USAGE_MARQUES.md"
+INTERVENTIONS = REPO / "docs" / "00-pilotage" / "INTERVENTIONS_HUMAINES.md"
+BACKLOG = REPO / "docs" / "00-pilotage" / "BACKLOG.csv"
+WORKFLOWS_N8N = REPO / "orchestration" / "n8n"
+JOUR_PUBLICATION_LANDING = 10
 
 HOTES_AUTORISES = {"fonts.googleapis.com", "fonts.gstatic.com"}
 VIDES = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
@@ -362,6 +374,37 @@ def verifier_page(chemin: Path, racine: Path, *, publication_mode: bool = False)
     # Formulaire (page principale)
     if nom == "index.html":
         err += [f"{nom} : {e}" for e in verifier_formulaire(a, publication_mode=publication_mode)]
+        err += [f"{nom} : {e}" for e in verifier_noscript(texte, publication_mode=publication_mode)]
+    return err
+
+
+NOSCRIPT_RE = re.compile(r"<noscript>(.*?)</noscript>", re.DOTALL)
+FORM_ACTION_RE = re.compile(r'<form[^>]*\saction="([^"]*)"')
+
+
+def verifier_noscript(texte: str, *, publication_mode: bool) -> list[str]:
+    """Le message sans JavaScript dit vrai (revue NEW-04).
+
+    Page publiée (``action`` du formulaire renseignée) : le formulaire fonctionne sans script, donc aucun
+    message « nécessite JavaScript » ni « n'envoie rien », et aucun marqueur de publication restant. Source et
+    aperçu : le message d'aperçu est entre marqueurs APERCU (jamais publié).
+    """
+    err: list[str] = []
+    messages = [m.lower() for m in NOSCRIPT_RE.findall(texte)]
+    action = FORM_ACTION_RE.search(texte)
+    if publication_mode or (action and action.group(1).strip()):
+        for m in messages:
+            if "nécessite javascript" in m or "n'envoie rien" in m or "n’envoie rien" in m:
+                err.append("message sans JavaScript faux : le formulaire publié fonctionne sans script")
+        if "PUBLICATION:NOSCRIPT" in texte:
+            err.append("marqueur PUBLICATION:NOSCRIPT resté dans la page publiée")
+        if not messages:
+            err.append("message sans JavaScript absent de la page publiée")
+    else:
+        for bloc in NOSCRIPT_RE.finditer(texte):
+            if "nécessite javascript" in bloc.group(1).lower():
+                err.append("message « nécessite JavaScript » hors aperçu : il serait publié alors que le formulaire "
+                           "publié fonctionne sans script")
     return err
 
 
@@ -577,6 +620,72 @@ def verifier_liquid(dossier: Path = SNIPPETS) -> list[str]:
     return err
 
 
+# ------------------------------------------------------------------------- planification et workflow
+def _jours(texte: str) -> set[int]:
+    return {int(n) for n in re.findall(r"\bJ(\d+)\b", texte)}
+
+
+def verifier_champs_landing_planifies(
+    interventions: Path = INTERVENTIONS, backlog: Path = BACKLOG, champs: dict[str, tuple[str, str]] | None = None
+) -> list[str]:
+    """Chaque champ exigé pour publier la landing vient d'un acte planifié au plus tard à J10 (revue CON-06).
+
+    L'acte de ``CHAMPS_LANDING`` cite une intervention (« B27 », « C26 »…) ou une tâche (« BL-187 ») : sa date
+    est lue dans la checklist chronologique d'``INTERVENTIONS_HUMAINES.md`` ou l'échéance de ``BACKLOG.csv``.
+    Un acte sans identifiant, inconnu ou planifié après J10 rend la publication de J10 irréalisable.
+    """
+    champs = publication.CHAMPS_LANDING if champs is None else champs
+    texte = interventions.read_text(encoding="utf-8")
+    chrono = texte.split("## 1.", 1)[-1].split("## 2.", 1)[0]
+    jours: dict[str, set[int]] = {}
+    for ligne in chrono.splitlines():
+        if not ligne.startswith("| ☐ |"):
+            continue
+        cellules = [c.strip() for c in ligne.strip().strip("|").split("|")]
+        for ident in re.findall(r"\b([ABC]\d{2})\b", cellules[2]):
+            jours.setdefault(ident, set()).update(_jours(cellules[1]))
+    with backlog.open(encoding="utf-8", newline="") as fh:
+        echeances = {r["ID"]: _jours(r["Échéance"]) for r in csv.DictReader(fh)}
+    err: list[str] = []
+    for nom, (_nature, acte) in sorted(champs.items()):
+        refs = [(r, jours.get(r), "INTERVENTIONS_HUMAINES.md") for r in re.findall(r"\b([ABC]\d{2})\b", acte)]
+        refs += [(r, echeances.get(r), "BACKLOG.csv") for r in re.findall(r"\bBL-\d{3}\b", acte)]
+        if not refs:
+            err.append(f"{nom} : acte sans intervention ni tâche identifiée (« {acte} »)")
+        for ref, dates, source in refs:
+            if not dates:
+                err.append(f"{nom} : {ref} sans date dans {source}")
+            elif min(dates) > JOUR_PUBLICATION_LANDING:
+                err.append(f"{nom} : {ref} planifié à J{min(dates)}, après la publication de la landing (J10)")
+    return err
+
+
+def verifier_workflow_inscription(dossier: Path = WORKFLOWS_N8N) -> list[str]:
+    """Export du workflow d'inscription aux alertes : aucune exécution conservée (revue NEW-05).
+
+    La notice promet que l'adresse IP du formulaire n'est pas enregistrée et qu'elle est effacée après le
+    contrôle ; une exécution n8n conservée garderait les en-têtes (``x-forwarded-for``) et le corps. Contrat :
+    ``site/landing/README.md`` §4. Tant que l'export n'est pas livré (BL-187), il n'y a rien à contrôler ici :
+    la publication exige de toute façon ``WEBHOOK_INSCRIPTION`` validé après la recette du workflow.
+    """
+    err: list[str] = []
+    for chemin in sorted(dossier.glob("*.json")) if dossier.is_dir() else []:
+        try:
+            donnees = json.loads(chemin.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        nom = str(donnees.get("name", "")) if isinstance(donnees, dict) else ""
+        if "inscription" not in (chemin.name + " " + nom).lower():
+            continue
+        reglages = donnees.get("settings") or {}
+        for cle in ("saveDataSuccessExecution", "saveDataErrorExecution"):
+            if reglages.get(cle) != "none":
+                err.append(f"{chemin.name} : {cle} = {reglages.get(cle)!r} (attendu « none » : aucune exécution conservée)")
+        if reglages.get("saveManualExecutions") not in (False, None):
+            err.append(f"{chemin.name} : saveManualExecutions doit être false")
+    return err
+
+
 # ------------------------------------------------------------------------- documents
 def verifier_docs(racine: Path = SITE) -> list[str]:
     """Chaque .md de site/ se termine par « Validation humaine requise »."""
@@ -599,6 +708,8 @@ def tout_verifier() -> dict[str, list[str]]:
         "snippets Liquid": verifier_liquid(SNIPPETS),
         "nom de travail (Shopify)": verifier_nom_de_travail(SITE / "shopify"),
         "documents": verifier_docs(SITE),
+        "landing publiable à J10": verifier_champs_landing_planifies(),
+        "workflow d'inscription (contrat §4)": verifier_workflow_inscription(),
     }
 
 

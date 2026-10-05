@@ -89,7 +89,7 @@ Sources Shopify (index de recherche, consultées le 4.10.2026) : https://shopify
 
 ## 11. Routines et tâches du backlog
 
-- BL-005 (préparer le coffre et les accès minimaux ; création par la propriétaire, B03), BL-031, BL-087 à BL-091, BL-102 (intégration), BL-170.
+- BL-005 (préparer le coffre et les accès minimaux ; création par la propriétaire, B03), BL-031, BL-186 (hébergement de n8n en HTTPS à J8 avec la propriétaire, B27), BL-187 (workflow « inscription aux alertes » à J9 : contrat `site/landing/README.md` §4, double opt-in, **aucune exécution conservée**), BL-087 à BL-091, BL-102 (intégration), BL-170, BL-178 et BL-189 (hébergement complet et connecteurs en lecture seule, avec la propriétaire).
 - **Chaque jour** : état des workflows, file de reprise, erreurs d'API ; vérification de l'état réel sur le site après chaque publication (BP §12 étape 8).
 
 ## 12. Modèle de rapport (mise en production)

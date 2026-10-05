@@ -429,7 +429,22 @@ class NorthStarLedger:
         Repris : CA net (produits + port HT − remise), frais de paiement, logistique. Ignorés :
         ``product_cost`` (le coût vient du coût historique), provisions SAV et acquisition
         (remplacées par les dépenses réelles).
+
+        Logistique **réelle** obligatoire (revue MOT-18) : un panier calculé sans coût logistique réel
+        (motifs ``SHIPPING_COST_ASSUMED`` ou ``SHIPPING_COST_UNKNOWN`` : hypothèse L du BP, ou port
+        offert sans coût) est refusé — l'étoile polaire n'enregistre jamais une hypothèse comme une
+        dépense réalisée. Recalculer le panier avec ``shipping_cost_actual``.
         """
+        assumed = sorted(
+            r.value if hasattr(r, "value") else str(r)
+            for r in basket.reasons
+            if (r.value if hasattr(r, "value") else str(r)) in ("SHIPPING_COST_ASSUMED", "SHIPPING_COST_UNKNOWN")
+        )
+        if assumed:
+            raise NorthStarError(
+                f"commande {order_id} : coût logistique non réel ({', '.join(assumed)}) — recalculer le panier avec "
+                "shipping_cost_actual (coût réel du transporteur) avant de l'inscrire dans l'étoile polaire"
+            )
         return self.record_order(
             order_id,
             at,

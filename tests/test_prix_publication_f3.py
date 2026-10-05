@@ -60,18 +60,25 @@ class Clock:
         return self.now
 
 
+FINANCE_TOKEN = "FICTIF-jeton-agent-05-finance-0001"
+HF = {API_TOKEN_HEADER: FINANCE_TOKEN}  # photo du stop-loss : jeton nommé (valeur décisive)
+
+
 def boot(clock: Clock | None = None, **extra: str) -> tuple[TestClient, Services]:
-    env = {"POKESHOP_API_TOKEN_SHA256": sha256_hex(API_TOKEN), "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(OWNER_TOKEN)}
+    env = {"POKESHOP_API_TOKEN_SHA256": sha256_hex(API_TOKEN), "POKESHOP_OWNER_TOKEN_SHA256": hash_owner_token(OWNER_TOKEN),
+           "POKESHOP_AGENT_TOKENS_SHA256": f"agent-05-finance:{sha256_hex(FINANCE_TOKEN)}"}
     env.update(extra)
     svc = Services.build(load_settings(env), clock=clock or Clock(), notifier=LogNotifier())
-    return TestClient(create_app(services=svc)), svc
+    client = TestClient(create_app(services=svc))
+    apport = {"movement_id": "FICTIF_APPORT", "at": (NOW - timedelta(days=30)).isoformat(), "kind": "CONTRIBUTION",
+              "amount": "8000"}  # apport attesté par la propriétaire (SEC-06)  # fmt: skip
+    assert client.post("/capital/movements", headers=HO, json=apport).status_code in (200, 201)
+    return client, svc
 
 
 def state_payload(at: datetime = NOW, **extra: Any) -> dict[str, Any]:
     base = {
         "as_of": at.isoformat(), "stock_budget_chf": "3000", "cash_available_chf": "5000", "ads_daily_cap_chf": "33",
-        "capital_movements": [{"movement_id": "FICTIF_APPORT", "at": (at - timedelta(days=30)).isoformat(),
-                               "kind": "CONTRIBUTION", "amount": "8000"}],
         "net_worth": {"as_of": at.isoformat(), "cash_chf": "8000"},
     }
     base.update(extra)
@@ -201,7 +208,7 @@ def test_reorder_proposal_refuses_self_declared_budget_and_cap_exceptions() -> N
     client, _ = boot()
     req = {"candidates": [candidate()], "budget_available": "5000"}
     assert client.post("/stock/reorder-proposal", headers=H, json=req).status_code == 409  # stop-loss inconnu
-    assert client.post("/stoploss/state", headers=H, json=state_payload()).status_code == 200
+    assert client.post("/stoploss/state", headers=HF, json=state_payload()).status_code == 200
     assert client.post("/stock/reorder-proposal", headers=H,
                        json={**req, "stock_budget_total": "100000"}).status_code == 422
     caps = {**req, "cap_exceptions": {"FICTIF_ALPHA": "1"}}
@@ -212,7 +219,7 @@ def test_reorder_proposal_refuses_self_declared_budget_and_cap_exceptions() -> N
 def test_reorder_uses_photo_exposure_caller_can_only_add() -> None:
     client, _ = boot()
     exposed = state_payload(extensions=[{"extension": "FICTIF_ALPHA", "stock_value_at_cost": "750"}])
-    assert client.post("/stoploss/state", headers=H, json=exposed).status_code == 200
+    assert client.post("/stoploss/state", headers=HF, json=exposed).status_code == 200
     req = {"candidates": [candidate()], "budget_available": "5000", "extension_exposure": {"FICTIF_ALPHA": "0"}}
     data = body(client.post("/stock/reorder-proposal", headers=H, json=req))
     assert data["proposal"]["lines"] == []  # 25 % × 3 000 = 750 déjà exposés : plafond atteint

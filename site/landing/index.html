@@ -275,7 +275,10 @@
             <button class="da-btn da-btn--primary" type="submit" id="lp-envoyer" disabled>M'inscrire aux alertes</button>
           </div>
           <p class="lp-statut" id="lp-statut" role="status" aria-live="polite"></p>
-          <noscript><p class="lp-statut lp-statut--info">Le formulaire nécessite JavaScript. Vous pouvez aussi écrire à {{EMAIL_SUPPORT}} pour recevoir l'alerte d'ouverture.</p></noscript>
+          <!-- APERCU:DEBUT -->
+          <noscript><p class="lp-statut lp-statut--info">Aperçu : le formulaire n'envoie rien tant que l'adresse d'envoi n'est pas posée à la publication. Vous pouvez aussi écrire à {{EMAIL_SUPPORT}} pour recevoir l'alerte d'ouverture.</p></noscript>
+          <!-- APERCU:FIN -->
+          <!-- PUBLICATION:NOSCRIPT -->
           <p class="lp-note">Après l'envoi, vous recevrez un email de confirmation. Tant que vous n'avez pas cliqué sur son lien, nous ne vous écrirons pas.</p>
         </form>
       </div>

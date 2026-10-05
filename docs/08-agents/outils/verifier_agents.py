@@ -26,7 +26,13 @@ Contrôles (chacun renvoie la liste des erreurs, vide si tout va bien) :
     ``docs/08-agents/outils/controle_generateurs.py``, qui travaille dans un dossier temporaire).
 14. ``check_stale_guidance`` : aucune consigne périmée (statut « attendu » d'un fichier livré, contrôle global
     par ``forecast.north_star(...).frozen``, seuil de gel global à −1 600 CHF, délai de 48 h pour une dépense
-    hors mandat que le workflow 08 fait expirer à 24 h).
+    hors mandat que le workflow 08 fait expirer à 24 h, date de G5 réduite à J60).
+15. ``check_secret_file_guidance`` : aucun document du dépôt ne fait créer le fichier de secrets **dans** le dépôt
+    (``cp .env.example .env``, « Copier en .env », ``--env-file .env``…) : il vit hors du dépôt
+    (``/etc/pokeshop/api.env``, ``scripts/compose.sh``), revue SEC-13.
+16. ``check_api_routes_documented`` : chaque route de ``engine/pokeshop/api.py`` et ``api_dashboard.py`` est citée
+    dans ``docs/SPEC.md`` §2.7 et dans ``BRIEF_COMMUN.md`` §10 (revue NEW-02) ; chaque route réservée à la
+    propriétaire figure dans ``INTERVENTIONS_HUMAINES.md``.
 
 Usage ::
 
@@ -249,11 +255,46 @@ STALE_GUIDANCE: tuple[tuple[re.Pattern[str], str], ...] = (
         "délai d'une dépense hors mandat : 24 h (expiration du workflow 08, DELEGATION_AUTONOMIE.md §2)",
     ),
     (
+        re.compile(r"G5 \(J60\)"),
+        "date de G5 incomplète : J60 (option B) / J64 (option A, recommandée), GATES_GO_NO_GO.md G5",
+    ),
+    (
         re.compile(r"(?i)générateurs en mode contrôle"),
         "les générateurs n'ont pas de mode contrôle : passer par docs/08-agents/outils/controle_generateurs.py",
     ),
 )
 ATTENDU_RE = re.compile(r"`([^`\n]+)`\s*[,(]?\s*\(?attendu\b")
+
+# Fichier de secrets prescrit DANS le dépôt (SEC-13) : le fichier de variables vit hors du dépôt.
+SECRET_FILE_IN_REPO: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bcp\s+\.env\.example\s+\.env\b"),
+    re.compile(r"(?i)\bcopier en \.env\b"),
+    re.compile(r"--env-file[ =]+\.?/?\.env\b"),
+    re.compile(r"\benv_file:\s*\.?/?\.env\b"),
+    re.compile(r"(?i)\b(?:remplir|renseigner|mettre|placer|ajouter|définir|definir)\b[^\n]{0,60}\bdans\s+`?\.env`?(?![.\w/])"),
+)
+SECRET_GUIDANCE_GLOBS = ("*.md", "*.yml", "*.yaml", "*.example", "*.sh")
+SECRET_GUIDANCE_SKIP = (".git", "tests", "node_modules", "__pycache__", "dist")
+
+# Routes de l'API (NEW-02) : toutes documentées dans SPEC §2.7 et BRIEF_COMMUN §10.
+API_FILES = (Path("engine") / "pokeshop" / "api.py", Path("engine") / "pokeshop" / "api_dashboard.py")
+ROUTE_DECORATOR_RE = re.compile(r"@(app|router)\.(get|post|put|patch|delete)\(\s*\"([^\"]+)\"")
+DASHBOARD_PREFIX = "/dashboard"
+SPEC_FILE = Path("docs") / "SPEC.md"
+BRIEF_FILE = DOCS_DIR / "BRIEF_COMMUN.md"
+INTERVENTIONS_FILE = Path("docs") / "00-pilotage" / "INTERVENTIONS_HUMAINES.md"
+# Routes (ou paramètres) réservées au jeton de la propriétaire : chacune a sa fiche dans la checklist maîtresse.
+OWNER_ROUTES = (
+    "POST /pricing/approvals",
+    "POST /capital/movements",
+    "POST /fx/rates",
+    "POST /stoploss/rearm",
+    "POST /stoploss/baseline",
+    "POST /stoploss/capital-memory/reset",
+    "POST /autonomy",
+    "POST /incidents/{id}/resume",
+    "cap_exceptions",
+)
 
 
 # ----------------------------------------------------------------------------------------- utilitaires
@@ -863,6 +904,81 @@ def check_stale_guidance(root: Path = REPO) -> list[str]:
     return errors
 
 
+# ----------------------------------------------------------------------------------------- 15. fichier de secrets
+def check_secret_file_guidance(root: Path = REPO) -> list[str]:
+    """Aucun document ne fait créer le fichier de secrets dans le dépôt (SEC-13).
+
+    Les agents qui ont Bash travaillent dans le dépôt : un ``.env`` à la racine y serait lisible par un script
+    (les règles ``deny`` ne sont qu'un filet). Le fichier de variables vit hors du dépôt
+    (``sudo install -D -m 600 .env.example /etc/pokeshop/api.env``) et la pile se lance par ``scripts/compose.sh``.
+    """
+    errors: list[str] = []
+    for pattern_glob in SECRET_GUIDANCE_GLOBS:
+        for path in sorted(root.rglob(pattern_glob)):
+            rel = path.relative_to(root)
+            if any(part in SECRET_GUIDANCE_SKIP for part in rel.parts) or not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for number, line in enumerate(text.splitlines(), start=1):
+                for pattern in SECRET_FILE_IN_REPO:
+                    if pattern.search(line):
+                        errors.append(
+                            f"{rel}:{number} : fichier de secrets prescrit dans le dépôt — le créer hors du dépôt "
+                            "(/etc/pokeshop/api.env, scripts/compose.sh)"
+                        )
+    return errors
+
+
+# ----------------------------------------------------------------------------------------- 16. routes de l'API
+def api_routes(root: Path = REPO) -> list[str]:
+    """Routes déclarées par l'API du moteur (« GET /health », « POST /pricing/approvals »…)."""
+    routes: list[str] = []
+    for rel in API_FILES:
+        path = root / rel
+        if not path.is_file():
+            continue
+        for kind, method, route in ROUTE_DECORATOR_RE.findall(path.read_text(encoding="utf-8")):
+            full = DASHBOARD_PREFIX + route if kind == "router" else route
+            routes.append(f"{method.upper()} {full}")
+    return routes
+
+
+def _route_cited(route: str, text: str) -> bool:
+    """Route citée avec sa méthode (« POST /stock/receive ») ; un paramètre ``{x}`` peut porter un autre nom."""
+    method, path = route.split(" ", 1)
+    pattern = re.escape(path)
+    pattern = re.sub(r"\\\{[^}]*\\\}", r"\\{[^}]+\\}", pattern)
+    return re.search(rf"\b{method}\s+{pattern}(?![\w/-])", text) is not None
+
+
+def check_api_routes_documented(root: Path = REPO) -> list[str]:
+    """Chaque route de l'API est décrite dans SPEC §2.7 et BRIEF_COMMUN §10 ; actes propriétaire dans la checklist."""
+    routes = api_routes(root)
+    if not routes:
+        return []
+    errors: list[str] = []
+    spec_path, brief_path = root / SPEC_FILE, root / BRIEF_FILE
+    spec = spec_path.read_text(encoding="utf-8") if spec_path.is_file() else ""
+    spec_section = spec.split("### 2.7", 1)[-1].split("### 2.8", 1)[0]
+    brief = brief_path.read_text(encoding="utf-8") if brief_path.is_file() else ""
+    brief_section = brief.split("## 10.", 1)[-1].split("## 11.", 1)[0]
+    for route in routes:
+        if not _route_cited(route, spec_section):
+            errors.append(f"docs/SPEC.md §2.7 : route {route} absente")
+        if not _route_cited(route, brief_section):
+            errors.append(f"{BRIEF_FILE} §10 : route {route} absente")
+    interventions_path = root / INTERVENTIONS_FILE
+    if interventions_path.is_file():
+        interventions = interventions_path.read_text(encoding="utf-8")
+        for act in OWNER_ROUTES:
+            if act not in interventions:
+                errors.append(f"{INTERVENTIONS_FILE} : acte réservé à la propriétaire « {act} » sans fiche")
+    return errors
+
+
 # ----------------------------------------------------------------------------------------- exécution
 ALL_CHECKS: tuple[Callable[..., list[str]], ...] = (
     check_agent_frontmatter,
@@ -881,6 +997,8 @@ ALL_CHECKS: tuple[Callable[..., list[str]], ...] = (
     check_secret_permissions,
     check_qa_read_only,
     check_stale_guidance,
+    check_secret_file_guidance,
+    check_api_routes_documented,
 )
 
 
