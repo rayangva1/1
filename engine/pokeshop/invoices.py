@@ -62,11 +62,21 @@ def _aware(value: datetime, name: str) -> datetime:
 
 
 class InvoiceLine(FrozenModel):
-    """Ligne de facture : référence (clé produit canonique), quantité, coût rendu unitaire ventilé en CHF."""
+    """Ligne de facture : référence (clé produit canonique), quantité, coût rendu unitaire ventilé en CHF.
+
+    Revue R5 (R4-DOC-02) : ``unit_cost_chf`` = prix facturé HT + fret et douane ventilés, **hors TVA d'import** ;
+    ``import_vat_unit_chf`` = TVA d'import ventilée par unité, comptée au coût rendu **selon le profil TVA du
+    moteur** (non assujettie : coût ; méthode effective : récupérable, hors coût) — jamais choisie par n8n.
+    """
 
     product_key: str = Field(min_length=1, max_length=120)
     qty: int = Field(ge=1, le=100_000)
     unit_cost_chf: Decimal = Field(gt=0)
+    import_vat_unit_chf: Decimal = Field(default=ZERO, ge=0)
+
+    def landed_unit_cost(self, *, import_vat_in_cost: bool) -> Decimal:
+        """Coût rendu unitaire de la ligne au profil TVA du moteur (TVA d'import comptée si non récupérable)."""
+        return self.unit_cost_chf + (self.import_vat_unit_chf if import_vat_in_cost else ZERO)
 
 
 class SupplierInvoice(FrozenModel):
@@ -102,6 +112,14 @@ class SupplierInvoice(FrozenModel):
     def line_for(self, product_key: str) -> InvoiceLine | None:
         """Ligne de la référence (None si la facture ne la porte pas)."""
         return next((line for line in self.lines if line.product_key == product_key), None)
+
+    def lines_total(self) -> Decimal:
+        """Σ quantité × (coût rendu + TVA d'import) des lignes : jamais au-dessus du montant dû (revue R5)."""
+        return sum((Decimal(line.qty) * (line.unit_cost_chf + line.import_vat_unit_chf) for line in self.lines), ZERO)
+
+    def units(self) -> int:
+        """Unités facturées (toutes lignes) : tolérance d'arrondi du rapprochement lignes / total."""
+        return sum(line.qty for line in self.lines)
 
 
 class InvoicePayment(FrozenModel):

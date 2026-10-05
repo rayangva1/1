@@ -572,9 +572,11 @@ def test_08_mandate_routes_each_outcome_and_answers_the_agent() -> None:
     human = by["Préparer l’email de validation 1 clic"]
     assert "$execution.resumeFormUrl" in json.dumps(human["parameters"], ensure_ascii=False)
     assert by["Exécuter le paiement PayPal — DÉSACTIVÉ"].get("disabled") is True
-    assert successors(wf, "Approuvée par la propriétaire ?", 1) == [
-        "Enregistrer le refus ou l’expiration — route moteur attendue (désactivé)"
+    # Revue R5 (R4-DOC-03) : POST /mandate/human-decision exige le jeton propriétaire (jamais dans n8n) : rappel.
+    assert successors(wf, "Approuvée par la propriétaire ?", 0) == [
+        "Rappel : enregistrer la validation au moteur (propriétaire, son jeton)"
     ]
+    assert successors(wf, "Approuvée par la propriétaire ?", 1) == ["Refus ou expiration : rien à payer (statu quo sûr)"]
     for node in by.values():
         if node["type"] == "n8n-nodes-base.respondToWebhook":
             assert not re.search(r"iban|cvv|password", json.dumps(node["parameters"]).lower())

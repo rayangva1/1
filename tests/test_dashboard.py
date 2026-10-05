@@ -658,7 +658,8 @@ def test_dashboard_routes_read_engine_state(client: TestClient) -> None:
     assert client.post("/catalog/items", headers=JR.HCAT, json={"items": [{"product_id": "FICTIF-P1", "listing": listing}]}).status_code == 200
     assert client.post("/stock/receive", headers=JR.HOPS, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": 1, "ref": "FICTIF-BL-1"}).status_code == 200
     svc.sync.replacement_costs.update(ReplacementCost(product_key="FICTIF-P1", supplier_id="fictif_grossiste_a",
-                                                      unit_cost=D("50.00"), source_ts=DEMO_AS_OF, offer_ref="FICTIF"))
+                                                      unit_cost=D("50.00"), source_ts=DEMO_AS_OF, offer_ref="FICTIF",
+                                                      fees_recorded_by="propriétaire"))  # revue R5 : frais de la propriétaire
     lot = {"kind": "RECEIPT", "product_key": "FICTIF-P1", "at": "2026-11-09T09:00:00+01:00", "ref": "FICTIF-LOT-1", "qty": 1,
            "unit_cost": "50.00", "stock_ref": "FICTIF-BL-1", "invoice_ref": "FICTIF-FACT-1"}
     assert client.post("/costs/movements", headers=HF, json=lot).status_code == 200

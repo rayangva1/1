@@ -20,6 +20,7 @@ le prix d'une commande est figé dans ses lignes (``BasketLine.unit_price_ttc``)
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
@@ -308,6 +309,20 @@ class ReplacementCostBook:
                 if pk == product_key and (supplier_id is None or sid == supplier_id)
             ]
         return max(items, key=lambda rc: rc.source_ts) if items else None
+
+    def latest_where(self, product_key: str, accept: Callable[[ReplacementCost], bool]) -> ReplacementCost | None:
+        """Dernière offre reçue (tout l'historique) que ``accept`` retient ; None sinon.
+
+        Sert à la référence du coût d'une réception (revue R5) : une offre plus récente évaluée avec des frais non
+        admis ne masque pas la dernière offre admise, et ne devient jamais elle-même une référence.
+        """
+        with self._lock:
+            items = [rc for rc in self._history if rc.product_key == product_key and accept(rc)]
+        best: ReplacementCost | None = None
+        for rc in items:  # ordre d'arrivée : à date de source égale, la plus récente reçue l'emporte
+            if best is None or rc.source_ts >= best.source_ts:
+                best = rc
+        return best
 
     def current(self, product_key: str, now: datetime, max_age: timedelta = DEFAULT_MAX_AGE) -> ReplacementCost | None:
         """Coût de remplacement **valide** : la moins chère des dernières offres fraîches (None sinon)."""

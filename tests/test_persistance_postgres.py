@@ -134,10 +134,10 @@ def test_restart_on_postgres_keeps_freeze_photo_ledger_northstar_and_quarantine(
     assert client.post("/stoploss/state", headers=HO, json=photo()).status_code == 200
     spend = {"request": {"amount": "40", "currency": "CHF", "supplier_id": "FICTIF_EMBALLAGES", "category": "PACKAGING",
                          "payment_method": "PAYPAL", "purpose": "Étuis FICTIFS", "idempotency_key": "FICTIF-PG-SPEND-1",
-                         "requested_by": "finance-pricing", "requested_at": NOW.isoformat(), "amount_source": "devis FICTIF"},
+                         "requested_by": "operations-sav", "requested_at": NOW.isoformat(), "amount_source": "devis FICTIF"},
              "treasury": {"as_of": NOW.isoformat(), "cash_available_chf": "5000", "paypal_balance_chf": "500"},
              "record": True}
-    assert body(client.post("/mandate/check", headers=HF, json=spend))["recorded"] is True
+    assert body(client.post("/mandate/check", headers=JR.HOPS, json=spend))["recorded"] is True  # revue R5 : pas finance
     # Revue R4 (R3-NEW-05) : commande avec lignes, sortie au CMP dérivée (stock au coût adossé, référence du moteur).
     listing = {"product_key": "FICTIF-P1", "public_sku": "DSP-FICTIF_ALPHA-FR", "fictif": True,
                "identity": {"gtin": "2000000001012", "language": "FR", "extension": "FICTIF_ALPHA", "format": "DISPLAY",
@@ -145,7 +145,8 @@ def test_restart_on_postgres_keeps_freeze_photo_ledger_northstar_and_quarantine(
     assert client.post("/catalog/items", headers=JR.HCAT, json={"items": [{"product_id": "FICTIF-P1", "listing": listing}]}).status_code == 200
     assert client.post("/stock/receive", headers=JR.HOPS, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": 1, "ref": "FICTIF-BL-PG"}).status_code == 200
     svc.sync.replacement_costs.update(ReplacementCost(product_key="FICTIF-P1", supplier_id="fictif_grossiste_a",
-                                                      unit_cost=D("100.00"), source_ts=NOW, offer_ref="FICTIF"))
+                                                      unit_cost=D("100.00"), source_ts=NOW, offer_ref="FICTIF",
+                                                      fees_recorded_by="propriétaire"))  # revue R5 : frais de la propriétaire
     lot = {"kind": "RECEIPT", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "FICTIF-LOT-PG", "qty": 1,
            "unit_cost": "100.00", "stock_ref": "FICTIF-BL-PG", "invoice_ref": "FICTIF-FACT-PG"}
     assert client.post("/costs/movements", headers=JR.HF, json=lot).status_code == 200
@@ -162,7 +163,7 @@ def test_restart_on_postgres_keeps_freeze_photo_ledger_northstar_and_quarantine(
     assert health["global_frozen"] is True and health["persistence"]["backend"] == "postgres"
     assert health["persistence"]["restored"] is True
     assert svc2.stoploss_state is not None and svc2.stoploss_engine.latch.cause == "MANUAL"
-    replay = body(client2.post("/mandate/check", headers=HF, json=spend))["decision"]
+    replay = body(client2.post("/mandate/check", headers=JR.HOPS, json=spend))["decision"]
     assert replay["replayed"] is True
     assert body(client2.get("/northstar", headers=H))["cumulative"] == "81.92"  # 184.92 − 3.00 − 100.00 (CMP)
     assert svc2.costs.ledger("FICTIF-P1").qty_on_hand == 0  # sortie dérivée persistée

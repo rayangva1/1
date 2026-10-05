@@ -13,13 +13,14 @@ de registres dont aucune valeur décisive n'est déclarée par l'agent qui en pr
 Apports et retraits        :class:`CapitalRegister` — ``POST /capital/movements``, **jeton propriétaire**
 Cash (banque + PayPal)     derniers relevés ``POST /treasury/bank-balance`` et ``/treasury/paypal-balance``
                            (connecteurs, acteur déduit du jeton ; la photo est datée du plus ancien relevé)
-Dettes et créances         :class:`BalanceStatement` — ``POST /treasury/balance-items`` : précommandes
-                           encaissées non livrées (déduites du cash disponible), TVA due, remboursements
-                           promis ; listes vides **attestées** si aucune. Revue R4 (R3-NEW-02) : **plancher**
-                           des factures fournisseur enregistrées non payées (:mod:`pokeshop.invoices`,
-                           ``n8n-03-factures`` ; paiement relevé par ``connecteur-tresorerie``) ajouté aux
-                           dettes déclarées ; **créances** comptées seulement si la propriétaire les relève
-                           (jeton propriétaire) — une créance déclarée par un rôle compte 0
+Dettes et créances         :class:`BalanceStatementBook` (journal ``balance_statements``, revue R5) —
+                           ``POST /treasury/balance-items`` : **dettes** (précommandes encaissées non livrées,
+                           déduites du cash disponible, TVA due, remboursements promis ; listes vides
+                           **attestées** ; âge accepté explicite, 24 h) et **créances** de la propriétaire seule :
+                           deux registres séparés et persistés (une déclaration de dettes n'efface jamais les
+                           créances ; le plancher des dettes survit au redémarrage). Revue R4 (R3-NEW-02) :
+                           **plancher** des factures fournisseur enregistrées non payées (:mod:`pokeshop.invoices`,
+                           ``n8n-03-factures`` ; paiement relevé par ``connecteur-tresorerie``) ajouté aux dettes
 Stock au coût historique   :class:`pokeshop.northstar.CostRegister` (``POST /costs/movements``)
 Exposition par extension   même registre, extension lue dans le catalogue validé (``POST /catalog/items``)
 Marges produit             prix public en vigueur (historique des prix) et coût du stock (CMP) ou coût
@@ -30,8 +31,10 @@ Publicité                  :class:`AdsActivityRegister` — ``POST /ads/activit
                            leur date de décision, exécutés à leur date d'exécution — revue R4, R2-NEW-03) ;
                            commandes attribuées = commandes enregistrées par le moteur (contribution plafonnée)
 Stock au coût historique   réceptions adossées à ``POST /stock/receive`` (autre jeton), coût à ± 2 % d'une
-                           référence du moteur (facture enregistrée, coût rendu de l'offre), sinon propriétaire ;
-                           sorties de vente dérivées des commandes enregistrées (CMP)
+                           référence du moteur (facture enregistrée aux quantités rapprochées, sinon coût rendu de
+                           l'offre avec des frais de la propriétaire), sinon propriétaire ; sorties de vente
+                           dérivées des commandes enregistrées (CMP ; en attente sans stock valorisé : photo
+                           signalée incomplète, revue R5) ; retours : lignes d'avoir + retour physique
 Plafond pub, budget stock  mandat signé actif et règles (jamais la photo)
 =========================  ===========================================================================
 
@@ -46,7 +49,7 @@ connue (``orchestration/README.md``) : l'activité publicitaire n'est connue que
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal
@@ -78,6 +81,8 @@ __all__ = [
     "CapitalRecord",
     "BankBalanceReading",
     "BalanceStatement",
+    "BalanceStatementBook",
+    "ReceivablesStatement",
     "AdsActivityRegister",
     "ActivityRegisterError",
     "ActivityRegisterPersistenceError",
@@ -244,6 +249,89 @@ class BalanceStatement(FrozenModel):
         return _aware(v, "as_of")
 
 
+class ReceivablesStatement(FrozenModel):
+    """Créances à date relevées par la **propriétaire** seule (revue R5, R4-NEW-02 / R4-DOC-01).
+
+    Registre **distinct** de la déclaration des dettes : une déclaration de dettes d'un rôle (agent 05, connecteur de
+    trésorerie) ne les efface jamais ; elles restent en vigueur jusqu'au prochain relevé de créances de la
+    propriétaire (``receivables: []`` les retire). Versements PSP en transit, TVA à récupérer, stock payé en transit
+    (au coût, à retirer dès sa réception au coût).
+    """
+
+    as_of: datetime
+    receivables: tuple[BalanceItem, ...] = ()
+    source: str = Field(min_length=3)
+    recorded_by: Literal["propriétaire"] = "propriétaire"
+
+    @field_validator("as_of")
+    @classmethod
+    def _tz(cls, v: datetime) -> datetime:
+        return _aware(v, "as_of")
+
+
+class BalanceStatementBook:
+    """Déclaration des dettes et relevé des créances en vigueur (journal ``balance_statements``, ajout seul).
+
+    Revue R5 (R3-NEW-02 partiel, R4-NEW-02, R4-DOC-01) : deux registres **séparés et persistés** — dettes et
+    précommandes (rôles ``finance-pricing``, ``connecteur-tresorerie`` ou propriétaire) ; créances (propriétaire
+    seule). Relus au démarrage : le **plancher des dettes** (un rôle ne les abaisse jamais) survit au redémarrage.
+    Journal illisible => service gelé (fermé par défaut).
+    """
+
+    STREAM = "balance_statements"
+
+    def __init__(self, *, store: StateJournal | None = None) -> None:
+        self._lock = threading.RLock()
+        self._debts: BalanceStatement | None = None
+        self._receivables: ReceivablesStatement | None = None
+        self._store = store
+
+    @classmethod
+    def restore(cls, store: StateJournal) -> BalanceStatementBook:
+        """Relit le registre (:class:`ActivityRegisterPersistenceError` s'il est illisible)."""
+        book = cls()
+        for n, record in enumerate(_load(store, "dettes et créances"), start=1):
+            try:
+                if record.get("debts") is not None:
+                    book._debts = BalanceStatement.model_validate(record["debts"])
+                if record.get("receivables") is not None:
+                    book._receivables = ReceivablesStatement.model_validate(record["receivables"])
+                if record.get("debts") is None and record.get("receivables") is None:
+                    raise KeyError("debts/receivables")
+            except (KeyError, TypeError, AttributeError, ValidationError) as exc:
+                raise ActivityRegisterPersistenceError(f"dettes et créances : enregistrement {n} illisible") from exc
+        book._store = store
+        return book
+
+    @property
+    def debts(self) -> BalanceStatement | None:
+        """Déclaration des dettes et précommandes en vigueur (None : jamais déclarée)."""
+        with self._lock:
+            return self._debts
+
+    @property
+    def receivables(self) -> ReceivablesStatement | None:
+        """Relevé des créances de la propriétaire en vigueur (None : aucune créance relevée)."""
+        with self._lock:
+            return self._receivables
+
+    def record(self, *, debts: BalanceStatement | None = None, receivables: ReceivablesStatement | None = None) -> None:
+        """Enregistre (un seul enregistrement, écrit d'abord) puis met en vigueur la ou les déclarations fournies."""
+        if debts is None and receivables is None:
+            raise ActivityRegisterError("rien à enregistrer : dettes ou créances attendues")
+        with self._lock:
+            _append(
+                self._store,
+                {"debts": None if debts is None else debts.model_dump(mode="json"),
+                 "receivables": None if receivables is None else receivables.model_dump(mode="json")},
+                "dettes et créances",
+            )  # fmt: skip
+            if debts is not None:
+                self._debts = debts
+            if receivables is not None:
+                self._receivables = receivables
+
+
 # --------------------------------------------------------------------------- publicité
 
 
@@ -266,6 +354,8 @@ class AdsActivityRegister:
         self._posters: set[str] = set()
         self._last: dict[str, datetime] = {}
         self._store = store
+        self.last_set_aside: dict[str, str] = {}
+        """Commandes attribuées écartées du dernier lot -> motif (revue R5 : jamais les dépenses du lot)."""
 
     @classmethod
     def restore(cls, store: StateJournal) -> AdsActivityRegister:
@@ -298,15 +388,25 @@ class AdsActivityRegister:
         for o in orders:
             self._orders[o.order_id] = o
 
-    def _checked_orders(self, orders: list[AttributedOrder], order_book: Any) -> list[AttributedOrder]:
+    def _checked_orders(
+        self, orders: list[AttributedOrder], order_book: Any
+    ) -> tuple[list[AttributedOrder], dict[str, str]]:
+        """Commandes attribuées admises (plafonnées par le registre des commandes) et commandes **écartées** -> motif.
+
+        Revue R5 (R4-NEW-01) : une commande inconnue du moteur (pas encore enregistrée par ``POST /orders/shipped``)
+        ou en conflit est écartée **seule** — jamais les dépenses du lot (le stop-loss pub ne perd aucune dépense) ;
+        le connecteur la renvoie à son prochain relevé.
+        """
         out: list[AttributedOrder] = []
+        aside: dict[str, str] = {}
         for o in orders:
             known = order_book.get(o.order_id) if order_book is not None else None
             if known is None:
-                raise ActivityRegisterError(
-                    f"commande attribuée {o.order_id} inconnue du moteur : seules les commandes enregistrées "
-                    "(POST /orders/shipped) peuvent être attribuées à une campagne"
+                aside[o.order_id] = (
+                    "inconnue du moteur : seules les commandes enregistrées (POST /orders/shipped) sont attribuées à une "
+                    "campagne — à renvoyer au prochain relevé"
                 )
+                continue
             status = o.status
             if order_book.status(o.order_id) == "REFUNDED":
                 status = "REFUNDED"
@@ -315,12 +415,14 @@ class AdsActivityRegister:
             previous = self._orders.get(o.order_id)
             if previous is not None:
                 if previous.status != "PAID" and status == "PAID":
-                    raise ActivityRegisterError(f"commande {o.order_id} : redevient « payée » après {previous.status} (refusé)")
+                    aside[o.order_id] = f"redevient « payée » après {previous.status} (refusé)"
+                    continue
                 if previous.campaign_id != o.campaign_id:
-                    raise ActivityRegisterError(f"commande {o.order_id} : déjà attribuée à {previous.campaign_id}")
+                    aside[o.order_id] = f"déjà attribuée à {previous.campaign_id}"
+                    continue
                 contribution = min(contribution, previous.contribution_before_acquisition)
             out.append(o.model_copy(update={"status": status, "contribution_before_acquisition": contribution}))
-        return out
+        return out, aside
 
     def record(
         self,
@@ -335,7 +437,7 @@ class AdsActivityRegister:
         """Enregistre un lot (contrôlé, écrit d'abord) ; renvoie le nombre d'éléments reçus.
 
         ``order_book`` : registre des commandes du moteur (``get``, ``status``, ``contribution_bound``) ;
-        sans lui, aucune commande attribuée n'est admise.
+        sans lui, aucune commande attribuée n'est admise. Commandes écartées : :attr:`last_set_aside`.
         """
         if any(s.day > today for s in spends):
             raise ActivityRegisterError("dépense publicitaire datée du futur")
@@ -350,7 +452,8 @@ class AdsActivityRegister:
                         f"dépense {s.campaign_id} du {s.day} déjà relevée à {current.amount} CHF : une baisse "
                         f"({s.amount}) est refusée (registre en ajout seul ; correction : la propriétaire)"
                     )
-            checked = self._checked_orders(list(orders), order_book)
+            checked, aside = self._checked_orders(list(orders), order_book)
+            self.last_set_aside = aside
             _append(
                 self._store,
                 {"ad_spends": [s.model_dump(mode="json") for s in spends],
@@ -363,7 +466,7 @@ class AdsActivityRegister:
             self._posters.add(recorded_by)
             if recorded_at is not None:
                 self._last[recorded_by] = max(self._last.get(recorded_by, recorded_at), recorded_at)
-        return len(spends) + len(orders)
+        return len(spends) + len(checked)
 
     def posters(self) -> frozenset[str]:
         """Déposants (déduits du jeton) de l'activité publicitaire."""
@@ -478,34 +581,51 @@ def build_activity_photo(
     max_age: timedelta,
     ads_window_days: int = 30,
     invoices: Any = None,
+    receivables: ReceivablesStatement | None = None,
+    balances_max_age: timedelta | None = None,
+    incomplete: Mapping[str, str] | None = None,
 ) -> tuple[StopLossState, dict[str, Any]]:
     """Photo d'activité tirée des registres ; :class:`PhotoSourcesError` si une source manque ou est périmée.
 
-    ``as_of`` de la photo = date du **plus ancien** relevé de cash : une photo n'est jamais plus fraîche
-    que sa donnée la plus vieille (le stop-loss et le mandat jugent la fraîcheur sur elle).
+    ``as_of`` de la photo = date du **plus ancien relevé de cash** (PayPal, banque, relevés horaires du connecteur) :
+    une photo n'est jamais plus fraîche que son cash, et le mandat (< 60 min) juge la fraîcheur sur elle.
 
-    Revue R4 (R3-NEW-02) : dettes = dettes déclarées + factures fournisseur enregistrées non payées
-    (``invoices`` : :class:`pokeshop.invoices.SupplierInvoiceBook`, plancher du moteur) ; créances = celles
-    relevées par la propriétaire seulement (une créance déclarée par un rôle compte 0).
+    Revue R5 (R4-DOC-10) : la déclaration des **dettes** (quotidienne, agent 05) a son **âge accepté explicite**
+    ``balances_max_age`` (défaut : ``max_age``, soit ``state_max_age_hours`` du stop-loss signé, 24 h) et n'entre pas
+    dans la date de la photo ; plus ancienne : pas de photo. Le plancher des factures enregistrées non payées est,
+    lui, toujours à jour. Revue R4 (R3-NEW-02) et R5 (R4-NEW-02, R4-DOC-01) : dettes = dettes déclarées + factures
+    enregistrées non payées ; créances = relevé **distinct** de la propriétaire (``receivables``), jamais effacé par
+    une déclaration de dettes d'un rôle. ``incomplete`` : motifs d'étoile polaire incomplète (coût des ventes en
+    attente, revue R5, R4-NEW-01), reportés dans les sources (dépenses : validation humaine).
     """
     _aware(now, "now")
     problems: list[str] = []
     readings: list[tuple[str, datetime]] = []
-    required: tuple[tuple[str, Any, str], ...] = (
+    for label, reading, route in (
         ("solde PayPal", paypal, "POST /treasury/paypal-balance, connecteur"),
         ("solde bancaire", bank, "POST /treasury/bank-balance, connecteur"),
-        ("déclaration des dettes et créances", balances,
-         "POST /treasury/balance-items : précommandes encaissées, factures non payées, TVA… ; listes vides si aucune"),
-    )  # fmt: skip
-    for label, reading, route in required:
+    ):
         if reading is None:
-            problems.append(f"{label} non relevé ({route})" if label.startswith("solde") else f"{label} absente ({route})")
+            problems.append(f"{label} non relevé ({route})")
             continue
         if reading.as_of - now > FUTURE_SKEW:
             problems.append(f"{label} : daté du futur ({reading.as_of.isoformat()})")
         elif now - reading.as_of > max_age:
             problems.append(f"{label} : périmé, du {reading.as_of.isoformat()} (> {max_age})")
         readings.append((label, reading.as_of))
+    debts_age = max_age if balances_max_age is None else balances_max_age
+    if balances is None:
+        problems.append(
+            "déclaration des dettes et créances absente (POST /treasury/balance-items : précommandes encaissées, "
+            "factures non payées, TVA… ; listes vides si aucune)"
+        )
+    elif balances.as_of - now > FUTURE_SKEW:
+        problems.append(f"déclaration des dettes : datée du futur ({balances.as_of.isoformat()})")
+    elif now - balances.as_of > debts_age:
+        problems.append(
+            f"déclaration des dettes et créances : périmée, du {balances.as_of.isoformat()} (âge accepté {debts_age}, "
+            "déclaration quotidienne de l'agent 05)"
+        )
     as_of = min((at for _, at in readings), default=now)
     movements = capital.movements(until=as_of)
     if not any(m.kind == "CONTRIBUTION" for m in movements):
@@ -524,7 +644,13 @@ def build_activity_photo(
           for inv, remaining in unpaid),
     )  # fmt: skip
     owner_statement = balances.recorded_by == OWNER_ACTOR
-    receivables = balances.receivables if owner_statement else ()
+    if receivables is not None:  # registre distinct de la propriétaire (revue R5)
+        counted = receivables.receivables if receivables.recorded_by == OWNER_ACTOR else ()
+        ignored = len(balances.receivables) if not owner_statement else 0
+    else:  # appel sans registre distinct : créances de la déclaration seulement si elle vient de la propriétaire
+        counted = balances.receivables if owner_statement else ()
+        ignored = 0 if owner_statement else len(balances.receivables)
+    receivable_items = counted
 
     stock: list[StockValuationLine] = []
     unit_costs: dict[str, Decimal] = {}
@@ -602,17 +728,25 @@ def build_activity_photo(
         cash_available_chf=cash - balances.preorders_collected_chf,
         capital_movements=movements,
         net_worth=NetWorthSnapshot(
-            as_of=as_of, cash_chf=cash, stock=tuple(stock), receivables=receivables, debts=debts
+            as_of=as_of, cash_chf=cash, stock=tuple(stock), receivables=receivable_items, debts=debts
         ),
     )
+    reasons = dict(incomplete or {})
     sources = {
         "as_of": as_of,
         "cash": {"paypal": {"as_of": paypal.as_of, "recorded_by": paypal.recorded_by},
                  "banque": {"as_of": bank.as_of, "recorded_by": bank.recorded_by}},
         "dettes_creances": {"as_of": balances.as_of, "recorded_by": balances.recorded_by,
-                            "debts": len(debts), "receivables": len(receivables),
-                            "receivables_ignored": 0 if owner_statement else len(balances.receivables),
+                            "age_minutes": int((now - balances.as_of).total_seconds() // 60),
+                            "max_age_minutes": int(debts_age.total_seconds() // 60),
+                            "debts": len(debts), "receivables": len(receivable_items),
+                            "receivables_as_of": receivables.as_of if receivables is not None else None,
+                            "receivables_recorded_by": receivables.recorded_by if receivables is not None else None,
+                            "receivables_ignored": ignored,
                             "unpaid_invoices": [inv.invoice_ref for inv, _ in unpaid]},
+        # Revue R5 (R4-NEW-01) : coût des ventes en attente => étoile polaire et photo incomplètes (dépenses : humain).
+        "complete": not reasons,
+        "incomplete": reasons,
         "capital_movements": len(movements),
         "stock_lines": len(stock),
         "extensions": [e.extension for e in extensions],

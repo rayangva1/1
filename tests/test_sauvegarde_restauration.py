@@ -37,6 +37,15 @@ class Server:
     def __init__(self, admin: str, password: str) -> None:
         self.admin, self.password = admin, password
         self.databases: list[str] = []
+        # Revue R5 (R4-NEW-03) : préfixe PROPRE à ce test pour les bases jetables de `db/backup.sh verifier` ; le test
+        # ne supprime et ne compte que ses bases (jamais tout « pokeshop_verif_% » : une exécution parallèle survit).
+        self.verif_prefix = f"pokeshop_verif_t{uuid.uuid4().hex[:10]}_"
+
+    def own_scratch(self) -> list[str]:
+        """Bases jetables créées par CE test (préfixe exact, sans joker LIKE)."""
+        out = _psql(f"SELECT datname FROM pg_database WHERE starts_with(datname, '{self.verif_prefix}');")
+        assert out.returncode == 0, out.stderr
+        return out.stdout.split()
 
     def url(self, db: str, user: str | None = None, password: str | None = None) -> str:
         return f"postgresql://{user or self.admin}:{password or self.password}@127.0.0.1:5432/{db}"
@@ -68,10 +77,7 @@ def server() -> Iterator[Server]:
     try:
         yield srv
     finally:
-        for name in srv.databases:
-            _psql(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE);')
-        leftovers = _psql("SELECT datname FROM pg_database WHERE datname LIKE 'pokeshop_verif_%';").stdout.split()
-        for name in leftovers:
+        for name in srv.databases + srv.own_scratch():  # seulement les bases créées par ce test
             _psql(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE);')
         _psql(f"DROP ROLE IF EXISTS {admin};")
 
@@ -100,6 +106,12 @@ def run(script: Path, *args: str, env: dict[str, str]) -> subprocess.CompletedPr
     return subprocess.run(["bash", str(script), *args], capture_output=True, text=True, timeout=300, check=False, env=full)
 
 
+def envs(server: Server, source: str, backup_dir: Path, **extra: str) -> dict[str, str]:
+    """Environnement de `db/backup.sh` : base source, dossier de sauvegarde, préfixe des bases jetables de CE test."""
+    return {"DATABASE_URL": server.url(source), "POKESHOP_BACKUP_DIR": str(backup_dir),
+            "POKESHOP_VERIF_PREFIX": server.verif_prefix, **extra}
+
+
 def count(db: str, sql: str) -> str:
     out = _psql(sql, db)
     assert out.returncode == 0, out.stderr
@@ -107,7 +119,7 @@ def count(db: str, sql: str) -> str:
 
 
 def test_backup_then_restore_test_in_a_throwaway_database(server: Server, source: str, tmp_path: Path) -> None:
-    env = {"DATABASE_URL": server.url(source), "POKESHOP_BACKUP_DIR": str(tmp_path / "sauvegardes")}
+    env = envs(server, source, tmp_path / "sauvegardes")
     made = run(BACKUP, "sauvegarde", env=env)
     assert made.returncode == 0, made.stderr
     dump = Path(made.stdout.strip().splitlines()[-1])
@@ -120,11 +132,11 @@ def test_backup_then_restore_test_in_a_throwaway_database(server: Server, source
     checked = run(BACKUP, "verifier", env=env)  # dernière sauvegarde du dossier
     assert checked.returncode == 0, checked.stderr
     assert "restauration vérifiée" in checked.stdout
-    assert count("postgres", "SELECT count(*) FROM pg_database WHERE datname LIKE 'pokeshop_verif_%'") == "0"
+    assert server.own_scratch() == []  # base jetable de CE test supprimée (jamais un comptage global)
 
 
 def test_altered_or_incomplete_backup_is_rejected(server: Server, source: str, tmp_path: Path) -> None:
-    env = {"DATABASE_URL": server.url(source), "POKESHOP_BACKUP_DIR": str(tmp_path / "s")}
+    env = envs(server, source, tmp_path / "s")
     dump = Path(run(BACKUP, "sauvegarde", env=env).stdout.strip().splitlines()[-1])
     data = bytearray(dump.read_bytes())
     data[len(data) // 2] ^= 0xFF
@@ -138,20 +150,20 @@ def test_altered_or_incomplete_backup_is_rejected(server: Server, source: str, t
                                                                      "pokeshop.engine_state_journal\t9"), encoding="utf-8")
     short = run(BACKUP, "verifier", str(dump2), env=env)
     assert short.returncode != 0 and "engine_state_journal : 5 ligne(s) < 9" in short.stderr
-    assert count("postgres", "SELECT count(*) FROM pg_database WHERE datname LIKE 'pokeshop_verif_%'") == "0"
+    assert server.own_scratch() == []  # base jetable de CE test supprimée (jamais un comptage global)
 
 
 def test_restore_test_detects_a_broken_audit_chain(server: Server, source: str, tmp_path: Path) -> None:
     assert _psql("SET session_replication_role = replica; UPDATE pokeshop.audit_log SET action = 'falsifie' "
                  "WHERE audit_id = (SELECT min(audit_id) FROM pokeshop.audit_log);", source).returncode == 0
-    env = {"DATABASE_URL": server.url(source), "POKESHOP_BACKUP_DIR": str(tmp_path / "s")}
+    env = envs(server, source, tmp_path / "s")
     assert run(BACKUP, "sauvegarde", env=env).returncode == 0
     bad = run(BACKUP, "verifier", env=env)
     assert bad.returncode != 0 and "verify_audit_chain" in bad.stderr
 
 
 def test_real_restore_into_an_empty_database_only(server: Server, source: str, tmp_path: Path) -> None:
-    env = {"DATABASE_URL": server.url(source), "POKESHOP_BACKUP_DIR": str(tmp_path / "s")}
+    env = envs(server, source, tmp_path / "s")
     dump = run(BACKUP, "sauvegarde", env=env).stdout.strip().splitlines()[-1]
     target = server.create("pk_bk_cible")
     restored = run(BACKUP, "restaurer", dump, server.url(target), env=env)
@@ -167,7 +179,7 @@ def test_real_restore_into_an_empty_database_only(server: Server, source: str, t
 def test_backups_are_refused_inside_the_repository(server: Server, source: str) -> None:
     inside = ROOT / "pokeshop-sauvegardes-test"
     try:
-        out = run(BACKUP, "sauvegarde", env={"DATABASE_URL": server.url(source), "POKESHOP_BACKUP_DIR": str(inside)})
+        out = run(BACKUP, "sauvegarde", env=envs(server, source, inside))
         assert out.returncode != 0 and "dans le dépôt" in out.stderr
         assert not list(inside.glob("*.dump"))
     finally:
@@ -179,8 +191,7 @@ def test_encrypted_backup_never_kept_in_clear(server: Server, source: str, tmp_p
     identity = tmp_path / "cle_proprietaire.txt"
     subprocess.run(["age-keygen", "-o", str(identity)], capture_output=True, check=True)
     recipient = next(line.split(": ")[1] for line in identity.read_text().splitlines() if "public key" in line)
-    env = {"DATABASE_URL": server.url(source), "POKESHOP_BACKUP_DIR": str(tmp_path / "s"),
-           "POKESHOP_BACKUP_AGE_RECIPIENT": recipient}
+    env = envs(server, source, tmp_path / "s", POKESHOP_BACKUP_AGE_RECIPIENT=recipient)
     made = run(BACKUP, "sauvegarde", env=env)
     assert made.returncode == 0, made.stderr
     dump = Path(made.stdout.strip().splitlines()[-1])

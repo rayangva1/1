@@ -338,8 +338,8 @@ def test_r2new01_spender_who_posted_costs_is_not_verifiable(tmp_path: Path) -> N
     spend = {"request": {"amount": "40", "currency": "CHF", "supplier_id": "FICTIF_EMBALLAGES", "category": "PACKAGING",
                          "payment_method": "PAYPAL", "purpose": "Étuis FICTIFS", "idempotency_key": "FICTIF-R3-1",
                          "requested_by": "finance-pricing", "requested_at": NOW.isoformat(), "amount_source": "devis"}}
-    data = body(client.post("/mandate/check", headers=JR.HF, json=spend))
-    assert "Stock au coût historique" in data["unverified"]  # finance a déposé les coûts : non vérifiable
+    # Revue R5 (R4-DOC-11) : l'agent finance, qui dépose les coûts (et paie), ne demande jamais de dépense : 403.
+    assert client.post("/mandate/check", headers=JR.HF, json=spend).status_code == 403
     ops = body(client.post("/mandate/check", headers=JR.HOPS, json={"request": {**spend["request"], "requested_by": "operations-sav",
                                                                                 "idempotency_key": "FICTIF-R3-2"}}))
     assert "Stock au coût historique" not in ops["unverified"]
@@ -363,7 +363,9 @@ def test_r2new03_ads_register_is_append_only_and_owned_by_the_connector(tmp_path
     fake = {"attributed_orders": [{"order_id": "FICTIF-INVENTEE", "campaign_id": "FICTIF-CAMP-1",
                                    "paid_at": NOW.isoformat(), "contribution_before_acquisition": "500"}]}
     unknown = client.post("/ads/activity", headers=JR.HADS, json=fake)
-    assert unknown.status_code == 409 and "inconnue du moteur" in body(unknown)["erreur"]
+    # Revue R5 (R4-NEW-01) : commande inconnue écartée seule (jamais enregistrée), les dépenses du lot ne sont pas perdues.
+    assert unknown.status_code == 200 and "inconnue du moteur" in body(unknown)["attributed_orders_set_aside"]["FICTIF-INVENTEE"]
+    assert svc.ads.window((NOW - timedelta(days=7)).date())[1] == ()
     F.seed_stock(client, svc)
     order = {"order_id": "FICTIF-O1", "paid_at": (NOW - timedelta(hours=2)).isoformat(), "net_sales_ht": "60.00",
              "payment_fees": "1.80", "shipping_cost_actual": "8.20", "shipping_label_ref": "FICTIF-ETIQ-1",

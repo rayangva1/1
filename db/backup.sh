@@ -27,6 +27,10 @@
 #   illisible ou trop ancienne : code 1 (fermé par défaut). Contrôle de recette R-I04 et healthcheck du service
 #   db-backup (docker compose ps : « unhealthy » tant qu'aucune restauration n'a été vérifiée). Pas de base requise.
 #
+# Base jetable de `verifier` : nommée POKESHOP_VERIF_PREFIX + date + pid + aléa (préfixe par défaut
+#   « pokeshop_verif_ » ; minuscules, chiffres et « _ », 40 caractères au plus, commençant par « pokeshop_verif_ »).
+#   Un test ou une exécution parallèle passe son propre préfixe et ne touche qu'à ses bases (revue R5, R4-NEW-03).
+#
 # Le compte de DATABASE_URL doit pouvoir tout lire (y compris owner_token_fingerprint) et créer une base
 # (verifier) : compte administrateur, jamais le compte de l'API. Aucun mot de passe n'est affiché.
 set -euo pipefail
@@ -194,13 +198,17 @@ cleanup() {  # base jetable et fichiers déchiffrés supprimés quoi qu'il arriv
 trap cleanup EXIT
 
 cmd_verifier() {
-    local file="${1:-}" manifest dump url status=0
+    local file="${1:-}" manifest dump url status=0 prefix="${POKESHOP_VERIF_PREFIX:-pokeshop_verif_}"
+    # Préfixe de la base jetable contrôlé AVANT tout accès (revue R5, R4-NEW-03 : un test ne touche qu'à ses bases).
+    [[ "$prefix" =~ ^pokeshop_verif_[a-z0-9_]{0,25}$ ]] \
+        || die "POKESHOP_VERIF_PREFIX invalide ($prefix) : « pokeshop_verif_ » suivi de minuscules, chiffres ou « _ »"
     [ -n "$file" ] || file="$(latest_backup)"
     [ -n "$file" ] || die "aucune sauvegarde dans $BACKUP_DIR"
     manifest="$(manifest_for "$file")"
     check_file "$file" "$manifest"
     WORK="$(mktemp -d)"
-    SCRATCH="pokeshop_verif_$(date -u +%Y%m%d%H%M%S)_$$_${RANDOM}"
+    SCRATCH="${prefix}$(date -u +%Y%m%d%H%M%S)_$$_${RANDOM}"
+    echo "base jetable : $SCRATCH" >&2
     url="$(url_for_db "$DATABASE_URL" "$SCRATCH")"
     dump="$(plain_dump "$file" "$WORK")"
     log "restauration de $(basename "$file") dans la base jetable $SCRATCH"

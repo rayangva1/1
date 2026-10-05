@@ -197,6 +197,12 @@ class SyncContext:
     """Validations de fiches de la propriétaire (registre ``catalog_approvals``) par ``product_id`` ;
     appliquées seulement au contenu exact de fiche validé (jamais un champ de la fiche)."""
     sensitive_terms: Collection[str] = ()
+    record_replacement_costs: bool = True
+    """Revue R5 (R4-DOC-09, R2-NEW-01 b) : faux pour un cycle qui lit un catalogue ou des frais **du corps**
+    (simulation) — il évalue les offres mais n'inscrit jamais de coût de remplacement (référence du moteur)."""
+    cost_inputs_recorded_by: Mapping[str, str] = field(default_factory=dict)
+    """Par ``supplier_id`` : acteur qui a posé au registre les frais utilisés (provenance inscrite avec le coût
+    de remplacement, :attr:`pokeshop.models.ReplacementCost.fees_recorded_by`)."""
 
 
 class SyncItem(FrozenModel):
@@ -921,7 +927,13 @@ class SyncService:
                 )
                 if decision.landed_cost is None:
                     cost_unknown += 1
-                elif decision.restock_eligible and decision.landed_cost > 0 and not decision.has(Reason.PRICE_ANOMALY):
+                elif (
+                    ctx.record_replacement_costs
+                    and decision.restock_eligible
+                    and decision.landed_cost > 0
+                    and not decision.has(Reason.PRICE_ANOMALY)
+                ):
+                    # Revue R5 (R4-DOC-09) : jamais depuis un catalogue ou des frais du corps (simulation).
                     self.replacement_costs.update(
                         ReplacementCost(
                             product_key=pid,
@@ -929,6 +941,7 @@ class SyncService:
                             unit_cost=decision.landed_cost,
                             source_ts=offer.source_ts,
                             offer_ref=offer.raw_ref,
+                            fees_recorded_by=ctx.cost_inputs_recorded_by.get(offer.supplier_id),
                         )
                     )
                 if decision.has(Reason.STALE_OFFER):

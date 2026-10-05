@@ -33,6 +33,15 @@
   ``order:``/``refund:``/``cost:`` réservés, commande atomique avec lignes et sortie au CMP dérivée
   (R3-NEW-04/05) ; frais PSP d'une commande comptés une fois (R3-DOC-03) ; relais 08 limité aux agents qui
   dépensent (R3-NEW-06) ; « simulation » d'un incident admis seulement moteur en simulation (R3-DOC-04).
+* **Revue R5** : référence du coût d'une réception jamais nourrie par son bénéficiaire (R2-NEW-01 / R3-DOC-02 /
+  R4-DOC-09) — facture enregistrée prioritaire (quantités reçues ≤ quantité facturée, lignes ≤ montant dû,
+  fournisseur lié), sinon offre évaluée avec des frais posés par la propriétaire ; cycle avec catalogue ou frais du
+  corps : aucun coût de remplacement inscrit ; réception valorisée une fois sur (SKU à la réception, bon) ; TVA
+  d'import des lignes comptée selon le profil TVA du moteur (R4-DOC-02) ; retour en stock au coût : lignes de l'avoir
+  + retour physique déclaré (R3-NEW-05) ; commande payée jamais refusée faute de coût (coût des ventes en attente,
+  dépenses en validation humaine) et lot pub jamais refusé pour une commande attribuée inconnue (R4-NEW-01) ; dettes
+  et créances en deux registres persistés (R4-NEW-02, R4-DOC-01, R3-NEW-02) ; ``POST /mandate/human-decision``
+  (propriétaire, R4-DOC-03) ; ``finance-pricing`` ne demande jamais de dépense (R4-DOC-11).
 * **Taux de change** : uniquement le registre de la propriétaire (``POST /fx/rates``) ; aucun champ
   ``fx_*`` accepté dans ``/sync/run`` ni ``/catalog/cost-inputs`` (422) ; sans taux : coût incomplet,
   fiche en brouillon. ``/mandate/check`` ne retient jamais le taux déclaré (contrôle à ± 1 % contre la
@@ -81,7 +90,8 @@
   mandat, étoile polaire, incidents et confinements, historique des prix, niveau d'autonomie,
   approbations de prix, références « dernier import », mouvements du stock local, catalogue de
   synchronisation et frais, cycles de synchronisation, apports de capital, activité publicitaire,
-  fiches publiées (identifiant Shopify et statut).
+  fiches publiées (identifiant Shopify et statut), factures fournisseur, commandes, dettes et créances
+  (``balance_statements``, revue R5).
   Base si ``POKESHOP_DATABASE_URL``, sinon fichiers JSON Lines dans ``POKESHOP_STATE_DIR``.
   :meth:`Services.build` les relit ; un journal illisible => service gelé (``RESTORE_FAILED``),
   mandat et étoile polaire en 503, jusqu'à réparation et redémarrage (fermé par défaut).
@@ -175,6 +185,7 @@ from .mandate import (
     FxRateBook,
     LedgerPersistenceError,
     Mandate,
+    MandateError,
     MandateRevocations,
     PayPalBalanceReading,
     RegistryPersistenceError,
@@ -185,7 +196,7 @@ from .mandate import (
     load_mandate,
     treasury_from_registers,
 )
-from .models import BasketLine, Discount, PriceEvent, ReorderCandidate, VatMode, canonical_hash, explain
+from .models import BasketLine, Discount, PriceEvent, ReorderCandidate, ReplacementCost, VatMode, canonical_hash, explain
 from .northstar import (
     ContributionEntry,
     CostMovement,
@@ -241,9 +252,11 @@ from .stoploss_snapshot import (
     ActivityRegisterPersistenceError,
     AdsActivityRegister,
     BalanceStatement,
+    BalanceStatementBook,
     BankBalanceReading,
     CapitalRegister,
     PhotoSourcesError,
+    ReceivablesStatement,
     build_activity_photo,
     committed_ad_payments,
     merge_ad_spends,
@@ -555,8 +568,9 @@ class Services:
     """Dernier solde bancaire relevé (mémoire : à relever de nouveau après redémarrage, fermé par défaut)."""
     publications: ShopPublicationBook = field(default_factory=ShopPublicationBook)
     """Fiches écrites et vérifiées sur la boutique (journal ``shop_publications``) : dépublication protectrice."""
-    balance_statement: BalanceStatement | None = None
-    """Dernière déclaration des dettes et créances (mémoire, comme les soldes ; jamais supposée nulle)."""
+    balances: BalanceStatementBook = field(default_factory=BalanceStatementBook)
+    """Déclaration des dettes et relevé des créances de la propriétaire, **séparés et persistés** (journal
+    ``balance_statements``, revue R5 : R3-NEW-02 partiel, R4-NEW-02, R4-DOC-01) ; jamais supposés nuls."""
     catalog_approvals: CatalogApprovalBook = field(default_factory=CatalogApprovalBook)
     """Validations de fiches de la propriétaire (journal ``catalog_approvals``) : seule source de
     ``approved``, ``content_validated`` et ``category_rule_validated`` (revue R3, R2-NEW-05)."""
@@ -565,6 +579,11 @@ class Services:
     invoices: SupplierInvoiceBook = field(default_factory=SupplierInvoiceBook)
     """Factures fournisseur enregistrées et paiements (journal ``supplier_invoices``, revue R4) : référence du coût
     d'une réception et plancher des dettes de la photo du stop-loss."""
+
+    @property
+    def balance_statement(self) -> BalanceStatement | None:
+        """Déclaration des dettes et précommandes en vigueur (lecture ; écriture : :attr:`balances`)."""
+        return self.balances.debts
 
     def authoritative_photo(self, state: StopLossState, now: datetime) -> tuple[StopLossState, list[str]]:
         """Photo avec plafond pub et budget stock du moteur (mandat signé actif, règles), jamais ceux postés."""
@@ -808,6 +827,10 @@ class Services:
             orders = OrderRegister.restore(journal_for(OrderRegister.STREAM))
         except NorthStarError as exc:
             orders = OrderRegister(store=failed(OrderRegister.STREAM, exc))
+        try:  # revue R5 (R3-NEW-02 partiel) : le plancher des dettes survit au redémarrage
+            balances = BalanceStatementBook.restore(journal_for(BalanceStatementBook.STREAM))
+        except ActivityRegisterPersistenceError as exc:
+            balances = BalanceStatementBook(store=failed(BalanceStatementBook.STREAM, exc))
         if NorthStarLedger.STREAM not in restore_errors and OrderRegister.STREAM not in restore_errors:
             # Rattrape une vente (et sa sortie de stock) enregistrée mais pas encore dérivée. Revue R4 (R3-NEW-04) :
             # un conflit sur une écriture dérivée ne gèle plus le registre : étoile polaire signalée incomplète.
@@ -905,6 +928,7 @@ class Services:
             catalog_approvals=catalog_approvals,
             orders=orders,
             invoices=invoices,
+            balances=balances,
         )
         if photo is not None:  # plafond pub et budget stock du moteur, jamais ceux de la photo relue
             svc.stoploss_state, _ = svc.authoritative_photo(photo, now())
@@ -1100,12 +1124,17 @@ class ShippedOrderIn(_In):
 
 
 class OrderRefundIn(_In):
-    """Avoir sur une commande enregistrée (cumul ≤ ventes de la commande)."""
+    """Avoir sur une commande enregistrée (cumul ≤ ventes de la commande).
+
+    Revue R5 (R3-NEW-05) : ``lines`` = unités **retournées** (SKU × quantité ≤ vendues − déjà retournées) ; vide pour
+    un remboursement sans retour (geste commercial), qui ne remet jamais rien en stock au coût.
+    """
 
     refund_id: str = Field(min_length=1, max_length=120)
     at: datetime
     net_sales_ht: PositiveMoney
     payment_fees_refunded: NonNegativeMoney = Decimal("0")
+    lines: list[ShippedOrderLineIn] = Field(default_factory=list, max_length=200)
 
 
 class CatalogItemsIn(_In):
@@ -1145,12 +1174,19 @@ class BankBalanceIn(_In):
 
 
 class BalanceItemsIn(_In):
-    """Dettes et créances à date (agent finance ou connecteur, jeton nommé) ; listes vides = « aucune », attesté."""
+    """Dettes et/ou créances à date ; listes vides = « aucune », attesté.
+
+    Revue R5 (R4-NEW-02, R4-DOC-01) : deux registres **séparés**. Déclaration des **dettes** = champ
+    ``preorders_collected_chf`` présent (avec ``debts``, vide si aucune) — agent finance, connecteur de trésorerie ou
+    propriétaire. Relevé des **créances** = champ ``receivables`` — propriétaire seule ; un dépôt de la propriétaire
+    avec ``receivables`` seul ne touche pas aux dettes, une déclaration de dettes d'un rôle ne touche pas aux créances
+    (``receivables: []`` d'un rôle est ignoré, une créance d'un rôle : 403).
+    """
 
     as_of: datetime
-    preorders_collected_chf: NonNegativeMoney
-    debts: list[BalanceItem] = Field(default_factory=list, max_length=200)
-    receivables: list[BalanceItem] = Field(default_factory=list, max_length=200)
+    preorders_collected_chf: NonNegativeMoney | None = None
+    debts: list[BalanceItem] | None = Field(default=None, max_length=200)
+    receivables: list[BalanceItem] | None = Field(default=None, max_length=200)
     source: str = Field(min_length=3, max_length=300)
 
 
@@ -1261,6 +1297,14 @@ class MandateCheckIn(_In):
     record: bool = False
 
 
+class HumanDecisionIn(_In):
+    """Décision de la propriétaire sur une dépense en attente de validation humaine (revue R5, R4-DOC-03)."""
+
+    idempotency_key: str = Field(min_length=3, max_length=200)
+    decision: Literal["APPROVE", "REFUSE"]
+    motif: str = Field(default="", max_length=500)
+
+
 class PayPalBalanceIn(_In):
     """Solde du compte PayPal dédié relevé par un connecteur (jamais par l'agent qui demande la dépense)."""
 
@@ -1309,11 +1353,16 @@ class NorthStarEntriesIn(_In):
 
 
 class InvoiceLineIn(_In):
-    """Ligne de facture : clé produit canonique, quantité, coût rendu unitaire ventilé (CHF)."""
+    """Ligne de facture : clé produit canonique, quantité, coût rendu unitaire ventilé (CHF).
+
+    Revue R5 (R4-DOC-02) : ``unit_cost_chf`` hors TVA d'import ; ``import_vat_unit_chf`` = TVA d'import ventilée par
+    unité, comptée au coût rendu selon le profil TVA du **moteur** (méthode effective : récupérable, hors coût).
+    """
 
     product_key: str = Field(min_length=1, max_length=120)
     qty: int = Field(ge=1, le=100_000)
     unit_cost_chf: PositiveMoney
+    import_vat_unit_chf: NonNegativeMoney = Decimal("0")
 
 
 class SupplierInvoiceIn(_In):
@@ -2316,9 +2365,12 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                     "registre (POST /catalog/cost-inputs) et le taux de la propriétaire (POST /fx/rates)",
                 )
             cost_inputs = _body_cost_inputs(dict(body.cost_inputs), mapping, now, principal.name)
+            fees_by: dict[str, str] = {}
         else:
             _persistence_guard(CatalogRegistry.COSTS_STREAM, "frais fournisseurs")
             cost_inputs = _registry_cost_inputs(mapping, now)
+            registered = svc.catalog.costs(mapping.supplier_id)
+            fees_by = {mapping.supplier_id: registered.recorded_by} if registered is not None else {}
         fictif = mapping.fictif or any(listing.fictif for _, _, listing in items)
         table = extension_table_for(mapping, _table(fictif))
         ctx = SyncContext(
@@ -2339,6 +2391,10 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 for pid, _, listing in items
                 if pid == listing.product_key and (a := svc.catalog_approvals.get(pid)) is not None
             },
+            # Revue R5 (R4-DOC-09, R2-NEW-01 b) : un cycle avec catalogue ou frais du corps (simulation) n'inscrit
+            # jamais de coût de remplacement ; sinon la provenance des frais du registre est inscrite avec lui.
+            record_replacement_costs=catalog_source == "registre" and not body.cost_inputs,
+            cost_inputs_recorded_by=fees_by,
         )
         try:
             report = svc.sync.run_supplier_cycle(
@@ -2464,8 +2520,10 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         :data:`pokeshop.authz.INCIDENT_TEST_ATTESTERS`), **différent de l'ouvreur**. ``test_ref`` désigne alors
         un cycle ``POST /sync/run`` du **journal persisté** (``sync_runs``) : simulation PROPRE, postérieure à
         l'ouverture, **lancée par un autre principal que l'attestant**, avec le **catalogue du registre**
-        (jamais celui du corps), sur des données **réelles** (non FICTIVES, source datée) sauf incident ouvert
-        en simulation ou sur données FICTIVES, et portant sur le **fournisseur** de l'incident (quand il est
+        (jamais celui du corps), sur des données **réelles** (non FICTIVES, source datée) sauf incident sur données
+        FICTIVES ou **déclaré** ``simulation: true`` alors que le moteur est en simulation (revue R5, R3-DOC-04 : un
+        incident sur données réelles ouvert sans ce drapeau exige un cycle réel, même moteur en simulation), et
+        portant sur le **fournisseur** de l'incident (quand il est
         connu, même si une référence l'est aussi) et sur sa **référence**. Un test échoué peut être déclaré
         par tout rôle nommé.
         """
@@ -2757,6 +2815,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             (AdsActivityRegister.STREAM, "registre de l'activité publicitaire"),
             (PersistentPriceHistory.STREAM, "historique des prix"),
             (SupplierInvoiceBook.STREAM, "registre des factures fournisseur"),
+            (BalanceStatementBook.STREAM, "registre des dettes et créances"),
         ):
             _persistence_guard(stream, what)
         now = svc.clock()
@@ -2766,7 +2825,9 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 capital=svc.capital,
                 paypal=svc.paypal_balance,
                 bank=svc.bank_balance,
-                balances=svc.balance_statement,
+                balances=svc.balances.debts,
+                receivables=svc.balances.receivables,
+                incomplete=svc.orders.incomplete_reasons(),
                 costs=svc.costs,
                 catalog=svc.catalog,
                 price_history=svc.price_history,
@@ -3129,8 +3190,10 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             posters.append(("Solde PayPal", svc.paypal_balance.recorded_by))
         if svc.bank_balance is not None:
             posters.append(("Solde bancaire", svc.bank_balance.recorded_by))
-        if svc.balance_statement is not None:
-            posters.append(("Dettes et créances", svc.balance_statement.recorded_by))
+        if svc.balances.debts is not None:
+            posters.append(("Dettes et précommandes", svc.balances.debts.recorded_by))
+        if svc.balances.receivables is not None:
+            posters.append(("Créances", svc.balances.receivables.recorded_by))
         # Revue R3 (R2-NEW-01, SEC-16) : déposants des coûts historiques (stock de la photo) et de la publicité.
         posters.extend(("Stock au coût historique", poster) for poster in sorted(svc.costs.posters()))
         posters.extend(("Activité publicitaire", poster) for poster in sorted(svc.ads.posters()))
@@ -3141,6 +3204,14 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             if relay or poster is None or poster in (authz.COMMON, "inconnu") or poster in (principal.name, requester):
                 if label not in unverified:
                     unverified.append(label)
+        incomplete = svc.orders.incomplete_reasons()
+        if incomplete:
+            # Revue R5 (R4-NEW-01) : coût des ventes en attente (ou écriture dérivée impossible) => étoile polaire et
+            # photo incomplètes : aucune dépense autonome (validation humaine), fermé par défaut.
+            unverified.append(
+                "Étoile polaire et photo incomplètes (" + " ; ".join(f"{k} : {v}" for k, v in sorted(incomplete.items()))
+                + ")"
+            )
         if body.request.category.value == "ADVERTISING":
             # Revue R4 (R2-NEW-03) : sans relevé récent du connecteur publicitaire, le stop-loss pub ne voit pas la
             # dépense réelle de la plateforme : toute dépense pub demande une validation humaine (fermé par défaut).
@@ -3185,6 +3256,37 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 "unverified": unverified,
             }
         )
+
+    @app.post("/mandate/human-decision")
+    async def mandate_human_decision(request: Request) -> PokeshopJSONResponse:
+        """Enregistre la décision de la **propriétaire** sur une dépense ``PENDING_HUMAN`` (jeton propriétaire seul).
+
+        Revue R5 (R4-DOC-03) : seule voie de ``HUMAN_APPROVED`` / ``HUMAN_REFUSED`` au registre du mandat. Une dépense
+        pub validée compte dès lors dans le stop-loss pub (paiements **engagés**, à la date de la décision) et devient
+        payable par la passerelle (``can_execute``, moins d'une heure). Validation au-delà de 24 h : expirée (409,
+        resoumettre avec des données fraîches). Jamais depuis n8n : le jeton propriétaire n'y est pas.
+        """
+        require_api(request)
+        _persistence_guard(SpendLedger.STREAM, "registre du mandat")
+        body = await _body(request, HumanDecisionIn)
+        now = svc.clock()
+        try:
+            if body.decision == "APPROVE":
+                entry = svc.spend_ledger.approve_by_human(body.idempotency_key, approver=authz.OWNER, at=now, note=body.motif)
+            else:
+                entry = svc.spend_ledger.refuse_by_human(body.idempotency_key, approver=authz.OWNER, at=now, note=body.motif)
+        except LedgerPersistenceError:
+            raise
+        except MandateError as exc:
+            raise HTTPProblem(409, str(exc)) from None
+        svc.gate.invalidate()
+        svc.audit.append(
+            actor=authz.OWNER, actor_kind=ActorKind.PROPRIETAIRE, action="mandate.human_decision", entity="spend_request",
+            entity_id=body.idempotency_key, dry_run=False,
+            payload={"decision": body.decision, "status": entry.status.value, "motif": body.motif},
+        )  # fmt: skip
+        frozen = svc.stoploss_engine is not None and svc.stoploss_engine.frozen
+        return _ok({"entry": entry, "status": entry.status, "global_frozen": frozen})
 
     @app.post("/mandate/revoke")
     async def mandate_revoke(request: Request) -> PokeshopJSONResponse:
@@ -3272,40 +3374,56 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
     @app.post("/treasury/balance-items")
     async def treasury_balance_items(request: Request) -> PokeshopJSONResponse:
-        """Déclare les dettes et créances à date (précommandes encaissées, TVA due, remboursements promis…).
+        """Déclare les dettes (précommandes encaissées, TVA due, remboursements promis…) et/ou relève les créances.
 
-        Valeur décisive de la photo du stop-loss (revue R4, R3-NEW-02) :
+        Valeur décisive de la photo du stop-loss (revues R4, R3-NEW-02, et R5, R4-NEW-02 / R4-DOC-01) — deux registres
+        **séparés et persistés** (journal ``balance_statements``), combinés dans la photo :
 
-        * **créances** (elles augmentent la valeur nette) : relevé de la **propriétaire** seulement (jeton
-          propriétaire) ; un rôle qui en déclare : 403 ;
-        * **dettes et précommandes** : l'agent finance peut les **relever**, jamais les abaisser sous la
-          déclaration en vigueur (403 : baisse par la propriétaire ou le connecteur de trésorerie, qui voit les
-          paiements) ; les factures fournisseur enregistrées non payées (``POST /costs/invoices``) s'y ajoutent
-          toujours dans la photo (plancher du moteur) : ne pas les redéclarer ici.
+        * **dettes et précommandes** (``preorders_collected_chf`` + ``debts``) : l'agent finance peut les **relever**,
+          jamais les abaisser sous la déclaration en vigueur — **même après un redémarrage** (403 : baisse par la
+          propriétaire ou le connecteur de trésorerie, qui voit les paiements) ; les factures fournisseur enregistrées
+          non payées (``POST /costs/invoices``) s'y ajoutent toujours dans la photo (plancher du moteur) ;
+        * **créances** (``receivables``, elles augmentent la valeur nette) : relevé de la **propriétaire** seulement
+          (jeton propriétaire) ; un rôle qui en déclare : 403 ; une déclaration de dettes ne les efface jamais.
         """
         principal = require_api(request)
         require_named(principal, request, route="treasury.balance_items", what="dettes et créances")
+        _persistence_guard(BalanceStatementBook.STREAM, "registre des dettes et créances")
         body = await _body(request, BalanceItemsIn)
         now = svc.clock()
         if body.as_of - now > timedelta(minutes=5):
             raise HTTPProblem(409, "déclaration datée du futur : horloge non fiable")
-        if svc.balance_statement is not None and body.as_of < svc.balance_statement.as_of:
+        has_debts = body.preorders_collected_chf is not None or body.debts is not None
+        if has_debts and body.preorders_collected_chf is None:
+            raise HTTPProblem(422, "déclaration des dettes : preorders_collected_chf obligatoire (« 0 » si aucune)")
+        # Un rôle ne relève jamais de créance ; « receivables: [] » d'un rôle (ancienne forme) est sans effet.
+        has_receivables = body.receivables is not None and (principal.owner or bool(body.receivables))
+        if not has_debts and not has_receivables:
+            raise HTTPProblem(422, "rien à déclarer : dettes (preorders_collected_chf, debts) ou créances (receivables)")
+        current = svc.balances.debts
+        current_receivables = svc.balances.receivables
+        if has_debts and current is not None and body.as_of < current.as_of:
             raise HTTPProblem(409, "déclaration plus ancienne que celle en vigueur : refusée (jamais de retour en arrière)")
+        if has_receivables and current_receivables is not None and body.as_of < current_receivables.as_of:
+            raise HTTPProblem(409, "relevé de créances plus ancien que celui en vigueur : refusé (jamais de retour en arrière)")
         refusal: str | None = None
-        if body.receivables and not principal.owner:
+        if has_receivables and not principal.owner:
             refusal = (
                 "créances : relevé de la propriétaire seulement (jeton propriétaire) — une créance déclarée par un "
                 "rôle augmenterait la valeur nette sans justificatif vérifiable"
             )
-        current = svc.balance_statement
-        if refusal is None and current is not None and not principal.owner and principal.role != "connecteur-tresorerie":
-            declared = sum((d.amount for d in body.debts), Decimal("0"))
+        if refusal is None and has_debts and current is not None and not principal.owner and (
+            principal.role != "connecteur-tresorerie"
+        ):
+            declared = sum((d.amount for d in body.debts or ()), Decimal("0"))
             in_force = sum((d.amount for d in current.debts), Decimal("0"))
-            if declared < in_force or body.preorders_collected_chf < current.preorders_collected_chf:
+            preorders = body.preorders_collected_chf or Decimal("0")
+            if declared < in_force or preorders < current.preorders_collected_chf:
                 refusal = (
                     f"baisse des dettes ({in_force} → {declared} CHF) ou des précommandes "
-                    f"({current.preorders_collected_chf} → {body.preorders_collected_chf} CHF) : réservée à la propriétaire "
-                    "ou au connecteur de trésorerie (paiement relevé) ; l'agent finance ne peut que les relever"
+                    f"({current.preorders_collected_chf} → {preorders} CHF) : réservée à la propriétaire "
+                    "ou au connecteur de trésorerie (paiement relevé) ; l'agent finance ne peut que les relever "
+                    "(plancher persisté, valable aussi après un redémarrage)"
                 )
         if refusal is not None:
             svc.audit.append(
@@ -3313,18 +3431,26 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 entity="treasury", entity_id="dettes_creances", dry_run=False, payload={"motif": refusal},
             )  # fmt: skip
             raise HTTPProblem(403, refusal)
-        statement = BalanceStatement(
-            as_of=body.as_of,
-            preorders_collected_chf=body.preorders_collected_chf,
-            debts=tuple(body.debts),
-            receivables=tuple(body.receivables),
-            source=body.source,
-            recorded_by=principal.name,
+        statement = (
+            BalanceStatement(
+                as_of=body.as_of,
+                preorders_collected_chf=body.preorders_collected_chf or Decimal("0"),
+                debts=tuple(body.debts or ()),
+                source=body.source,
+                recorded_by=principal.name,
+            )
+            if has_debts
+            else None
         )
-        svc.balance_statement = statement
+        receivables = (
+            ReceivablesStatement(as_of=body.as_of, receivables=tuple(body.receivables or ()), source=body.source)
+            if has_receivables
+            else None
+        )
+        svc.balances.record(debts=statement, receivables=receivables)
         svc.audit.append(
             actor=principal.name,
-            actor_kind=ActorKind.AGENT if principal.named else ActorKind.SYSTEME,
+            actor_kind=ActorKind.PROPRIETAIRE if principal.owner else ActorKind.AGENT,
             action="treasury.balance_items",
             entity="treasury",
             entity_id="dettes_creances",
@@ -3332,12 +3458,13 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             payload={
                 "as_of": body.as_of,
                 "preorders_collected_chf": body.preorders_collected_chf,
-                "debts": [d.model_dump(mode="json") for d in body.debts],
-                "receivables": [r.model_dump(mode="json") for r in body.receivables],
+                "debts": None if body.debts is None else [d.model_dump(mode="json") for d in body.debts],
+                "receivables": None if receivables is None else [r.model_dump(mode="json") for r in receivables.receivables],
                 "source": body.source,
             },
         )
-        return _ok({"statement": statement})
+        return _ok({"statement": svc.balances.debts, "receivables": svc.balances.receivables,
+                    "updated": [k for k, v in (("dettes", statement), ("créances", receivables)) if v is not None]})  # fmt: skip
 
     @app.post("/capital/movements", status_code=201)
     async def capital_movements(request: Request) -> PokeshopJSONResponse:
@@ -3388,7 +3515,8 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         Jamais l'agent acquisition (qui dépense) : rôle ``connecteur-publicite`` ou propriétaire (matrice).
         Registre en ajout seul : une dépense déjà relevée pour (campagne, jour) ne baisse jamais (409) ; une
         commande attribuée doit être enregistrée par le moteur (``POST /orders/shipped``), sa contribution
-        est plafonnée par ses données (revue R3, R2-NEW-03). Le stop-loss pub retient en plus, par
+        est plafonnée par ses données (revue R3, R2-NEW-03) ; inconnue ou en conflit, elle est **écartée seule**
+        (``attributed_orders_set_aside``) et les dépenses du lot sont enregistrées (revue R5, R4-NEW-01). Le stop-loss pub retient en plus, par
         (campagne, jour), le MAX entre cette déclaration et les paiements pub engagés (approuvés ou exécutés) du mandat.
         """
         principal = require_api(request)
@@ -3412,9 +3540,11 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             entity="ads",
             entity_id=str(received),
             dry_run=False,
-            payload={"ad_spends": len(body.ad_spends), "attributed_orders": len(body.attributed_orders)},
-        )
-        return _ok({"received": received})
+            payload={"ad_spends": len(body.ad_spends), "attributed_orders": len(body.attributed_orders),
+                     "attributed_orders_set_aside": svc.ads.last_set_aside},
+        )  # fmt: skip
+        # Revue R5 (R4-NEW-01) : une commande attribuée inconnue (ou en conflit) est écartée seule, jamais les dépenses.
+        return _ok({"received": received, "attributed_orders_set_aside": svc.ads.last_set_aside})
 
     @app.post("/fx/rates")
     async def fx_rates_record(request: Request) -> PokeshopJSONResponse:
@@ -3463,7 +3593,8 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         """Contribution nette cumulée par semaine (étoile polaire)."""
         require_api(request)
         _persistence_guard(NorthStarLedger.STREAM, "journal de l'étoile polaire")
-        incomplete = dict(svc.orders.derivation_errors)
+        # Revues R4 (R3-NEW-04/05) et R5 (R4-NEW-01) : écriture dérivée impossible ou coût des ventes en attente.
+        incomplete = svc.orders.incomplete_reasons()
         if not svc.northstar.entries() and (start is None or end is None):
             return _ok({"cumulative": Decimal("0.00"), "rows": [], "markdown": "", "note": "aucune écriture",
                         "incomplete": bool(incomplete), "derivation_errors": incomplete})  # fmt: skip
@@ -3481,6 +3612,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 # Revue R4 (R3-NEW-04/05) : écriture dérivée impossible (conflit, commande sans lignes) => incomplète.
                 "incomplete": bool(incomplete),
                 "derivation_errors": incomplete,
+                "cost_of_sales_pending": svc.orders.pending_cogs(),
             }
         )
 
@@ -3515,7 +3647,9 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
         Rôle ``n8n-02-commandes`` (webhook Shopify vérifié) ou propriétaire. Coût **réel** du transporteur et
         référence de l'étiquette achetée obligatoires (revue MOT-18 : une logistique supposée n'est jamais
-        inscrite) ; idempotente par ``order_id`` (autre contenu : 409).
+        inscrite) ; idempotente par ``order_id`` (autre contenu : 409). Revue R5 (R4-NEW-01) : jamais refusée faute
+        de stock valorisé — coût des ventes **en attente** (``cost_of_sales_pending``), étoile polaire et photo
+        signalées incomplètes (dépenses : validation humaine) jusqu'à l'inscription du coût de réception.
         """
         principal = require_api(request)
         _persistence_guard(OrderRegister.STREAM, "registre des commandes")
@@ -3556,9 +3690,13 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 dry_run=False,
                 payload={"net_sales_ht": order.net_sales_ht, "shipping_cost_actual": order.shipping_cost_actual,
                          "shipping_label_ref": order.shipping_label_ref,
-                         "lines": [(ln.public_sku, ln.qty) for ln in order.lines]},
+                         "lines": [(ln.public_sku, ln.qty) for ln in order.lines],
+                         "cost_of_sales_pending": svc.orders.pending_cogs().get(order.order_id)},
             )  # fmt: skip
-        return _ok({"order": order, "created": created}, 201 if created else 200)
+        # Revue R5 (R4-NEW-01) : enregistrée même sans stock valorisé ; coût des ventes en attente signalé.
+        pending = svc.orders.pending_cogs().get(order.order_id)
+        return _ok({"order": order, "created": created, "cost_of_sales_pending": pending,
+                    "incomplete": pending is not None}, 201 if created else 200)  # fmt: skip
 
     @app.post("/orders/{order_id}/refunds", status_code=201)
     async def orders_refund(order_id: str, request: Request) -> PokeshopJSONResponse:
@@ -3570,11 +3708,18 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         now = svc.clock()
         if body.at - now > timedelta(minutes=5):
             raise HTTPProblem(409, "avoir daté du futur : horloge non fiable")
+        lines: list[OrderLine] = []
+        for line in body.lines:
+            entry = svc.catalog.by_sku(line.public_sku)
+            if entry is None or not entry.canonical:
+                raise HTTPProblem(409, f"ligne retournée {line.public_sku} : SKU inconnu du catalogue validé — avoir refusé")
+            lines.append(OrderLine(public_sku=line.public_sku, product_key=entry.product_id, qty=line.qty))
         try:
             refund, created = svc.orders.record_refund(
-                OrderRefund(order_id=order_id, **body.model_dump(), recorded_by=principal.name, recorded_at=now),
+                OrderRefund(order_id=order_id, **body.model_dump(exclude={"lines"}), lines=tuple(lines),
+                            recorded_by=principal.name, recorded_at=now),
                 svc.northstar,
-            )
+            )  # fmt: skip
         except NorthStarPersistenceError:
             raise
         except NorthStarError as exc:
@@ -3587,33 +3732,71 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 entity="order",
                 entity_id=order_id,
                 dry_run=False,
-                payload={"refund_id": refund.refund_id, "net_sales_ht": refund.net_sales_ht},
-            )
+                payload={"refund_id": refund.refund_id, "net_sales_ht": refund.net_sales_ht,
+                         "lines": [(ln.public_sku, ln.qty) for ln in refund.lines]},
+            )  # fmt: skip
         return _ok({"refund": refund, "created": created}, 201 if created else 200)
 
     INVOICE_GAP_OWNER = Decimal("0.02")
     """Écart (facture, coût de réception) au-delà duquel seule la propriétaire inscrit le coût (workflow 03 : > 2 %)."""
 
-    def _receipt_reference(product_key: str, invoice_ref: str | None) -> tuple[Decimal, str] | None:
-        """Référence **du moteur** du coût unitaire d'une réception (revue R4, R2-NEW-01 / R3-DOC-02).
+    def _cost_beneficiaries(principal: Principal) -> frozenset[str]:
+        """Jetons qui bénéficient d'un coût de réception : rôles admis sur ``POST /costs/movements`` et l'appelant."""
+        rule = authz.rule_for("POST", "/costs/movements")
+        return (rule.roles if rule is not None else frozenset()) | {principal.name, authz.COMMON, "inconnu"}
 
-        1. ligne de la facture enregistrée ``invoice_ref`` (``POST /costs/invoices``, workflow 03 après validation
-           de la propriétaire) pour la même référence ;
-        2. sinon, coût rendu de la dernière offre évaluée par le moteur pour la référence (``/sync/run`` : prix
-           fournisseur importé, taux de la propriétaire, frais du registre).
+    def _admissible_offer(rc: ReplacementCost, principal: Principal) -> bool:
+        """Offre admise comme référence d'une réception (revue R5, R2-NEW-01 / R3-DOC-02).
+
+        Coût rendu évalué par le moteur (catalogue et frais **du registre**, jamais du corps : voir ``/sync/run``)
+        avec des frais posés par la propriétaire ou par un rôle qui ne valorise pas les réceptions ; des frais posés
+        par ``finance-pricing`` (bénéficiaire de la référence) ou de provenance inconnue ne bornent rien.
+        """
+        by = rc.fees_recorded_by
+        return by is not None and (by == authz.OWNER or by not in _cost_beneficiaries(principal))
+
+    def _receipt_reference(
+        product_key: str, invoice_line: InvoiceLine | None, invoice_ref: str | None, principal: Principal
+    ) -> tuple[Decimal, str] | None:
+        """Référence **du moteur** du coût unitaire d'une réception (revues R4 et R5, R2-NEW-01 / R3-DOC-02).
+
+        1. ligne de la facture enregistrée ``invoice_ref`` (``POST /costs/invoices``, workflow 03 après validation de
+           la propriétaire ; quantités rapprochées par l'appelant) : coût rendu au profil TVA du moteur ;
+        2. sinon, coût rendu de la dernière offre évaluée par le moteur **admise** (:func:`_admissible_offer`).
         Aucune des deux : None (la propriétaire inscrit le coût).
         """
-        invoice = svc.invoices.get(invoice_ref) if invoice_ref else None
-        line = invoice.line_for(product_key) if invoice is not None else None
-        if line is not None:
-            return line.unit_cost_chf, f"facture enregistrée {invoice_ref}"
-        offer = svc.sync.replacement_costs.latest(product_key)
+        if invoice_line is not None:
+            in_cost = svc.rules.profile is not VatMode.EFFECTIVE
+            return invoice_line.landed_unit_cost(import_vat_in_cost=in_cost), f"facture enregistrée {invoice_ref}"
+        offer = svc.sync.replacement_costs.latest_where(product_key, lambda rc: _admissible_offer(rc, principal))
         if offer is not None:
-            return offer.unit_cost, f"coût rendu de l'offre {offer.offer_ref or offer.supplier_id} du {offer.source_ts.date()}"
+            return offer.unit_cost, (
+                f"coût rendu de l'offre {offer.offer_ref or offer.supplier_id} du {offer.source_ts.date()} "
+                f"(frais posés par {offer.fees_recorded_by})"
+            )
         return None
 
+    def _moved_qty(kind: str, stock_ref: str | None, *, sku: str | None = None, product_key: str | None = None,
+                   invoice_ref: str | None = None, exclude_ref: str | None = None) -> int:  # fmt: skip
+        """Unités déjà portées par les mouvements ``kind`` qui citent ce bon / cette facture (même SKU ou référence)."""
+        total = 0
+        for m in svc.costs.movements():
+            if m.kind != kind or (stock_ref is not None and m.stock_ref != stock_ref):
+                continue
+            if invoice_ref is not None and m.invoice_ref != invoice_ref:
+                continue
+            if exclude_ref is not None and m.ref == exclude_ref and m.product_key == product_key:
+                continue  # le même mouvement rejoué
+            m_sku = m.sku
+            if m_sku is None:  # mouvement d'avant la revue R5 : SKU actuel de sa fiche
+                other = svc.catalog.entry_for(m.product_key)
+                m_sku = other.listing.public_sku if other is not None else None
+            if (sku is not None and m_sku == sku) or (product_key is not None and m.product_key == product_key):
+                total += m.qty or 0
+        return total
+
     def _cost_reference_problem(body: CostMovementIn, principal: Principal) -> tuple[int, str] | None:
-        """Adossement d'un mouvement de coût (revues R3 et R4, R2-NEW-01) ; None = vérifié."""
+        """Adossement d'un mouvement de coût (revues R3, R4 et R5, R2-NEW-01, R3-NEW-05) ; None = vérifié."""
         if body.kind == "RECEIPT":
             if body.stock_ref is None or body.invoice_ref is None:
                 return 422, "réception : stock_ref (réception POST /stock/receive) et invoice_ref (facture) obligatoires"
@@ -3635,23 +3818,46 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 return 409, f"réception {body.stock_ref} : {qty} unité(s) reçue(s) ≠ {body.qty} au coût"
             if not principal.owner and (receiver is None or receiver == principal.name):
                 return 409, "réception déclarée par le même jeton (ou inconnu) : un autre jeton doit l'avoir déclarée"
-            # Revue R4 (R2-NEW-01 b) : une réception physique (SKU, bon) n'est valorisée qu'une fois, quelle que soit
-            # la clé citée (la clé est canonique, et toute clé qui désigne le même SKU compte).
+            # Revues R4 et R5 (R2-NEW-01 b et d) : une réception physique (SKU **à la réception**, bon) n'est valorisée
+            # qu'une fois, quelle que soit la clé citée ou le SKU actuel de la fiche d'un mouvement plus ancien.
             for m in svc.costs.movements():
                 if m.kind != "RECEIPT" or m.stock_ref != body.stock_ref:
                     continue
-                other = svc.catalog.entry_for(m.product_key)
-                same_sku = m.product_key == body.product_key or (other is not None and other.listing.public_sku == sku)
-                if same_sku and (m.ref != body.ref or m.product_key != body.product_key):
-                    return 409, f"réception {body.stock_ref} déjà valorisée (lot {m.ref}, {m.product_key})"
+                m_sku = m.sku
+                if m_sku is None:
+                    other = svc.catalog.entry_for(m.product_key)
+                    m_sku = other.listing.public_sku if other is not None else None
+                same = m.product_key == body.product_key or m_sku == sku
+                if same and (m.ref != body.ref or m.product_key != body.product_key):
+                    return 409, f"réception {body.stock_ref} déjà valorisée (lot {m.ref}, {m.product_key}, SKU {m_sku})"
             if not principal.owner:
                 if body.unit_cost is None:
                     return 422, "réception : unit_cost obligatoire"
-                reference = _receipt_reference(body.product_key, body.invoice_ref)
+                invoice = svc.invoices.get(body.invoice_ref)
+                line = invoice.line_for(body.product_key) if invoice is not None else None
+                if invoice is not None and line is not None:
+                    # Revue R5 (R2-NEW-01 c) : facture d'un fournisseur lié à la référence, quantités rapprochées.
+                    suppliers = {link.supplier_id for link in entry.supplier_links}
+                    if suppliers and invoice.supplier_id not in suppliers:
+                        return 409, (
+                            f"facture {body.invoice_ref} du fournisseur {invoice.supplier_id} : {body.product_key} n'est lié "
+                            f"qu'à {', '.join(sorted(suppliers))} au catalogue — la propriétaire rapproche"
+                        )
+                    already = _moved_qty("RECEIPT", None, product_key=body.product_key, invoice_ref=body.invoice_ref,
+                                         exclude_ref=body.ref)  # fmt: skip
+                    if already + (body.qty or 0) > line.qty:
+                        return 409, (
+                            f"réception de {body.qty} unité(s) (déjà {already} au coût sur cette facture) > {line.qty} "
+                            f"unité(s) facturée(s) sur la ligne {body.product_key} de la facture {body.invoice_ref} : "
+                            "carton saisi comme unité, ou facture d'un autre envoi ? la propriétaire rapproche"
+                        )
+                reference = _receipt_reference(body.product_key, line, body.invoice_ref, principal)
                 if reference is None:
                     return 403, (
                         "coût de réception sans référence du moteur (facture enregistrée POST /costs/invoices pour cette "
-                        "référence, ou offre évaluée par /sync/run) : la propriétaire l'inscrit (jeton propriétaire)"
+                        "référence, ou offre évaluée par /sync/run avec des frais posés par la propriétaire — jamais des "
+                        "frais posés par finance-pricing ni ceux du corps d'une simulation) : la propriétaire l'inscrit "
+                        "(jeton propriétaire)"
                     )
                 ref_cost, ref_label = reference
                 gap = abs(Decimal(body.unit_cost) - ref_cost) / ref_cost
@@ -3676,6 +3882,42 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                     return 409, (
                         f"retour sur la commande {order_id} sans avoir enregistré (POST /orders/{order_id}/refunds) : "
                         "un retour en stock ne se déclare pas seul"
+                    )
+                # Revue R5 (R3-NEW-05) : un retour en stock au coût exige les LIGNES de l'avoir (unités retournées) et
+                # la réception PHYSIQUE du retour (operations-sav) ; un geste commercial ne remet rien en stock.
+                entry = svc.catalog.entry_for(body.product_key)
+                refund_id = (body.stock_ref or "").removeprefix("return:")
+                refund = svc.orders.refund(refund_id) if (body.stock_ref or "").startswith("return:") else None
+                if entry is None or not entry.canonical or refund is None or refund.order_id != order_id:
+                    return 403, (
+                        "retour en stock au coût : stock_ref = « return:<refund_id> » d'un avoir de cette commande avec "
+                        "lignes (POST /orders/{id}/refunds, lines = SKU × unités retournées) et réception physique du "
+                        "retour (POST /stock/receive, ref return:<refund_id>, operations-sav) — sinon la propriétaire "
+                        "l'inscrit (jeton propriétaire)"
+                    )
+                returned = sum(ln.qty for ln in refund.lines if ln.product_key == body.product_key)
+                already = _moved_qty("RETURN", body.stock_ref, product_key=body.product_key)
+                if already + (body.qty or 0) > returned:
+                    return 403, (
+                        f"retour de {body.qty} unité(s) (déjà {already}) > {returned} unité(s) retournée(s) sur les lignes "
+                        f"de l'avoir {refund_id} : un remboursement sans retour (geste commercial) ne remet rien en "
+                        "stock ; correction : la propriétaire"
+                    )
+                sku = entry.listing.public_sku
+                physical = svc.stock.receipt(sku, body.stock_ref or "")
+                if physical is None:
+                    return 403, (
+                        f"retour physique {body.stock_ref} non déclaré pour {sku} (POST /stock/receive, operations-sav) : "
+                        "rien ne rentre en stock au coût sans retour physique"
+                    )
+                received, receiver = physical
+                if receiver is None or receiver == principal.name:
+                    return 403, "retour physique déclaré par le même jeton (ou inconnu) : un autre jeton doit l'avoir déclaré"
+                in_stock = _moved_qty("RETURN", body.stock_ref, sku=sku)
+                if in_stock + (body.qty or 0) > received:
+                    return 403, (
+                        f"retour de {body.qty} unité(s) > {received - in_stock} unité(s) physiquement reçue(s) "
+                        f"({body.stock_ref}, {sku})"
                     )
         elif body.kind == "INVOICE_ADJUSTMENT":
             if body.invoice_ref is None:
@@ -3715,12 +3957,22 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             invoice = SupplierInvoice(
                 invoice_ref=body.invoice_ref, supplier_id=body.supplier_id, issued_at=body.issued_at,
                 total_chf=body.total_chf,
-                lines=tuple(InvoiceLine(product_key=ln.product_key, qty=ln.qty, unit_cost_chf=ln.unit_cost_chf)
+                lines=tuple(InvoiceLine(product_key=ln.product_key, qty=ln.qty, unit_cost_chf=ln.unit_cost_chf,
+                                        import_vat_unit_chf=ln.import_vat_unit_chf)
                             for ln in body.lines),
                 source=body.source, recorded_by=principal.name, recorded_at=now,
             )  # fmt: skip
         except ValidationError as exc:
             raise HTTPProblem(422, "facture invalide", details=to_jsonable(exc.errors(include_url=False))) from None
+        # Revue R5 (R2-NEW-01 c) : lignes rapprochées du montant dû — Σ quantité × (coût rendu + TVA d'import) jamais
+        # au-dessus du total (tolérance d'arrondi : 1 centime par unité facturée).
+        tolerance = Decimal("0.01") * invoice.units()
+        if invoice.lines_total() > invoice.total_chf + tolerance:
+            raise HTTPProblem(
+                409,
+                f"facture {invoice.invoice_ref} : lignes {invoice.lines_total():.2f} CHF (quantité × coût rendu unitaire) > "
+                f"montant dû {invoice.total_chf} CHF — quantité, unité (carton ou pièce) ou coût unitaire incohérents",
+            )
         item, created = svc.invoices.record(invoice)
         if created:
             svc.audit.append(
@@ -3794,8 +4046,12 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 payload={"kind": body.kind, "ref": body.ref, "stock_ref": body.stock_ref, "motif": problem[1]},
             )
             raise HTTPProblem(problem[0], problem[1])
-        movement = CostMovement(**body.model_dump(), recorded_by=principal.name)
+        entry = svc.catalog.entry_for(body.product_key)
+        sku = entry.listing.public_sku if entry is not None and body.kind in ("RECEIPT", "RETURN") else None
+        movement = CostMovement(**body.model_dump(), recorded_by=principal.name, sku=sku)
         added = svc.costs.apply(movement)
+        # Revue R5 (R4-NEW-01) : coût des ventes en attente (commande expédiée avant le coût) dérivé dès qu'il existe.
+        added += svc.orders.derive_pending(svc.costs)
         ledger = svc.costs.ledger(movement.product_key)
         svc.audit.append(
             actor=principal.name,

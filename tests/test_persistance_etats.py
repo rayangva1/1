@@ -351,7 +351,8 @@ def test_northstar_cumulative_survives_restart(tmp_path: Path) -> None:
     assert client.post("/stock/receive", headers=HOPS, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": 1,
                                                              "ref": "FICTIF-BL-1"}).status_code == 200
     svc.sync.replacement_costs.update(ReplacementCost(product_key="FICTIF-P1", supplier_id="fictif_grossiste_a",
-                                                      unit_cost=D("140.00"), source_ts=NOW, offer_ref="FICTIF"))
+                                                      unit_cost=D("140.00"), source_ts=NOW, offer_ref="FICTIF",
+                                                      fees_recorded_by="propriétaire"))  # revue R5 : frais de la propriétaire
     lot = {"kind": "RECEIPT", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "FICTIF-LOT-1", "qty": 1,
            "unit_cost": "140.00", "stock_ref": "FICTIF-BL-1", "invoice_ref": "FICTIF-FACT-1"}
     sale = {"kind": "ISSUE", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "FICTIF-O1", "qty": 1}

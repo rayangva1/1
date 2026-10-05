@@ -119,7 +119,6 @@ CREDENTIALS: dict[str, tuple[str, str, str]] = {
         for role, num, cid in (
             ("chef-de-projet", "01", "pkshpGw08Chef001"),
             ("sourcing", "02", "pkshpGw08Sourc02"),
-            ("finance-pricing", "05", "pkshpGw08Finan05"),
             ("direction-artistique", "06", "pkshpGw08DirAr06"),
             ("site-integrations", "07", "pkshpGw08SiteI07"),
             ("communication", "09", "pkshpGw08Commu09"),
@@ -134,6 +133,9 @@ CREDENTIALS: dict[str, tuple[str, str, str]] = {
     "emailing": ("httpHeaderAuth", "pkshpEmailing001", "Outil d'emailing — jeton API"),
     "ads": ("httpHeaderAuth", "pkshpAdsPlatfm01", "Plateforme publicitaire — jeton API"),
     "paypal": ("oAuth2Api", "pkshpPaypalOAuth", "PayPal compte dédié — OAuth2 client credentials"),
+    # Revue R5 (R4-DOC-07) : lecture des soldes avec un credential DISTINCT de celui des paiements (application PayPal
+    # en lecture seule, scope reporting) — jamais le credential de paiement de 08 sur la lecture de 07.
+    "paypal_read": ("oAuth2Api", "pkshpPaypalLect1", "PayPal compte dédié — lecture des soldes (lecture seule)"),
     "supplier": ("httpHeaderAuth", "pkshpSupplier001", "Flux fournisseur — accès autorisé"),
     "bank": ("httpHeaderAuth", "pkshpBanqueSolde", "Banque — relevé de solde (lecture seule)"),
 }
@@ -939,27 +941,43 @@ return [{ json: { body: Object.assign({}, body, { request }), demandeur: '__ROLE
 JS_INVOICE_FOR_ENGINE = (
     JS_CENTS
     + r"""
-// Facture validée par la propriétaire -> registre des factures du moteur (POST /costs/invoices), revue R4.
-// Coût rendu unitaire ventilé : prix facturé + frais (fret, douane, TVA import) répartis au prorata de la valeur.
+// Facture validée par la propriétaire -> registre des factures du moteur (POST /costs/invoices), revues R4 et R5.
+// Coût rendu unitaire ventilé : prix facturé HT + fret et douane répartis au prorata de la valeur. La TVA d'import est
+// ventilée À PART (import_vat_unit_chf) : le moteur la compte au coût selon SON profil TVA (méthode effective :
+// récupérable, hors coût ; non assujettie : coût) — jamais décidé ici (revue R5, R4-DOC-02).
 const body = $('Facture extraite par l’agent 05 (passerelle)').first().json.body || {};
 const lines = Array.isArray(body.lines) ? body.lines : [];
 const fees = body.fees_chf || {};
-const feeCents = ['freight', 'customs', 'import_vat'].reduce((sum, k) => sum + (fees[k] ? cents(fees[k]) : 0), 0);
+const costFees = ['freight', 'customs'].reduce((sum, k) => sum + (fees[k] ? cents(fees[k]) : 0), 0);
+const vatCents = fees.import_vat ? cents(fees.import_vat) : 0;
 const goods = lines.reduce((sum, l) => sum + cents(l.invoice_unit_cost_chf) * l.qty, 0);
 if (goods <= 0) throw new Error('facture sans valeur marchandise : rien à enregistrer');
-let allocated = 0;
-const out = lines.map((l, i) => {
-  const value = cents(l.invoice_unit_cost_chf) * l.qty;
-  const share = i === lines.length - 1 ? feeCents - allocated : Math.floor((feeCents * value) / goods);
-  allocated += share;
-  const unit = Math.round((value + share) / l.qty);
-  return { product_key: String(l.product_key), qty: l.qty, unit_cost_chf: chf(unit) };
-});
+const allocate = (total) => {
+  let allocated = 0;
+  return lines.map((l, i) => {
+    const value = cents(l.invoice_unit_cost_chf) * l.qty;
+    const share = i === lines.length - 1 ? total - allocated : Math.floor((total * value) / goods);
+    allocated += share;
+    return share;
+  });
+};
+const feeShares = allocate(costFees);
+const vatShares = allocate(vatCents);
+const out = lines.map((l, i) => ({
+  product_key: String(l.product_key),
+  qty: l.qty,
+  unit_cost_chf: chf(Math.round((cents(l.invoice_unit_cost_chf) * l.qty + feeShares[i]) / l.qty)),
+  import_vat_unit_chf: chf(Math.round(vatShares[i] / l.qty)),
+}));
+// Date d'émission jamais dans le futur (revue R5, R4-DOC-08) : minuit UTC du jour de la facture, ou maintenant si
+// la facture est validée avant cette heure (le moteur refuse une facture datée de plus de 5 min dans le futur).
+const day = Date.parse(`${body.invoice_date}T00:00:00Z`);
+if (Number.isNaN(day)) throw new Error(`date de facture illisible : ${body.invoice_date}`);
 return [{ json: {
   invoice_ref: String(body.invoice_ref),
   supplier_id: String(body.supplier_id),
-  issued_at: `${body.invoice_date}T12:00:00+00:00`,
-  total_chf: chf(goods + feeCents),
+  issued_at: new Date(Math.min(day, Date.now())).toISOString(),
+  total_chf: chf(goods + costFees + vatCents),
   lines: out,
   source: `facture ${body.invoice_ref} extraite par l'agent 05, validée par la propriétaire (formulaire 03)`,
 } }];
@@ -971,8 +989,10 @@ JS_INVOICE_CHECKS = (
     + r"""
 // Contrôles déterministes de la facture extraite par l'agent 05 (l'IA extrait, elle ne décide pas).
 // Entrée : { invoice_ref, supplier_id, invoice_date, currency, fx: {rate, source, date}, goods_total_chf,
-//            lines: [{ lot_id, product_key, qty, estimated_unit_cost_chf, invoice_unit_cost_chf }],
+//            lines: [{ lot_id, product_key, qty, unit_basis, estimated_unit_cost_chf, invoice_unit_cost_chf }],
 //            fees_chf: { freight, customs, import_vat }, documents: [...] }
+// Revue R5 (R2-NEW-01 c) : quantités et coûts PAR UNITÉ DE VENTE (unit_basis « unité ») ; une ligne facturée au
+// carton est convertie avant l'envoi (qty × contenu, coût ÷ contenu) — sinon anomalie, rien n'est enregistré.
 const body = $input.first().json.body || {};
 const anomalies = [];
 for (const field of ['invoice_ref', 'supplier_id', 'invoice_date']) if (!body[field]) anomalies.push(`champ manquant : ${field}`);
@@ -987,6 +1007,8 @@ const variances = [];
 lines.forEach((line, i) => {
   if (!line.lot_id || !line.product_key) anomalies.push(`ligne ${i + 1} : lot ou référence manquant`);
   if (!Number.isInteger(line.qty) || line.qty <= 0) anomalies.push(`ligne ${i + 1} : quantité invalide`);
+  const basis = line.unit_basis === undefined ? 'unité' : String(line.unit_basis);
+  if (basis !== 'unité') anomalies.push(`ligne ${i + 1} : facturée « ${basis} » — convertir en unités de vente (quantité × contenu, coût ÷ contenu)`);
   let est;
   let act;
   try {
@@ -997,10 +1019,11 @@ lines.forEach((line, i) => {
     return;
   }
   if (act <= 0) anomalies.push(`ligne ${i + 1} : coût facturé nul ou négatif`);
-  goods += act * (Number.isInteger(line.qty) ? line.qty : 0);
+  const qty = Number.isInteger(line.qty) ? line.qty : 0;
+  goods += act * qty;
   // Écart > 2 % : comparaison entière exacte |réel − estimé| × 50 > estimé.
   const flagged = est > 0 && Math.abs(act - est) * 50 > est;
-  variances.push({ lot_id: line.lot_id, product_key: line.product_key, estimated: chf(est), invoice: chf(act), flagged });
+  variances.push({ lot_id: line.lot_id, product_key: line.product_key, qty, basis, estimated: chf(est), invoice: chf(act), value: act * qty, flagged });
 });
 if (body.goods_total_chf !== undefined) {
   try {
@@ -1011,17 +1034,25 @@ if (body.goods_total_chf !== undefined) {
 } else {
   anomalies.push('total marchandise absent : contrôle du total impossible');
 }
+// Frais affichés à la propriétaire (fret, douane, TVA d'import) et coût rendu unitaire calculé (hors TVA d'import).
+const fees = body.fees_chf || {};
+const feeOf = (k) => { try { return fees[k] ? cents(fees[k]) : 0; } catch (error) { anomalies.push(`frais ${k} : ${error.message}`); return 0; } };
+const freight = feeOf('freight');
+const customs = feeOf('customs');
+const importVat = feeOf('import_vat');
+const landed = (v) => (goods > 0 && v.qty > 0 ? chf(Math.round((v.value + Math.floor(((freight + customs) * v.value) / goods)) / v.qty)) : '?');
 const flaggedLines = variances.filter((v) => v.flagged);
 return [{ json: {
   invoice_ref: body.invoice_ref || null,
   supplier_id: body.supplier_id || null,
   goods_total_chf: chf(goods),
   lines: lines.length,
-  variances,
+  variances: variances.map(({ value, ...v }) => v),
   flagged_count: flaggedLines.length,
   anomalies,
   anomalies_count: anomalies.length,
-  resume: variances.map((v) => `${v.lot_id} ${v.product_key} : estimé ${v.estimated} / facturé ${v.invoice}${v.flagged ? ' (ÉCART > 2 %)' : ''}`).join('\n'),
+  fees_resume: `fret ${chf(freight)} CHF, douane ${chf(customs)} CHF, TVA d'import ${chf(importVat)} CHF (ventilée à part : comptée au coût selon le profil TVA du moteur)`,
+  resume: variances.map((v) => `${v.lot_id} ${v.product_key} : ${v.qty} × ${v.basis} — facturé ${v.invoice} CHF/unité (estimé ${v.estimated}), coût rendu ${landed(v)} CHF/unité hors TVA d'import${v.flagged ? ' (ÉCART > 2 %)' : ''}`).join('\n'),
 } }];
 """
 )
@@ -1693,8 +1724,10 @@ propriétaire) → **écarts > 2 %** signalés. Jamais de modification d'une com
             ("sujet", "=[FACTURE] Valider l'extraction {{ $json.invoice_ref }} ({{ $json.supplier_id }})", "string"),
             (
                 "texte",
-                "=Lignes extraites :\n{{ $json.resume }}\nTotal marchandise : {{ $json.goods_total_chf }} CHF.\n"
-                "Comparer au PDF puis répondre : {{ $execution.resumeFormUrl }}\n"
+                "=Lignes extraites (quantité × unité de vente, coût facturé et coût rendu par unité) :\n{{ $json.resume }}\n"
+                "Total marchandise : {{ $json.goods_total_chf }} CHF. Frais : {{ $json.fees_resume }}.\n"
+                "Vérifier au PDF les QUANTITÉS (unités, jamais des cartons) et les montants, puis répondre : "
+                "{{ $execution.resumeFormUrl }}\n"
                 "INTERNE — contient coûts et marges : ne jamais transférer ni publier.",
                 "string",
             ),
@@ -1706,8 +1739,10 @@ propriétaire) → **écarts > 2 %** signalés. Jamais de modification d'une com
         "Validation humaine de l’extraction (formulaire, 72 h)",
         (6, -0.5),
         title="Validation d'une facture fournisseur",
-        description="=Facture {{ $('Contrôles déterministes (centimes)').first().json.invoice_ref }} : les montants "
-        "extraits correspondent-ils au justificatif ? (aucune commande client ne sera modifiée)",
+        description="=Facture {{ $('Contrôles déterministes (centimes)').first().json.invoice_ref }} : les quantités "
+        "(unités de vente) et les montants extraits correspondent-ils au justificatif ? (aucune commande client ne sera "
+        "modifiée)\n{{ $('Contrôles déterministes (centimes)').first().json.resume }}\n"
+        "Frais : {{ $('Contrôles déterministes (centimes)').first().json.fees_resume }}",
         choices=("Conforme au justificatif", "Non conforme"),
         hours=72,
     )
@@ -1722,7 +1757,8 @@ propriétaire) → **écarts > 2 %** signalés. Jamais de modification d'une com
         "Préparer la facture validée (coût rendu ventilé)",
         (7.5, -1),
         JS_INVOICE_FOR_ENGINE,
-        notes="Lignes au coût rendu unitaire (frais ventilés au prorata de la valeur) ; total dû = marchandise + frais.",
+        notes="Lignes au coût rendu unitaire (fret et douane ventilés au prorata de la valeur), TVA d'import ventilée à "
+        "part (le moteur la compte selon son profil TVA) ; total dû = marchandise + frais ; date d'émission jamais future.",
     )
     record = engine(
         wf,
@@ -2840,8 +2876,9 @@ propriétaire avec son jeton (`/treasury/*-balance`), ou par une exécution manu
         "GET",
         "https://api-m.paypal.com/v1/reporting/balances?currency_code=CHF",
         (2, 2),
-        "paypal",
-        notes="Lecture seule du compte PayPal dédié (scope reporting) ; activer après recette CONN-PAYPAL.",
+        "paypal_read",
+        notes="Lecture seule du compte PayPal dédié (scope reporting) avec le credential « PayPal compte dédié — lecture "
+        "des soldes », distinct du credential de paiement de 08 ; activer après recette CONN-PAYPAL.",
     )
     pp_norm = code_node(wf, "Normaliser le solde PayPal", (3, 2), JS_PAYPAL_BALANCE)
     pp_post = engine(
@@ -3083,15 +3120,25 @@ Contrôle impossible (mandat illisible, stop-loss non évalué) → **refus par 
         (10, -0.2),
         [condition("={{ $json['Décision'] }}", "string", "equals", "Approuver")],
     )
-    record_ok = engine(
+    # Revue R5 (R4-DOC-03) : POST /mandate/human-decision existe et exige le JETON PROPRIÉTAIRE, jamais détenu par n8n.
+    # Le formulaire ne fait que guider le parcours ; la propriétaire enregistre sa décision au moteur depuis son
+    # terminal (sans cela : ni payable — can_execute —, ni comptée au stop-loss pub ; expirée après 24 h).
+    record_ok = set_node(
         wf,
-        "Enregistrer la validation humaine — route moteur attendue (désactivé)",
-        "POST",
-        "/mandate/human-decision",
+        "Rappel : enregistrer la validation au moteur (propriétaire, son jeton)",
         (11, -0.6),
-        disabled=True,
-        body=f"{{ idempotency_key: {req}.request.idempotency_key, decision: 'APPROVE', motif: $json['Motif'] }}",
-        notes="Route à créer : SpendLedger.approve_by_human (expire après 24 h).",
+        [
+            ("sujet", f"=[À ENREGISTRER] Validation de {{{{ {req}.request.idempotency_key }}}}", "string"),
+            (
+                "texte",
+                f"=Depuis votre terminal (jeton propriétaire, jamais dans n8n) : POST /mandate/human-decision avec "
+                f"idempotency_key = {{{{ {req}.request.idempotency_key }}}} et decision = APPROVE, en-tête "
+                "X-Pokeshop-Owner-Token, dans les 24 h. Sans cet enregistrement, la dépense n'est ni payable ni comptée "
+                "dans le stop-loss pub.",
+                "string",
+            ),
+        ],
+        notes="POST /mandate/human-decision : jeton propriétaire seul (matrice authz) — n8n ne le détient pas.",
     )
     exec_h = external(
         wf,
@@ -3101,17 +3148,16 @@ Contrôle impossible (mandat illisible, stop-loss non évalué) → **refus par 
         (12, -0.6),
         "paypal",
         body=f"{{ sender_batch_header: {{ sender_batch_id: {req}.request.idempotency_key }}, items: [] }}",
-        notes="Virement : la propriétaire signe l'ordre préparé dans son e-banking ; PayPal : après recette.",
+        notes="Virement : la propriétaire signe l'ordre préparé dans son e-banking ; PayPal : après recette et "
+        "enregistrement de la validation au moteur (HUMAN_APPROVED, moins d'une heure).",
     )
     ok_h = noop(wf, "Journal : validée par la propriétaire", (13, -0.6))
-    record_no = engine(
+    record_no = noop(
         wf,
-        "Enregistrer le refus ou l’expiration — route moteur attendue (désactivé)",
-        "POST",
-        "/mandate/human-decision",
+        "Refus ou expiration : rien à payer (statu quo sûr)",
         (11, 0.2),
-        disabled=True,
-        body=f"{{ idempotency_key: {req}.request.idempotency_key, decision: 'REFUSE', motif: $json['Motif'] || 'expiration 24 h' }}",
+        notes="Facultatif : la propriétaire peut enregistrer le refus (POST /mandate/human-decision, decision REFUSE, son "
+        "jeton) ; sinon la demande expire au registre après 24 h et n'est jamais engagée.",
     )
     no_h = noop(wf, "Journal : refus ou expiration (statu quo sûr)", (12, 0.2))
     wf.link(outcome, human_resp, 1)

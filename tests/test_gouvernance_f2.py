@@ -369,12 +369,14 @@ def test_mot08_self_declared_or_shared_token_figures_are_not_verifiable(tmp_path
     assert relay["decision"]["outcome"] == "NEEDS_HUMAN_APPROVAL" and "TREASURY_UNVERIFIED" in relay["decision"]["reasons"]
     ok = body(client.post("/mandate/check", headers=HOPS, json=spend_payload("FICTIF-SELF-3", "40")))["decision"]
     assert ok["outcome"] == "APPROVED_WITHIN_MANDATE"
-    # l'agent finance déclare lui-même les dettes et créances puis demande une dépense : non vérifiable
+    # l'agent finance déclare les dettes : il ne demande jamais de dépense (revue R5, R4-DOC-11 : 403), et une demande
+    # d'un autre agent reste vérifiable (déposant ≠ demandeur).
     statement = {"as_of": API_NOW.isoformat(), "preorders_collected_chf": "0", "source": "déclaration FICTIVE"}
     assert client.post("/treasury/balance-items", headers=HF, json=statement).status_code == 200
-    own = body(client.post("/mandate/check", headers=HF, json=spend_payload("FICTIF-SELF-1", "40",
-                                                                           requested_by="finance-pricing")))
-    assert own["decision"]["outcome"] == "NEEDS_HUMAN_APPROVAL" and "Dettes et créances" in own["unverified"]
+    own = client.post("/mandate/check", headers=HF, json=spend_payload("FICTIF-SELF-1", "40", requested_by="finance-pricing"))
+    assert own.status_code == 403
+    other = body(client.post("/mandate/check", headers=HOPS, json=spend_payload("FICTIF-SELF-6", "40")))
+    assert "Dettes et précommandes" not in other["unverified"]
     impostor = client.post("/mandate/check", headers=HOPS, json=spend_payload("FICTIF-SELF-4", "40",
                                                                               requested_by="finance-pricing"))
     assert impostor.status_code == 403

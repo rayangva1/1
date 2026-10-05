@@ -199,47 +199,6 @@
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "pokeshop-depense-finance-pricing",
-        "responseMode": "responseNode",
-        "options": {},
-        "authentication": "headerAuth"
-      },
-      "id": "4cecb3f1-5513-5580-9de5-f1e92032ed10",
-      "name": "Demande de dépense — finance-pricing (passerelle)",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        -560,
-        0
-      ],
-      "webhookId": "3abf936f-850c-54ed-8013-6f8601d36e89",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "pkshpGw08Finan05",
-          "name": "Passerelle 08 dépense — secret de l'agent 05 (finance-pricing)"
-        }
-      },
-      "notes": "Secret remis au seul agent « finance-pricing ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
-      "notesInFlow": true
-    },
-    {
-      "parameters": {
-        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'finance-pricing' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'finance-pricing' } }];\n"
-      },
-      "id": "b3c4c45a-2b5e-5976-9856-54842b9fb420",
-      "name": "Demandeur imposé : finance-pricing",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -280,
-        0
-      ],
-      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
-      "notesInFlow": true
-    },
-    {
-      "parameters": {
-        "httpMethod": "POST",
         "path": "pokeshop-depense-operations-sav",
         "responseMode": "responseNode",
         "options": {},
@@ -251,7 +210,7 @@
       "typeVersion": 2,
       "position": [
         -560,
-        159
+        0
       ],
       "webhookId": "41583937-f14f-50cf-8569-af293f3ea7b0",
       "credentials": {
@@ -273,7 +232,7 @@
       "typeVersion": 2,
       "position": [
         -280,
-        159
+        0
       ],
       "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
       "notesInFlow": true
@@ -292,7 +251,7 @@
       "typeVersion": 2,
       "position": [
         -560,
-        320
+        159
       ],
       "webhookId": "74a5b743-61f4-5ab2-9146-54958c2410e8",
       "credentials": {
@@ -314,7 +273,7 @@
       "typeVersion": 2,
       "position": [
         -280,
-        320
+        159
       ],
       "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
       "notesInFlow": true
@@ -333,7 +292,7 @@
       "typeVersion": 2,
       "position": [
         -560,
-        480
+        320
       ],
       "webhookId": "64259669-d0bc-5c62-800f-7565a3163ba2",
       "credentials": {
@@ -355,7 +314,7 @@
       "typeVersion": 2,
       "position": [
         -280,
-        480
+        320
       ],
       "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
       "notesInFlow": true
@@ -989,37 +948,35 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "={{ $('Paramètres').first().json.api_base_url }}/mandate/human-decision",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "options": {
-          "timeout": 30000
+        "assignments": {
+          "assignments": [
+            {
+              "id": "26d1c78a-3cca-594e-8335-233f30290ab9",
+              "name": "sujet",
+              "value": "=[À ENREGISTRER] Validation de {{ $('Demande de dépense (passerelle agents)').first().json.body.request.idempotency_key }}",
+              "type": "string"
+            },
+            {
+              "id": "fe947fa1-6feb-5f4f-91dd-1ed33fc55178",
+              "name": "texte",
+              "value": "=Depuis votre terminal (jeton propriétaire, jamais dans n8n) : POST /mandate/human-decision avec idempotency_key = {{ $('Demande de dépense (passerelle agents)').first().json.body.request.idempotency_key }} et decision = APPROVE, en-tête X-Pokeshop-Owner-Token, dans les 24 h. Sans cet enregistrement, la dépense n'est ni payable ni comptée dans le stop-loss pub.",
+              "type": "string"
+            }
+          ]
         },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ idempotency_key: $('Demande de dépense (passerelle agents)').first().json.body.request.idempotency_key, decision: 'APPROVE', motif: $json['Motif'] }) }}"
+        "includeOtherFields": true,
+        "options": {}
       },
-      "id": "e221eda9-9adb-5cf3-831e-d3f72d0cc393",
-      "name": "Enregistrer la validation humaine — route moteur attendue (désactivé)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "6dca9a87-8f1b-5075-adf3-c0176802ab3b",
+      "name": "Rappel : enregistrer la validation au moteur (propriétaire, son jeton)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
       "position": [
         3080,
         -120
       ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "pkshpApiN8n08Man",
-          "name": "Pokeshop API — jeton nommé n8n-08-mandat"
-        }
-      },
-      "disabled": true,
-      "notes": "Route à créer : SpendLedger.approve_by_human (expire après 24 h).",
-      "notesInFlow": true,
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 2000
+      "notes": "POST /mandate/human-decision : jeton propriétaire seul (matrice authz) — n8n ne le détient pas.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1049,7 +1006,7 @@
         }
       },
       "disabled": true,
-      "notes": "Virement : la propriétaire signe l'ordre préparé dans son e-banking ; PayPal : après recette.",
+      "notes": "Virement : la propriétaire signe l'ordre préparé dans son e-banking ; PayPal : après recette et enregistrement de la validation au moteur (HUMAN_APPROVED, moins d'une heure).",
       "notesInFlow": true
     },
     {
@@ -1064,36 +1021,17 @@
       ]
     },
     {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Paramètres').first().json.api_base_url }}/mandate/human-decision",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "options": {
-          "timeout": 30000
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ idempotency_key: $('Demande de dépense (passerelle agents)').first().json.body.request.idempotency_key, decision: 'REFUSE', motif: $json['Motif'] || 'expiration 24 h' }) }}"
-      },
-      "id": "e594ff73-39cb-55f6-823f-32e7730ac3ea",
-      "name": "Enregistrer le refus ou l’expiration — route moteur attendue (désactivé)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "parameters": {},
+      "id": "ede6c86e-9336-5af9-a4a9-285cc4a56355",
+      "name": "Refus ou expiration : rien à payer (statu quo sûr)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
       "position": [
         3080,
         40
       ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "pkshpApiN8n08Man",
-          "name": "Pokeshop API — jeton nommé n8n-08-mandat"
-        }
-      },
-      "disabled": true,
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 2000
+      "notes": "Facultatif : la propriétaire peut enregistrer le refus (POST /mandate/human-decision, decision REFUSE, son jeton) ; sinon la demande expire au registre après 24 h et n'est jamais engagée.",
+      "notesInFlow": true
     },
     {
       "parameters": {},
@@ -1231,28 +1169,6 @@
       ]
     },
     "Demandeur imposé : direction-artistique": {
-      "main": [
-        [
-          {
-            "node": "Demande de dépense (passerelle agents)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Demande de dépense — finance-pricing (passerelle)": {
-      "main": [
-        [
-          {
-            "node": "Demandeur imposé : finance-pricing",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Demandeur imposé : finance-pricing": {
       "main": [
         [
           {
@@ -1544,21 +1460,21 @@
       "main": [
         [
           {
-            "node": "Enregistrer la validation humaine — route moteur attendue (désactivé)",
+            "node": "Rappel : enregistrer la validation au moteur (propriétaire, son jeton)",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Enregistrer le refus ou l’expiration — route moteur attendue (désactivé)",
+            "node": "Refus ou expiration : rien à payer (statu quo sûr)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Enregistrer la validation humaine — route moteur attendue (désactivé)": {
+    "Rappel : enregistrer la validation au moteur (propriétaire, son jeton)": {
       "main": [
         [
           {
@@ -1580,7 +1496,7 @@
         ]
       ]
     },
-    "Enregistrer le refus ou l’expiration — route moteur attendue (désactivé)": {
+    "Refus ou expiration : rien à payer (statu quo sûr)": {
       "main": [
         [
           {

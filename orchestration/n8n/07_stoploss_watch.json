@@ -527,12 +527,12 @@
       ],
       "credentials": {
         "oAuth2Api": {
-          "id": "pkshpPaypalOAuth",
-          "name": "PayPal compte dédié — OAuth2 client credentials"
+          "id": "pkshpPaypalLect1",
+          "name": "PayPal compte dédié — lecture des soldes (lecture seule)"
         }
       },
       "disabled": true,
-      "notes": "Lecture seule du compte PayPal dédié (scope reporting) ; activer après recette CONN-PAYPAL.",
+      "notes": "Lecture seule du compte PayPal dédié (scope reporting) avec le credential « PayPal compte dédié — lecture des soldes », distinct du credential de paiement de 08 ; activer après recette CONN-PAYPAL.",
       "notesInFlow": true
     },
     {

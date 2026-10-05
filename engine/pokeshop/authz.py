@@ -57,7 +57,7 @@ __all__ = [
     "matrix_markdown",
 ]
 
-AUTHZ_VERSION = "2026-10-05.r4"
+AUTHZ_VERSION = "2026-10-05.r5"
 """Version de la matrice (à changer à chaque modification ; citée par ``/health`` et la doc générée)."""
 
 OWNER = "propriétaire"
@@ -107,10 +107,14 @@ RELAY_ROLES: frozenset[str] = frozenset({"n8n-08-mandat"})
 """Relais d'une demande d'agent : le demandeur déclaré n'est pas authentifié, trésorerie jamais vérifiable."""
 
 SPENDING_ROLES: frozenset[str] = frozenset(
-    {"chef-de-projet", "sourcing", "finance-pricing", "direction-artistique", "site-integrations", "communication",
+    {"chef-de-projet", "sourcing", "direction-artistique", "site-integrations", "communication",
      "acquisition", "operations-sav", "n8n-08-mandat"}
 )  # fmt: skip
-"""Rôles qui peuvent soumettre une demande de dépense au mandat (jamais ``qa-conformite`` ni ``catalogue``)."""
+"""Rôles qui peuvent soumettre une demande de dépense au mandat (jamais ``qa-conformite`` ni ``catalogue``).
+
+Revue R5 (R4-DOC-11) : ni ``finance-pricing`` — l'agent 05 contrôle et **paie** les dépenses de la flotte et dépose
+les coûts et les dettes de la photo ; il ne demande jamais une dépense à son nom (ni en direct, ni par le relais 08).
+"""
 
 RELAYED_SPENDERS: frozenset[str] = (SPENDING_ROLES & frozenset(AGENT_ROLES)) - RELAY_ROLES
 """Demandeurs qu'un relais (``n8n-08-mandat``) peut porter : agents qui dépensent (revue R4, R3-NEW-06)."""
@@ -234,6 +238,9 @@ ROUTE_MATRIX: dict[tuple[str, str], RouteRule] = {
         "mandate.check", SPENDING_ROLES, owner=False,
         note="requested_by = rôle du jeton ; relais n8n-08-mandat : requested_by parmi les agents qui dépensent, "
         "trésorerie non vérifiable (validation humaine)"),
+    ("POST", "/mandate/human-decision"): _owner(
+        "mandate.human_decision",
+        "validation ou refus d'une dépense en attente (24 h) : seule voie de HUMAN_APPROVED, comptée au stop-loss pub"),
     ("POST", "/mandate/revoke"): _write("mandate.revoke", ALL_NAMED, note="acte protecteur"),
     ("POST", "/treasury/paypal-balance"): _write("treasury.paypal_balance", {"connecteur-tresorerie"}),
     ("POST", "/treasury/bank-balance"): _write("treasury.bank_balance", {"connecteur-tresorerie"}),
@@ -359,22 +366,29 @@ def matrix_markdown(matrix: Mapping[tuple[str, str], RouteRule] | None = None) -
         "- Fiches : `catalogue` les dépose ; `approved`, `content_validated`, `category_rule_validated` : propriétaire",
         "  (`POST /catalog/approvals`, liée au contenu de la fiche).",
         "- Coûts historiques : `finance-pricing`, réception adossée à `POST /stock/receive` (`operations-sav`, autre jeton),",
-        "  coût unitaire à ± 2 % d'une référence du moteur (ligne de la facture enregistrée par `n8n-03-factures`, sinon coût",
-        "  rendu de la dernière offre évaluée) ; sans référence ou au-delà : propriétaire ; une réception n'est valorisée",
-        "  qu'une fois (clé produit canonique) ; écart de facture > 2 % : propriétaire.",
+        "  coût unitaire à ± 2 % d'une référence du moteur : ligne de la facture enregistrée par `n8n-03-factures` (quantités",
+        "  reçues au coût ≤ quantité facturée, lignes ≤ montant dû, fournisseur lié à la référence), sinon coût rendu de la",
+        "  dernière offre évaluée avec des frais posés par la propriétaire (jamais des frais posés par `finance-pricing`,",
+        "  jamais un cycle avec catalogue ou frais du corps) ; sans référence ou au-delà : propriétaire ; une réception",
+        "  (SKU **à la réception**, bon) n'est valorisée qu'une fois ; écart de facture > 2 % : propriétaire ; retour en stock",
+        "  au coût : lignes de l'avoir (unités retournées) et retour physique déclaré par `operations-sav` (`return:<avoir>`).",
         "- Clé produit unique : `product_id` = `listing.product_key` (422 sinon) ; SKU ou handle en double : 409 ; un nouvel",
         "  identifiant ne reprend jamais le SKU ou le handle d'une fiche existante, ni l'identité produit (GTIN, langue, scellé,",
         "  extension, format, contenu) d'une référence en quarantaine, bloquée ou d'état stop-loss inconnu (409, sauf propriétaire).",
         "- Photo du stop-loss : construite par le moteur (`POST /stoploss/state/refresh`) ; photo déposée : propriétaire",
-        "  seule, cash recoupé avec les relevés du connecteur ; créances : propriétaire seule ; dettes : plancher des",
-        "  factures enregistrées non payées (paiement relevé par `connecteur-tresorerie`).",
+        "  seule, cash recoupé avec les relevés du connecteur ; créances : registre distinct de la propriétaire, jamais effacé",
+        "  par une déclaration de dettes ; dettes : registre persisté (plancher valable après un redémarrage) + factures",
+        "  enregistrées non payées (paiement relevé par `connecteur-tresorerie`).",
         "- Étoile polaire : ventes, avoirs, coût des ventes et sortie de stock dérivés de commandes enregistrées",
-        "  (`POST /orders/shipped` avec lignes, coût transporteur réel) ; identifiants `order:`/`refund:`/`cost:`/`expense:`/",
-        "  `fixed:` réservés au moteur ; frais PSP d'une commande comptés une fois ; écritures manuelles et montants négatifs",
-        "  (référencés) : propriétaire.",
+        "  (`POST /orders/shipped` avec lignes, coût transporteur réel ; jamais refusée faute de coût : coût des ventes en",
+        "  attente, étoile et photo incomplètes, dépenses en validation humaine) ; identifiants `order:`/`refund:`/`cost:`/",
+        "  `expense:`/`fixed:` réservés au moteur ; frais PSP d'une commande comptés une fois ; écritures manuelles et",
+        "  montants négatifs (référencés) : propriétaire.",
         "- Test d'incident réussi : `qa-conformite` (≠ ouvreur, cycle réel lancé par un autre principal ; cycle FICTIF admis",
-        "  seulement pour un incident sur données FICTIVES ou ouvert alors que le moteur est en simulation) ou propriétaire.",
-        "- Relais `n8n-08-mandat` : `requested_by` parmi les agents qui dépensent (jamais `qa-conformite` ni `catalogue`).",
+        "  seulement pour un incident sur données FICTIVES, ou déclaré `simulation: true` alors que le moteur est en",
+        "  simulation) ou propriétaire.",
+        "- Relais `n8n-08-mandat` : `requested_by` parmi les agents qui dépensent (jamais `qa-conformite`, `catalogue` ni",
+        "  `finance-pricing`, qui paie) ; décision humaine d'une dépense en attente : propriétaire (`POST /mandate/human-decision`).",
         "",
         "## Validation humaine requise",
         "",

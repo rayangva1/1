@@ -481,22 +481,25 @@ def spend_payload(key: str = "FICTIF-SPEND-API-1") -> dict[str, Any]:
     return {
         "request": {"amount": "40", "currency": "CHF", "supplier_id": "FICTIF_EMBALLAGES", "category": "PACKAGING",
                     "payment_method": "PAYPAL", "purpose": "Étuis FICTIFS", "idempotency_key": key,
-                    "requested_by": "finance-pricing", "requested_at": NOW.isoformat(), "amount_source": "devis FICTIF n°1"},
+                    "requested_by": "operations-sav", "requested_at": NOW.isoformat(), "amount_source": "devis FICTIF n°1"},
         "treasury": {"as_of": NOW.isoformat(), "cash_available_chf": "5000", "paypal_balance_chf": "500"},
     }
 
 
 def test_mandate_check_needs_stoploss_state_then_applies_unsigned_mandate(client: TestClient, svc: Services) -> None:
     assert client.post("/mandate/check", headers=H, json=spend_payload()).status_code == 403  # jeton commun : jamais
-    unavailable = client.post("/mandate/check", headers=HF, json=spend_payload())
+    # Revue R5 (R4-DOC-11) : l'agent finance (qui paie) ne demande jamais de dépense, même à son nom.
+    finance = {**spend_payload(), "request": {**spend_payload()["request"], "requested_by": "finance-pricing"}}
+    assert client.post("/mandate/check", headers=HF, json=finance).status_code == 403
+    unavailable = client.post("/mandate/check", headers=R.HOPS, json=spend_payload())
     assert unavailable.status_code == 503
     client.post("/stoploss/state", headers=HO, json=state_payload())
-    data = body(client.post("/mandate/check", headers=HF, json={**spend_payload(), "record": True}))
+    data = body(client.post("/mandate/check", headers=R.HOPS, json={**spend_payload(), "record": True}))
     assert data["decision"]["outcome"] == "NEEDS_HUMAN_APPROVAL" and "MANDATE_NOT_SIGNED" in data["decision"]["reasons"]
     assert data["recorded"] is True and svc.spend_ledger.get("FICTIF-SPEND-API-1") is not None
     forbidden = spend_payload("FICTIF-SPEND-API-2")
     forbidden["request"]["category"] = "FINANCING"
-    assert body(client.post("/mandate/check", headers=HF, json=forbidden))["decision"]["outcome"] == "REJECTED"
+    assert body(client.post("/mandate/check", headers=R.HOPS, json=forbidden))["decision"]["outcome"] == "REJECTED"
 
 
 # ----------------------------------------------------------------------------- étoile polaire

@@ -1,6 +1,6 @@
 # Matrice d'autorisations de l'API du moteur
 
-> Générée depuis `engine/pokeshop/authz.py` (version `2026-10-05.r4`) — ne pas modifier à la main :
+> Générée depuis `engine/pokeshop/authz.py` (version `2026-10-05.r5`) — ne pas modifier à la main :
 > `python -m pokeshop.authz > docs/08-agents/MATRICE_API.md`. Refus par défaut : une route absente
 > de la matrice est refusée (403). Le **jeton commun** n'a que la lecture et les aperçus en simulation.
 > Nom d'un jeton nommé = rôle ; son empreinte sha256 va dans `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` (une variable
@@ -34,7 +34,8 @@
 | POST | `/incidents/{incident_id}/close` | WRITE | **non** | chef-de-projet, n8n-04-incidents, qa-conformite | oui |  |
 | POST | `/incidents/{incident_id}/resume` | WRITE | **non** | chef-de-projet, n8n-04-incidents, qa-conformite | oui | après test réussi attesté ; incident critique : propriétaire |
 | POST | `/incidents/{incident_id}/test` | WRITE | **non** | tous les rôles nommés | oui | passed:true : qa-conformite (≠ ouvreur, cycle réel lancé par un autre principal) ou propriétaire |
-| POST | `/mandate/check` | WRITE | **non** | acquisition, chef-de-projet, communication, direction-artistique, finance-pricing, n8n-08-mandat, operations-sav, site-integrations, sourcing | non | requested_by = rôle du jeton ; relais n8n-08-mandat : requested_by parmi les agents qui dépensent, trésorerie non vérifiable (validation humaine) |
+| POST | `/mandate/check` | WRITE | **non** | acquisition, chef-de-projet, communication, direction-artistique, n8n-08-mandat, operations-sav, site-integrations, sourcing | non | requested_by = rôle du jeton ; relais n8n-08-mandat : requested_by parmi les agents qui dépensent, trésorerie non vérifiable (validation humaine) |
+| POST | `/mandate/human-decision` | WRITE | **non** | aucun | oui | validation ou refus d'une dépense en attente (24 h) : seule voie de HUMAN_APPROVED, comptée au stop-loss pub |
 | POST | `/mandate/revoke` | WRITE | **non** | tous les rôles nommés | oui | acte protecteur |
 | GET | `/northstar` | READ | oui | tous | oui |  |
 | POST | `/northstar/entries` | WRITE | **non** | finance-pricing, n8n-02-commandes | oui | rôles : coûts positifs (PAYMENT, SAV, acquisition, charges fixes) ; propriétaire : écriture manuelle ; identifiants order:/refund:/cost: réservés au moteur ; frais d'une commande enregistrée : jamais deux fois |
@@ -93,7 +94,7 @@
 
 Écritures **propres** à chaque rôle (hors actes ouverts à tout rôle nommé). Tout rôle nommé peut en plus :
 POST `/autonomy`, POST `/incidents/{incident_id}/test`, POST `/incidents`, POST `/mandate/revoke`, POST `/stoploss/freeze` (signalement, gel, baisse de niveau, révocation ; test réussi : voir la note).
-Propriétaire seule : POST `/capital/movements`, POST `/catalog/approvals`, POST `/fx/rates`, POST `/pricing/approvals`, POST `/stoploss/baseline`, POST `/stoploss/capital-memory/reset`, POST `/stoploss/rearm`, POST `/stoploss/state`.
+Propriétaire seule : POST `/capital/movements`, POST `/catalog/approvals`, POST `/fx/rates`, POST `/mandate/human-decision`, POST `/pricing/approvals`, POST `/stoploss/baseline`, POST `/stoploss/capital-memory/reset`, POST `/stoploss/rearm`, POST `/stoploss/state`.
 
 | Rôle (nom du jeton) | Écritures propres |
 |---|---|
@@ -101,7 +102,7 @@ Propriétaire seule : POST `/capital/movements`, POST `/catalog/approvals`, POST
 | `sourcing` | POST `/mandate/check` |
 | `donnees-fournisseurs` | POST `/imports/{supplier}/run` |
 | `catalogue` | POST `/catalog/items` |
-| `finance-pricing` | POST `/catalog/cost-inputs`, POST `/costs/movements`, POST `/mandate/check`, POST `/northstar/entries`, POST `/pricing/approvals/{approval_id}/revoke`, POST `/stock/reorder-proposal`, POST `/treasury/balance-items` |
+| `finance-pricing` | POST `/catalog/cost-inputs`, POST `/costs/movements`, POST `/northstar/entries`, POST `/pricing/approvals/{approval_id}/revoke`, POST `/stock/reorder-proposal`, POST `/treasury/balance-items` |
 | `direction-artistique` | POST `/mandate/check` |
 | `site-integrations` | POST `/mandate/check`, POST `/sync/run` |
 | `seo-redaction` | aucune (lecture, aperçus et actes protecteurs seulement) |
@@ -130,22 +131,29 @@ Propriétaire seule : POST `/capital/movements`, POST `/catalog/approvals`, POST
 - Fiches : `catalogue` les dépose ; `approved`, `content_validated`, `category_rule_validated` : propriétaire
   (`POST /catalog/approvals`, liée au contenu de la fiche).
 - Coûts historiques : `finance-pricing`, réception adossée à `POST /stock/receive` (`operations-sav`, autre jeton),
-  coût unitaire à ± 2 % d'une référence du moteur (ligne de la facture enregistrée par `n8n-03-factures`, sinon coût
-  rendu de la dernière offre évaluée) ; sans référence ou au-delà : propriétaire ; une réception n'est valorisée
-  qu'une fois (clé produit canonique) ; écart de facture > 2 % : propriétaire.
+  coût unitaire à ± 2 % d'une référence du moteur : ligne de la facture enregistrée par `n8n-03-factures` (quantités
+  reçues au coût ≤ quantité facturée, lignes ≤ montant dû, fournisseur lié à la référence), sinon coût rendu de la
+  dernière offre évaluée avec des frais posés par la propriétaire (jamais des frais posés par `finance-pricing`,
+  jamais un cycle avec catalogue ou frais du corps) ; sans référence ou au-delà : propriétaire ; une réception
+  (SKU **à la réception**, bon) n'est valorisée qu'une fois ; écart de facture > 2 % : propriétaire ; retour en stock
+  au coût : lignes de l'avoir (unités retournées) et retour physique déclaré par `operations-sav` (`return:<avoir>`).
 - Clé produit unique : `product_id` = `listing.product_key` (422 sinon) ; SKU ou handle en double : 409 ; un nouvel
   identifiant ne reprend jamais le SKU ou le handle d'une fiche existante, ni l'identité produit (GTIN, langue, scellé,
   extension, format, contenu) d'une référence en quarantaine, bloquée ou d'état stop-loss inconnu (409, sauf propriétaire).
 - Photo du stop-loss : construite par le moteur (`POST /stoploss/state/refresh`) ; photo déposée : propriétaire
-  seule, cash recoupé avec les relevés du connecteur ; créances : propriétaire seule ; dettes : plancher des
-  factures enregistrées non payées (paiement relevé par `connecteur-tresorerie`).
+  seule, cash recoupé avec les relevés du connecteur ; créances : registre distinct de la propriétaire, jamais effacé
+  par une déclaration de dettes ; dettes : registre persisté (plancher valable après un redémarrage) + factures
+  enregistrées non payées (paiement relevé par `connecteur-tresorerie`).
 - Étoile polaire : ventes, avoirs, coût des ventes et sortie de stock dérivés de commandes enregistrées
-  (`POST /orders/shipped` avec lignes, coût transporteur réel) ; identifiants `order:`/`refund:`/`cost:`/`expense:`/
-  `fixed:` réservés au moteur ; frais PSP d'une commande comptés une fois ; écritures manuelles et montants négatifs
-  (référencés) : propriétaire.
+  (`POST /orders/shipped` avec lignes, coût transporteur réel ; jamais refusée faute de coût : coût des ventes en
+  attente, étoile et photo incomplètes, dépenses en validation humaine) ; identifiants `order:`/`refund:`/`cost:`/
+  `expense:`/`fixed:` réservés au moteur ; frais PSP d'une commande comptés une fois ; écritures manuelles et
+  montants négatifs (référencés) : propriétaire.
 - Test d'incident réussi : `qa-conformite` (≠ ouvreur, cycle réel lancé par un autre principal ; cycle FICTIF admis
-  seulement pour un incident sur données FICTIVES ou ouvert alors que le moteur est en simulation) ou propriétaire.
-- Relais `n8n-08-mandat` : `requested_by` parmi les agents qui dépensent (jamais `qa-conformite` ni `catalogue`).
+  seulement pour un incident sur données FICTIVES, ou déclaré `simulation: true` alors que le moteur est en
+  simulation) ou propriétaire.
+- Relais `n8n-08-mandat` : `requested_by` parmi les agents qui dépensent (jamais `qa-conformite`, `catalogue` ni
+  `finance-pricing`, qui paie) ; décision humaine d'une dépense en attente : propriétaire (`POST /mandate/human-decision`).
 
 ## Validation humaine requise
 

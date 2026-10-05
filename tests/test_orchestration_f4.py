@@ -164,13 +164,17 @@ def test_e2e07_streak_counts_clean_runs_ignores_empty_and_resets_on_anomaly() ->
 # =============================================================================== E2E-08
 
 
-def engine_offer(svc: Services, unit_cost: str, product_key: str = "FICTIF-P1") -> None:
-    """Coût rendu d'une offre évaluée par le moteur (comme après un ``/sync/run``) : référence du coût de réception."""
+def engine_offer(svc: Services, unit_cost: str, product_key: str = "FICTIF-P1", fees_by: str | None = "propriétaire") -> None:
+    """Coût rendu d'une offre évaluée par le moteur (comme après un ``/sync/run``) : référence du coût de réception.
+
+    Revue R5 (R2-NEW-01) : référence admise seulement si les frais du registre utilisés ont été posés par la
+    propriétaire (ou un rôle qui ne valorise pas les réceptions) — ``fees_by`` = leur auteur.
+    """
     from pokeshop.models import ReplacementCost
 
     svc.sync.replacement_costs.update(ReplacementCost(product_key=product_key, supplier_id="fictif_grossiste_a",
                                                       unit_cost=D(unit_cost), source_ts=NOW - timedelta(days=2),
-                                                      offer_ref="FICTIF-OFFRE-1"))  # fmt: skip
+                                                      offer_ref="FICTIF-OFFRE-1", fees_recorded_by=fees_by))  # fmt: skip
 
 
 def feed_registers(client: TestClient, svc: Services) -> None:
@@ -374,11 +378,15 @@ def test_e2e08_declared_debts_reduce_cash_and_net_worth_and_are_never_assumed_ze
     assert sum(d.amount for d in worth.debts) == D("800") and sum(r.amount for r in worth.receivables) == D("100")
     older = dict(statement, as_of=(NOW - timedelta(hours=1)).isoformat(), receivables=[])
     assert client.post("/treasury/balance-items", headers=HCONN, json=older).status_code == 409
-    # Redémarrage : la déclaration (mémoire) doit être refaite ; sans elle, aucune photo.
+    # Redémarrage : revue R5 (R3-NEW-02 partiel) — dettes et créances relues du journal (plancher en vigueur) ; les
+    # soldes (mémoire) doivent être relevés de nouveau, sans eux aucune photo.
     client2, svc2, _ = boot(tmp_path)
+    assert client2.post("/stoploss/state/refresh", headers=HPHOTO).status_code == 409
     client2.post("/treasury/paypal-balance", headers=HCONN,
                  json={"as_of": NOW.isoformat(), "balance_chf": "1500", "source": "API PayPal FICTIVE"})
     client2.post("/treasury/bank-balance", headers=HCONN,
                  json={"as_of": NOW.isoformat(), "balance_chf": "2000", "source": "relevé FICTIF"})
     again = client2.post("/stoploss/state/refresh", headers=HPHOTO)
-    assert again.status_code == 409 and "dettes et créances" in body(again)["erreur"]
+    assert again.status_code == 200
+    worth2 = svc2.stoploss_state.net_worth
+    assert sum(d.amount for d in worth2.debts) == D("800") and sum(r.amount for r in worth2.receivables) == D("100")

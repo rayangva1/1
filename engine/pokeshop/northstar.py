@@ -811,6 +811,10 @@ class CostMovement(FrozenModel):
     invoice_ref: str | None = None
     """RECEIPT / INVOICE_ADJUSTMENT : référence de la facture fournisseur (revue R3)."""
     recorded_by: str = Field(default="moteur", min_length=2)
+    sku: str | None = None
+    """RECEIPT / RETURN : SKU boutique **au moment du mouvement**, inscrit par le moteur depuis le catalogue (jamais
+    déclaré). Revue R5 (R2-NEW-01 d) : « réception déjà valorisée » se juge sur (SKU à la réception, bon), pas sur le
+    SKU actuel de la fiche (un SKU déplacé puis repris ne revalorise pas la même réception physique)."""
 
     @field_validator("at")
     @classmethod
@@ -922,6 +926,11 @@ class CostRegister:
         with self._lock:
             return any(m.kind == "ISSUE" and m.product_key == product_key and m.ref == ref for m in self._movements)
 
+    def issued_qty(self, product_key: str, ref: str) -> int:
+        """Unités déjà sorties (ISSUE) sous la référence ``ref`` pour le produit (sorties partielles cumulées)."""
+        with self._lock:
+            return sum(m.qty or 0 for m in self._movements if m.kind == "ISSUE" and m.product_key == product_key and m.ref == ref)
+
     def apply(self, movement: CostMovement) -> int:
         """Contrôle, enregistre puis applique un mouvement ; renvoie le nombre d'écritures ajoutées à l'étoile polaire."""
         with self._lock:
@@ -1018,19 +1027,28 @@ class ShippedOrder(FrozenModel):
         """Référence des sorties de stock dérivées de la commande (``sale_ref`` d'un retour)."""
         return f"order:{self.order_id}"
 
-    def issue_movements(self) -> tuple[CostMovement, ...]:
-        """Sorties au CMP dérivées des lignes (une par référence ; quantités cumulées)."""
+    def qty_by_product(self) -> dict[str, int]:
+        """Unités vendues par référence (lignes cumulées)."""
         qty: dict[str, int] = {}
         for line in self.lines:
             qty[line.product_key] = qty.get(line.product_key, 0) + line.qty
+        return dict(sorted(qty.items()))
+
+    def issue_movements(self) -> tuple[CostMovement, ...]:
+        """Sorties au CMP dérivées des lignes (une par référence ; quantités cumulées)."""
         return tuple(
             CostMovement(kind="ISSUE", product_key=key, at=self.paid_at, ref=self.sale_ref, qty=n, recorded_by="moteur")
-            for key, n in sorted(qty.items())
+            for key, n in self.qty_by_product().items()
         )
 
 
 class OrderRefund(FrozenModel):
-    """Avoir (remboursement) sur une commande enregistrée."""
+    """Avoir (remboursement) sur une commande enregistrée.
+
+    Revue R5 (R3-NEW-05) : ``lines`` = unités **retournées** (SKU × quantité, ≤ vendues − déjà retournées) ; vide
+    pour un remboursement sans retour (geste commercial). Seules ces lignes, avec la réception physique du retour
+    (``POST /stock/receive``, ref ``return:<refund_id>``), permettent un retour en stock au coût (RETURN).
+    """
 
     refund_id: str = Field(min_length=1, max_length=120)
     order_id: str = Field(min_length=1, max_length=120)
@@ -1039,6 +1057,7 @@ class OrderRefund(FrozenModel):
     payment_fees_refunded: Decimal = Field(default=ZERO, ge=0)
     recorded_by: str = Field(min_length=2)
     recorded_at: datetime
+    lines: tuple[OrderLine, ...] = ()
 
     @field_validator("at", "recorded_at")
     @classmethod
@@ -1069,6 +1088,9 @@ class OrderRegister:
         self._store = store
         self.derivation_errors: dict[str, str] = {}
         """Commande ou avoir -> motif d'une écriture dérivée impossible au rattrapage (étoile polaire incomplète)."""
+        self._pending: dict[str, dict[str, int]] = {}
+        """Revue R5 (R4-NEW-01) : commande -> unités vendues dont la sortie au CMP attend un stock valorisé (coût des
+        ventes en attente ; étoile polaire et photo signalées incomplètes). Dérivé : recalculé au démarrage."""
 
     @classmethod
     def restore(cls, store: StateJournal) -> OrderRegister:
@@ -1104,9 +1126,11 @@ class OrderRegister:
     ) -> tuple[ShippedOrder, bool]:
         """Enregistre une commande expédiée puis dérive ses écritures ; (commande, nouvelle ?).
 
-        **Atomique** (revue R4, R3-NEW-04) : écritures dérivées de l'étoile polaire et sorties de stock au CMP
-        (``costs``, revue R3-NEW-05) sont contrôlées à blanc **avant** l'écriture de la commande ; un conflit
-        (identifiant déjà pris, stock valorisé insuffisant) refuse la commande sans rien écrire.
+        Revue R4 (R3-NEW-04) : les écritures dérivées de l'étoile polaire sont contrôlées à blanc **avant** l'écriture
+        de la commande (identifiant déjà pris : refus, rien n'est écrit). Revue R5 (R4-NEW-01) : une commande payée
+        n'est **jamais** refusée faute de coût — la sortie au CMP porte sur le stock valorisé disponible, le reste
+        attend (coût des ventes en attente, :meth:`pending_cogs`) et est dérivé dès qu'un coût existe
+        (:meth:`derive_pending`, et au démarrage par :meth:`sync`).
         """
         require_actual_logistics(order.order_id, order.shipping_cost_actual, order.shipping_label_ref)
         for value, name in ((order.net_sales_ht, "net_sales_ht"), (order.payment_fees, "payment_fees")):
@@ -1120,17 +1144,64 @@ class OrderRegister:
             entries = self._order_entries(order, northstar)
             if northstar is not None:
                 northstar.check_new(entries)
-            issues = [m for m in order.issue_movements() if costs is None or not costs.has_issue(m.product_key, m.ref)]
-            if costs is not None and issues:
-                costs.check(issues)
             self._append({"order": order.model_dump(mode="json")})
             self._orders[order.order_id] = order
         if costs is not None:
-            for movement in issues:
-                costs.apply(movement)
+            self._derive_issues(order, costs)
         if northstar is not None:
             northstar._add(entries)
         return order, True
+
+    def _derive_issues(self, order: ShippedOrder, costs: CostRegister) -> int:
+        """Sorties au CMP de la commande sur le stock valorisé disponible ; le reste en attente. Renvoie les sorties."""
+        pending: dict[str, int] = {}
+        derived = 0
+        for key, qty in order.qty_by_product().items():
+            needed = qty - costs.issued_qty(key, order.sale_ref)
+            if needed <= 0:
+                continue
+            ledger = costs.ledger(key)
+            now_qty = min(needed, ledger.qty_on_hand if ledger is not None else 0)
+            if now_qty > 0:
+                movement = CostMovement(kind="ISSUE", product_key=key, at=order.paid_at, ref=order.sale_ref,
+                                        qty=now_qty, recorded_by="moteur")  # fmt: skip
+                try:
+                    costs.apply(movement)
+                    derived += 1
+                except NorthStarPersistenceError:
+                    raise
+                except (NorthStarError, CostError):
+                    now_qty = 0
+            if needed - now_qty > 0:
+                pending[key] = needed - now_qty
+        with self._lock:
+            if pending:
+                self._pending[order.order_id] = pending
+            else:
+                self._pending.pop(order.order_id, None)
+        return derived
+
+    def derive_pending(self, costs: CostRegister) -> int:
+        """Dérive le coût des ventes en attente (commandes par date de paiement) ; renvoie le nombre de sorties."""
+        with self._lock:
+            waiting = sorted((self._orders[oid] for oid in self._pending if oid in self._orders), key=lambda o: o.paid_at)
+        return sum(self._derive_issues(order, costs) for order in waiting)
+
+    def pending_cogs(self) -> dict[str, dict[str, int]]:
+        """Commandes dont le coût des ventes attend un stock valorisé : commande -> {référence: unités}."""
+        with self._lock:
+            return {oid: dict(p) for oid, p in sorted(self._pending.items())}
+
+    def incomplete_reasons(self) -> dict[str, str]:
+        """Motifs d'étoile polaire incomplète : écritures dérivées impossibles et coût des ventes en attente."""
+        out = dict(self.derivation_errors)
+        for oid, pending in self.pending_cogs().items():
+            detail = ", ".join(f"{n} × {key}" for key, n in pending.items())
+            out[f"commande {oid}"] = (
+                f"coût des ventes en attente ({detail} sans stock valorisé) : inscrire le coût de réception "
+                "(facture enregistrée, POST /costs/movements) — dérivé automatiquement ensuite"
+            )
+        return out
 
     @staticmethod
     def _order_entries(order: ShippedOrder, northstar: NorthStarLedger | None) -> list[ContributionEntry]:
@@ -1163,6 +1234,22 @@ class OrderRegister:
                 raise NorthStarError(
                     f"avoir {refund.refund_id} : cumul {already + refund.net_sales_ht} > ventes {order.net_sales_ht}"
                 )
+            # Revue R5 (R3-NEW-05) : unités retournées ≤ vendues − déjà retournées, par référence de la commande.
+            sold = order.qty_by_product()
+            returned: dict[str, int] = {}
+            for r in self._refunds.values():
+                if r.order_id == refund.order_id:
+                    for ln in r.lines:
+                        returned[ln.product_key] = returned.get(ln.product_key, 0) + ln.qty
+            for ln in refund.lines:
+                if ln.product_key not in sold:
+                    raise NorthStarError(f"avoir {refund.refund_id} : {ln.public_sku} n'est pas une ligne de la commande")
+                returned[ln.product_key] = returned.get(ln.product_key, 0) + ln.qty
+                if returned[ln.product_key] > sold[ln.product_key]:
+                    raise NorthStarError(
+                        f"avoir {refund.refund_id} : {returned[ln.product_key]} unité(s) retournée(s) de {ln.product_key} "
+                        f"> {sold[ln.product_key]} vendue(s)"
+                    )
             fees = sum((r.payment_fees_refunded for r in self._refunds.values() if r.order_id == refund.order_id), ZERO)
             if fees + refund.payment_fees_refunded > order.payment_fees:
                 raise NorthStarError(f"avoir {refund.refund_id} : frais remboursés > frais de la commande")
@@ -1205,13 +1292,10 @@ class OrderRegister:
             orders = list(self._orders.values())
             refunds = list(self._refunds.values())
         errors: dict[str, str] = {}
-        for order in orders:
+        for order in sorted(orders, key=lambda o: o.paid_at):
             try:
                 if costs is not None:
-                    for movement in order.issue_movements():
-                        if not costs.has_issue(movement.product_key, movement.ref):
-                            costs.check([movement])
-                            costs.apply(movement)
+                    self._derive_issues(order, costs)  # revue R5 : partiel, le reste en attente (jamais un refus)
                 if not order.lines:
                     errors[f"commande {order.order_id}"] = "commande sans lignes : coût des ventes non dérivé"
                 self._derive_order(order, northstar)
@@ -1233,6 +1317,11 @@ class OrderRegister:
         """Commande enregistrée (None si inconnue)."""
         with self._lock:
             return self._orders.get(order_id)
+
+    def refund(self, refund_id: str) -> OrderRefund | None:
+        """Avoir enregistré (None si inconnu)."""
+        with self._lock:
+            return self._refunds.get(refund_id)
 
     def refunded(self, order_id: str) -> Decimal:
         """Ventes HT déjà remboursées sur la commande."""

@@ -377,17 +377,23 @@ def test_r3new05_shipped_orders_carry_lines_and_derive_cost_of_sales(tmp_path: P
     assert body(client.get("/northstar", headers=H))["cumulative"] == "215.19"  # 855 − 25 − 7.40 − 607.41
     photo = body(client.post("/stoploss/state/refresh", headers=JR.HPHOTO))
     assert svc.stoploss_state.net_worth.stock == () and D(photo["net_worth_chf"]) == D("3500.00")
-    # Stock au coût insuffisant : refus, rien d'écrit.
+    # Stock au coût insuffisant : revue R5 (R4-NEW-01) — commande enregistrée, coût des ventes en attente (jamais perdue).
     short = client.post("/orders/shipped", headers=JR.HORDERS, json=order("1002"))
-    assert short.status_code == 409 and svc.orders.get("1002") is None
+    assert short.status_code == 201 and body(short)["cost_of_sales_pending"] == {"FICTIF-P1": 1}
+    assert svc.orders.get("1002") is not None and body(client.get("/northstar", headers=H))["incomplete"] is True
     issue = {"kind": "ISSUE", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "1001", "qty": 1}
     assert client.post("/costs/movements", headers=JR.HF, json=issue).status_code == 403  # jamais déclarée
     back = {"kind": "RETURN", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "FICTIF-RET-1", "qty": 1,
-            "sale_ref": "order:1001"}
+            "sale_ref": "order:1001", "stock_ref": "return:FICTIF-AV-1"}
     assert client.post("/costs/movements", headers=JR.HF, json=back).status_code == 409  # sans avoir enregistré
-    refund = {"refund_id": "FICTIF-AV-1", "at": NOW.isoformat(), "net_sales_ht": "142.50"}
+    # Revue R5 (R3-NEW-05) : avoir AVEC lignes retournées et retour physique déclaré par operations-sav.
+    refund = {"refund_id": "FICTIF-AV-1", "at": NOW.isoformat(), "net_sales_ht": "142.50", "lines": [{"public_sku": SKU, "qty": 1}]}
     assert client.post("/orders/1001/refunds", headers=JR.HOPS, json=refund).status_code == 201
+    assert client.post("/costs/movements", headers=JR.HF, json=back).status_code == 403  # pas encore de retour physique
+    assert client.post("/stock/receive", headers=JR.HOPS, json={"sku": SKU, "qty": 1, "ref": "return:FICTIF-AV-1"}).status_code == 200
     assert client.post("/costs/movements", headers=JR.HF, json=back).status_code == 200
+    # L'unité revenue au coût sert aussitôt la commande 1002 en attente : coût des ventes dérivé, étoile complète.
+    assert svc.orders.pending_cogs() == {} and body(client.get("/northstar", headers=H))["incomplete"] is False
 
 
 # ======================================================================= R3-NEW-06

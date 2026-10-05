@@ -337,7 +337,7 @@
 
 | Connecteur | Mode | Niveau min. | Plafond |
 |---|---|---|---|
-| `CONN-API-MOTEUR` (jeton `qa-conformite`) | `/incidents` (quarantaine, suspension, **test de correction réussi** d'un incident ouvert par un autre jeton, sur un cycle réel lancé par un autre principal — cycle FICTIF admis seulement pour un incident sur données FICTIVES ou ouvert moteur en simulation : tout autre rôle, l'ouvreur et le jeton commun reçoivent 403), reprise et clôture d'un incident non critique, `/stoploss/freeze`, `/autonomy` (baisse seulement), `/mandate/revoke`, `/pricing/approvals/{id}/revoke`, lecture `/stoploss/status`, `/sync/history` (gate 3.6) | 1 | — |
+| `CONN-API-MOTEUR` (jeton `qa-conformite`) | `/incidents` (quarantaine, suspension, **test de correction réussi** d'un incident ouvert par un autre jeton, sur un cycle réel lancé par un autre principal — cycle FICTIF admis seulement pour un incident sur données FICTIVES, ou déclaré `simulation: true` et ouvert moteur en simulation : tout autre rôle, l'ouvreur et le jeton commun reçoivent 403), reprise et clôture d'un incident non critique, `/stoploss/freeze`, `/autonomy` (baisse seulement), `/mandate/revoke`, `/pricing/approvals/{id}/revoke`, lecture `/stoploss/status`, `/sync/history` (gate 3.6) | 1 | — |
 | `CONN-N8N` | Suspension de workflow par le moteur (`POST /incidents` : les workflows lisent les suspensions) et lecture de l'état des exécutions ; jamais d'administration de n8n | 1 | — |
 | `CONN-DB-LECTURE`, `CONN-PAYPAL` (lecture) | Contrôle | 1 | — |
 | Dépense | — | — | 0 CHF |

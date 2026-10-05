@@ -1021,6 +1021,11 @@ class ReplacementCost(FrozenModel):
     unit_cost: Decimal = Field(gt=0)
     source_ts: datetime
     offer_ref: str = ""
+    fees_recorded_by: str | None = None
+    """Acteur (déduit du jeton) qui a posé au registre les frais utilisés pour ce coût rendu (``POST
+    /catalog/cost-inputs``) ; None = provenance inconnue. Revue R5 (R2-NEW-01) : seule une offre dont les frais
+    viennent de la propriétaire ou d'un rôle qui ne valorise pas les réceptions sert de référence au coût d'une
+    réception (jamais des frais posés par son bénéficiaire)."""
 
     @field_validator("source_ts")
     @classmethod
