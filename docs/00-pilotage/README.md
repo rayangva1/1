@@ -13,7 +13,7 @@ Dossier du chef de projet (BP §11, agent 01). Source métier : BP du 4.10.2026 
 | `GATES_GO_NO_GO.md` | Gates G0 à G7, seuils chiffrés, décideur, modèle de fiche | Agent pilotage |
 | `INTERVENTIONS_HUMAINES.md` | Checklist maîtresse et exhaustive de ce qui exige une personne (A physique, B légal une fois, C validations, signatures et réarmement), chaque fiche reliée à ses tâches du backlog | Agent pilotage |
 | `REGISTRE_RISQUES.md` | 31 risques : probabilité, impact, mitigation, déclencheur, stop-loss lié | Agent pilotage |
-| `REVUE_SECURITE.md` | Revue adverse de sécurité : historique des 5 rounds, catégories et correctifs, **risques résiduels connus** (impact, mitigation, niveau d'autonomie avant lequel les traiter), procédure à relancer avant chaque passage aux niveaux 2, 3 et 4 | Agent 12 (tenue), propriétaire (acceptation) |
+| `REVUE_SECURITE.md` | Revue adverse de sécurité : historique des 5 rounds, catégories et correctifs, **risques résiduels connus** (impact, mitigation, niveau d'autonomie avant lequel les traiter), procédure à relancer avant chaque passage aux niveaux 2, 3 et 4 | Agent 12 (contenu, par rapport), agent 01 (écriture), propriétaire (acceptation) |
 | `ECARTS_BP.md` | Écarts et ambiguïtés du BP, consolidés pour les 11 domaines du build (ID par domaine, gravité, traitement provisoire, décision attendue) | Partagé |
 | `DELEGATION_AUTONOMIE.md`, `ETOILE_POLAIRE.md`, `STOP_LOSS.md` | Mandat, métrique, stop-loss | Agent gouvernance (non modifiés ici) |
 | `outils/verifier_livrables.py` | Contrôle de cohérence des dossiers 00, 01 et 02 | Agent pilotage |

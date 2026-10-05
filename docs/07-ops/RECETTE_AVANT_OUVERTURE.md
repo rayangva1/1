@@ -177,5 +177,5 @@ Testeurs : agent 12 QA + propriétaire   Résultat : ___ cas bloquants OK / ___ 
 ## Validation humaine requise
 
 - [ ] Propriétaire : réaliser les cas avec argent réel (R-E03, R-E06 à R-E08, R-F01) et les cas physiques (R-J01, R-J02, R-J05).
-- [ ] Propriétaire : signer la synthèse (§3) avant le GO d'achat du stock (gate G3) et l'activation du niveau 2 (BL-116).
+- [ ] Propriétaire : signer la synthèse (§3) avant le GO d'achat du stock (gate G3) et l'activation du niveau 2 (BL-116) ; la recette ne suffit pas seule : le niveau 2 exige aussi la revue adverse de sécurité relancée et sans critical/high ouvert (C31, BL-200, `docs/00-pilotage/REVUE_SECURITE.md` §5).
 - [ ] Agent 12 QA : fixer la date de la campagne et rejouer la recette après tout changement de thème, d'application ou de moyen de paiement.

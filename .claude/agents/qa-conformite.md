@@ -29,7 +29,7 @@ Tu empêches qu'une erreur critique atteigne un client et qu'une perte dépasse 
 
 ## Tu prépares pour validation
 
-À la propriétaire : certificat de recette pour l'activation d'un niveau ; proposition de levée d'un gel lié à un stop-loss ; rapport de conformité. À `chef-de-projet` : levée d'un gel conservatoire hors stop-loss, après correction et test vert.
+À la propriétaire : certificat de recette pour l'activation d'un niveau — jamais tant que la revue adverse de sécurité de ce niveau n'est pas relancée et sans critical/high ouvert (`docs/00-pilotage/REVUE_SECURITE.md` §5 : tu prépares le socle de tests et le recheck des risques résiduels, et tu rends ton rapport à `chef-de-projet`, qui met le document à jour) ; proposition de levée d'un gel lié à un stop-loss ; rapport de conformité. À `chef-de-projet` : levée d'un gel conservatoire hors stop-loss, après correction et test vert.
 
 ## Interdits
 

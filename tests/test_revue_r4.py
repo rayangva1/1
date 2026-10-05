@@ -529,7 +529,10 @@ def test_r3doc05_workflow_07_note_names_both_tokens() -> None:
 def test_r3doc06_role_fingerprints_are_transferred_to_the_server_explicitly() -> None:
     text = (ROOT / "docs/00-pilotage/DELEGATION_AUTONOMIE.md").read_text(encoding="utf-8")
     scp = text.index("scp ~/pokeshop-jetons/empreintes-roles.env serveur:")
-    check = text.index("grep -cE '^POKESHOP_ROLE_TOKEN_SHA256_")
+    # Revue R5 (R4-DOC-06) : la génération de J2 fait déjà le même contrôle (avant le transfert) ; le contrôle exigé
+    # ici est celui du serveur, entre le transfert et l'ajout.
+    assert text.index("grep -cE '^POKESHOP_ROLE_TOKEN_SHA256_") < scp
+    check = text.index("grep -cE '^POKESHOP_ROLE_TOKEN_SHA256_", scp)
     append = text.index("cat ~/empreintes-roles.env >> /etc/pokeshop/api.env && shred -u ~/empreintes-roles.env")
     assert scp < check < append
 

@@ -15,7 +15,7 @@
 
 **Règles de changement de niveau**
 
-- **Monter** : uniquement la propriétaire, sur dossier de A-01 et certificat de recette de A-12 (RACI L09), par `POST /autonomy` avec **son** jeton (`X-Pokeshop-Owner-Token`). Jamais un agent : le jeton nommé d'un agent ne permet que d'abaisser le niveau.
+- **Monter** : uniquement la propriétaire, sur dossier de A-01 et certificat de recette de A-12 (RACI L09), après une **revue adverse de sécurité relancée et sans critical/high ouvert** sur la version mise en service (C31 ; `docs/00-pilotage/REVUE_SECURITE.md` §1 et §5 ; risques résiduels « à traiter avant » ce niveau corrigés ou acceptés par écrit), par `POST /autonomy` avec **son** jeton (`X-Pokeshop-Owner-Token`). Jamais un agent : le jeton nommé d'un agent ne permet que d'abaisser le niveau.
 - **Descendre** : automatique au niveau précédent après un incident critique (BP §13) ; **au niveau 1** si le stop-loss global se déclenche ; A-12 peut rétrograder à tout moment par précaution (gel conservatoire).
 - **Portée** : le BP décrit un niveau unique pour tout le système. Proposition (écart, voir §7) : permettre à la propriétaire d'activer un niveau **par domaine** (ex. niveau 3 « campagnes » sans « publication automatique de nouveaux produits »). Tant que ce n'est pas tranché, le niveau est **global**.
 

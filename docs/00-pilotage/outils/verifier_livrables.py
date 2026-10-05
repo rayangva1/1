@@ -36,6 +36,7 @@ OWNED_MD = {
         "GATES_GO_NO_GO.md",
         "INTERVENTIONS_HUMAINES.md",
         "REGISTRE_RISQUES.md",
+        "REVUE_SECURITE.md",
         "ECARTS_BP.md",
         "README.md",
     ),

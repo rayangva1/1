@@ -252,7 +252,8 @@ ROUTE_MATRIX: dict[tuple[str, str], RouteRule] = {
     ("GET", "/capital/movements"): _read("capital.movements"),
     ("POST", "/ads/activity"): _write(
         "ads.activity", {"connecteur-publicite"},
-        note="ajout seul par (campagne, jour) ; commandes attribuées = commandes connues du moteur"),
+        note="ajout seul par (campagne, jour) ; commandes attribuées = commandes connues du moteur (inconnue ou en "
+        "conflit : écartée seule, les dépenses du lot sont enregistrées)"),
     ("POST", "/fx/rates"): _owner("fx.rates"),
     # -- étoile polaire, commandes, coûts
     ("GET", "/northstar"): _read("northstar"),
@@ -263,13 +264,16 @@ ROUTE_MATRIX: dict[tuple[str, str], RouteRule] = {
     ("POST", "/orders/shipped"): _write(
         "orders.shipped", {"n8n-02-commandes"},
         note="vente dérivée d'une commande (lignes SKU × quantité), coût transporteur réel ; sortie de stock et coût "
-        "des ventes dérivés au CMP ; enregistrement atomique"),
+        "des ventes dérivés au CMP ; enregistrement atomique ; jamais refusée faute de stock valorisé (coût des ventes "
+        "en attente, étoile polaire incomplète)"),
     ("POST", "/orders/{order_id}/refunds"): _write(
-        "orders.refund", {"n8n-02-commandes", "operations-sav"}, note="avoir sur une commande enregistrée"),
+        "orders.refund", {"n8n-02-commandes", "operations-sav"},
+        note="avoir sur une commande enregistrée ; lignes = unités retournées (≤ vendues − déjà retournées)"),
     ("POST", "/costs/movements"): _write(
         "costs.movement", {"finance-pricing"},
         note="réception adossée à /stock/receive (autre jeton), coût ≤ 2 % d'une référence du moteur (facture "
-        "enregistrée ou offre) sinon propriétaire ; sortie de vente (ISSUE) : dérivée des commandes ; retour : avoir enregistré"),
+        "enregistrée ou offre) sinon propriétaire ; sortie de vente (ISSUE) : dérivée des commandes ; retour : avoir à "
+        "lignes ≥ coût des unités retournées et retour physique d'un autre jeton (return:<avoir>)"),
     ("POST", "/costs/invoices"): _write(
         "costs.invoice", {"n8n-03-factures"},
         note="facture fournisseur validée par la propriétaire (workflow 03) : lignes au coût rendu, dette jusqu'au paiement"),

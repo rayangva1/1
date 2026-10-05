@@ -85,6 +85,7 @@ A-12 répond des tests, de la surveillance et du gel (RACI L56, L58, L60) et val
 - **Lundi, et après toute modification d'un générateur** : `python docs/08-agents/outils/controle_generateurs.py` (classeurs du dépôt = régénération en dossier temporaire ; tout écart est signalé à A-05, qui régénère).
 - **Lundi** : rapprochements ; revue des accès ; rapport de conformité.
 - **Mensuel** : test de restauration ; revue des secrets et des accès délégués.
+- **Avant chaque hausse de niveau d'autonomie (2, 3, 4)** : préparer la revue adverse de sécurité (`docs/00-pilotage/REVUE_SECURITE.md` §5 : version figée, socle vert, recheck des preuves des rounds précédents et des risques résiduels du §4) et en rendre le rapport à A-01 ; aucun certificat de recette de niveau tant qu'un finding critical ou high est ouvert (C31 ; BL-200, BL-201, BL-202).
 - Tâches : BL-033, BL-046, BL-082, BL-083, BL-092 (`GET /sync/history` : 20 cycles PROPRES sur livraisons réelles distinctes), BL-095, BL-098, BL-099, BL-103, BL-160, BL-161, BL-187 (recette du workflow d'inscription avant le GO C07).
 
 ## 12. Modèle de rapport (état des stop-loss)

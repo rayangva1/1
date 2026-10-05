@@ -81,7 +81,8 @@ sudo install -D -m 600 -o "$USER" .env.example /etc/pokeshop/api.env
 # 2. Le compléter EN PLACE depuis le coffre (nano /etc/pokeshop/api.env ; pas « sed -i » : /etc/pokeshop appartient à root) :
 #    POSTGRES_PASSWORD, POKESHOP_DB_PASSWORD, N8N_ENCRYPTION_KEY (chacun : openssl rand -hex 32), N8N_WEBHOOK_URL,
 #    POKESHOP_OWNER_TOKEN_SHA256 (B21) — empreintes sha256, jamais les jetons.
-# 3. Empreintes des rôles (B22), produites à J2 sur TON ordinateur (DELEGATION_AUTONOMIE.md §10 étape 6), dont
+# 3. Empreintes des rôles (B22), produites à J2 sur TON ordinateur (Linux ou macOS : sha256sum ou, en repli,
+#    shasum -a 256 ; bloc en set -euo pipefail, 64 hexadécimaux contrôlés dès J2 ; DELEGATION_AUTONOMIE.md §10 étape 6), dont
 #    POKESHOP_ROLE_TOKEN_SHA256_N8N_07_STOPLOSS, POKESHOP_ROLE_TOKEN_SHA256_CONNECTEUR_TRESORERIE
 #    et POKESHOP_ROLE_TOKEN_SHA256_FINANCE_PRICING, obligatoires. Sur ton ordinateur (« serveur » = son adresse SSH) :
 scp ~/pokeshop-jetons/empreintes-roles.env serveur:~/empreintes-roles.env
@@ -89,6 +90,7 @@ scp ~/pokeshop-jetons/empreintes-roles.env serveur:~/empreintes-roles.env
 test "$(grep -cE '^POKESHOP_ROLE_TOKEN_SHA256_[A-Z0-9_]+=[0-9a-f]{64}$' ~/empreintes-roles.env)" -eq 17 \
   && test "$(wc -l < ~/empreintes-roles.env)" -eq 17 \
   && cat ~/empreintes-roles.env >> /etc/pokeshop/api.env && shred -u ~/empreintes-roles.env
+#    puis, sur ton ordinateur (la copie du coffre reste) : shred -u (Linux) ou rm -P (macOS) de ~/pokeshop-jetons/empreintes-roles.env.
 #    POKESHOP_API_TOKEN_SHA256 (jeton commun : lecture et aperçus seulement, pour dashboard/build.py) est facultatif ;
 #    ton jeton (X-Pokeshop-Owner-Token) suffit seul pour tous tes actes et tes lectures.
 # 4. Ton compte doit parler au démon Docker : une fois « sudo usermod -aG docker "$USER" » puis te reconnecter

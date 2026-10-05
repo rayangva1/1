@@ -143,7 +143,7 @@ Une décision donnée dans une fiche ne modifie **pas** le mandat. Pour changer 
 - [ ] Écrire la décision dans la fiche ; préciser le nouveau capital de référence si vous apportez des fonds.
 - [ ] Depuis votre terminal (jamais via un agent ni un chat) : lire `rearm_reference` dans `GET /stoploss/status`, puis `POST /stoploss/rearm` avec votre jeton (`X-Pokeshop-Owner-Token`) et le corps `{"reason": "…", "rebase": true, "reference_chf": "<rearm_reference.net_worth_chf>", "photo_sha256": "<rearm_reference.photo_sha256>"}` : vous **attestez** la valeur nette (écart > 1 CHF ou photo remplacée : refus 409). Procédure complète : `docs/00-pilotage/STOP_LOSS.md` §5.
 - [ ] Si le service est gelé au démarrage (`RESTORE_FAILED` : journal d'état illisible ; `CONFIG_UNSIGNED` : seuils ou règles modifiés sans signature) : aucun réarmement n'est possible ; réparer ou restaurer le stockage, ou signer la configuration, puis redémarrer (`docs/00-pilotage/INTERVENTIONS_HUMAINES.md`, C24).
-- [ ] Après réarmement, la flotte **reste au niveau 1** ; chaque niveau supérieur se réactive par une nouvelle décision, sur certificat de recette (`POST /autonomy` avec votre jeton).
+- [ ] Après réarmement, la flotte **reste au niveau 1** ; chaque niveau supérieur se réactive par une nouvelle décision, sur certificat de recette et après une revue adverse de sécurité relancée et sans critical/high ouvert (C31, `docs/00-pilotage/REVUE_SECURITE.md` §5), par `POST /autonomy` avec votre jeton.
 
 ## 8. Changer le cadre
 

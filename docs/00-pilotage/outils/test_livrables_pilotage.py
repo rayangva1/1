@@ -47,6 +47,7 @@ def test_expected_files_exist():
             "GATES_GO_NO_GO.md",
             "INTERVENTIONS_HUMAINES.md",
             "REGISTRE_RISQUES.md",
+            "REVUE_SECURITE.md",
             "ECARTS_BP.md",
         ],
         v.MARCHE: [
@@ -76,6 +77,7 @@ def test_governance_docs_not_owned():
     assert not names & v.FOREIGN_DOCS
     # tous les documents attendus du périmètre sont contrôlés
     assert {"PLAN_90_JOURS.md", "GATES_GO_NO_GO.md", "EMAILS_FOURNISSEURS.md", "ASSORTIMENT_PILOTE.md"} <= names
+    assert "REVUE_SECURITE.md" in names  # revue R5 : registre des risques résiduels contrôlé (BL-nnn, section finale)
 
 
 def test_foreign_file_in_folder_is_ignored(tmp_path, monkeypatch):

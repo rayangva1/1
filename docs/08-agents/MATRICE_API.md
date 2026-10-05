@@ -10,7 +10,7 @@
 
 | Méthode | Route | Nature | Jeton commun | Rôles nommés admis | Propriétaire | Note |
 |---|---|---|---|---|---|---|
-| POST | `/ads/activity` | WRITE | **non** | connecteur-publicite | oui | ajout seul par (campagne, jour) ; commandes attribuées = commandes connues du moteur |
+| POST | `/ads/activity` | WRITE | **non** | connecteur-publicite | oui | ajout seul par (campagne, jour) ; commandes attribuées = commandes connues du moteur (inconnue ou en conflit : écartée seule, les dépenses du lot sont enregistrées) |
 | GET | `/autonomy` | READ | oui | tous | oui |  |
 | POST | `/autonomy` | WRITE | **non** | tous les rôles nommés | oui | baisser : tout rôle ; relever : propriétaire |
 | GET | `/capital/movements` | READ | oui | tous | oui |  |
@@ -22,7 +22,7 @@
 | POST | `/catalog/items` | WRITE | **non** | catalogue | oui | fiches sans champ moteur ni validation humaine (422) |
 | POST | `/costs/invoices` | WRITE | **non** | n8n-03-factures | oui | facture fournisseur validée par la propriétaire (workflow 03) : lignes au coût rendu, dette jusqu'au paiement |
 | POST | `/costs/invoices/{invoice_ref}/payments` | WRITE | **non** | connecteur-tresorerie | oui | paiement relevé sur le compte (cumul ≤ montant de la facture) : seule baisse de la dette d'une facture |
-| POST | `/costs/movements` | WRITE | **non** | finance-pricing | oui | réception adossée à /stock/receive (autre jeton), coût ≤ 2 % d'une référence du moteur (facture enregistrée ou offre) sinon propriétaire ; sortie de vente (ISSUE) : dérivée des commandes ; retour : avoir enregistré |
+| POST | `/costs/movements` | WRITE | **non** | finance-pricing | oui | réception adossée à /stock/receive (autre jeton), coût ≤ 2 % d'une référence du moteur (facture enregistrée ou offre) sinon propriétaire ; sortie de vente (ISSUE) : dérivée des commandes ; retour : avoir à lignes ≥ coût des unités retournées et retour physique d'un autre jeton (return:<avoir>) |
 | GET | `/dashboard/daily` | READ | oui | tous | oui |  |
 | GET | `/dashboard/monthly` | READ | oui | tous | oui |  |
 | GET | `/dashboard/weekly` | READ | oui | tous | oui |  |
@@ -39,8 +39,8 @@
 | POST | `/mandate/revoke` | WRITE | **non** | tous les rôles nommés | oui | acte protecteur |
 | GET | `/northstar` | READ | oui | tous | oui |  |
 | POST | `/northstar/entries` | WRITE | **non** | finance-pricing, n8n-02-commandes | oui | rôles : coûts positifs (PAYMENT, SAV, acquisition, charges fixes) ; propriétaire : écriture manuelle ; identifiants order:/refund:/cost: réservés au moteur ; frais d'une commande enregistrée : jamais deux fois |
-| POST | `/orders/shipped` | WRITE | **non** | n8n-02-commandes | oui | vente dérivée d'une commande (lignes SKU × quantité), coût transporteur réel ; sortie de stock et coût des ventes dérivés au CMP ; enregistrement atomique |
-| POST | `/orders/{order_id}/refunds` | WRITE | **non** | n8n-02-commandes, operations-sav | oui | avoir sur une commande enregistrée |
+| POST | `/orders/shipped` | WRITE | **non** | n8n-02-commandes | oui | vente dérivée d'une commande (lignes SKU × quantité), coût transporteur réel ; sortie de stock et coût des ventes dérivés au CMP ; enregistrement atomique ; jamais refusée faute de stock valorisé (coût des ventes en attente, étoile polaire incomplète) |
+| POST | `/orders/{order_id}/refunds` | WRITE | **non** | n8n-02-commandes, operations-sav | oui | avoir sur une commande enregistrée ; lignes = unités retournées (≤ vendues − déjà retournées) |
 | GET | `/pricing/approvals` | READ | oui | tous | oui |  |
 | POST | `/pricing/approvals` | WRITE | **non** | aucun | oui | approbation d'un prix public |
 | POST | `/pricing/approvals/{approval_id}/revoke` | WRITE | **non** | chef-de-projet, finance-pricing, qa-conformite | oui | acte protecteur (retour au prix du moteur) |

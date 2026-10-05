@@ -69,6 +69,7 @@
 | `docs/00-pilotage/INTERVENTIONS_HUMAINES.md` | Ce qui exige la propriétaire (A, B, C) | pilotage | 01 | présent |
 | `docs/00-pilotage/ECARTS_BP.md` | Registre des écarts du BP | pilotage | 01 | présent |
 | `docs/00-pilotage/REGISTRE_RISQUES.md` | Registre des risques | pilotage | 01, 12 | présent |
+| `docs/00-pilotage/REVUE_SECURITE.md` | Revue adverse de sécurité : historique, risques résiduels (RS-nn), procédure avant les niveaux 2, 3 et 4 | pilotage | 12 (contenu, par rapport), 01 (écriture) | présent |
 | `docs/01-marche/GRILLE_CONCURRENCE.csv` | Relevés de prix concurrents (URL + date) | pilotage | 02, 05 | présent |
 | `docs/01-marche/PROTOCOLE_CONCURRENCE.md` | Méthode de relevé et référence marché | pilotage | 02, 05 | présent |
 | `docs/01-marche/PROTOCOLE_LANDING_TEST.md` | Test de la landing, KPI | pilotage | 07, 09, 10 | présent |
