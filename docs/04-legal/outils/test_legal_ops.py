@@ -629,3 +629,57 @@ def test_preview_header_marks_draft() -> None:
     for content in previews.values():
         assert content.startswith("<!-- FICHIER GÉNÉRÉ")
         assert "NE PAS PUBLIER" in content and v.BANNER in content
+
+
+# ------------------------------------------------------------------ revue F5a (CON-02, 03, 06, 16, 17, 21)
+#: Champs connus seulement après la boutique (B15), le paiement (B16), le transporteur (B17) ou la relecture J28 (C11).
+CHAMPS_APRES_J10 = {
+    "ST_PAIEMENT", "ST_PAIEMENT_PAYS", "PSP_NOM", "ST_TRANSPORT", "ST_TRANSPORT_PAYS", "ST_BOUTIQUE", "ST_BOUTIQUE_PAYS",
+    "URL_COOKIES", "DATE_VERSION", "ST_AUDIENCE", "ST_AUDIENCE_PAYS",
+}
+
+
+def test_landing_notice_is_published_and_publishable_at_j10() -> None:
+    """CON-06 : la landing a sa propre notice, sans champ connu seulement après J10."""
+    notice = rc.LEGAL_DIR / "CONFIDENTIALITE_LANDING.md"
+    assert notice in rt.PUBLIC_DOCS and notice.name in v.LEGAL_FILES
+    used = set(rc.placeholders("\n".join(rc.public_blocks(notice.read_text(encoding="utf-8")))))
+    assert used and not used & CHAMPS_APRES_J10, used & CHAMPS_APRES_J10
+    assert "DATE_VERSION_LANDING" in used
+
+
+def test_privacy_declarations_cover_optional_answers_and_abandoned_cart() -> None:
+    """CON-03 et CON-21 : toutes les données collectées et finalités sont déclarées."""
+    full = "\n".join(rc.public_blocks((rc.LEGAL_DIR / "CONFIDENTIALITE.md").read_text(encoding="utf-8")))
+    for needle in ("Réponses facultatives", "budget", "canton", "utm", "agrégée", "Panier non finalisé",
+                   "{{DUREE_CONSERVATION_PANIER}}", "passage en caisse"):
+        assert needle in full, needle
+    landing = "\n".join(rc.public_blocks((rc.LEGAL_DIR / "CONFIDENTIALITE_LANDING.md").read_text(encoding="utf-8")))
+    for needle in ("Prénom", "budget", "pour qui", "canton", "utm", "agrégée", "Adresse IP", "aucun cookie"):
+        assert needle in landing, needle
+
+
+def test_missing_cart_row_detected(ctx: v.Context) -> None:
+    edit(ctx.legal / "CONFIDENTIALITE.md", "| Panier non finalisé |", "| Panier |")
+    assert_flags(v.check_required_public_clauses(ctx), "Panier non finalisé")
+
+
+def test_customer_cancellation_in_cgv_and_faq() -> None:
+    """CON-17 : la FAQ ne promet rien que les CGV (qui font foi) ne prévoient."""
+    cgv = "\n".join(rc.public_blocks((rc.LEGAL_DIR / "CGV.md").read_text(encoding="utf-8")))
+    assert "4.7 **Annulation de votre part avant préparation.**" in cgv
+    faq = (rc.OPS_DIR / "FAQ_CLIENTS.md").read_text(encoding="utf-8")
+    assert "(CGV ch. 4.7)" in faq
+
+
+def test_human_reply_claim_flagged(ctx: v.Context) -> None:
+    """CON-02 : « une personne vous répond » est faux (réponses courantes automatisées)."""
+    edit(ctx.ops / "FAQ_CLIENTS.md", "Une personne traite les cas particuliers", "Une personne vous répond toujours")
+    assert_flags(v.check_public_hygiene(ctx), "service client")
+
+
+def test_unusual_clause_not_attributed_to_art_8_lcd() -> None:
+    """CON-16 : la règle de l'insolite est jurisprudentielle ; l'art. 8 LCD vise les clauses abusives."""
+    cgv = (rc.LEGAL_DIR / "CGV.md").read_text(encoding="utf-8")
+    assert "insolite (art. 8 LCD)" not in cgv
+    assert cgv.count("règle jurisprudentielle de l'insolite") >= 2 and "ATF 135 III 1" in cgv

@@ -2,8 +2,18 @@
 
 Couvre BP §3, §4, §10 et la métrique unique de pilotage décidée par la propriétaire :
 la **contribution nette cumulée** (ventes nettes HT − coût historique − paiement −
-logistique − SAV − acquisition − charges fixes), suivie chaque semaine, avec le seuil
-du stop-loss global (perte cumulée ≥ 20 % du capital engagé ⇒ tout gelé).
+logistique − SAV − acquisition − charges fixes), suivie chaque semaine, avec une
+**approximation** du stop-loss global.
+
+**Définition unique du stop-loss global** (celle de ``pokeshop.stoploss``, qui fait foi) : perte de
+**valeur nette** (cash + stock prudent + créances − dettes) ≥ 20 % du **capital engagé de
+référence** (apports − retraits, ou point zéro posé par la propriétaire + apports ultérieurs −
+retraits). La projection ne connaît pas la valeur nette : elle l'approche par la contribution
+cumulée, ce qui n'est cohérent qu'une fois les coûts de lancement assumés par le point zéro.
+Pour rester sur la même définition, passer ``capital_engaged=BP_STOPLOSS_REFERENCE`` (point zéro
+recommandé, option A de ``STOP_LOSS.md`` §5 : 4 200 CHF, seuil 840 CHF) ; la valeur par défaut
+``BP_CAPITAL_ENGAGED`` (8 000, seuil 1 600) ne reproduit que l'ancien classeur et **sous-estime**
+la prudence du moteur d'un facteur ≈ 2 (gel projeté en semaine 28 au lieu de 13 au rythme du jalon).
 
 Module autonome de l'agent finance : il ne dépend ni de ``pokeshop.pricing`` ni de
 ``pokeshop.stoploss`` (agent gouvernance, qui fait foi pour l'application des stop-loss).
@@ -27,6 +37,8 @@ __all__ = [
     "BP_AFTER_SALES_PER_ORDER",
     "BP_BASKET_TTC",
     "BP_CAPITAL_ENGAGED",
+    "BP_STOPLOSS_REFERENCE",
+    "global_stoploss_threshold",
     "BP_CONTRIBUTION_RATE",
     "BP_FIXED_COSTS",
     "BP_HARD_FLOOR_CHF_PER_ORDER",
@@ -124,8 +136,11 @@ WEEKS_PER_MONTH = Decimal(WEEKS_PER_YEAR) / Decimal(12)
 BP_PAYMENT_PCT = Decimal("0.025")
 BP_PAYMENT_FIXED = Decimal("0.30")
 BP_AFTER_SALES_PER_ORDER = Decimal("1")
-#: Capital engagé de référence du stop-loss global = budget initial BP §3 (hypothèse à confirmer).
+#: Apports du budget initial BP §3 (hypothèse à confirmer) : capital engagé **littéral**, sans point zéro.
 BP_CAPITAL_ENGAGED = Decimal("8000")
+#: Référence du stop-loss global avec le point zéro recommandé (STOP_LOSS.md §5, option A, à J3 avec C03) :
+#: 8 000 − 2 900 de lancement − 900 de décote prudente du stock = 4 200 CHF => seuil 840 CHF.
+BP_STOPLOSS_REFERENCE = Decimal("4200")
 #: Stop-loss global du mandat : perte cumulée ≥ 20 % du capital engagé ⇒ tout gelé.
 GLOBAL_STOPLOSS_PCT = Decimal("0.20")
 #: Plan 90 jours BP §9 : ouverture douce aux jours 31 à 45 ⇒ ventes dès la semaine 5.
@@ -784,6 +799,18 @@ class NorthStarReport:
         )
 
 
+def global_stoploss_threshold(
+    reference: Decimal = BP_STOPLOSS_REFERENCE, pct: Decimal = GLOBAL_STOPLOSS_PCT
+) -> Decimal:
+    """Perte de valeur nette qui déclenche le gel global : ``pct`` × capital engagé de référence (840 CHF au BP)."""
+    reference = to_decimal(reference, "reference")
+    pct = to_decimal(pct, "pct")
+    if reference <= 0:
+        raise ForecastError("référence du stop-loss > 0 requise")
+    _check_rate(pct, "pct")
+    return reference * pct
+
+
 def north_star(
     weeks: Sequence[NorthStarWeek],
     *,
@@ -794,6 +821,8 @@ def north_star(
 
     Le stop-loss global est *collant* : une fois la perte cumulée ≥ seuil, il reste
     actif même si le cumul remonte (seule la propriétaire peut le réarmer).
+    ``capital_engaged`` = capital engagé **de référence** (voir l'en-tête du module) : passer
+    :data:`BP_STOPLOSS_REFERENCE` pour la définition du moteur (point zéro, seuil 840 CHF).
     """
     if not weeks:
         raise ForecastError("au moins une semaine est requise")

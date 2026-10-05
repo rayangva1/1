@@ -22,7 +22,7 @@ Dossier de l'agent « Finance et pricing » (BP §11, mission 5). Toutes les val
 1. Ouvrir la feuille **Hypothèses**. Ne modifier que les **cellules jaunes à texte bleu**. Le texte noir contient des formules, le vert des liens vers une autre feuille, le gris italique les valeurs publiées dans le BP (références de contrôle).
 2. Les feuilles **Budget initial** et **Charges mensuelles** ont leurs propres cellules jaunes. Les totaux alimentent les hypothèses.
 3. Lire le résultat dans **Scénarios** (lignes 15 à 26), **Seuil & sensibilité** et **Stock & BFR**. La colonne « Statut » compare automatiquement au BP. Une valeur modifiée fait logiquement apparaître « ÉCART » : c'est voulu.
-4. **Prix plancher** : saisir C, r, b, L, R, A, m (et t) d'une référence réelle pour obtenir le plancher, le prix public arrondi et la contribution à un prix testé. Le moteur de production reste `pokeshop.pricing`. Cette feuille sert au contrôle.
+4. **Prix plancher** : saisir C, r, b, L, R, A, m (et t) d'une référence réelle pour obtenir le plancher, le prix public arrondi et la contribution à un prix testé. Le moteur de production reste `pokeshop.pricing`, qui fait foi. Cette feuille sert au contrôle : la ligne 26 reproduit le prix public **du moteur** (prix rentable ≥ 8 CHF par commande, puis grille par tranches `rounding_tiers` de `config/pricing_rules.v1.yaml`, relue à chaque régénération : < 10 CHF → X,50/X,90 ; 10 à 99,99 → X,90 ; ≥ 100 → X4,90/X9,90). Les lignes 19 à 22 ne sont que des **lectures du BP** (pas de 10 CHF et terminaison 9,90, ou « prochain X,90 ») : elles ne concordent avec le moteur que sur le cas du BP (208,79 → 209,90) ; par exemple, pour un coût de 50 CHF, 89,90 en lecture BP contre 83,90 au moteur.
 
 ### Étoile polaire (feuille du modèle financier)
 
@@ -96,7 +96,7 @@ Le recalcul exige LibreOffice **avec le module Calc** (paquet `libreoffice-calc`
 | Capital engagé 8 000 CHF (base du stop-loss global) | Hypothèses B44 | §3 | Capital réellement engagé, validé par la propriétaire | Propriétaire |
 | Ouverture des ventes en semaine 5 | Hypothèses B48 | §9 | Date réelle de l'ouverture douce | Chef de projet |
 | Réserve 1 600 CHF = stop-loss cash | Budget initial B11 ; trésorerie B7 | §3 + mandat | Décision de la propriétaire uniquement | Propriétaire |
-| Pas d'arrondi 10 CHF, terminaison 9,90 | Prix plancher B19-B20 | §4 (ambigu) | Règle d'arrondi validée, par tranche de prix | Propriétaire |
+| Arrondi du prix public : grille par tranches du moteur (`rounding_tiers`) ; lecture BP pas 10 / 9,90 à titre de comparaison | Prix plancher B26 (moteur) ; B19-B20 (lecture BP) | §4 (ambigu) | Validation de la grille par tranche de prix (`config/pricing_rules.v1.yaml`, règles signées) | Propriétaire |
 
 ## Limites connues
 

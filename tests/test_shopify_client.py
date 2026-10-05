@@ -21,6 +21,7 @@ from pokeshop.shopify_client import (
     ALLOWED_MUTATIONS,
     DEFAULT_API_VERSION,
     INVENTORY_SET_QUANTITIES_MUTATION,
+    METAFIELDS_SET_MUTATION,
     PRODUCT_SET_MUTATION,
     InventoryChange,
     ShopifyAccessDeniedError,
@@ -33,6 +34,7 @@ from pokeshop.shopify_client import (
     ShopifyInFlightError,
     ShopifyThrottledError,
     ShopifyTransportError,
+    allowed_mutation,
     derive_idempotency_key,
     root_field,
 )
@@ -170,9 +172,10 @@ def sleeps() -> list[float]:
 
 
 def make_client(fake: FakeShopify, sleeps: list[float], **kw: Any) -> ShopifyClient:
+    """Client configuré en écriture réelle (``POKESHOP_DRY_RUN=false``) ; ``dry_run=True`` pour un client en simulation."""
     params: dict[str, Any] = dict(
         shop_domain=SHOP, access_token=TOKEN, transport=httpx.MockTransport(fake), sleep=sleeps.append,
-        clock=lambda: NOW, max_retries=3, backoff_base_ms=100, backoff_max_ms=5_000,
+        clock=lambda: NOW, max_retries=3, backoff_base_ms=100, backoff_max_ms=5_000, dry_run=False,
     )
     params.update(kw)
     return ShopifyClient(**params)
@@ -193,7 +196,8 @@ def set_inv(client: ShopifyClient, *, key: str = KEY, dry_run: bool | None = Fal
 
 
 def test_dry_run_is_default_and_sends_nothing(fake: FakeShopify, sleeps: list[float]) -> None:
-    client = make_client(fake, sleeps)
+    client = ShopifyClient(shop_domain=SHOP, access_token=TOKEN, transport=httpx.MockTransport(fake),
+                           sleep=sleeps.append, clock=lambda: NOW)
     assert client.dry_run is True
     resp = client.product_set(PRODUCT_INPUT, identifier={"handle": PRODUCT_INPUT["handle"]}, idempotency_key=KEY)
     assert resp.dry_run and resp.ok and resp.data is None
@@ -467,6 +471,72 @@ def test_order_and_unlisted_mutations_are_forbidden(fake: FakeShopify, sleeps: l
     assert ALLOWED_MUTATIONS == {"productSet", "inventorySetQuantities", "metafieldsSet"}
 
 
+def test_global_dry_run_switch_wins_over_call_parameter(fake: FakeShopify, sleeps: list[float]) -> None:
+    """SEC-10 : ``POKESHOP_DRY_RUN=true`` => aucun appel ne peut écrire, même avec ``dry_run=False``."""
+    settings = load_settings({"POKESHOP_SHOPIFY_SHOP_DOMAIN": SHOP, "POKESHOP_SHOPIFY_ADMIN_TOKEN": TOKEN})
+    assert settings.dry_run is True
+    client = ShopifyClient.from_settings(settings, transport=httpx.MockTransport(fake), sleep=sleeps.append)
+    resp = client.product_set(PRODUCT_INPUT, identifier={"handle": PRODUCT_INPUT["handle"]}, idempotency_key=KEY,
+                              dry_run=False)
+    assert resp.dry_run is True and fake.requests == [] and client.requests_sent == 0
+    assert set_inv(client, dry_run=False).dry_run is True
+    assert fake.requests == []
+    live = make_client(fake, sleeps)  # client en écriture réelle : un appel peut encore restreindre
+    assert live.product_set(PRODUCT_INPUT, idempotency_key=KEY, dry_run=True).dry_run is True
+    assert fake.requests == []
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        # alias : le premier nom lu est « productSet », la mutation réelle est orderCancel
+        "mutation M($id: ID!) { productSet: orderCancel(orderId: $id, reason: OTHER, refund: false, restock: false) "
+        "{ userErrors { message } } }",
+        # deux champs racine : productSet puis productDelete
+        "mutation M($input: ProductSetInput!) { productSet(input: $input) { product { id } } "
+        "productDelete(input: {id: \"gid://shopify/Product/1\"}) { deletedProductId } }",
+        # document constant modifié (champ supplémentaire)
+        PRODUCT_SET_MUTATION.replace("userErrors { field message code }",
+                                     "userErrors { field message code } } productDelete(input: {id: \"1\"}) { deletedProductId"),
+    ],
+)
+def test_mutation_whitelist_compares_exact_constant_documents(fake: FakeShopify, sleeps: list[float], document: str) -> None:
+    """SEC-11 : alias GraphQL, second champ racine ou document modifié => refus avant tout envoi."""
+    client = make_client(fake, sleeps)
+    for dry in (True, False):
+        with pytest.raises(ShopifyForbiddenOperationError):
+            client.mutate(document, {"input": dict(PRODUCT_INPUT)}, idempotency_key=KEY, dry_run=dry)
+    assert fake.requests == [] and client.requests_sent == 0
+
+
+def test_mutate_applies_sensitive_field_checks_itself(fake: FakeShopify, sleeps: list[float]) -> None:
+    """SEC-11 : ``mutate(productSet)`` direct ne contourne plus la liste blanche des champs publics."""
+    client = make_client(fake, sleeps)
+    leaking = {"title": "Display", "status": "ACTIVE", "vendor": "Asmodee (prix B2B 98.50)",
+               "metafields": [{"namespace": "interne", "key": "cout_achat_fournisseur", "type": "number_decimal",
+                               "value": "98.50"}]}
+    for dry in (True, False):
+        with pytest.raises(SensitiveFieldError):
+            client.mutate(PRODUCT_SET_MUTATION, {"input": leaking, "identifier": None, "synchronous": True},
+                          idempotency_key=KEY, dry_run=dry)
+    with pytest.raises(SensitiveFieldError):
+        client.mutate(METAFIELDS_SET_MUTATION, {"metafields": leaking["metafields"]}, idempotency_key=KEY)
+    assert fake.requests == []
+
+
+def test_protective_product_set_accepts_status_only(fake: FakeShopify, sleeps: list[float]) -> None:
+    """SEC-15 : une dépublication protectrice n'envoie que ``{"status": "DRAFT"}`` avec l'identifiant."""
+    client = make_client(fake, sleeps)
+    with pytest.raises(SensitiveFieldError):
+        client.product_set(PRODUCT_INPUT, identifier={"id": "gid://shopify/Product/7"}, idempotency_key=KEY,
+                           protective=True)
+    with pytest.raises(ShopifyConfigError):
+        client.product_set({"status": "DRAFT"}, identifier={"handle": "x"}, idempotency_key=KEY, protective=True)
+    resp = client.product_set({"status": "DRAFT"}, identifier={"id": "gid://shopify/Product/7"},
+                              idempotency_key=KEY, protective=True, dry_run=True)
+    assert resp.dry_run and fake.requests == []
+
+
 def test_query_refuses_mutations_and_inventory_requires_directive(fake: FakeShopify, sleeps: list[float]) -> None:
     client = make_client(fake, sleeps)
     with pytest.raises(ShopifyForbiddenOperationError):
@@ -477,6 +547,8 @@ def test_query_refuses_mutations_and_inventory_requires_directive(fake: FakeShop
     with pytest.raises(ShopifyForbiddenOperationError):
         root_field("{ shop { name } }")
     assert root_field(PRODUCT_SET_MUTATION) == ("mutation", "productSet")
+    assert allowed_mutation(PRODUCT_SET_MUTATION) == "productSet"
+    assert allowed_mutation(INVENTORY_SET_QUANTITIES_MUTATION) == "inventorySetQuantities"
 
 
 def test_query_requires_configuration(fake: FakeShopify, sleeps: list[float]) -> None:

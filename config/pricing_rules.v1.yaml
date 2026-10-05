@@ -27,8 +27,8 @@ pricing:
   payment_fixed: "0.30"             # b — CHF/commande, hypothèse BP §4
   logistics_cost: "3.00"            # L — coût NET supporté CHF/commande, hypothèse BP §4
                                     #     (préparation + part du port NON refacturée ; si port
-                                    #     offert, passer le coût réel au panier : à confirmer
-                                    #     par devis transporteur)
+                                    #     offert, passer le coût réel au panier, sinon REVIEW
+                                    #     SHIPPING_COST_UNKNOWN : à confirmer par devis transporteur)
   after_sales_provision: "1.00"     # R — provision SAV CHF/commande, hypothèse BP §4
   acquisition_cost: "5.00"          # A — CAC attribué CHF/commande, hypothèse BP §4
   target_margin: "0.20"             # m — contribution cible 20 % du CA net (BP §5)
@@ -38,9 +38,19 @@ pricing:
   max_daily_price_change: "0.05"    # variation publique > 5 %/jour => validation (BP §5)
   price_anomaly_factor: "10"        # ×10 / ÷10 => quarantaine (BP §13)
   # Règle petits produits (BP §5 « règles adaptées aux petits produits ») — hypothèse moteur :
-  # coût rendu ≤ seuil => frais par commande (b, L, R, A) exclus du prix unitaire ;
-  # le plancher 12 % / 8 CHF est contrôlé sur le panier complet. Seuil à valider.
-  small_product_max_cost: "15.00"
+  # coût rendu ≤ seuil => frais par commande (b, L, R, A) exclus du prix unitaire. Le moteur ne
+  # contrôle PAS les commandes Shopify : la règle n'est donc ACTIVE que si la boutique bloque
+  # elle-même tout panier composé uniquement de petits produits (étiquette « petit-produit »)
+  # sous small_product_min_order_ttc, et si ce minimum couvre le minimum calculé par le moteur
+  # (pricing.small_product_min_order_required : 127.00 CHF en EFFECTIVE, 118.00 en NOT_REGISTERED
+  # avec un port offert ; davantage si un port est facturé). Fermé par défaut : tant que ces deux
+  # valeurs sont nulles (ou le minimum insuffisant), chaque article porte b + L + R + A et respecte
+  # seul le plancher 12 % / 8 CHF (un booster coûtant 3.79 CHF est prixé 23.90 CHF).
+  # Activation : validation de panier en place et recettée (site/shopify/STRUCTURE_BOUTIQUE.md §7),
+  # puis valeurs renseignées et règles signées de nouveau (POKESHOP_RULES_FINGERPRINT).
+  small_product_max_cost: "15.00"   # seuil à valider
+  small_product_min_order_ttc: null  # minimum TTC (marchandises après remises) imposé au panier
+  small_product_max_shipping_ttc: null  # port maximal facturé à ce panier (0 = port offert)
   # Grille d'arrondi retail vers le haut (BP §4-5 : arrondir puis revérifier la marge).
   # Reproduit l'exemple BP 208,79 -> 209,90.
   rounding_tiers:

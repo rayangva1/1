@@ -91,7 +91,7 @@ ALE = '<span class="da-badge da-badge--restock">[[i:alerte:14]]Alerte réassort<
 
 cards = (
     card(1, [FR, LOC, NEW], "Display — Extension exemple — FR", "Display · français · scellé", "CHF 209.90",
-         "da-stock--local", "[[i:stock-local:16]]", "En stock local", "Expédié depuis la Suisse sous {{DELAI_EXPEDITION}} · 2 max. par commande", "Ajouter au panier")
+         "da-stock--local", "[[i:stock-local:16]]", "En stock local", "Expédié depuis la Suisse sous {{DELAI_EXPEDITION}} · 2 max. par foyer", "Ajouter au panier")
     + card(2, [FR, PRE], "Coffret — Extension exemple 2 — FR", "Coffret · français · scellé", "CHF 59.90",
          "da-stock--preorder", "[[i:precommande:16]]", "Précommande sur allocation confirmée", "Sortie prévue le {{DATE_SORTIE}} · expédié à réception", "Précommander")
     + card(3, [FR, OUT, ALE], "ETB — Extension exemple 3 — FR", "Coffret Dresseur d'élite · français · scellé", "CHF 64.90",
@@ -208,7 +208,7 @@ _CARTE = head("Carte produit — composants DA", "Carte produit : prix CHF, stat
       <li><strong>Statut de stock</strong> explicite + délai réaliste ou date confirmée.</li>
       <li><strong>Action</strong> unique : ajouter, précommander ou m'alerter.</li>
     </ol>
-    <p class="da-note">[[i:info:18]]<span>Champs autorisés dans le gabarit : titre, format, langue, état, prix public, statut, délai, limite par commande, photo autorisée. Tout autre champ du catalogue reste interne ; le filtre de publication (module publish) fait foi.</span></p>
+    <p class="da-note">[[i:info:18]]<span>Champs autorisés dans le gabarit : titre, format, langue, état, prix public, statut, délai, limite par foyer, photo autorisée. Tout autre champ du catalogue reste interne ; le filtre de publication (module publish) fait foi.</span></p>
 """ + FOOT + """  </main>
 </body>
 </html>
@@ -260,7 +260,7 @@ _BANNIERES = head("Bannières — composants DA", "Bandeau d'annonce, bannière 
         <input id="email-alerte" type="email" autocomplete="email" placeholder="vous@exemple.ch" style="flex:1 1 220px;min-height:var(--da-touch-target);padding:8px 12px;border:2px solid var(--da-color-line-strong);border-radius:var(--da-radius-md);background:var(--da-color-surface);color:var(--da-color-ink);font:inherit">
         <button type="submit" class="da-btn da-btn--primary">M'inscrire</button>
       </form>
-      <p class="da-muted" style="margin:0;font-size:var(--da-text-sm)">Désinscription en un clic dans chaque email. {{LIEN_CONFIDENTIALITE}} (texte de consentement à valider).</p>
+      <p class="da-muted" style="margin:0;font-size:var(--da-text-sm)">Désinscription en un clic dans chaque email. Confidentialité : {{URL_CONFIDENTIALITE}} (texte de consentement à valider).</p>
     </section>
 """ + FOOT + """  </main>
 </body>
@@ -320,7 +320,7 @@ _PRODUIT = head("Page produit — application DA", "Application des directions A
           <p class="da-muted" style="margin:0;font-size:var(--da-text-sm)">{{MENTION_TVA}} · <a href="#">frais de livraison</a> calculés avant paiement</p>
         </div>
         <div class="da-panel" style="display:grid;gap:var(--da-space-3)">
-          <p class="da-stock da-stock--local">[[i:stock-local:18]]<span>En stock local — prêt à partir<span class="da-stock__detail">Expédié depuis la Suisse sous {{DELAI_EXPEDITION}} · 2 maximum par commande</span></span></p>
+          <p class="da-stock da-stock--local">[[i:stock-local:18]]<span>En stock local — prêt à partir<span class="da-stock__detail">Expédié depuis la Suisse sous {{DELAI_EXPEDITION}} · 2 maximum par foyer</span></span></p>
           <div style="display:flex;flex-wrap:wrap;gap:var(--da-space-3);align-items:center">
             <div class="da-qty" role="group" aria-label="Quantité">
               <button type="button" aria-label="Retirer une unité">−</button>

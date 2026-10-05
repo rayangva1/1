@@ -5,9 +5,9 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## 01 — Fournisseur vers site (BP §5, §12)\nPrix et offres **toutes les 6 h** ; stock amont **toutes les 45 min** (BP : 30 à 60 min si flux fiable).\n1. Récupérer le flux autorisé et le déposer dans le dossier d'import (nœuds désactivés : aucun accès fournisseur n'existe).\n2. `POST /imports/{fournisseur}/run` — **simulation**, quarantaine des anomalies.\n3. `POST /sync/run` avec **dry_run: true** : 8 étapes du BP §12, incidents ouverts par le moteur.\nImport rejeté (> 24 h, incomplet, ×10…) => incident **INC-03** (achats et promesses bloqués ; le stock local se vend).\n**Activation** : niveau 1 (simulation). Passer `dry_run` à false = décision C14 (niveau 2) + `POKESHOP_DRY_RUN=false`.\n**Validation humaine requise** : accès autorisé à chaque flux (B-xx), liste des fournisseurs du nœud Paramètres.",
-        "height": 380,
-        "width": 640,
+        "content": "## 01 — Fournisseur vers site (BP §5, §12)\nPrix et offres **toutes les 6 h** : import puis cycle complet. Stock amont **toutes les 45 min** : import seul\n(disponibilité amont et âge de la source), **sans** réévaluer les prix (BP §5).\n1. Récupérer le flux autorisé et le déposer dans le dossier d'import (nœuds désactivés : aucun accès fournisseur n'existe).\n2. `POST /imports/{fournisseur}/run` — **simulation**, quarantaine des anomalies.\n3. `POST /sync/run` avec **dry_run: true** : 8 étapes du BP §12 sur le **catalogue validé et les frais enregistrés\n   dans le moteur** (`POST /catalog/items`, `/catalog/cost-inputs`, taux `POST /fx/rates`) ; sans catalogue : 409.\n   Un cycle n'est **propre** que s'il évalue au moins une offre (`GET /sync/history` : cycles propres consécutifs).\nImport rejeté (> 24 h, incomplet, ×10…) => incident **INC-03** (achats et promesses bloqués ; le stock local se vend).\n**Activation** : niveau 1 (simulation). Passer `dry_run` à false = décision C14 (niveau 2) + `POKESHOP_DRY_RUN=false`.\n**Validation humaine requise** : accès autorisé à chaque flux (B-xx), liste des fournisseurs du nœud Paramètres, catalogue validé.",
+        "height": 440,
+        "width": 680,
         "color": 4
       },
       "id": "741684ff-3cde-56ee-a281-7b3641a2d56a",
@@ -124,9 +124,9 @@
               "type": "boolean"
             },
             {
-              "id": "85f39cd8-ccbd-5780-a20a-4b3222fa5d26",
+              "id": "226e17ac-5e47-5736-a6d6-5965a85bfce5",
               "name": "workflow",
-              "value": "01-fournisseur-site",
+              "value": "fournisseur-site",
               "type": "string"
             },
             {
@@ -394,6 +394,53 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a24572e9-773e-5ad9-afb9-6fe520e7b66e",
+              "leftValue": "={{ $('Paramètres').first().json.cycle }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "stock_amont"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "d12c8006-e849-529a-9d23-730ba139a2c3",
+      "name": "Cycle stock amont ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3080,
+        0
+      ],
+      "notes": "Stock amont (45 min) : import seul, aucun prix réévalué ; prix et offres (6 h) : cycle complet.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "b8fa7cfe-2692-5bc7-a15a-ad3559e40f54",
+      "name": "Stock amont : import seul (prix non réévalués)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3360,
+        -160
+      ]
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "={{ $('Paramètres').first().json.api_base_url }}/sync/run",
         "authentication": "genericCredentialType",
@@ -410,7 +457,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3080,
+        3360,
         0
       ],
       "credentials": {
@@ -419,7 +466,7 @@
           "name": "Pokeshop API — X-Pokeshop-Token"
         }
       },
-      "notes": "dry_run: true explicite. Le moteur ouvre lui-même les incidents d'anomalie (simulation).",
+      "notes": "dry_run: true explicite. Catalogue validé et frais : registres du moteur (sans catalogue : 409). Le moteur ouvre lui-même les incidents d'anomalie (simulation).",
       "notesInFlow": true,
       "retryOnFail": true,
       "maxTries": 3,
@@ -456,7 +503,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        3360,
+        3640,
         0
       ]
     },
@@ -467,7 +514,7 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        3640,
+        3920,
         -100
       ]
     },
@@ -476,9 +523,9 @@
         "assignments": {
           "assignments": [
             {
-              "id": "3ef33892-c676-50bb-beec-ac044318ac0e",
+              "id": "f5eafd4f-047f-5163-9ae2-e92535580d7e",
               "name": "sujet",
-              "value": "=[SYNC] Cycle non propre : {{ $('Un élément par fournisseur').item.json.supplier }}",
+              "value": "=[SYNC] Cycle {{ $json.cycle_status }} : {{ $('Un élément par fournisseur').item.json.supplier }}",
               "type": "string"
             },
             {
@@ -497,7 +544,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        3640,
+        3920,
         100
       ]
     },
@@ -517,7 +564,7 @@
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        3920,
+        4200,
         100
       ],
       "credentials": {
@@ -708,7 +755,7 @@
       "main": [
         [
           {
-            "node": "Cycle fournisseur vers site (dry-run)",
+            "node": "Cycle stock amont ?",
             "type": "main",
             "index": 0
           }
@@ -716,6 +763,24 @@
         [
           {
             "node": "Ouvrir un incident de flux (INC-03)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cycle stock amont ?": {
+      "main": [
+        [
+          {
+            "node": "Stock amont : import seul (prix non réévalués)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cycle fournisseur vers site (dry-run)",
             "type": "main",
             "index": 0
           }

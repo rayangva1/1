@@ -81,7 +81,7 @@ Rappel : le contenu des boosters est aléatoire ; aucune carte précise ni raret
 | `boutique.statut_stock` | stock_local |
 | `boutique.date_sortie` / statut | 2026-07-17 / confirmee (FICTIF) |
 | Description | « Display de l'extension Exemple, en français, neuf et scellé. Contenu : 36 boosters de l'extension Exemple. Pour qui : pour ouvrir beaucoup de boosters d'une même extension, seul ou à plusieurs. Bon à savoir : protège-cartes non inclus. Guide : ETB ou display, lequel choisir ? Rappel : le contenu des boosters est aléatoire ; aucune carte précise ni rareté n'est garantie. » |
-| Titre SEO | Display 36 boosters Extension Exemple (FR) — expédié de Genève · Quai des Cartes |
+| Titre SEO | Display 36 boosters Extension Exemple (FR) — expédié de Genève · {{NOM_BOUTIQUE}} |
 | Méta-description | Display de l'extension Exemple en français, neuf et scellé, en stock local à Genève. Livraison en Suisse ; contenu exact et délai indiqués sur la fiche. |
 | Tags | statut:stock-local, ext:extension-exemple, nouveaute |
 

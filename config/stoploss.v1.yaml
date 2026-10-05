@@ -5,6 +5,14 @@
 # Toute modification d'une VALEUR => nouveau fichier stoploss.vN.yaml + nouveau stoploss_version.
 # Montants entre guillemets (jamais de nombre à virgule flottante).
 #
+# SIGNATURE (docs/00-pilotage/STOP_LOSS.md §5) : la propriétaire calcule l'empreinte et la recopie
+# dans le coffre (POKESHOP_STOPLOSS_FINGERPRINT) — c'est ce report, fait par elle seule, qui vaut signature :
+#     cd engine && python -m pokeshop.stoploss fingerprint ../config/stoploss.v1.yaml
+# - empreinte du coffre différente du fichier (fichier modifié après signature) => stop-loss NON CHARGÉ :
+#   toute écriture et toute dépense sont refusées jusqu'à une nouvelle signature ;
+# - aucune empreinte au coffre => chaque seuil vaut le PLUS STRICT entre ce fichier et la référence du code
+#   (pokeshop.stoploss.REFERENCE_THRESHOLDS) : modifier ce fichier sans signature ne peut que durcir.
+#
 # Une règle = une seule valeur dans tout le dépôt (contrôlé par les tests) :
 #   product.*            = planchers durs de config/pricing_rules.v1.yaml (hard_floor_*)
 #   extension.max_share  = stock.extension_budget_cap de pricing_rules et limits.extension_max_share du mandat
@@ -49,3 +57,8 @@ time:                         # 60 j sans les seuils de validation => dossier co
   min_contribution_after_ads_chf: "0"     # BP §1 : contribution positive après publicité (> 0 strict)
   max_oversells: 0                        # BP §1 : absence de survente
   min_sell_through_share_at_cost: "0.50"  # BP §1 : ≥ 50 % du stock pilote écoulé en valeur de coût
+
+approval:                     # informatif : l'empreinte qui fait foi est celle du coffre
+  approved_by: null           # nom de la propriétaire
+  approved_at: null           # AAAA-MM-JJTHH:MM:SS+02:00
+  fingerprint_sha256: null    # empreinte calculée par la commande ci-dessus (facultatif ici)

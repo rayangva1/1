@@ -11,7 +11,11 @@ Chaque action d'écriture déclare son niveau requis (:data:`REQUIRED_LEVEL`). M
 est réservé à la propriétaire (jeton vérifié par empreinte, un niveau à la fois, après recette) ;
 agents et système ne peuvent que descendre. Un incident critique rétablit le niveau précédent ;
 le stop-loss global ramène au niveau 1. Le niveau est stocké (mémoire, fichier JSON en ajout
-seul, ou table ``pokeshop.autonomy_levels``).
+seul — par défaut ``<POKESHOP_STATE_DIR>/autonomy.jsonl`` —, ou table ``pokeshop.autonomy_levels``).
+En base, une hausse passe par ``pokeshop.raise_autonomy`` (migration 004, ``SECURITY DEFINER``) :
+la base revérifie elle-même le jeton de la propriétaire contre l'empreinte qu'elle seule a
+enregistrée et n'accepte qu'un niveau à la fois, avec le compte de production membre de
+``pokeshop_engine`` (un refus de la base devient :class:`AutonomyRefusedError`, HTTP 403).
 
 **Porte de gouvernance** (:class:`GovernanceGate`) — règle des trois verrous
 (``BRIEF_COMMUN.md`` §2 : niveau + mandat + aucun stop-loss). Toute écriture réelle
@@ -22,7 +26,12 @@ seul, ou table ``pokeshop.autonomy_levels``).
    indisponible ou périmé => refus (sécurité par défaut) ; gel global => refus, incident
    critique INC-09 et retour au niveau 1 ;
 3. le mandat signé ; pour une action qui dépense, :func:`pokeshop.mandate.check` doit rendre
-   ``APPROVED_WITHIN_MANDATE`` (``NEEDS_HUMAN_APPROVAL`` => en attente, rien n'est exécuté).
+   ``APPROVED_WITHIN_MANDATE`` (``NEEDS_HUMAN_APPROVAL`` => en attente, rien n'est exécuté). La
+   trésorerie vient **des registres du moteur** (``treasury_provider`` : dernière photo acceptée +
+   solde PayPal relevé), jamais de l'appelant ; sans registre : validation humaine. Les taux de
+   change et propositions de réassort viennent des registres du moteur (``fx_rates``, ``proposals``).
+   Le gel trésorerie s'applique à toutes les catégories gelées par le stop-loss cash
+   (:data:`pokeshop.mandate.CASH_FREEZE_CATEGORIES` : stock, accessoires, échantillons, publicité).
 
 Les actions **protectrices** (geler, dépublier, couper une campagne) restent permises pendant
 un gel ou une suspension : elles réduisent le risque. Le dry-run est toujours permis (il
@@ -34,6 +43,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 import os
 import threading
 from collections.abc import Callable, Sequence
@@ -46,8 +56,11 @@ from pydantic import Field
 
 from .audit import ActorKind, AuditLog, ConnectionFactory, _PgRunner
 from .errors import PokeshopError
-from .incidents import Incident, IncidentCode, IncidentManager, IncidentScope, Severity
+from .incidents import Incident, IncidentCode, IncidentManager, IncidentPersistenceError, IncidentScope, Severity
 from .mandate import (
+    CASH_FREEZE_CATEGORIES,
+    EngineProposalBook,
+    FxRateBook,
     Mandate,
     MandateDecision,
     MandateOutcome,
@@ -193,6 +206,7 @@ PURCHASE_ACTIONS: frozenset[WriteAction] = frozenset({WriteAction.PROPOSE_PURCHA
 """Achats de stock : interdits si extension, produit ou trésorerie gelés."""
 
 ChangeRole = Literal["PROPRIETAIRE", "AGENT", "SYSTEME"]
+logger = logging.getLogger("pokeshop.autonomy")
 
 
 def verify_owner_token(token: str | None, expected_sha256: str | None) -> bool:
@@ -229,8 +243,8 @@ class AutonomyStore(Protocol):
         """Dernier état du périmètre (None si jamais fixé)."""
         ...
 
-    def append(self, state: AutonomyState) -> AutonomyState:
-        """Ajoute un changement de niveau."""
+    def append(self, state: AutonomyState, *, owner_token: str | None = None) -> AutonomyState:
+        """Ajoute un changement de niveau (``owner_token`` : hausse par la propriétaire, revérifiée en base)."""
         ...
 
     def history(self, scope: str = "global") -> tuple[AutonomyState, ...]:
@@ -253,8 +267,8 @@ class InMemoryAutonomyStore:
                     return row
         return None
 
-    def append(self, state: AutonomyState) -> AutonomyState:
-        """Ajout seul."""
+    def append(self, state: AutonomyState, *, owner_token: str | None = None) -> AutonomyState:
+        """Ajout seul (le jeton est déjà vérifié par le contrôleur)."""
         with self._lock:
             self._rows.append(state)
         return state
@@ -293,12 +307,17 @@ class JsonFileAutonomyStore:
                     return row
         return None
 
-    def append(self, state: AutonomyState) -> AutonomyState:
-        """Ajoute une ligne (fichier ouvert en mode ajout)."""
+    def append(self, state: AutonomyState, *, owner_token: str | None = None) -> AutonomyState:
+        """Ajoute une ligne (fichier ouvert en mode ajout, ``fsync`` : le niveau survit à un arrêt brutal)."""
         with self._lock:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as fh:
-                fh.write(state.model_dump_json() + "\n")
+            try:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                with self.path.open("a", encoding="utf-8") as fh:
+                    fh.write(state.model_dump_json() + "\n")
+                    fh.flush()
+                    os.fsync(fh.fileno())
+            except OSError as exc:
+                raise AutonomyError(f"{self.path} : niveau non enregistré ({exc.strerror})") from exc
         return state
 
     def history(self, scope: str = "global") -> tuple[AutonomyState, ...]:
@@ -308,12 +327,19 @@ class JsonFileAutonomyStore:
 
 
 class PostgresAutonomyStore:
-    """Table ``pokeshop.autonomy_levels`` : la base refuse qu'un agent ou le système relève le niveau."""
+    """Table ``pokeshop.autonomy_levels`` : la base refuse qu'un agent ou le système relève le niveau.
+
+    Abaisser : INSERT direct (rôles AGENT et SYSTEME). Relever : fonction
+    ``pokeshop.raise_autonomy`` (``SECURITY DEFINER``, propriétaire ``pokeshop_owner``) qui
+    revérifie le jeton contre l'empreinte enregistrée par la propriétaire et impose un niveau à
+    la fois ; elle marche avec le compte de production membre de ``pokeshop_engine``.
+    """
 
     INSERT_SQL = (
         "INSERT INTO pokeshop.autonomy_levels (scope, level, changed_by, changed_by_role, reason) "
         "VALUES (%s, %s, %s, %s, %s) RETURNING previous_level, at"
     )
+    RAISE_SQL = "SELECT previous_level, at FROM pokeshop.raise_autonomy(%s, %s, %s, %s, %s)"
     SELECT_SQL = (
         "SELECT scope, level, previous_level, changed_by, changed_by_role, reason, at "
         "FROM pokeshop.autonomy_levels WHERE scope = %s ORDER BY change_id"
@@ -344,11 +370,33 @@ class PostgresAutonomyStore:
         rows = self.history(scope)
         return rows[-1] if rows else None
 
-    def append(self, state: AutonomyState) -> AutonomyState:
-        """INSERT ; le trigger fixe ``previous_level`` et la contrainte refuse une hausse non propriétaire."""
-        row = self._db.run(
-            self.INSERT_SQL, (state.scope, state.level, state.changed_by, state.changed_by_role, state.reason), "one"
-        )
+    def append(self, state: AutonomyState, *, owner_token: str | None = None) -> AutonomyState:
+        """``pokeshop.raise_autonomy`` (hausse propriétaire avec jeton) ou INSERT direct ; refus de la base => 403.
+
+        Sans jeton, un INSERT ``PROPRIETAIRE`` n'est accepté par la base que depuis un compte membre
+        de ``pokeshop_owner`` (trigger de 002) ; le compte du moteur est refusé.
+        """
+        try:
+            if state.changed_by_role == "PROPRIETAIRE" and owner_token:
+                row = self._db.run(
+                    self.RAISE_SQL, (state.scope, state.level, state.changed_by, state.reason, owner_token), "one"
+                )
+            else:
+                row = self._db.run(
+                    self.INSERT_SQL,
+                    (state.scope, state.level, state.changed_by, state.changed_by_role, state.reason),
+                    "one",
+                )
+        except AutonomyError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - pilote optionnel : on lit le code SQLSTATE sans importer psycopg
+            sqlstate = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None)
+            if sqlstate in ("42501", "23514"):
+                message = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+                raise AutonomyRefusedError(f"niveau d'autonomie refusé par la base : {message}") from exc
+            raise
+        if row is None:
+            raise AutonomyError("niveau d'autonomie : la base n'a renvoyé aucune ligne")
         return state.replace(previous_level=None if row[0] is None else int(row[0]), at=row[1])
 
 
@@ -441,7 +489,9 @@ class AutonomyController:
         )
 
     # -- changements ----------------------------------------------------------------
-    def _write(self, level: int, *, actor: str, role: ChangeRole, reason: str) -> AutonomyState:
+    def _write(
+        self, level: int, *, actor: str, role: ChangeRole, reason: str, owner_token: str | None = None
+    ) -> AutonomyState:
         if not reason or not reason.strip():
             raise AutonomyError("motif obligatoire")
         if not actor or not actor.strip():
@@ -456,7 +506,9 @@ class AutonomyController:
             reason=reason.strip(),
             at=self._clock(),
         )
-        stored = self._store.append(state)
+        stored = (
+            self._store.append(state, owner_token=owner_token) if owner_token is not None else self._store.append(state)
+        )
         kind = {"PROPRIETAIRE": ActorKind.PROPRIETAIRE, "AGENT": ActorKind.AGENT, "SYSTEME": ActorKind.SYSTEME}[role]
         self._audit.append(
             actor=actor,
@@ -516,7 +568,9 @@ class AutonomyController:
                 raise AutonomyError("utiliser lower() pour abaisser ou confirmer le niveau")
             if int(to_level) != current + 1:
                 raise AutonomyError("un niveau à la fois (BP §13 : chaque niveau est activé après recette)")
-            return self._write(int(to_level), actor=actor, role="PROPRIETAIRE", reason=reason)
+            return self._write(
+                int(to_level), actor=actor, role="PROPRIETAIRE", reason=reason, owner_token=owner_token
+            )
 
     def on_critical_incident(self, incident: Incident) -> tuple[int, int]:
         """Rappel pour :class:`IncidentManager` : un incident critique rétablit le niveau précédent."""
@@ -564,7 +618,7 @@ GATE_REASON_LABELS_FR: dict[GateReason, str] = {
     GateReason.MANDATE_INACTIVE: "Mandat non signé, incomplet, modifié, révoqué ou hors période.",
     GateReason.MANDATE_REJECTED: "Dépense refusée par le mandat.",
     GateReason.MANDATE_NEEDS_HUMAN_APPROVAL: "Dépense au-delà du mandat : validation de la propriétaire requise.",
-    GateReason.SPEND_REQUEST_MISSING: "Action qui dépense sans demande de dépense ni photo de trésorerie.",
+    GateReason.SPEND_REQUEST_MISSING: "Action qui dépense sans demande de dépense.",
     GateReason.PRODUCT_QUARANTINED: "Référence en quarantaine (incident ouvert).",
     GateReason.WORKFLOW_SUSPENDED: "Workflow suspendu par un incident ouvert.",
     GateReason.ALL_WRITES_SUSPENDED: "Toutes les écritures suspendues par un incident global ouvert.",
@@ -595,6 +649,7 @@ class GateDecision(FrozenModel):
 
 StateProvider = Callable[[], StopLossState | None]
 MandateProvider = Callable[[], Mandate | None]
+TreasuryProvider = Callable[[], TreasurySnapshot | None]
 
 
 class GovernanceGate:
@@ -613,12 +668,18 @@ class GovernanceGate:
         real_writes_enabled: bool = False,
         clock: Callable[[], datetime] | None = None,
         status_ttl: timedelta = timedelta(minutes=5),
+        treasury_provider: TreasuryProvider | None = None,
+        fx_rates: FxRateBook | None = None,
+        proposals: EngineProposalBook | None = None,
     ) -> None:
         self.autonomy = autonomy
         self._audit = audit
         self._engine = stoploss_engine
         self._state_provider = state_provider
         self._mandate_provider = mandate_provider
+        self._treasury_provider = treasury_provider
+        self._fx_rates = fx_rates
+        self._proposals = proposals
         self._ledger = spend_ledger if spend_ledger is not None else SpendLedger()
         self._incidents = incidents
         self.real_writes_enabled = real_writes_enabled
@@ -659,28 +720,38 @@ class GovernanceGate:
                 self.last_stoploss_error = str(exc)
                 self._cache = None
                 return None, ()
-            status = self._engine.status(triggers, as_of=at, autonomy_level=int(self.autonomy.level))
+            status = self._engine.status(
+                triggers, as_of=at, autonomy_level=int(self.autonomy.level), state_as_of=state.as_of
+            )
             self.last_stoploss_error = None
             self._cache = (key, state.as_of, at, status, triggers)
             return status, triggers
 
     def _global_freeze(self, triggers: Sequence[Trigger], actor: str) -> str | None:
-        self.autonomy.force_level_one(reason="stop-loss global : retour au niveau d'autonomie 1")
+        try:
+            self.autonomy.force_level_one(reason="stop-loss global : retour au niveau d'autonomie 1")
+        except AutonomyError as exc:  # stockage en panne : le gel ramène déjà le niveau effectif à 1
+            logger.error("niveau 1 non enregistré pendant le gel global : %s", exc)
         if self._incidents is None:
             return None
         fallback = self._engine.latch.detail if self._engine is not None and self._engine.latch.detail else None
         default = fallback or "gel global verrouillé"
         reason = next((t.reason for t in triggers if t.action.value == "FREEZE_ALL"), default)
-        incident = self._incidents.open(
-            code=IncidentCode.INC_09,
-            severity=Severity.CRITIQUE,
-            scope=IncidentScope.GLOBAL,
-            cause=f"Stop-loss global : {reason}",
-            proposed_action="Tout est gelé et l'autonomie est au niveau 1. Examiner la valeur nette ; seul le jeton "
-            "de la propriétaire réarme (POST /stoploss/rearm).",
-            decision_expected="Réarmer ou non le stop-loss global (propriétaire uniquement)",
-            actor=actor,
-        )
+        try:
+            incident = self._incidents.open(
+                code=IncidentCode.INC_09,
+                severity=Severity.CRITIQUE,
+                scope=IncidentScope.GLOBAL,
+                cause=f"Stop-loss global : {reason}",
+                proposed_action="Tout est gelé et l'autonomie est au niveau 1. Examiner la valeur nette ; seul le "
+                "jeton de la propriétaire réarme (POST /stoploss/rearm).",
+                decision_expected="Réarmer ou non le stop-loss global (propriétaire uniquement)",
+                actor=actor,
+            )
+        except IncidentPersistenceError as exc:
+            # Confinement appliqué en mémoire ; le refus des écritures ne dépend pas de l'enregistrement.
+            logger.error("incident de gel global non enregistré : %s", exc)
+            return exc.incident.incident_id if exc.incident is not None else None
         return incident.incident_id
 
     def enforce(
@@ -707,9 +778,12 @@ class GovernanceGate:
         campaign_id: str | None = None,
         workflow: str | None = None,
         spend_request: SpendRequest | None = None,
-        treasury: TreasurySnapshot | None = None,
     ) -> GateDecision:
-        """Décide si l'action peut être **réellement** exécutée ; journalise la décision."""
+        """Décide si l'action peut être **réellement** exécutée ; journalise la décision.
+
+        La trésorerie d'une dépense n'est jamais fournie par l'appelant : elle est lue dans les
+        registres du moteur (``treasury_provider``) ; sans registre, la dépense part en validation humaine.
+        """
         act = WriteAction(action)
         now = self._clock()
         required = int(REQUIRED_LEVEL[act])
@@ -753,7 +827,7 @@ class GovernanceGate:
                 if act in PURCHASE_ACTIONS or (
                     act in SPEND_ACTIONS
                     and spend_request is not None
-                    and spend_request.category.value in ("STOCK", "ACCESSORIES")
+                    and spend_request.category in CASH_FREEZE_CATEGORIES
                 ):
                     if status.purchases_and_ads_frozen:
                         reasons.append(GateReason.STOPLOSS_CASH)
@@ -792,10 +866,20 @@ class GovernanceGate:
                     reasons.append(GateReason.MANDATE_INACTIVE)
                     extra.append("Mandat inactif : " + ", ".join(r.value for r in inactive) + ".")
                 if act in SPEND_ACTIONS:
-                    if spend_request is None or treasury is None:
+                    if spend_request is None:
                         reasons.append(GateReason.SPEND_REQUEST_MISSING)
                     elif status is not None:
-                        mandate_decision = check(spend_request, mandate, self._ledger, status, treasury, now=now)
+                        treasury = self._treasury_provider() if self._treasury_provider is not None else None
+                        mandate_decision = check(
+                            spend_request,
+                            mandate,
+                            self._ledger,
+                            status,
+                            treasury,
+                            now=now,
+                            fx_rates=self._fx_rates,
+                            proposals=self._proposals,
+                        )
                         if mandate_decision.outcome is MandateOutcome.REJECTED:
                             reasons.append(GateReason.MANDATE_REJECTED)
                         elif mandate_decision.outcome is MandateOutcome.NEEDS_HUMAN_APPROVAL:

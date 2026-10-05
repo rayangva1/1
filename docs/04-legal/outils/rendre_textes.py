@@ -30,6 +30,7 @@ PUBLIC_DOCS: tuple[Path, ...] = (
     rc.LEGAL_DIR / "LIVRAISON_RETOURS.md",
     rc.LEGAL_DIR / "PRECOMMANDES.md",
     rc.LEGAL_DIR / "CONFIDENTIALITE.md",
+    rc.LEGAL_DIR / "CONFIDENTIALITE_LANDING.md",
     rc.LEGAL_DIR / "COOKIES.md",
     rc.LEGAL_DIR / "MENTIONS_LEGALES.md",
     rc.LEGAL_DIR / "USAGE_MARQUES.md",

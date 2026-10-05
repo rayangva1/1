@@ -170,8 +170,16 @@ def sql(pg: Postgres, db: str) -> Sql:
 # ------------------------------------------------------------------- schéma
 
 
+def _registered_name(path: Path) -> list[str]:
+    match = re.search(r"INSERT INTO pokeshop\.schema_migrations \(version, name\) VALUES \('(\d{3})', '([a-z_]+)'\)",
+                      path.read_text(encoding="utf-8"))
+    assert match, path.name
+    return [match.group(1), match.group(2)]
+
+
 def test_migration_files_are_numbered_and_transactional() -> None:
-    assert [p.name[:3] for p in MIGRATIONS] == ["001", "002", "003"]
+    assert [p.name[:3] for p in MIGRATIONS] == [f"{i:03d}" for i in range(1, len(MIGRATIONS) + 1)]
+    assert len(MIGRATIONS) >= 4  # 004 : persistance des états de sécurité
     for path in MIGRATIONS + SEEDS:
         text = path.read_text(encoding="utf-8")
         assert re.search(r"^BEGIN;$", text, re.M) and re.search(r"^COMMIT;$", text, re.M), path.name
@@ -180,9 +188,9 @@ def test_migration_files_are_numbered_and_transactional() -> None:
 
 
 def test_migrations_registered(sql: Sql) -> None:
-    assert sql("SELECT version, name FROM pokeshop.schema_migrations ORDER BY 1") == [
-        ["001", "init"], ["002", "integrity"], ["003", "public_catalog"]
-    ]
+    expected = [_registered_name(p) for p in MIGRATIONS]
+    assert expected[:4] == [["001", "init"], ["002", "integrity"], ["003", "public_catalog"], ["004", "persistance_etats"]]
+    assert sql("SELECT version, name FROM pokeshop.schema_migrations ORDER BY 1") == expected
 
 
 def test_spec_tables_exist(sql: Sql) -> None:
@@ -218,7 +226,7 @@ def test_enums_match_python(sql: Sql, type_name: str, python_values: list[str]) 
 def test_reapplying_a_migration_fails_cleanly(pg: Postgres, db: str, sql: Sql) -> None:
     out = pg.run(MIGRATIONS[1].read_text(encoding="utf-8"), db, tuples=False)
     assert out.returncode != 0
-    assert sql("SELECT count(*) FROM pokeshop.schema_migrations") == [["3"]]
+    assert sql("SELECT count(*) FROM pokeshop.schema_migrations") == [[str(len(MIGRATIONS))]]
 
 
 # --------------------------------------------------------------- append-only
@@ -310,10 +318,11 @@ def test_public_view_definition_reads_no_sensitive_source(sql: Sql) -> None:
 
 
 def test_public_view_content(sql: Sql) -> None:
-    assert sql("SELECT count(*) FROM storefront.public_catalog") == [["0"]]  # FICTIF masqué par défaut
+    assert sql("SELECT count(*) FROM storefront.public_catalog") == [["0"]]  # FICTIF jamais public
+    # 005 : le réglage de session ne rouvre plus la vue publique (SEC-21) ; essais via la vue interne.
+    assert sql("SELECT count(*) FROM storefront.public_catalog", fictif=True) == [["0"]]
     rows = sql(
-        "SELECT public_sku, price_chf, availability, max_order_qty, language, extension_name FROM storefront.public_catalog ORDER BY 1",
-        fictif=True,
+        "SELECT public_sku, price_chf, availability, max_order_qty, language, extension_name FROM pokeshop.public_catalog_test ORDER BY 1",
     )
     assert rows == [
         ["FICTIF-DSP-ALPHA", "154.90", "LOCAL_STOCK", "2", "FR", "Extension Fictive Alpha"],
@@ -331,9 +340,8 @@ def test_supplier_stock_never_becomes_public_availability(sql: Sql) -> None:
         "INSERT INTO pokeshop.stock_levels (product_id) SELECT product_id FROM pokeshop.products WHERE public_sku = 'FICTIF-TRI-BETA';"
         "INSERT INTO pokeshop.preorder_allocations (product_id, supplier_id, firm_allocation_qty, fictif) "
         "SELECT product_id, 'fictif_grossiste_a', 500, true FROM pokeshop.products WHERE public_sku = 'FICTIF-TRI-BETA';"
-        "SELECT availability, max_order_qty FROM storefront.public_catalog WHERE public_sku = 'FICTIF-TRI-BETA';"
+        "SELECT availability, max_order_qty FROM pokeshop.public_catalog_test WHERE public_sku = 'FICTIF-TRI-BETA';"
         "ROLLBACK;",
-        fictif=True,
     )
     assert rows == [["UNAVAILABLE", "0"]]  # stock local nul + allocation non écrite => indisponible
 
@@ -350,7 +358,10 @@ def test_rollback_price_is_the_displayed_price(sql: Sql) -> None:
 
 
 def test_storefront_reader_sees_only_the_view(sql: Sql) -> None:
-    assert sql("SELECT count(*) FROM storefront.public_catalog", role="storefront_reader", fictif=True) == [["4"]]
+    # SEC-21 : même en posant pokeshop.include_fictif = 'on', le site public ne voit aucun produit FICTIF.
+    assert sql("SELECT count(*) FROM storefront.public_catalog", role="storefront_reader", fictif=True) == [["0"]]
+    assert "permission denied" in sql.error("SELECT * FROM pokeshop.public_catalog_test", role="storefront_reader")
+    assert sql("SELECT count(*) FROM pokeshop.public_catalog_test", role="pokeshop_engine") == [["4"]]
     for table in ("supplier_offers", "cost_lots", "price_decisions", "suppliers", "supplier_contacts", "orders",
                   "products", "audit_log", "raw_snapshots"):
         assert "permission denied" in sql.error(f"SELECT * FROM pokeshop.{table} LIMIT 1", role="storefront_reader")
@@ -390,7 +401,7 @@ def test_only_owner_can_raise_autonomy(sql: Sql) -> None:
 def test_only_owner_can_validate_rules(sql: Sql) -> None:
     validate = (
         "UPDATE pokeshop.pricing_rules SET status = 'VALIDE', validated_by = 'x', validated_at = now() "
-        "WHERE rules_version = 'FICTIF-seed-v1'"
+        "WHERE rules_version = 'v1-2026-10-04'"
     )
     assert "propriétaire" in sql.error(validate, role="pokeshop_engine")
     assert sql(f"BEGIN; {validate}; SELECT status FROM pokeshop.pricing_rules; ROLLBACK;") == [["VALIDE"]]
@@ -615,9 +626,9 @@ def test_apply_script(pg: Postgres) -> None:
         env = ["env", f"DATABASE_URL=postgresql:///{name}"]
         first = subprocess.run([*pg.prefix, *env, "bash", str(script), "all"], capture_output=True, text=True, timeout=120, check=False)
         assert first.returncode == 0, first.stderr
-        assert first.stdout.count("application :") == 3 and "fictif_seed.sql" in first.stdout
+        assert first.stdout.count("application :") == len(MIGRATIONS) and "fictif_seed.sql" in first.stdout
         again = subprocess.run([*pg.prefix, *env, "bash", str(script)], capture_output=True, text=True, timeout=120, check=False)
-        assert again.returncode == 0 and again.stdout.count("déjà appliquée") == 3
+        assert again.returncode == 0 and again.stdout.count("déjà appliquée") == len(MIGRATIONS)
         bad = subprocess.run([*pg.prefix, *env, "bash", str(script), "tout"], capture_output=True, text=True, timeout=60, check=False)
         assert bad.returncode == 2
         assert pg.run("SELECT count(*) FROM pokeshop.products;", name).stdout.strip() == "8"

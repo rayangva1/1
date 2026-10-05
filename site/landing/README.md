@@ -21,7 +21,7 @@
 |---|---|---|
 | `index.html` | Page principale (source, champs `{{…}}` visibles) | À la main (agent 07) |
 | `merci.html`, `inscription-confirmee.html`, `desinscription.html` | Pages de retour du workflow n8n (sans JavaScript, après confirmation, après désinscription) | **Générées** : `python site/outils/publication.py source` |
-| `confidentialite.html` | Déclaration de confidentialité = bloc public de `docs/04-legal/CONFIDENTIALITE.md` converti en HTML | **Générée** (même commande) ; le texte se corrige dans `docs/04-legal/` |
+| `confidentialite.html` | Notice de confidentialité **de la landing** = bloc public de `docs/04-legal/CONFIDENTIALITE_LANDING.md` converti en HTML (chaque champ du formulaire y est déclaré : contrôlé par `verifier_site.py`) ; la déclaration complète de la boutique (`CONFIDENTIALITE.md`) la remplace à l'ouverture | **Générée** (même commande) ; le texte se corrige dans `docs/04-legal/` |
 | `css/landing.css` | Mise en page propre à la landing ; uniquement des variables `--da-*` | À la main |
 | `js/theme.js` | Applique le thème mémorisé avant affichage | À la main |
 | `js/landing.js` | Bouton de thème, formulaire (validation, envoi, messages) ; fonctions pures dans `LandingCore` | À la main |
@@ -43,6 +43,8 @@ python site/outils/publication.py etat          # ce qui manque encore, et qui d
 python site/outils/publication.py apercu        # dossier d'aperçu : site/dist/apercu/ (page non indexée)
 python site/outils/publication.py publication   # dossier final : site/dist/landing/ — REFUSE tant que tout n'est pas validé
 ```
+
+**Publication à J10 (BL-032).** La liste des champs exigés est **fermée** (`CHAMPS_LANDING` dans `publication.py`, affichée par `etat` avec la nature de chaque champ) : identité (B07), emails (B02), webhook et emailing (B04), hébergeur de la page et polices (B08, choix des polices), n8n, messagerie et IA, durées de conservation, plus trois champs **provisoires autorisés** — `URL_LANDING` (adresse de l'hébergeur avant le domaine), `MOIS_OUVERTURE` (mois visé), `DATE_VERSION_LANDING` (version de la notice, remplacée à l'ouverture). Provisoire ne veut pas dire « à valider » : chaque champ doit avoir le statut `valide` ; on republie quand la valeur change. Aucun champ ne dépend de la boutique Shopify, du paiement, du transporteur ni de la relecture complète des textes (J28). Une page qui utiliserait un autre champ fait échouer la publication tant que la liste n'a pas été revue. `ST_POLICES` doit dire « Google » si la page charge Google Fonts, et ne pas le dire avec `--sans-google-fonts` : sinon, refus.
 
 Le dossier `publication` contient en plus : `js/config.js` rempli (URL du webhook), `_headers` (politique de sécurité Netlify : seul le webhook est joignable), `robots.txt`, `sitemap.xml`. Le bandeau d'aperçu et la balise `noindex` sont retirés ; le nom validé remplace le nom de travail ; le formulaire fonctionne aussi sans JavaScript (envoi direct au webhook). Option `--sans-google-fonts` : retire Google Fonts (polices système de secours), si la propriétaire préfère ne transmettre aucune adresse IP à Google (nLPD, voir README DA §3).
 
@@ -88,7 +90,7 @@ Le workflow appartient à l'agent integrations (`orchestration/n8n/`). La landin
 | Enregistrement | Statut `en_attente`, horodatage **serveur**, texte et version du consentement, préférences, source UTM ; jeton de confirmation aléatoire à usage unique (expiration proposée : 7 jours, **hypothèse**) |
 | Double opt-in | Envoyer **uniquement** l'email `docs/06-contenu/EMAILS/` n° 01 (confirmation). Lien `GET …/alertes-confirmer?jeton=…` → statut `confirme`, email n° 02 (bienvenue et préférences), redirection vers `inscription-confirmee.html` |
 | Désinscription | Lien `GET …/alertes-desinscrire?jeton=…` dans chaque email → propagation à **tous** les outils (emailing, Shopify, base), liste d'exclusion, redirection vers `desinscription.html` (BP §9, BL-103) |
-| Données | Jamais de copie dans un tableur partagé ; pas d'envoi à un prompt d'IA ; conservation selon `DUREE_CONSERVATION_ALERTES` (registre légal) |
+| Données | Jamais de copie dans un tableur partagé ; pas d'envoi à un prompt d'IA ; conservation selon `DUREE_CONSERVATION_ALERTES` (registre légal) ; réponses facultatives et UTM exploitées **seulement en agrégé** ; l'adresse IP sert uniquement à limiter les appels et n'est **jamais enregistrée avec l'inscription** (promesse de la notice `CONFIDENTIALITE_LANDING.md`, ch. 2) |
 
 **Tests de recette du contrat** (agent 12, avant le GO C07) : inscription JS → `200` et email 01 reçu ; inscription sans JS → `303` vers `merci.html` ; consentement absent → rejet ; champ piège rempli → aucun email ; double envoi → un seul email ; lien de confirmation → page de confirmation et email 02 ; désinscription → plus aucun envoi, sur chaque outil ; origine non autorisée → refus CORS.
 
@@ -113,6 +115,7 @@ python -m pytest site/tests -q
 - [ ] Exploitant, adresse et email de contact visibles ; lien de confidentialité sur chaque page.
 - [ ] Case de consentement non pré-cochée et obligatoire ; double opt-in et désinscription testés de bout en bout (§4).
 - [ ] Aucune donnée interne dans le code source.
+- [ ] Notice de la landing relue par le juriste (relecture express) et datée ; `publication.py etat` : tous les champs de la liste fermée `valide`.
 - [ ] Affichage mobile (390 px) et ordinateur (1280 px), clair et sombre, vérifié.
 - [ ] Liens UTM générés pour chaque source.
 
@@ -127,5 +130,5 @@ python -m pytest site/tests -q
 - [ ] **B08 / B04** : acheter le domaine, créer le compte d'hébergement (ou réclamer le site Netlify) et l'outil d'envoi d'emails ; renseigner `URL_LANDING`.
 - [ ] Valider `MOIS_OUVERTURE` (proposé : « novembre 2026 », sans date ferme) dans `site/config/publication_landing.yaml`.
 - [ ] Valider le texte de consentement (avec le juriste si souhaité) : toute modification crée une nouvelle `consentement_version`.
-- [ ] Choisir : Google Fonts (DA) ou polices système (`--sans-google-fonts`), et l'outil de mesure des visiteurs (ou aucun).
+- [ ] Choisir : Google Fonts (DA) ou polices système (`--sans-google-fonts`), et renseigner `ST_POLICES` en conséquence ; choisir l'outil de mesure des visiteurs (ou aucun : la notice dit « aucun outil de mesure d'audience », à modifier avant d'en ajouter un).
 - [ ] **C07** : donner le GO de publication après la checklist §6 et les tests de recette du contrat n8n (§4).

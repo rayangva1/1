@@ -15,6 +15,13 @@ d'idempotence / reprise sans double écriture*.
   réécrire, rejouer la réponse), ``CONFLICT`` (même clé, autre requête : refus). La base
   utilise ``pokeshop.claim_idempotency_key``.
 
+* :class:`StateJournal` — journaux d'état **en ajout seul**, chaînés sha256, des composants de
+  sécurité (verrou et journal du stop-loss, dernière photo valide, registre du mandat, étoile
+  polaire, incidents et confinements, historique des prix) : fichier JSON Lines
+  (:class:`JsonlStateJournal`, ``POKESHOP_STATE_DIR``) ou table ``pokeshop.engine_state_journal``
+  (:class:`PostgresStateJournal`, migration 004). Écriture d'abord, application ensuite ; un
+  journal illisible au démarrage gèle le service (:class:`StateStoreError`, fermé par défaut).
+
 Règles de contenu : aucun ``float`` (TypeError), aucun secret (les clés de type jeton, mot de
 passe, IBAN… sont masquées par :func:`redact`), datetimes avec fuseau. Les adaptateurs Postgres
 acceptent toute connexion DB-API 2.0 au style de paramètres ``%s`` (psycopg 3 conseillé).
@@ -24,12 +31,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
+from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
@@ -55,6 +64,13 @@ __all__ = [
     "redact",
     "REDACTED",
     "payload_sha256",
+    "StateStoreError",
+    "StateJournal",
+    "InMemoryStateJournal",
+    "JsonlStateJournal",
+    "PostgresStateJournal",
+    "FailedStateJournal",
+    "state_row_digest",
 ]
 
 REDACTED = "***MASQUÉ***"
@@ -727,3 +743,293 @@ class PostgresIdempotencyStore:
         """DELETE de la réservation EN_COURS uniquement."""
         _check_key(scope, key)
         self._db.run(self.RELEASE_SQL, (scope, key), "none")
+
+
+# ------------------------------------------------------------ journaux d'état
+
+
+class StateStoreError(PokeshopError, RuntimeError):
+    """Journal d'état illisible, altéré, en conflit ou impossible à écrire.
+
+    Toujours traité en **fermé par défaut** : au démarrage, un journal illisible gèle le service ;
+    en cours de route, une écriture refusée n'est jamais considérée comme faite.
+    """
+
+
+_STREAM_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+def _check_stream(stream: str) -> str:
+    if not isinstance(stream, str) or not _STREAM_RE.match(stream):
+        raise StateStoreError(f"nom de journal d'état invalide : {stream!r}")
+    return stream
+
+
+def state_row_digest(prev_hash: str | None, seq: int, body: str) -> str:
+    """Empreinte d'une ligne de journal d'état : sha256(prev ␟ seq ␟ corps JSON canonique).
+
+    Même formule que la fonction SQL ``pokeshop.state_row_digest`` (migration 004).
+    """
+    return hashlib.sha256("\x1f".join((prev_hash or "", str(seq), body)).encode("utf-8")).hexdigest()
+
+
+def _state_body(record: Mapping[str, Any]) -> str:
+    try:
+        return _canonical(to_jsonable(dict(record)))
+    except TypeError as exc:
+        raise StateStoreError(f"enregistrement d'état non sérialisable : {exc}") from exc
+
+
+@runtime_checkable
+class StateJournal(Protocol):
+    """Journal d'état **en ajout seul**, chaîné sha256, d'un composant de sécurité (« flux »).
+
+    ``load`` relit tout le flux (et vérifie la chaîne) ; ``append`` écrit une ligne **avant**
+    que l'appelant n'applique le changement en mémoire (écriture d'abord) et lève
+    :class:`StateStoreError` si elle n'est pas durablement enregistrée.
+    """
+
+    stream: str
+    backend: str
+
+    def load(self) -> list[dict[str, Any]]:
+        """Enregistrements du flux, du plus ancien au plus récent (StateStoreError si illisible)."""
+        ...
+
+    def append(self, record: Mapping[str, Any]) -> int:
+        """Ajoute un enregistrement ; renvoie son numéro de séquence (StateStoreError si refusé)."""
+        ...
+
+
+class _ChainState:
+    """Position courante de la chaîne (séquence, dernière empreinte) d'un flux."""
+
+    def __init__(self) -> None:
+        self.loaded = False
+        self.seq = 0
+        self.last_hash: str | None = None
+
+    def verify(self, stream: str, rows: Sequence[tuple[int, str | None, str, str]]) -> list[dict[str, Any]]:
+        """Vérifie séquence, chaînage et empreintes ; renvoie les corps décodés."""
+        out: list[dict[str, Any]] = []
+        prev: str | None = None
+        for expected, (seq, prev_hash, row_hash, body) in enumerate(rows, start=1):
+            if seq != expected:
+                raise StateStoreError(f"journal d'état {stream} : séquence rompue en {seq} ({expected} attendu)")
+            if (prev_hash or None) != prev:
+                raise StateStoreError(f"journal d'état {stream} : chaînage rompu en {seq}")
+            if state_row_digest(prev, seq, body) != row_hash:
+                raise StateStoreError(f"journal d'état {stream} : ligne {seq} modifiée (empreinte invalide)")
+            try:
+                data = json.loads(body)
+            except ValueError as exc:
+                raise StateStoreError(f"journal d'état {stream} : ligne {seq} illisible") from exc
+            if not isinstance(data, dict):
+                raise StateStoreError(f"journal d'état {stream} : ligne {seq} n'est pas un objet JSON")
+            out.append(data)
+            prev = row_hash
+        self.loaded = True
+        self.seq = len(rows)
+        self.last_hash = prev
+        return out
+
+    def next_row(self, record: Mapping[str, Any]) -> tuple[int, str | None, str, str]:
+        body = _state_body(record)
+        seq = self.seq + 1
+        return seq, self.last_hash, state_row_digest(self.last_hash, seq, body), body
+
+    def advance(self, seq: int, row_hash: str) -> None:
+        self.seq = seq
+        self.last_hash = row_hash
+
+
+class InMemoryStateJournal:
+    """Journal d'état en mémoire (tests ; ``POKESHOP_STATE_DIR=:memory:`` hors production)."""
+
+    backend = "memoire"
+
+    def __init__(self, stream: str) -> None:
+        self.stream = _check_stream(stream)
+        self._lock = threading.RLock()
+        self._rows: list[tuple[int, str | None, str, str]] = []
+        self._chain = _ChainState()
+
+    def load(self) -> list[dict[str, Any]]:
+        """Relit (et vérifie) le flux."""
+        with self._lock:
+            return self._chain.verify(self.stream, self._rows)
+
+    def append(self, record: Mapping[str, Any]) -> int:
+        """Ajout seul."""
+        with self._lock:
+            if not self._chain.loaded:
+                self._chain.verify(self.stream, self._rows)
+            row = self._chain.next_row(record)
+            self._rows.append(row)
+            self._chain.advance(row[0], row[2])
+            return row[0]
+
+
+class JsonlStateJournal:
+    """Journal d'état dans un fichier JSON Lines en **ajout seul** (``<POKESHOP_STATE_DIR>/<flux>.jsonl``).
+
+    Chaque ligne : ``{"seq", "prev", "hash", "data"}`` ; la chaîne sha256 détecte une ligne
+    modifiée, supprimée au milieu ou tronquée. Écriture : verrou exclusif (``flock``), contrôle
+    que personne d'autre n'a écrit depuis la dernière lecture (taille du fichier), ``fsync``.
+    Un seul processus écrivain par fichier : un second écrivain est refusé (conflit).
+    """
+
+    backend = "fichier"
+
+    def __init__(self, path: str | Path, *, stream: str | None = None) -> None:
+        self.path = Path(path)
+        self.stream = _check_stream(stream or self.path.stem)
+        self._lock = threading.RLock()
+        self._chain = _ChainState()
+        self._size = 0
+
+    def _ensure_dir(self) -> None:
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise StateStoreError(f"dossier d'état {self.path.parent} inaccessible ({exc.strerror})") from exc
+        if not os.access(self.path.parent, os.W_OK | os.X_OK):
+            raise StateStoreError(f"dossier d'état {self.path.parent} non inscriptible")
+
+    def _read_rows(self) -> tuple[list[tuple[int, str | None, str, str]], int]:
+        try:
+            raw = self.path.read_bytes()
+        except FileNotFoundError:
+            return [], 0
+        except OSError as exc:
+            raise StateStoreError(f"journal d'état {self.path} illisible ({exc.strerror})") from exc
+        if raw and not raw.endswith(b"\n"):
+            raise StateStoreError(f"journal d'état {self.path} : dernière ligne tronquée (écriture interrompue ?)")
+        rows: list[tuple[int, str | None, str, str]] = []
+        for n, line in enumerate(raw.decode("utf-8", errors="strict").split("\n")[:-1] if raw else [], start=1):
+            try:
+                item = json.loads(line)
+                seq, prev, row_hash, data = item["seq"], item["prev"], item["hash"], item["data"]
+            except (ValueError, KeyError, TypeError) as exc:
+                raise StateStoreError(f"journal d'état {self.path} : ligne {n} illisible") from exc
+            if isinstance(seq, bool) or not isinstance(seq, int) or not isinstance(row_hash, str):
+                raise StateStoreError(f"journal d'état {self.path} : ligne {n} mal formée")
+            rows.append((seq, prev, row_hash, _canonical(data)))
+        return rows, len(raw)
+
+    def load(self) -> list[dict[str, Any]]:
+        """Relit et vérifie tout le fichier ; crée le dossier au besoin (contrôle d'écriture)."""
+        with self._lock:
+            self._ensure_dir()
+            try:
+                rows, size = self._read_rows()
+            except UnicodeDecodeError as exc:
+                raise StateStoreError(f"journal d'état {self.path} : encodage invalide") from exc
+            data = self._chain.verify(self.stream, rows)
+            self._size = size
+            return data
+
+    def append(self, record: Mapping[str, Any]) -> int:
+        """Écrit une ligne (verrou exclusif, contrôle de conflit, fsync) ; StateStoreError sinon."""
+        import fcntl
+
+        with self._lock:
+            if not self._chain.loaded:
+                self.load()
+            seq, prev, row_hash, body = self._chain.next_row(record)
+            line = _canonical({"data": json.loads(body), "hash": row_hash, "prev": prev, "seq": seq}) + "\n"
+            encoded = line.encode("utf-8")
+            try:
+                fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+            except OSError as exc:
+                raise StateStoreError(f"journal d'état {self.path} : ouverture impossible ({exc.strerror})") from exc
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                size = os.fstat(fd).st_size
+                if size != self._size:
+                    raise StateStoreError(
+                        f"journal d'état {self.path} modifié par un autre processus : écriture refusée "
+                        "(un seul service par dossier d'état ; redémarrer pour relire)"
+                    )
+                written = os.write(fd, encoded)
+                if written != len(encoded):
+                    raise StateStoreError(f"journal d'état {self.path} : écriture partielle")
+                os.fsync(fd)
+            except OSError as exc:
+                raise StateStoreError(f"journal d'état {self.path} : écriture impossible ({exc.strerror})") from exc
+            finally:
+                os.close(fd)
+            self._size += len(encoded)
+            self._chain.advance(seq, row_hash)
+            return seq
+
+
+class PostgresStateJournal:
+    """Journal d'état dans ``pokeshop.engine_state_journal`` (migration 004, ajout seul).
+
+    La base refuse UPDATE/DELETE/TRUNCATE, impose la séquence continue et le chaînage par flux
+    (trigger) et vérifie l'empreinte : un second écrivain concurrent est refusé.
+    """
+
+    backend = "postgres"
+
+    SELECT_SQL = (
+        "SELECT seq, prev_hash, row_hash, body FROM pokeshop.engine_state_journal WHERE stream = %s ORDER BY seq"
+    )
+    INSERT_SQL = (
+        "INSERT INTO pokeshop.engine_state_journal (stream, seq, prev_hash, row_hash, body) "
+        "VALUES (%s, %s, %s, %s, %s)"
+    )
+
+    def __init__(self, connect: ConnectionFactory, stream: str) -> None:
+        self.stream = _check_stream(stream)
+        self._db = _PgRunner(connect)
+        self._lock = threading.RLock()
+        self._chain = _ChainState()
+
+    def load(self) -> list[dict[str, Any]]:
+        """SELECT du flux puis vérification de la chaîne."""
+        with self._lock:
+            try:
+                rows = self._db.run(self.SELECT_SQL, (self.stream,), "all") or []
+            except Exception as exc:  # noqa: BLE001 - toute panne de base = journal illisible (fermé)
+                raise StateStoreError(
+                    f"journal d'état {self.stream} : lecture en base impossible ({type(exc).__name__})"
+                ) from exc
+            clean = [
+                (int(r[0]), r[1].strip() if isinstance(r[1], str) else r[1], str(r[2]).strip(), str(r[3])) for r in rows
+            ]
+            return self._chain.verify(self.stream, clean)
+
+    def append(self, record: Mapping[str, Any]) -> int:
+        """INSERT de la ligne suivante de la chaîne (la base refuse tout trou ou doublon)."""
+        with self._lock:
+            if not self._chain.loaded:
+                self.load()
+            seq, prev, row_hash, body = self._chain.next_row(record)
+            try:
+                self._db.run(self.INSERT_SQL, (self.stream, seq, prev, row_hash, body), "none")
+            except Exception as exc:  # noqa: BLE001 - conflit ou panne : rien n'est considéré comme écrit
+                raise StateStoreError(
+                    f"journal d'état {self.stream} : écriture en base refusée ({type(exc).__name__}: {exc})"
+                ) from exc
+            self._chain.advance(seq, row_hash)
+            return seq
+
+
+class FailedStateJournal:
+    """Journal d'un flux qui n'a pas pu être relu au démarrage : toute écriture est refusée."""
+
+    backend = "indisponible"
+
+    def __init__(self, stream: str, reason: str) -> None:
+        self.stream = _check_stream(stream)
+        self.reason = reason
+
+    def load(self) -> list[dict[str, Any]]:
+        """Toujours en échec."""
+        raise StateStoreError(f"journal d'état {self.stream} indisponible : {self.reason}")
+
+    def append(self, record: Mapping[str, Any]) -> int:
+        """Toujours refusé (le service reste gelé jusqu'à réparation et redémarrage)."""
+        raise StateStoreError(f"journal d'état {self.stream} indisponible : {self.reason}")

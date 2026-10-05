@@ -54,6 +54,8 @@ from pokeshop.pricing import (
     order_floor_price_exact,
     round_up_retail,
     select_tier,
+    small_product_min_order_required,
+    small_product_rule_active,
 )
 
 NOW = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
@@ -78,6 +80,8 @@ def params(**kw) -> PricingParams:
 
 EFF = params()
 NREG = params(vat_rate_sales=D("0"))
+# Règle petits produits ACTIVE : minimum de commande imposé par la boutique (port offert, couvert par L).
+SMALL = params(small_product_max_shipping_ttc=D("0"), small_product_min_order_ttc=D("127"))
 
 
 def lci(**kw) -> LandedCostInput:
@@ -751,20 +755,69 @@ class TestDecidePrice:
         assert d.restock_eligible is False
 
     def test_small_product_addon_rule(self):
-        d = decide_price(D("3.50"), EFF)
+        d = decide_price(D("3.50"), SMALL)
         assert d.small_product
         assert d.has(Reason.SMALL_PRODUCT_ADDON)
         assert d.recommended_price == D("4.90")
         assert d.contribution_pct >= D("0.20")
 
     def test_small_product_override_and_disabled_rule(self):
-        d = decide_price(D("3.50"), EFF, small_product=False)
+        d = decide_price(D("3.50"), SMALL, small_product=False)
         assert not d.small_product
         assert d.has(Reason.ORDER_FLOOR_CHF_BINDING)
         assert d.contribution_chf >= D("8")
-        no_rule = params(small_product_max_cost=None)
+        no_rule = params(small_product_max_cost=None, small_product_max_shipping_ttc=D("0"),
+                         small_product_min_order_ttc=D("127"))  # fmt: skip
         assert not decide_price(D("3.50"), no_rule).small_product
-        assert decide_price(D("50"), EFF, small_product=True).small_product
+        # l'appelant ne peut que restreindre : jamais « petit » au-dessus du seuil ni règle inactive
+        assert not decide_price(D("50"), SMALL, small_product=True).small_product
+        assert not decide_price(D("3.50"), EFF, small_product=True).small_product
+
+    def test_small_product_rule_inactive_without_shop_minimum_order(self):
+        """MOT-10 / E2E-11 : sans minimum de commande imposé, un petit produit vendu seul reste ≥ 8 CHF."""
+        assert small_product_min_order_required(EFF) == D("127.00")
+        assert not small_product_rule_active(EFF)
+        for cost in ("3.79", "5.66", "13.24", "15.00"):
+            d = decide_price(D(cost), EFF)
+            assert not d.small_product and not d.has(Reason.SMALL_PRODUCT_ADDON)
+            assert any("inactive" in n for n in d.notes)
+            alone = basket_contribution(
+                [BasketLine(sku="P", qty=1, unit_price_ttc=d.recommended_price, unit_cost=D(cost))],
+                EFF, D("0"), shipping_cost_actual=EFF.logistics_cost,
+            )  # fmt: skip
+            assert alone.status is DecisionStatus.OK and alone.contribution_chf >= D("8"), cost
+
+    def test_small_product_rule_needs_sufficient_minimum_and_shipping(self):
+        assert not small_product_rule_active(params(small_product_min_order_ttc=D("127")))  # port maximal absent
+        assert not small_product_rule_active(
+            params(small_product_max_shipping_ttc=D("0"), small_product_min_order_ttc=D("126.99"))
+        )
+        assert small_product_rule_active(SMALL)
+        shipped = params(small_product_max_shipping_ttc=D("9.90"))
+        assert small_product_min_order_required(shipped) == D("145.00")
+        assert not small_product_rule_active(shipped.replace(small_product_min_order_ttc=D("127")))
+        assert small_product_min_order_required(params(hard_floor_margin=D("0.20"))) is None
+
+    @pytest.mark.parametrize("p", [EFF, NREG])
+    @pytest.mark.parametrize("ship_max", [D("0"), D("9.90")])
+    def test_small_only_basket_above_required_minimum_respects_hard_floors(self, p, ship_max):
+        """Panier de petits produits seuls ≥ minimum calculé : jamais sous 12 % ni sous 8 CHF."""
+        rules = p.replace(small_product_max_shipping_ttc=ship_max)
+        rules = rules.replace(small_product_min_order_ttc=small_product_min_order_required(rules))
+        assert small_product_rule_active(rules)
+        rng = random.Random(7)
+        for _ in range(400):
+            lines, goods = [], D("0")
+            while goods < rules.small_product_min_order_ttc:
+                cost = D(rng.randint(50, 1500)) / 100
+                d = decide_price(cost, rules)
+                assert d.small_product
+                qty = rng.randint(1, 3)
+                lines.append(BasketLine(sku=f"S{len(lines)}", qty=qty, unit_price_ttc=d.recommended_price, unit_cost=cost))
+                goods += qty * d.recommended_price
+            ship = D(rng.randint(0, int(ship_max * 100))) / 100
+            r = basket_contribution(lines, rules, ship, shipping_cost_actual=rules.logistics_cost if ship == 0 else None)
+            assert r.status is not DecisionStatus.BLOCKED, (goods, ship, r.reasons)
 
     def test_order_floor_binds_for_mid_price_products(self):
         d = decide_price(D("20"), EFF)
@@ -775,11 +828,19 @@ class TestDecidePrice:
         assert d.contribution_chf >= D("8")
 
     def test_small_candidate_checked_on_pct_only(self):
-        d = decide_price(D("3.50"), EFF, candidate_price=D("4.50"))
+        d = decide_price(D("3.50"), SMALL, candidate_price=D("4.50"))
         assert d.status is DecisionStatus.REVIEW
         assert not d.has(Reason.BELOW_ORDER_FLOOR_CHF)
-        d2 = decide_price(D("3.50"), EFF, candidate_price=D("3.90"))
+        d2 = decide_price(D("3.50"), SMALL, candidate_price=D("3.90"))
         assert d2.status is DecisionStatus.BLOCKED
+
+    def test_hard_floor_uses_exact_ratio_not_rounded_pct(self):
+        """MOT-28 : 8.34 / 69.52 = 11,9965 % s'affiche 12,00 % mais reste sous le plancher dur."""
+        d = decide_price(D("50"), EFF, candidate_price=D("75.15"))
+        assert d.contribution_chf == D("8.34") and d.contribution_pct == D("0.1200")
+        assert d.status is DecisionStatus.BLOCKED and d.has(Reason.BELOW_HARD_FLOOR)
+        current = decide_price(D("50"), EFF, current_public=D("75.15"))
+        assert current.has(Reason.CURRENT_PRICE_BELOW_HARD_FLOOR)
 
     def test_denominator_failure_is_blocked_not_raised(self):
         d = decide_price(D("100"), params(target_margin=D("0.98")))
@@ -1047,6 +1108,24 @@ class TestBasket:
         assert r.goods_ttc == D("570.00")
         assert r.discount_ttc == D("57.00")
         assert r.total_paid_ttc == D("520.90")
+
+    def test_free_shipping_without_actual_cost_needs_review(self):
+        """MOT-18 : port offert sans coût réel => le moteur ne suppose plus un port réel nul."""
+        lines = [line(price="64.90", cost="40")]
+        r = basket_contribution(lines, EFF, D("0"))
+        assert r.status is DecisionStatus.REVIEW and not r.is_allowed
+        assert Reason.SHIPPING_COST_UNKNOWN.value in r.reasons
+        real = basket_contribution(lines, EFF, D("0"), shipping_cost_actual=D("12"))
+        assert real.status is DecisionStatus.BLOCKED and Reason.SHIPPING_COST_UNKNOWN.value not in real.reasons
+        charged = basket_contribution(lines, EFF, D("7.90"))
+        assert Reason.SHIPPING_COST_UNKNOWN.value not in charged.reasons
+
+    def test_basket_hard_floor_uses_exact_ratio(self):
+        """MOT-28 côté panier : ratio exact sous 12 % => BLOCKED même si le pourcentage affiché vaut 12,00 %."""
+        lines = [line(price="75.15", cost="50")]
+        r = basket_contribution(lines, EFF, D("0"), shipping_cost_actual=D("3"))
+        assert r.contribution_pct == D("0.1200") and r.contribution_chf / r.net_revenue < D("0.12")
+        assert r.status is DecisionStatus.BLOCKED and Reason.BELOW_HARD_FLOOR.value in r.reasons
 
     def test_free_shipping_uses_actual_cost(self):
         default = basket_contribution([line(price="209.90")], EFF)

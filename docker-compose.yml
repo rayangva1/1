@@ -1,13 +1,24 @@
 # Pile locale « pour plus tard » — {{NOM_BOUTIQUE}} : PostgreSQL 16 + migrations + n8n + API du moteur.
 #
 # NE PAS LANCER avant décision de la propriétaire : coffre de secrets (B03), boutique Shopify
-# (B15) et niveau d'autonomie (C14). Préparation :
-#   1. cp .env.example .env   puis remplir depuis le coffre (jamais commité : .env est ignoré par git) ;
-#   2. docker compose config  (vérification sans rien lancer) ;
-#   3. docker compose up -d db db-migrate api n8n
+# (B15) et niveau d'autonomie (C14). Préparation (exécutable telle quelle, voir README.md « Démarrage ») :
+#   1. cp .env.example .env   puis remplir DEPUIS LE COFFRE au minimum POSTGRES_PASSWORD,
+#      POKESHOP_DB_PASSWORD, N8N_ENCRYPTION_KEY, POKESHOP_API_TOKEN_SHA256 et POKESHOP_OWNER_TOKEN_SHA256
+#      (.env n'est jamais commité : il est ignoré par git et exclu du contexte de construction) ;
+#   2. docker compose config --quiet   (vérification sans rien lancer : échoue tant qu'un secret obligatoire manque) ;
+#   3. docker compose up -d db db-migrate db-backup api n8n
+#   4. docker compose logs db-backup   (doit afficher « restauration vérifiée » : sauvegarde ET restauration testées)
 # Ports publiés sur 127.0.0.1 uniquement (aucune exposition réseau).
-# Simulation par défaut : POKESHOP_DRY_RUN=true dans .env.example ; aucune écriture Shopify réelle
-# sans POKESHOP_DRY_RUN=false ET le niveau d'autonomie requis (table autonomy_levels).
+# Simulation par défaut : POKESHOP_DRY_RUN=true ; aucune écriture Shopify réelle sans POKESHOP_DRY_RUN=false
+# ET le niveau d'autonomie requis.
+#
+# Moindre privilège : AUCUN service ne charge .env en entier. Docker Compose lit .env pour l'interpolation
+# ${…} ; chaque service ne reçoit que les variables listées dans son bloc `environment` :
+#   - db, db-migrate, db-backup : mot de passe administrateur PostgreSQL (db-migrate : aussi celui du compte du
+#     moteur, pour le créer) ;
+#   - api : variables POKESHOP_* seulement, connexion avec le compte `api_moteur` (membre de pokeshop_engine,
+#     jamais l'administrateur) ; ni N8N_ENCRYPTION_KEY ni POSTGRES_PASSWORD ;
+#   - n8n : sa clé de chiffrement et ses réglages ; aucun jeton ni mot de passe du moteur.
 
 name: pokeshop
 
@@ -30,7 +41,8 @@ services:
       timeout: 5s
       retries: 10
 
-  # Applique db/migrations/NNN_*.sql dans l'ordre (db/apply.sh, migrations seules, sans seed FICTIF).
+  # Applique db/migrations/NNN_*.sql dans l'ordre (db/apply.sh, migrations seules, sans seed FICTIF),
+  # puis crée ou met à jour le compte de connexion du moteur `api_moteur` (membre de pokeshop_engine).
   db-migrate:
     image: postgres:16
     depends_on:
@@ -38,10 +50,32 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://pokeshop_admin:${POSTGRES_PASSWORD:?definir POSTGRES_PASSWORD}@db:5432/pokeshop
+      POKESHOP_DB_USER: api_moteur
+      POKESHOP_DB_PASSWORD: ${POKESHOP_DB_PASSWORD:?definir POKESHOP_DB_PASSWORD dans .env (coffre)}
     volumes:
       - ./db:/db:ro
-    entrypoint: ["bash", "/db/apply.sh", "none"]
+    entrypoint: ["bash", "-c", "bash /db/apply.sh none && bash /db/engine_login.sh"]
     restart: "no"
+
+  # Sauvegarde quotidienne (pg_dump) ET test de restauration dans une base jetable (db/backup.sh) :
+  # une sauvegarde dont la restauration échoue est signalée dans le journal du service (BP §6).
+  # Copier régulièrement le volume « backups » hors de la machine (disque chiffré de la propriétaire).
+  db-backup:
+    image: postgres:16
+    restart: unless-stopped
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://pokeshop_admin:${POSTGRES_PASSWORD:?definir POSTGRES_PASSWORD}@db:5432/pokeshop
+      POKESHOP_BACKUP_DIR: /sauvegardes
+      POKESHOP_BACKUP_KEEP: ${POKESHOP_BACKUP_KEEP:-30}
+      POKESHOP_BACKUP_INTERVAL_HOURS: ${POKESHOP_BACKUP_INTERVAL_HOURS:-24}
+      TZ: Europe/Zurich
+    volumes:
+      - ./db:/db:ro
+      - backups:/sauvegardes
+    entrypoint: ["bash", "/db/backup.sh", "boucle"]
 
   api:
     build: .
@@ -49,14 +83,38 @@ services:
     depends_on:
       db-migrate:
         condition: service_completed_successfully
-    env_file:
-      - path: .env
-        required: false   # sans .env : simulation, jetons absents => routes internes fermées (503)
+    # Pas d'env_file : liste explicite (moindre privilège). Valeur vide = absente pour le moteur.
     environment:
-      # Compte administrateur en local uniquement ; en production : compte de connexion membre du
-      # rôle pokeshop_engine (db/README.md, « Rôles »), mot de passe au coffre.
-      POKESHOP_DATABASE_URL: postgresql://pokeshop_admin:${POSTGRES_PASSWORD:?definir POSTGRES_PASSWORD}@db:5432/pokeshop
+      POKESHOP_ENV: ${POKESHOP_ENV:-dev}
+      POKESHOP_DRY_RUN: ${POKESHOP_DRY_RUN:-true}
+      POKESHOP_VAT_PROFILE: ${POKESHOP_VAT_PROFILE:-EFFECTIVE}
+      POKESHOP_TIMEZONE: ${POKESHOP_TIMEZONE:-Europe/Zurich}
+      POKESHOP_RULES_PATH: ${POKESHOP_RULES_PATH:-}
+      POKESHOP_STOPLOSS_PATH: ${POKESHOP_STOPLOSS_PATH:-}
+      POKESHOP_MANDATE_PATH: ${POKESHOP_MANDATE_PATH:-}
+      POKESHOP_MANDATE_FINGERPRINT: ${POKESHOP_MANDATE_FINGERPRINT:-}
+      POKESHOP_STOPLOSS_FINGERPRINT: ${POKESHOP_STOPLOSS_FINGERPRINT:-}
+      POKESHOP_RULES_FINGERPRINT: ${POKESHOP_RULES_FINGERPRINT:-}
+      POKESHOP_API_TOKEN_SHA256: ${POKESHOP_API_TOKEN_SHA256:?definir POKESHOP_API_TOKEN_SHA256 dans .env (sinon routes internes fermees)}
+      POKESHOP_OWNER_TOKEN_SHA256: ${POKESHOP_OWNER_TOKEN_SHA256:?definir POKESHOP_OWNER_TOKEN_SHA256 dans .env (coffre)}
+      POKESHOP_AGENT_TOKENS_SHA256: ${POKESHOP_AGENT_TOKENS_SHA256:-}
+      POKESHOP_SHOPIFY_SHOP_DOMAIN: ${POKESHOP_SHOPIFY_SHOP_DOMAIN:-}
+      POKESHOP_SHOPIFY_API_VERSION: ${POKESHOP_SHOPIFY_API_VERSION:-2026-10}
+      POKESHOP_SHOPIFY_ADMIN_TOKEN: ${POKESHOP_SHOPIFY_ADMIN_TOKEN:-}
+      POKESHOP_SHOPIFY_LOCATION_ID: ${POKESHOP_SHOPIFY_LOCATION_ID:-}
+      POKESHOP_SHOPIFY_TEST_STORE: ${POKESHOP_SHOPIFY_TEST_STORE:-false}
+      # Compte de connexion du moteur créé par db-migrate (db/engine_login.sh), jamais l'administrateur.
+      POKESHOP_DATABASE_URL: postgresql://api_moteur:${POKESHOP_DB_PASSWORD:?definir POKESHOP_DB_PASSWORD}@db:5432/pokeshop
       POKESHOP_N8N_WEBHOOK_URL: http://n8n:5678/webhook/pokeshop-incidents
+      # false par défaut : les incidents partent vers le workflow 04 (n8n interne) ; un envoi raté est journalisé
+      # « non livré ». true = alertes simulées (signalé par /health et le digest 05).
+      POKESHOP_NOTIFY_DRY_RUN: ${POKESHOP_NOTIFY_DRY_RUN:-false}
+      POKESHOP_AUTONOMY_LEVEL: ${POKESHOP_AUTONOMY_LEVEL:-1}
+      # Vide = data/samples (jeux FICTIFS de l'image). Flux réel : /data/imports (volume partagé avec n8n).
+      POKESHOP_IMPORTS_DIR: ${POKESHOP_IMPORTS_DIR:-}
+      TZ: Europe/Zurich
+    volumes:
+      - imports:/data/imports:ro
     ports:
       - "127.0.0.1:8000:8000"
 
@@ -68,18 +126,26 @@ services:
       - api
     environment:
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?definir N8N_ENCRYPTION_KEY dans .env (coffre)}
+      # URL publique HTTPS de n8n (webhooks Shopify, liens des emails, formulaires) ; vide = localhost.
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-}
+      # Seul dossier lisible/inscriptible par les nœuds fichiers (dépôt du flux fournisseur du workflow 01).
+      N8N_RESTRICT_FILE_ACCESS_TO: /data/imports
       GENERIC_TIMEZONE: Europe/Zurich
       TZ: Europe/Zurich
       N8N_DIAGNOSTICS_ENABLED: "false"
       N8N_PERSONALIZATION_ENABLED: "false"
       N8N_PORT: "5678"
-      POKESHOP_API_URL: http://api:8000
     volumes:
       - n8n-data:/home/node/.n8n
       - ./orchestration/n8n:/workflows:ro
+      - imports:/data/imports
     ports:
       - "127.0.0.1:5678:5678"
 
 volumes:
   db-data:
   n8n-data:
+  # Dossier d'import partagé : n8n y dépose le flux autorisé, l'API le lit (lecture seule).
+  imports:
+  # Sauvegardes de la base (contiennent coûts et marges : jamais dans le dépôt ni sur un partage ouvert).
+  backups:

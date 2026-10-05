@@ -46,12 +46,57 @@ OWNER_EMAIL_PLACEHOLDER = "REMPLACER-responsable@exemple.invalid"
 AGENTS_EMAIL_PLACEHOLDER = "agents@REMPLACER-domaine.invalid"
 SHOPIFY_GRAPHQL_PLACEHOLDER = "https://REMPLACER-boutique.myshopify.com/admin/api/2026-10/graphql.json"
 LANDING_PLACEHOLDER = "https://REMPLACER-URL-LANDING.exemple.invalid"
+SUPPORT_EMAIL_PLACEHOLDER = "REMPLACER-email-support@exemple.invalid"
+EMAILING_PLACEHOLDER = "https://REMPLACER-outil-emailing.exemple.invalid/api"
+
+# ------------------------------------------------------------------ noms et clés des workflows
+
+WORKFLOW_NAMES: dict[str, str] = {
+    "01": "Pokeshop 01 — Fournisseur vers site (simulation)",
+    "02": "Pokeshop 02 — Commande vers livraison",
+    "03": "Pokeshop 03 — Facture vers marge réelle",
+    "04": "Pokeshop 04 — Incidents et erreurs",
+    "05": "Pokeshop 05 — Digest quotidien",
+    "06": "Pokeshop 06 — Automatisations marketing",
+    "07": "Pokeshop 07 — Surveillance du stop-loss",
+    "08": "Pokeshop 08 — Mandat de dépense",
+}
+"""Nom affiché de chaque workflow (unique)."""
+
+WORKFLOW_IDS: dict[str, str] = {
+    "01": "pkshp01FournSite",
+    "02": "pkshp02CmdLivrai",
+    "03": "pkshp03FactMarge",
+    "04": "pkshp04Incidents",
+    "05": "pkshp05DigestJou",
+    "06": "pkshp06Marketing",
+    "07": "pkshp07StopLossW",
+    "08": "pkshp08MandatDep",
+}
+
+WORKFLOW_KEYS: dict[str, str] = {
+    "01": "fournisseur-site",
+    "02": "commande-livraison",
+    "03": "facture-marge",
+    "04": "incident",
+    "05": "digest",
+    "06": "marketing",
+    "07": "stoploss-watch",
+    "08": "mandat-depenses",
+}
+"""Clé CANONIQUE de chaque workflow : nœud « Paramètres », incidents ouverts par n8n (y compris par le
+workflow d'erreur 04), suspensions lues par les gardes, et moteur (``pokeshop.api.WORKFLOW_KEYS`` ;
+``fournisseur-site`` = ``pokeshop.sync.WORKFLOW_SUPPLIER_TO_SHOP``). Une seule clé par workflow : une
+suspension posée par le moteur ou par 04 arrête bien le workflow concerné (revue E2E-10)."""
 
 # --------------------------------------------------------------------- identifiants (références)
 
 CREDENTIALS: dict[str, tuple[str, str, str]] = {
     # clé logique -> (type n8n, id de référence, nom exact à créer dans n8n)
     "api": ("httpHeaderAuth", "pkshpApiToken001", "Pokeshop API — X-Pokeshop-Token"),
+    # Jeton NOMMÉ (POKESHOP_AGENT_TOKENS_SHA256 « n8n-07-stoploss:<empreinte> ») : la photo du stop-loss et les
+    # relevés de trésorerie sont déposés par un autre jeton que celui qui demande une dépense (mandat vérifiable).
+    "api_photo": ("httpHeaderAuth", "pkshpApiPhoto007", "Pokeshop API — jeton nommé n8n-07-stoploss"),
     "gateway": ("httpHeaderAuth", "pkshpGateway0001", "Passerelle agents — X-Pokeshop-Gateway"),
     "owner_form": ("httpBasicAuth", "pkshpOwnerForm01", "Formulaires propriétaire — Basic Auth"),
     "smtp": ("smtp", "pkshpSmtpAgents1", "SMTP boîte des agents"),
@@ -61,6 +106,7 @@ CREDENTIALS: dict[str, tuple[str, str, str]] = {
     "ads": ("httpHeaderAuth", "pkshpAdsPlatfm01", "Plateforme publicitaire — jeton API"),
     "paypal": ("oAuth2Api", "pkshpPaypalOAuth", "PayPal compte dédié — OAuth2 client credentials"),
     "supplier": ("httpHeaderAuth", "pkshpSupplier001", "Flux fournisseur — accès autorisé"),
+    "bank": ("httpHeaderAuth", "pkshpBanqueSolde", "Banque — relevé de solde (lecture seule)"),
 }
 
 WRITE_NODE_TYPES = frozenset(
@@ -251,8 +297,14 @@ def engine(
     disabled: bool = False,
     notes: str | None = None,
     on_error: str | None = None,
+    cred: str = "api",
 ) -> str:
-    """Appel HTTP de l'API du moteur avec le credential « Pokeshop API » (en-tête X-Pokeshop-Token)."""
+    """Appel HTTP de l'API du moteur avec un credential « Pokeshop API » (en-tête X-Pokeshop-Token).
+
+    ``cred`` : ``api`` (jeton commun, non attribuable) ou ``api_photo`` (jeton nommé n8n-07-stoploss).
+    """
+    if not CREDENTIALS[cred][2].startswith("Pokeshop API"):
+        raise ValueError(f"credential non moteur : {cred}")
     parameters: dict[str, Any] = {
         "method": method,
         "url": f"={{{{ {ref(params)}.first().json.api_base_url }}}}{path}",
@@ -274,7 +326,7 @@ def engine(
         parameters,
         pos,
         disabled=disabled,
-        credentials="api",
+        credentials=cred,
         notes=notes,
         **extra,
     )
@@ -291,8 +343,12 @@ def external(
     body: str | None = None,
     predefined: bool = False,
     notes: str,
+    on_error: str | None = None,
 ) -> str:
-    """Appel d'un service externe : **toujours désactivé** à l'import (écriture ou accès non encore autorisé)."""
+    """Appel d'un service externe : **toujours désactivé** à l'import (écriture ou accès non encore autorisé).
+
+    ``on_error="continueErrorOutput"`` : un échec suit la sortie 1 (bilan honnête) au lieu d'arrêter le workflow.
+    """
     ctype = CREDENTIALS[cred][0]
     parameters: dict[str, Any] = {"method": method, "url": url}
     if predefined:
@@ -302,8 +358,11 @@ def external(
     if body is not None:
         parameters.update({"sendBody": True, "specifyBody": "json", "jsonBody": f"={{{{ JSON.stringify({body}) }}}}"})
     parameters["options"] = {"timeout": 30000}
+    extra: dict[str, Any] = {}
+    if on_error:
+        extra.update({"onError": on_error, "retryOnFail": True, "maxTries": 3, "waitBetweenTries": 2000})
     return wf.add(
-        name, "n8n-nodes-base.httpRequest", 4.2, parameters, pos, disabled=True, credentials=cred, notes=notes
+        name, "n8n-nodes-base.httpRequest", 4.2, parameters, pos, disabled=True, credentials=cred, notes=notes, **extra
     )
 
 
@@ -556,6 +615,55 @@ def respond(wf: Workflow, name: str, pos: tuple[float, float], body: str, code: 
     )
 
 
+def respond_redirect(wf: Workflow, name: str, pos: tuple[float, float], url: str) -> str:
+    """Réponse d'un webhook public par redirection (page du site)."""
+    return wf.add(
+        name,
+        "n8n-nodes-base.respondToWebhook",
+        1.1,
+        {"respondWith": "redirect", "redirectURL": url, "options": {}},
+        pos,
+    )
+
+
+def respond_html(wf: Workflow, name: str, pos: tuple[float, float], html: str, code: int) -> str:
+    """Réponse HTML autonome (sans JavaScript ni ressource externe) d'un lien public des emails."""
+    return wf.add(
+        name,
+        "n8n-nodes-base.respondToWebhook",
+        1.1,
+        {
+            "respondWith": "text",
+            "responseBody": html,
+            "options": {
+                "responseCode": code,
+                "responseHeaders": {"entries": [{"name": "Content-Type", "value": "text/html; charset=utf-8"}]},
+            },
+        },
+        pos,
+    )
+
+
+def merge_node(wf: Workflow, name: str, pos: tuple[float, float], notes: str | None = None) -> str:
+    """Merge v3 « append » : sorties de l'entrée 1 puis de l'entrée 2 (attend les deux branches)."""
+    return wf.add(name, "n8n-nodes-base.merge", 3, {"mode": "append"}, pos, notes=notes)
+
+
+def html_page(title: str, *paragraphs: str) -> str:
+    """Page HTML minimale, accessible, sans script, sans ressource externe, non indexée."""
+    body = "".join(f"<p>{p}</p>" for p in paragraphs)
+    return (
+        '<!DOCTYPE html><html lang="fr-CH"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<meta name="robots" content="noindex, nofollow">'
+        f"<title>{title}</title>"
+        "<style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5}"
+        "</style></head>"
+        f"<body><main><h1>{title}</h1>{body}"
+        f'<p><a href="{LANDING_PLACEHOLDER}/">Retour à l\'accueil</a></p></main></body></html>'
+    )
+
+
 def sticky(wf: Workflow, name: str, pos: tuple[float, float], content: str, width: int = 520, height: int = 420) -> str:
     """Note affichée sur le canevas (objectif, garde-fous, activation, validation humaine)."""
     return wf.add(
@@ -568,18 +676,29 @@ def sticky(wf: Workflow, name: str, pos: tuple[float, float], content: str, widt
 
 
 def suspension_guard(
-    wf: Workflow, col: float, row: float, *, params: str = "Paramètres", include_global: bool = True
+    wf: Workflow,
+    col: float,
+    row: float,
+    *,
+    params: str = "Paramètres",
+    include_global: bool = True,
+    suffix: str = "",
 ) -> tuple[str, str]:
     """Lit les incidents ouverts : si le workflow (ou, pour une dépense, toutes les écritures) est suspendu, on s'arrête.
 
+    La clé comparée est la clé **canonique** du nœud « Paramètres » (:data:`WORKFLOW_KEYS`), la même que celle
+    des incidents ouverts par le moteur et par le workflow d'erreur 04.
     ``include_global=False`` pour un cycle en simulation : la surveillance continue pendant un gel global
     (aucune écriture ; la porte de gouvernance du moteur refuse de toute façon les écritures réelles).
+    ``suffix`` distingue plusieurs gardes d'un même workflow.
     """
-    read = engine(wf, "Garde : incidents ouverts", "GET", "/incidents?open_only=true", (col, row), params=params)
+    read = engine(
+        wf, f"Garde : incidents ouverts{suffix}", "GET", "/incidents?open_only=true", (col, row), params=params
+    )
     scope = " || t === '*'" if include_global else ""
     guard = if_node(
         wf,
-        "Workflow suspendu ?",
+        f"Workflow suspendu ?{suffix}",
         (col + 1, row),
         [
             condition(
@@ -798,6 +917,8 @@ JS_DIGEST = (
 const ns = $('Étoile polaire (GET /northstar)').first().json;
 const sl = $('État du stop-loss (GET /stoploss/status)').first().json;
 const db = ($('Tableau de bord du jour (GET /dashboard/daily)').first().json || {}).report || {};
+const hist = $('Cycles de synchronisation (GET /sync/history)').first().json || {};
+const health = $('État du moteur (GET /health)').first().json || {};
 const rows = Array.isArray(ns.rows) ? ns.rows : [];
 const last = rows.length ? rows[rows.length - 1] : null;
 const north = db.north_star || {};
@@ -823,6 +944,12 @@ if (!sl.available) {
 } else {
   out.push('2. STOP-LOSS : aucun déclencheur.');
 }
+const notif = health.notifications || {};
+if (notif.real_time_alerts !== true) {
+  out.push(`   ALERTES TEMPS RÉEL INACTIVES (${notif.webhook_configured ? 'POKESHOP_NOTIFY_DRY_RUN=true' : 'webhook n8n non configuré'}) : un incident critique ne vous parvient que par ce digest.`);
+}
+const unreadable = (health.persistence || {}).unreadable;
+if (Array.isArray(unreadable) && unreadable.length) out.push(`   JOURNAUX D'ÉTAT ILLISIBLES (${unreadable.join(', ')}) : service gelé jusqu'à réparation.`);
 const kpis = {};
 (db.kpis || []).forEach((k) => { kpis[k.key] = k; });
 const order = ['ventes_payees', 'contribution_jour', 'cash_disponible', 'commandes_a_preparer', 'ruptures_locales', 'offres_perimees', 'incidents_ouverts'];
@@ -833,6 +960,11 @@ order.forEach((key) => {
   out.push(`${n}. ${k.label} : ${k.display} [${k.status}]${k.detail ? ' — ' + k.detail : ''}`);
   n += 1;
 });
+const runs = Array.isArray(hist.runs) ? hist.runs : [];
+const lastRun = runs.length ? runs[runs.length - 1] : null;
+out.push(`${n}. Synchronisation fournisseurs : ${hist.consecutive_clean_runs === undefined ? '—' : hist.consecutive_clean_runs} cycle(s) propre(s) consécutif(s) sur ${hist.target || 20} visés`
+  + (lastRun ? ` ; dernier cycle ${lastRun.status} (${lastRun.supplier_id}, ${lastRun.offers_costed} offre(s) évaluée(s))` : ' ; aucun cycle'));
+n += 1;
 const decisions = Array.isArray(db.decisions) ? db.decisions : [];
 out.push(`${n}. DÉCISIONS ATTENDUES (oui / non, avant l'échéance ; sans réponse : statu quo sûr) :`);
 if (!decisions.length) out.push('   aucune');
@@ -848,6 +980,11 @@ return [{ json: { sujet: `DIGEST {{NOM_BOUTIQUE}} — ${day} — cumul ${fmt(ns.
 JS_STOPLOSS_ANALYSIS = r"""
 // Analyse de GET /stoploss/status : cause, chiffres, action, comment réarmer ; empreinte pour n'alerter qu'au changement.
 const s = $input.first().json;
+const refresh = $('Construire la photo (POST /stoploss/state/refresh)').first().json || {};
+const built = refresh.origin === 'registres du moteur';
+const refreshNote = built
+  ? `photo construite par le moteur à partir de ses registres (relevés du ${(refresh.sources || {}).as_of || '?'})`
+  : `photo NON construite : ${refresh.erreur || (refresh.error && (refresh.error.description || refresh.error.message)) || 'erreur inconnue'}`;
 const triggers = Array.isArray(s.triggers) ? s.triggers : [];
 const status = s.status || {};
 const freeze = s.global_frozen === true || triggers.some((t) => t.action === 'FREEZE_ALL');
@@ -860,14 +997,15 @@ const ACTIONS = {
 };
 const lines = triggers.map((t) => `- [${LEVELS[t.level] || t.level}] ${t.scope} — cause : ${t.reason} | mesure : ${t.value === null || t.value === undefined ? '—' : t.value} ; seuil : ${t.threshold === null || t.threshold === undefined ? '—' : t.threshold} | action : ${ACTIONS[t.action] || t.action}`);
 const text = [];
-if (!s.available) text.push(`Stop-loss NON ÉVALUABLE : ${s.error || 'photo absente'}. Le mandat refuse toute dépense tant que la photo d'activité manque (POST /stoploss/state).`);
+if (!s.available) text.push(`Stop-loss NON ÉVALUABLE : ${s.error || 'photo absente'}. Le mandat refuse toute dépense tant que la photo d'activité manque.`,
+  `Photo d'activité : ${refreshNote}. Sources : apports (POST /capital/movements, votre jeton), soldes PayPal et banque (connecteurs), stock au coût (POST /costs/movements).`);
 if (freeze) text.push('GEL GLOBAL : tout est gelé, autonomie au niveau 1. Ce workflow a appliqué le gel (POST /stoploss/freeze).');
 if (lines.length) text.push('Déclencheurs :', ...lines);
 if (cut.length || status.ads_globally_cut) text.push(`Campagnes à couper : ${status.ads_globally_cut ? 'toutes' : cut.join(', ')} (nœud de coupure : à activer après recette).`);
 if (freeze) {
   text.push('', 'Comment réarmer (vous seule) :',
-    '1. Lire la valeur nette et la cause ; écrire votre motif (docs/00-pilotage/STOP_LOSS.md §5).',
-    '2. Depuis votre terminal : POST /stoploss/rearm avec les en-têtes X-Pokeshop-Token et X-Pokeshop-Owner-Token (votre jeton, jamais transmis à un agent) et le corps {"reason": "…", "rebase": true}.',
+    '1. Lire GET /stoploss/status : la cause, rearm_reference.net_worth_chf (valeur nette) et rearm_reference.photo_sha256 ; écrire votre motif (docs/00-pilotage/STOP_LOSS.md §5).',
+    '2. Depuis votre terminal : POST /stoploss/rearm avec les en-têtes X-Pokeshop-Token et X-Pokeshop-Owner-Token (votre jeton, jamais transmis à un agent) et le corps {"reason": "…", "rebase": true, "reference_chf": "<rearm_reference.net_worth_chf>", "photo_sha256": "<rearm_reference.photo_sha256>"} : vous attestez la valeur nette (écart > 1 CHF ou photo remplacée => refus 409).',
     "3. L'autonomie reste au niveau 1 : la remonter est une décision distincte (POST /autonomy).");
 }
 if (s.report_markdown) text.push('', s.report_markdown);
@@ -875,6 +1013,7 @@ text.push('', 'INTERNE — contient coûts et marges : ne jamais transférer ni 
 const fingerprint = [status.triggers_hash || '', s.available ? 'ok' : `ko:${s.error || ''}`, freeze ? 'gel' : 'libre'].join('|');
 return [{ json: {
   available: s.available === true,
+  photo_built: built,
   global_frozen: freeze,
   has_triggers: triggers.length > 0,
   has_freeze_all: freeze,
@@ -886,6 +1025,45 @@ return [{ json: {
   sujet: `[STOP-LOSS] ${freeze ? 'GEL GLOBAL' : !s.available ? 'NON ÉVALUABLE' : `${triggers.length} déclencheur(s)`}`,
   texte: text.join('\n'),
 } }];
+"""
+
+JS_ON_CHANGE = r"""
+// Une alerte par CHANGEMENT d'état (et non « jamais vu ») : l'empreinte est comparée à la dernière signalée,
+// mémorisée dans les données statiques du workflow (exécutions de production ; une exécution manuelle ne les
+// conserve pas). Un état qui disparaît puis réapparaît est donc de nouveau signalé, gel et coupure compris.
+const memo = $getWorkflowStaticData('global');
+const item = $input.first();
+if (memo.dernier_etat === item.json.fingerprint) return [];
+memo.dernier_etat = item.json.fingerprint;
+return [item];
+"""
+
+JS_FORGET_STATE = r"""
+// Aucun déclencheur : l'état signalé est oublié, pour qu'une réapparition (même empreinte) soit de nouveau alertée.
+const memo = $getWorkflowStaticData('global');
+memo.dernier_etat = 'aucun';
+return $input.all();
+"""
+
+JS_PAYPAL_BALANCE = r"""
+// Réponse PayPal « List all balances » (GET v1/reporting/balances) -> relevé CHF du compte dédié.
+// Aucun montant inventé : sans réponse, sans solde CHF ou sans date du relevé, rien n'est déposé.
+const data = $input.first().json || {};
+const balances = Array.isArray(data.balances) ? data.balances : null;
+if (!balances || !data.as_of_time) return [];
+const chf = balances.find((b) => b.currency === 'CHF' || (b.total_balance || {}).currency_code === 'CHF');
+const amount = chf && chf.available_balance ? String(chf.available_balance.value) : '';
+if (!/^\d+(\.\d{1,2})?$/.test(amount)) return [];
+return [{ json: { as_of: data.as_of_time, balance_chf: amount, source: 'API PayPal v1/reporting/balances (compte dédié)' } }];
+"""
+
+JS_BANK_BALANCE = r"""
+// Connecteur bancaire (contrat à adapter à la banque retenue) : { currency: 'CHF', balance_chf: '1234.56', as_of: ISO }.
+// Aucun montant inventé : réponse absente, devise autre que CHF ou date manquante => rien n'est déposé.
+const data = $input.first().json || {};
+const amount = String(data.balance_chf === undefined || data.balance_chf === null ? '' : data.balance_chf);
+if (data.currency !== 'CHF' || !data.as_of || !/^-?\d+(\.\d{1,2})?$/.test(amount)) return [];
+return [{ json: { as_of: data.as_of, balance_chf: amount, source: 'connecteur bancaire (compte de l’activité)' } }];
 """
 
 JS_SUBSCRIBERS = r"""
@@ -915,18 +1093,99 @@ if (!order.customer || !order.customer.id) return [];
 return [{ json: { customer_id: String(order.customer.id), order_name: order.name } }];
 """
 
-JS_UNSUBSCRIBE = r"""
-// Désinscription : jeton du lien (landing, emails) ou consentement retiré dans Shopify. Journal sans adresse.
+JS_LINK_TOKEN = r"""
+// Lien public d'un email (jeton unique, EMAILS §4 règle 7). Jeton absent ou mal formé : la demande ne peut pas être
+// identifiée — elle n'est JAMAIS ignorée en silence (page d'erreur honnête et, pour une opposition, incident).
 const item = $input.first().json;
-const token = item.query && item.query.jeton ? String(item.query.jeton) : null;
-if (token !== null && !/^[A-Za-z0-9_-]{16,128}$/.test(token)) return []; // jeton invalide : ignoré
-return [{ json: {
-  source: token ? 'lien_desinscription' : 'shopify',
-  jeton: token,
-  shopify_customer_id: token ? null : String(item.id || ''),
-  received_at: new Date().toISOString(),
-} }];
+const token = item.query && item.query.jeton ? String(item.query.jeton) : '';
+const valide = /^[A-Za-z0-9_-]{16,128}$/.test(token);
+return [{ json: { etape: 'normalise', valide, jeton: valide ? token : null, received_at: new Date().toISOString() } }];
 """
+
+
+def js_prepare_shopify(link_node: str, ok_field: str) -> str:
+    """Résultat de l'outil d'emailing (succès, erreur ou nœud désactivé) -> étape Shopify éventuelle."""
+    return (
+        r"""
+// Résultat de l'outil d'emailing -> préparation de l'étape Shopify (client lié au jeton, s'il existe).
+// Nœud désactivé (outil non branché) : la donnée normalisée passe telle quelle => « non branché », jamais « confirmé ».
+const j = $input.first().json || {};
+const lien = $('LINK_NODE').first().json;
+let emailing;
+if (j.error) emailing = `échec (${(j.error && j.error.message) || 'erreur'})`;
+else if (j.etape === 'normalise') emailing = 'non branché (nœud désactivé)';
+else emailing = j.OK_FIELD === true ? 'confirmé' : 'réponse non conforme';
+const customer = emailing === 'confirmé' && j.shopify_customer_id ? String(j.shopify_customer_id).replace(/\D/g, '') : '';
+return [{ json: { etape: 'prepare', jeton: lien.jeton, emailing, shopify_customer_id: customer || null,
+  shopify_applicable: customer !== '' } }];
+"""
+        .replace("LINK_NODE", link_node)
+        .replace("OK_FIELD", ok_field)
+    )
+
+
+def js_bilan(prepare_node: str, mutation: str) -> str:
+    """Bilan honnête : seul un retrait CONFIRMÉ par chaque outil compte."""
+    return (
+        r"""
+// Bilan : seul un résultat CONFIRMÉ par chaque outil compte ; nœud désactivé, erreur ou réponse non conforme => non
+// confirmé (incident pour un traitement manuel sans délai, envois marketing suspendus jusqu'à la reprise).
+const prep = $('PREPARE_NODE').first().json;
+const j = $input.first().json || {};
+let shopify;
+if (!prep.shopify_applicable) shopify = prep.emailing === 'confirmé' ? 'sans objet (aucun client Shopify lié)' : 'non vérifié';
+else if (j.error) shopify = `échec (${(j.error && j.error.message) || 'erreur'})`;
+else if (j.etape === 'prepare') shopify = 'non branché (nœud désactivé)';
+else {
+  const r = j.data && j.data.MUTATION;
+  shopify = r && Array.isArray(r.userErrors) && r.userErrors.length === 0 ? 'confirmé' : 'réponse non conforme';
+}
+const ok = prep.emailing === 'confirmé' && (!prep.shopify_applicable || shopify === 'confirmé');
+return [{ json: { tous_confirmes: ok, jeton: prep.jeton, resume: `outil d’emailing : ${prep.emailing} ; Shopify : ${shopify}` } }];
+"""
+        .replace("PREPARE_NODE", prepare_node)
+        .replace("MUTATION", mutation)
+    )
+
+
+JS_SHOPIFY_UNSUBSCRIBE = r"""
+// Consentement marketing retiré dans Shopify : à propager à l'outil d'emailing. Journal sans adresse.
+const item = $input.first().json;
+return [{ json: { etape: 'normalise', shopify_customer_id: String(item.id || ''), received_at: new Date().toISOString() } }];
+"""
+
+JS_SHOPIFY_UNSUBSCRIBE_BILAN = r"""
+// Bilan de la propagation Shopify -> outil d'emailing : seul un retrait confirmé par l'outil compte.
+const j = $input.first().json || {};
+let emailing;
+if (j.error) emailing = `échec (${(j.error && j.error.message) || 'erreur'})`;
+else if (j.etape === 'normalise') emailing = 'non branché (nœud désactivé)';
+else emailing = j.unsubscribed === true ? 'confirmé' : 'réponse non conforme';
+return [{ json: { tous_confirmes: emailing === 'confirmé', resume: `outil d’emailing : ${emailing} ; Shopify : retrait déjà fait (origine)` } }];
+"""
+
+JS_CONFIRM_ANSWER = r"""
+// Double opt-in : seule une confirmation explicite de l'outil d'emailing ({ confirmed: true }) active les alertes.
+const j = $input.first().json || {};
+return [{ json: { confirmed: !j.error && j.etape !== 'normalise' && j.confirmed === true } }];
+"""
+
+
+def js_preferences_answer(link_node: str, page: str) -> str:
+    """Adresse https de la page de préférences fournie par l'outil, sinon page honnête (désinscription possible)."""
+    return (
+        r"""
+// Page de préférences : adresse https fournie par l'outil d'emailing ; sinon page honnête qui offre la désinscription.
+const j = $input.first().json || {};
+const lien = $('LINK_NODE').first().json;
+const url = !j.error && j.etape !== 'normalise' && typeof j.preferences_url === 'string' && /^https:\/\//.test(j.preferences_url)
+  ? j.preferences_url : null;
+return [{ json: { preferences_url: url, html: PAGE.replace('__JETON__', lien.jeton) } }];
+"""
+        .replace("LINK_NODE", link_node)
+        .replace("PAGE", json.dumps(page, ensure_ascii=False))
+    )
+
 
 
 # -------------------------------------------------------------------------------- workflows
@@ -934,28 +1193,26 @@ return [{ json: {
 
 def wf01(cmap: Mapping[str, str] | None = None) -> Workflow:
     """Fournisseur -> site (BP §5 « Synchronisation proposée », §12) : prix 6 h, stock amont 45 min, simulation."""
-    wf = Workflow(
-        "pkshp01FournSite",
-        "Pokeshop 01 — Fournisseur vers site (simulation)",
-        "01_fournisseur_vers_site.json",
-        credentials_map=cmap,
-    )
+    wf = Workflow(WORKFLOW_IDS["01"], WORKFLOW_NAMES["01"], "01_fournisseur_vers_site.json", credentials_map=cmap)
     sticky(
         wf,
         "Note — à lire",
         (-1, -2.2),
         """
 ## 01 — Fournisseur vers site (BP §5, §12)
-Prix et offres **toutes les 6 h** ; stock amont **toutes les 45 min** (BP : 30 à 60 min si flux fiable).
+Prix et offres **toutes les 6 h** : import puis cycle complet. Stock amont **toutes les 45 min** : import seul
+(disponibilité amont et âge de la source), **sans** réévaluer les prix (BP §5).
 1. Récupérer le flux autorisé et le déposer dans le dossier d'import (nœuds désactivés : aucun accès fournisseur n'existe).
 2. `POST /imports/{fournisseur}/run` — **simulation**, quarantaine des anomalies.
-3. `POST /sync/run` avec **dry_run: true** : 8 étapes du BP §12, incidents ouverts par le moteur.
+3. `POST /sync/run` avec **dry_run: true** : 8 étapes du BP §12 sur le **catalogue validé et les frais enregistrés
+   dans le moteur** (`POST /catalog/items`, `/catalog/cost-inputs`, taux `POST /fx/rates`) ; sans catalogue : 409.
+   Un cycle n'est **propre** que s'il évalue au moins une offre (`GET /sync/history` : cycles propres consécutifs).
 Import rejeté (> 24 h, incomplet, ×10…) => incident **INC-03** (achats et promesses bloqués ; le stock local se vend).
 **Activation** : niveau 1 (simulation). Passer `dry_run` à false = décision C14 (niveau 2) + `POKESHOP_DRY_RUN=false`.
-**Validation humaine requise** : accès autorisé à chaque flux (B-xx), liste des fournisseurs du nœud Paramètres.
+**Validation humaine requise** : accès autorisé à chaque flux (B-xx), liste des fournisseurs du nœud Paramètres, catalogue validé.
 """,
-        width=640,
-        height=380,
+        width=680,
+        height=440,
     )
     t1 = cron(wf, "Toutes les 6 h — prix et offres", (0, 0), "5 */6 * * *")
     t2 = wf.add(
@@ -971,7 +1228,7 @@ Import rejeté (> 24 h, incomplet, ×10…) => incident **INC-03** (achats et pr
         wf,
         "Paramètres",
         (2, 0.5),
-        "01-fournisseur-site",
+        WORKFLOW_KEYS["01"],
         (
             "fournisseurs",
             '={{ [{"supplier": "fictif_grossiste_a", "source_path": "FICTIF_offres_grossiste_a.csv"}, '
@@ -1045,23 +1302,32 @@ Import rejeté (> 24 h, incomplet, ×10…) => incident **INC-03** (achats et pr
         ],
         combinator="or",
     )
+    stock_only = if_node(
+        wf,
+        "Cycle stock amont ?",
+        (11, 0),
+        [condition(f"={{{{ {ref('Paramètres')}.first().json.cycle }}}}", "string", "equals", "stock_amont")],
+        notes="Stock amont (45 min) : import seul, aucun prix réévalué ; prix et offres (6 h) : cycle complet.",
+    )
+    stock_done = noop(wf, "Stock amont : import seul (prix non réévalués)", (12, -0.8))
     sync = engine(
         wf,
         "Cycle fournisseur vers site (dry-run)",
         "POST",
         "/sync/run",
-        (11, 0),
+        (12, 0),
         body=f"{{ supplier: {item}.supplier, source_path: {item}.source_path, dry_run: true }}",
-        notes="dry_run: true explicite. Le moteur ouvre lui-même les incidents d'anomalie (simulation).",
+        notes="dry_run: true explicite. Catalogue validé et frais : registres du moteur (sans catalogue : 409). "
+        "Le moteur ouvre lui-même les incidents d'anomalie (simulation).",
     )
-    clean = if_node(wf, "Cycle propre ?", (12, 0), [condition("={{ $json.clean }}", "boolean", "true")])
-    ok = noop(wf, "Journal : cycle propre", (13, -0.5))
+    clean = if_node(wf, "Cycle propre ?", (13, 0), [condition("={{ $json.clean }}", "boolean", "true")])
+    ok = noop(wf, "Journal : cycle propre", (14, -0.5))
     alert = set_node(
         wf,
         "Préparer l'alerte de cycle",
-        (13, 0.5),
+        (14, 0.5),
         [
-            ("sujet", f"=[SYNC] Cycle non propre : {{{{ {item}.supplier }}}}", "string"),
+            ("sujet", f"=[SYNC] Cycle {{{{ $json.cycle_status }}}} : {{{{ {item}.supplier }}}}", "string"),
             (
                 "texte",
                 "={{ $json.report_markdown }}\n\nINTERNE — contient coûts et marges : ne jamais transférer ni publier.",
@@ -1069,7 +1335,7 @@ Import rejeté (> 24 h, incomplet, ×10…) => incident **INC-03** (achats et pr
             ),
         ],
     )
-    mail = email(wf, "Alerter la responsable (email, désactivé)", (14, 0.5))
+    mail = email(wf, "Alerter la responsable (email, désactivé)", (15, 0.5))
     incident = engine(
         wf,
         "Ouvrir un incident de flux (INC-03)",
@@ -1085,8 +1351,10 @@ Import rejeté (> 24 h, incomplet, ×10…) => incident **INC-03** (achats et pr
         notes="Le stock local confirmé n'est jamais touché par une panne de flux (BP §12).",
     )
     wf.chain(split, fetch, drop, imp, ok_import)
-    wf.link(ok_import, sync, 0)
+    wf.link(ok_import, stock_only, 0)
     wf.link(ok_import, incident, 1)
+    wf.link(stock_only, stock_done, 0)
+    wf.link(stock_only, sync, 1)
     wf.link(sync, clean)
     wf.link(clean, ok, 0)
     wf.link(clean, alert, 1)
@@ -1097,8 +1365,8 @@ Import rejeté (> 24 h, incomplet, ×10…) => incident **INC-03** (achats et pr
 def wf02(cmap: Mapping[str, str] | None = None) -> Workflow:
     """Commande -> livraison (BP §12) : paiement confirmé, doublon, réservation, bon, tâche colis HUMAINE, suivi, rapprochement."""
     wf = Workflow(
-        "pkshp02CmdLivrai",
-        "Pokeshop 02 — Commande vers livraison",
+        WORKFLOW_IDS["02"],
+        WORKFLOW_NAMES["02"],
         "02_commande_vers_livraison.json",
         keep_success_data=False,
         credentials_map=cmap,
@@ -1123,7 +1391,7 @@ Données personnelles : aucune conservée (exécutions réussies non sauvegardé
     )
     trigger = shopify_trigger(wf, "Shopify : commande payée (orders/paid)", (0, 0), "orders/paid")
     pa = params_node(
-        wf, "Paramètres — commande", (1, 0), "02-commande-livraison", ("delai_expedition_jours_ouvres", 3, "number")
+        wf, "Paramètres — commande", (1, 0), WORKFLOW_KEYS["02"], ("delai_expedition_jours_ouvres", 3, "number")
     )
     dup = dedupe(
         wf,
@@ -1192,7 +1460,7 @@ Données personnelles : aucune conservée (exécutions réussies non sauvegardé
     # Suivi quotidien des colis.
     t2 = cron(wf, "Chaque jour ouvré 07:30 — colis à remettre", (0, 2), "30 7 * * 1-5")
     pb = params_node(
-        wf, "Paramètres — suivi", (1, 2), "02-commande-livraison", ("delai_expedition_jours_ouvres", 3, "number")
+        wf, "Paramètres — suivi", (1, 2), WORKFLOW_KEYS["02"], ("delai_expedition_jours_ouvres", 3, "number")
     )
     read = external(
         wf,
@@ -1211,7 +1479,7 @@ Données personnelles : aucune conservée (exécutions réussies non sauvegardé
     wf.chain(t2, pb, read, late, late_mail)
     # Rapprochement hebdomadaire des versements.
     t3 = cron(wf, "Chaque lundi 06:30 — rapprochement des versements", (0, 3.2), "30 6 * * 1")
-    pc = params_node(wf, "Paramètres — rapprochement", (1, 3.2), "02-commande-livraison")
+    pc = params_node(wf, "Paramètres — rapprochement", (1, 3.2), WORKFLOW_KEYS["02"])
     tx = external(
         wf,
         "Lire les transactions de versement — Shopify Payments (désactivé)",
@@ -1258,12 +1526,7 @@ Données personnelles : aucune conservée (exécutions réussies non sauvegardé
 
 def wf03(cmap: Mapping[str, str] | None = None) -> Workflow:
     """Facture -> marge réelle (BP §12) : import assisté, contrôles, validation humaine, coût historique, écarts."""
-    wf = Workflow(
-        "pkshp03FactMarge",
-        "Pokeshop 03 — Facture vers marge réelle",
-        "03_facture_vers_marge_reelle.json",
-        credentials_map=cmap,
-    )
+    wf = Workflow(WORKFLOW_IDS["03"], WORKFLOW_NAMES["03"], "03_facture_vers_marge_reelle.json", credentials_map=cmap)
     sticky(
         wf,
         "Note — à lire",
@@ -1281,7 +1544,7 @@ Jamais de modification d'une commande client déjà conclue. Paiements et rembou
         height=340,
     )
     hook = webhook(wf, "Facture extraite par l’agent 05 (passerelle)", (0, 0), "pokeshop-facture")
-    p = params_node(wf, "Paramètres", (1, 0), "03-facture-marge")
+    p = params_node(wf, "Paramètres", (1, 0), WORKFLOW_KEYS["03"])
     checks = code_node(wf, "Contrôles déterministes (centimes)", (2, 0), JS_INVOICE_CHECKS)
     coherent = if_node(
         wf, "Extraction cohérente ?", (3, 0), [condition("={{ $json.anomalies_count }}", "number", "equals", 0)]
@@ -1399,11 +1662,7 @@ Jamais de modification d'une commande client déjà conclue. Paiements et rembou
 def wf04(cmap: Mapping[str, str] | None = None) -> Workflow:
     """Incident (BP §12) : notification cause + action, reprise après validation, échecs d'exécution (Error Trigger)."""
     wf = Workflow(
-        "pkshp04Incidents",
-        "Pokeshop 04 — Incidents et erreurs",
-        "04_incident.json",
-        error_workflow=False,
-        credentials_map=cmap,
+        WORKFLOW_IDS["04"], WORKFLOW_NAMES["04"], "04_incident.json", error_workflow=False, credentials_map=cmap
     )
     sticky(
         wf,
@@ -1430,7 +1689,7 @@ S1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : tes
         notes="Appelé par le moteur (POKESHOP_N8N_WEBHOOK_URL=http://n8n:5678/webhook/pokeshop-incidents). "
         "Le moteur n'envoie pas encore d'en-tête secret : réseau interne docker uniquement (écart signalé).",
     )
-    pa = params_node(wf, "Paramètres — incidents", (1, 0), "04-incident")
+    pa = params_node(wf, "Paramètres — incidents", (1, 0), WORKFLOW_KEYS["04"])
     valid = if_node(
         wf,
         "Charge valide ?",
@@ -1482,7 +1741,7 @@ S1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : tes
         "pokeshop-incident-reprise",
         notes='Corps : {"incident_id": "...", "test_ref": "...", "passed": true, "actor": "agent-12-qa"}',
     )
-    pb = params_node(wf, "Paramètres — reprise", (1, 2.2), "04-incident")
+    pb = params_node(wf, "Paramètres — reprise", (1, 2.2), WORKFLOW_KEYS["04"])
     body_ref = f"{ref('Demande de reprise (passerelle agents)')}.first().json.body"
     test = engine(
         wf,
@@ -1588,8 +1847,16 @@ S1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : tes
     wf.link(s1_msg, s1_mail2)
     # Erreurs d'exécution de tous les workflows.
     et = wf.add("Échec d’exécution d’un workflow", "n8n-nodes-base.errorTrigger", 1, {}, (0, 4.2))
-    pc = params_node(wf, "Paramètres — erreurs", (1, 4.2), "04-incident")
+    pc = params_node(wf, "Paramètres — erreurs", (1, 4.2), WORKFLOW_KEYS["04"])
     err = f"{ref('Échec d’exécution d’un workflow')}.first().json"
+    # Clé canonique du workflow en échec (connue au build : identifiant puis nom affiché) => la suspension
+    # posée par l'incident arrête bien ce workflow (garde « Workflow suspendu ? ») et, pour 08, le moteur.
+    by_id = json.dumps({WORKFLOW_IDS[k]: WORKFLOW_KEYS[k] for k in WORKFLOW_IDS}, ensure_ascii=False)
+    by_name = json.dumps({WORKFLOW_NAMES[k]: WORKFLOW_KEYS[k] for k in WORKFLOW_NAMES}, ensure_ascii=False)
+    failed_key = (
+        f"({by_id})[({err}.workflow || {{}}).id] || ({by_name})[({err}.workflow || {{}}).name] "
+        f"|| ({err}.workflow || {{}}).name || 'inconnu'"
+    )
     inc = engine(
         wf,
         "Ouvrir un incident d’exécution",
@@ -1600,7 +1867,7 @@ S1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : tes
         body=(
             f"{{ cause: 'Exécution ' + ({err}.execution.id || '?') + ' en échec au nœud ' + ({err}.execution.lastNodeExecuted || '?') "
             f"+ ' : ' + (({err}.execution.error || {{}}).message || 'erreur inconnue'), kind: 'WORKFLOW_EN_ECHEC', "
-            f"severity: 'MAJEUR', scope: 'WORKFLOW', workflow: ({err}.workflow || {{}}).name || 'inconnu', "
+            f"severity: 'MAJEUR', scope: 'WORKFLOW', workflow: {failed_key}, "
             "proposed_action: 'Corriger puis relancer depuis la file de reprise avec les mêmes clés d’idempotence ; "
             "vérifier l’état réel sur le site.', actor: 'n8n:04-incident', "
             f"simulation: {ref('Paramètres — erreurs')}.first().json.simulation, "
@@ -1636,9 +1903,7 @@ S1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : tes
 
 def wf05(cmap: Mapping[str, str] | None = None) -> Workflow:
     """Digest quotidien (ROUTINES_PILOTAGE §3.2) : étoile polaire puis stop-loss en tête, KPI du jour, décisions."""
-    wf = Workflow(
-        "pkshp05DigestJou", "Pokeshop 05 — Digest quotidien", "05_digest_quotidien.json", credentials_map=cmap
-    )
+    wf = Workflow(WORKFLOW_IDS["05"], WORKFLOW_NAMES["05"], "05_digest_quotidien.json", credentials_map=cmap)
     sticky(
         wf,
         "Note — à lire",
@@ -1656,23 +1921,25 @@ Lecture seule. **INTERNE** : contient coûts et marges.
         height=320,
     )
     t = cron(wf, "Chaque jour 07:45 — digest", (0, 0), "45 7 * * *")
-    p = params_node(wf, "Paramètres", (1, 0), "05-digest")
+    p = params_node(wf, "Paramètres", (1, 0), WORKFLOW_KEYS["05"])
     ns = engine(wf, "Étoile polaire (GET /northstar)", "GET", "/northstar", (2, 0))
     sl = engine(wf, "État du stop-loss (GET /stoploss/status)", "GET", "/stoploss/status", (3, 0))
     db = engine(wf, "Tableau de bord du jour (GET /dashboard/daily)", "GET", "/dashboard/daily", (4, 0))
-    cmp = code_node(wf, "Composer le digest (étoile polaire en premier)", (5, 0), JS_DIGEST)
-    mail = email(wf, "Envoyer le digest à la responsable (email, désactivé)", (6, -0.4))
-    sk = slack(wf, "Envoyer le digest (Slack, désactivé)", (6, 0.4))
-    wf.chain(t, p, ns, sl, db, cmp, mail)
+    hist = engine(wf, "Cycles de synchronisation (GET /sync/history)", "GET", "/sync/history?limit=5", (5, 0))
+    health = engine(wf, "État du moteur (GET /health)", "GET", "/health", (6, 0))
+    cmp = code_node(wf, "Composer le digest (étoile polaire en premier)", (7, 0), JS_DIGEST)
+    mail = email(wf, "Envoyer le digest à la responsable (email, désactivé)", (8, -0.4))
+    sk = slack(wf, "Envoyer le digest (Slack, désactivé)", (8, 0.4))
+    wf.chain(t, p, ns, sl, db, hist, health, cmp, mail)
     wf.link(cmp, sk)
     return wf
 
 
 def wf06(cmap: Mapping[str, str] | None = None) -> Workflow:
-    """Automatisations marketing (BP §9) avec garde-fous stock, marge et gel ; désinscription propagée."""
+    """Automatisations marketing (BP §9) avec garde-fous ; liens publics des emails traités avant toute confirmation."""
     wf = Workflow(
-        "pkshp06Marketing",
-        "Pokeshop 06 — Automatisations marketing",
+        WORKFLOW_IDS["06"],
+        WORKFLOW_NAMES["06"],
         "06_marketing_automations.json",
         keep_success_data=False,
         credentials_map=cmap,
@@ -1680,41 +1947,57 @@ def wf06(cmap: Mapping[str, str] | None = None) -> Workflow:
     sticky(
         wf,
         "Note — à lire",
-        (-1, -2.6),
+        (-1, -2.8),
         """
 ## 06 — Automatisations marketing (BP §9, docs/06-contenu/EMAILS)
-- **Nouveau stock local** (réception contrôlée) → alerte aux inscrits **consentants** (email 04), une par produit et par personne.
-  **Garde-fous** : campagne stoppée si stock vendable < seuil, référence sous stop-loss produit (marge insuffisante),
-  gel global ou stop-loss non évaluable.
+- **Réception contrôlée** → `POST /stock/receive` (stock local réel), puis alerte « nouveau stock local » aux inscrits
+  **consentants** (email 04). **Garde-fous** : incident ouvert sur « marketing », stock vendable < seuil, référence sous
+  stop-loss produit (marge insuffisante), gel global ou stop-loss non évaluable.
 - **Commande expédiée** → suivi (email 07 envoyé par Shopify ; alerte si aucun numéro de suivi).
 - **Livraison** → demande d'avis (email 11) **7 jours** après (hypothèse), une seule, sans réclamation ni opposition.
-- **Désinscription** → propagée à **tous** les outils (emailing, Shopify) ; page `desinscription.html`.
+- **Liens des emails** (jeton) : désinscription `alertes-desinscrire`, refus d'avis `avis-refus`, préférences
+  `alertes-preferences`, confirmation `alertes-confirmer`. La page de confirmation ne s'affiche **qu'après** les appels
+  aux outils ; lien invalide = page d'erreur honnête ; retrait non confirmé par un outil = incident (traitement manuel
+  sans délai, envois marketing suspendus jusqu'à la reprise).
 Aucun prix ni donnée interne dans un email : titre, statut et prix lus sur la page publique au moment de l'envoi.
-**Activation** : désinscription AVANT tout envoi ; envois au niveau 3. Pas de SMS ni d'email non sollicité.
+**Activation** : liens des emails AVANT tout envoi ; envois au niveau 3. Pas de SMS ni d'email non sollicité.
 **Validation humaine requise** : outil d'emailing (B04), seuil de stock d'alerte, délai d'avis, notes juristes C2-C4.
 """,
-        width=700,
-        height=430,
+        width=720,
+        height=480,
     )
-    # A. Nouveau stock local -> alerte.
+    # A. Réception contrôlée -> stock local -> alerte.
     hook = webhook(
         wf,
         "Réception contrôlée (passerelle agent 11)",
         (0, 0),
         "pokeshop-stock-recu",
-        notes='Corps : {"product_key", "sku", "public_title", "public_url", "format_preference"} — aucun prix.',
+        notes='Corps : {"product_key", "sku", "qty", "ref" (bon de livraison), "public_title", "public_url", '
+        '"format_preference"} — aucun prix.',
     )
-    pa = params_node(wf, "Paramètres — alertes stock", (1, 0), "06-marketing", ("seuil_stock_alerte", 3, "number"))
+    pa = params_node(wf, "Paramètres — alertes stock", (1, 0), WORKFLOW_KEYS["06"], ("seuil_stock_alerte", 3, "number"))
     body = f"{ref('Réception contrôlée (passerelle agent 11)')}.first().json.body"
+    receive = engine(
+        wf,
+        "Enregistrer la réception (POST /stock/receive)",
+        "POST",
+        "/stock/receive",
+        (2, 0),
+        params="Paramètres — alertes stock",
+        body=f"{{ sku: {body}.sku, qty: {body}.qty, ref: {body}.ref }}",
+        notes="Registre du stock local (idempotent par SKU + bon de livraison) : sans lui, la fiche reste en rupture.",
+    )
+    read_a, guard_a = suspension_guard(wf, 3, 0.8, params="Paramètres — alertes stock", suffix=" (alertes stock)")
+    held_a = noop(wf, "Alertes suspendues (incident ouvert)", (5, 1.4))
     guard = engine(
-        wf, "Garde : état du stop-loss", "GET", "/stoploss/status", (2, 0), params="Paramètres — alertes stock"
+        wf, "Garde : état du stop-loss", "GET", "/stoploss/status", (3, 0), params="Paramètres — alertes stock"
     )
     stock = engine(
         wf,
         "Stock vendable local",
         "POST",
         "/stock/sellable",
-        (3, 0),
+        (4, 0),
         params="Paramètres — alertes stock",
         body=f"{{ sku: {body}.sku }}",
     )
@@ -1722,7 +2005,7 @@ Aucun prix ni donnée interne dans un email : titre, statut et prix lus sur la p
     rails = if_node(
         wf,
         "Garde-fous campagne (stock, marge, gel)",
-        (4, 0),
+        (5, 0),
         [
             condition(f"={{{{ {sl}.available }}}}", "boolean", "true"),
             condition(f"={{{{ {sl}.global_frozen }}}}", "boolean", "false"),
@@ -1744,7 +2027,7 @@ Aucun prix ni donnée interne dans un email : titre, statut et prix lus sur la p
     stopped = set_node(
         wf,
         "Campagne stoppée (motif)",
-        (5, 0.7),
+        (6, 0.7),
         [
             (
                 "motif",
@@ -1755,24 +2038,24 @@ Aucun prix ni donnée interne dans un email : titre, statut et prix lus sur la p
             ),
         ],
     )
-    stopped_log = noop(wf, "Journal : alerte non envoyée", (6, 0.7))
+    stopped_log = noop(wf, "Journal : alerte non envoyée", (7, 0.7))
     subs = external(
         wf,
         "Lire les inscrits consentants — outil d’emailing (désactivé)",
         "GET",
-        "https://REMPLACER-outil-emailing.exemple.invalid/api/subscribers?status=confirme",
-        (5, -0.4),
+        f"{EMAILING_PLACEHOLDER}/subscribers?status=confirme",
+        (6, -0.4),
         "emailing",
         notes="Outil d'emailing à choisir (B04) ; lecture des inscrits confirmés seulement.",
     )
-    filt = code_node(wf, "Filtrer : consentement confirmé et préférence", (6, -0.4), JS_SUBSCRIBERS)
+    filt = code_node(wf, "Filtrer : consentement confirmé et préférence", (7, -0.4), JS_SUBSCRIBERS)
     one = dedupe(
-        wf, "Une alerte par produit et par personne", (7, -0.4), "={{ $json.product_key }}|{{ $json.subscriber_id }}"
+        wf, "Une alerte par produit et par personne", (8, -0.4), "={{ $json.product_key }}|{{ $json.subscriber_id }}"
     )
     comp = set_node(
         wf,
         "Composer l’email 04 (alerte stock local)",
-        (8, -0.4),
+        (9, -0.4),
         [
             ("modele", "04-alerte-stock-local", "string"),
             ("produit_titre", "={{ $json.public_title }}", "string"),
@@ -1783,13 +2066,16 @@ Aucun prix ni donnée interne dans un email : titre, statut et prix lus sur la p
         wf,
         "Envoyer l’email 04 — outil d’emailing (désactivé)",
         "POST",
-        "https://REMPLACER-outil-emailing.exemple.invalid/api/send",
-        (9, -0.4),
+        f"{EMAILING_PLACEHOLDER}/send",
+        (10, -0.4),
         "emailing",
         body="{ template: $json.modele, subscriber_id: $json.subscriber_id, variables: { produit_titre: $json.produit_titre, url_produit: $json.url_produit } }",
         notes="Niveau 3 seulement. Prix et statut relus sur la page publique au moment de l'envoi (EMAILS §4).",
     )
-    wf.chain(hook, pa, guard, stock, rails)
+    wf.chain(hook, pa, receive, read_a)
+    wf.link(guard_a, held_a, 0)
+    wf.link(guard_a, guard, 1)
+    wf.chain(guard, stock, rails)
     wf.link(rails, subs, 0)
     wf.link(rails, stopped, 1)
     wf.link(stopped, stopped_log)
@@ -1807,7 +2093,7 @@ Aucun prix ni donnée interne dans un email : titre, statut et prix lus sur la p
         ],
     )
     tracked = noop(wf, "Suivi envoyé au client par Shopify (email 07)", (2, 1.6))
-    pt = params_node(wf, "Paramètres — suivi", (2, 2.4), "06-marketing")
+    pt = params_node(wf, "Paramètres — suivi", (2, 2.4), WORKFLOW_KEYS["06"])
     no_track = set_node(
         wf,
         "Préparer l’alerte sans suivi",
@@ -1842,7 +2128,9 @@ Aucun prix ni donnée interne dans un email : titre, statut et prix lus sur la p
         (3, 3.4),
         webhook=True,
     )
-    pd = params_node(wf, "Paramètres — avis", (4, 3.4), "06-marketing")
+    pd = params_node(wf, "Paramètres — avis", (4, 3.4), WORKFLOW_KEYS["06"])
+    read_c, guard_c = suspension_guard(wf, 5, 4.2, params="Paramètres — avis", suffix=" (avis)")
+    held_c = noop(wf, "Avis suspendus (incident ouvert)", (7, 4.6))
     guard2 = engine(wf, "Garde : gel global (avis)", "GET", "/stoploss/status", (5, 3.4), params="Paramètres — avis")
     allowed = if_node(
         wf,
@@ -1887,86 +2175,417 @@ Aucun prix ni donnée interne dans un email : titre, statut et prix lus sur la p
     frozen_log = noop(wf, "Journal : avis non envoyé (gel ou stop-loss indisponible)", (7, 4))
     wf.chain(delivered, is_delivered)
     wf.link(is_delivered, once, 0)
-    wf.chain(once, wait7, pd, guard2, allowed)
+    wf.chain(once, wait7, pd, read_c)
+    wf.link(guard_c, held_c, 0)
+    wf.link(guard_c, guard2, 1)
+    wf.link(guard2, allowed)
     wf.link(allowed, order, 0)
     wf.link(allowed, frozen_log, 1)
     wf.chain(order, elig, comp11, send11)
-    # D. Désinscription propagée.
-    unsub = webhook(
+    # D. Désinscription (lien des emails) : confirmation APRÈS les retraits, jamais avant (CON-05).
+    _optout_flow(
         wf,
-        "Lien de désinscription (landing et emails)",
-        (0, 5),
-        "alertes-desinscrire",
-        method="GET",
-        auth="none",
-        response_mode="responseNode",
-        notes="Jeton unique par lien (EMAILS §4 règle 7) ; page de confirmation sans JavaScript.",
+        row=5.4,
+        path="alertes-desinscrire",
+        label="désinscription",
+        params_name="Paramètres — désinscription",
+        emailing_name="Désinscrire dans l’outil d’emailing (désactivé)",
+        emailing_url=f"{EMAILING_PLACEHOLDER}/unsubscribe",
+        emailing_ok_field="unsubscribed",
+        shopify_name="Retirer le consentement marketing dans Shopify (désactivé)",
+        shopify_body="{ query: 'mutation($input: CustomerEmailMarketingConsentUpdateInput!) { customerEmailMarketingConsentUpdate(input: $input) { userErrors { field message } } }', variables: { input: { customerId: 'gid://shopify/Customer/' + $json.shopify_customer_id, emailMarketingConsent: { marketingState: 'UNSUBSCRIBED' } } } }",
+        shopify_mutation="customerEmailMarketingConsentUpdate",
+        success_page_redirect=f"{LANDING_PLACEHOLDER}/desinscription.html",
+        success_html=None,
+        invalid_html=html_page(
+            "Lien de désinscription invalide",
+            "Votre lien de désinscription est incomplet ou invalide : nous n'avons pas pu identifier votre adresse, "
+            "et votre désinscription n'est <strong>pas</strong> enregistrée.",
+            f"Pour vous désinscrire, répondez « STOP » à l'email reçu ou écrivez à {SUPPORT_EMAIL_PLACEHOLDER} : "
+            "nous vous retirons à la main de tous nos outils et vous le confirmons par écrit.",
+        ),
+        kind="DESINSCRIPTION",
+        cause_unconfirmed="Désinscription non confirmée par tous les outils",
+        cause_invalid="Lien de désinscription invalide ou incomplet (jeton absent ou mal formé)",
+        action="Retirer à la main la personne de chaque outil (emailing, Shopify) sans délai et vérifier qu’aucun envoi "
+        "ne part ; les envois marketing restent suspendus jusqu’à la reprise.",
     )
-    page = wf.add(
-        "Afficher la page de désinscription",
-        "n8n-nodes-base.respondToWebhook",
-        1.1,
-        {"respondWith": "redirect", "redirectURL": f"{LANDING_PLACEHOLDER}/desinscription.html", "options": {}},
-        (1, 5),
-    )
-    cust = shopify_trigger(wf, "Shopify : client mis à jour (customers/update)", (0, 6), "customers/update")
+    # Consentement retiré directement dans Shopify -> outil d'emailing.
+    cust = shopify_trigger(wf, "Shopify : client mis à jour (customers/update)", (0, 8.2), "customers/update")
     is_unsub = if_node(
         wf,
         "Désinscrit dans Shopify ?",
-        (1, 6),
+        (1, 8.2),
         [condition("={{ ($json.email_marketing_consent || {}).state }}", "string", "equals", "unsubscribed")],
     )
-    norm = code_node(wf, "Normaliser la désinscription", (2, 5.5), JS_UNSUBSCRIBE)
-    u1 = external(
+    ps = params_node(wf, "Paramètres — désinscription Shopify", (2, 8), WORKFLOW_KEYS["06"])
+    norm_s = code_node(wf, "Normaliser la désinscription Shopify", (3, 8), JS_SHOPIFY_UNSUBSCRIBE)
+    u1s = external(
         wf,
-        "Désinscrire dans l’outil d’emailing (désactivé)",
+        "Désinscrire dans l’outil d’emailing — depuis Shopify (désactivé)",
         "POST",
-        "https://REMPLACER-outil-emailing.exemple.invalid/api/unsubscribe",
-        (3, 5.5),
+        f"{EMAILING_PLACEHOLDER}/unsubscribe",
+        (4, 8),
         "emailing",
-        body="{ token: $json.jeton, shopify_customer_id: $json.shopify_customer_id, source: $json.source }",
-        notes="À activer en même temps que l'outil d'emailing, AVANT tout envoi (désinscription dans la minute).",
+        body="{ shopify_customer_id: $json.shopify_customer_id, source: 'shopify' }",
+        notes="Réponse attendue de l'outil : { unsubscribed: true } (contrat à adapter à l'outil retenu, B04).",
+        on_error="continueErrorOutput",
     )
-    u2 = external(
-        wf,
-        "Retirer le consentement marketing dans Shopify (désactivé)",
-        "POST",
-        SHOPIFY_GRAPHQL_PLACEHOLDER,
-        (4, 5.5),
-        "shopify",
-        predefined=True,
-        body="{ query: 'mutation($input: CustomerEmailMarketingConsentUpdateInput!) { customerEmailMarketingConsentUpdate(input: $input) { userErrors { field message } } }', variables: { input: { customerId: 'gid://shopify/Customer/' + $json.shopify_customer_id, emailMarketingConsent: { marketingState: 'UNSUBSCRIBED' } } } }",
-        notes="Mutation hors liste blanche du client du moteur : à valider (agent integrations) avant activation.",
+    bilan_s = code_node(wf, "Bilan du retrait (origine Shopify)", (5, 8), JS_SHOPIFY_UNSUBSCRIBE_BILAN)
+    ok_s = if_node(
+        wf, "Retrait confirmé (origine Shopify) ?", (6, 8), [condition("={{ $json.tous_confirmes }}", "boolean", "true")]
     )
-    journal = noop(wf, "Journal de désinscription (sans adresse)", (5, 5.5))
-    wf.chain(unsub, page, norm)
+    done_s = noop(wf, "Journal de désinscription Shopify (sans adresse)", (7, 7.6))
+    inc_s = _optout_incident(
+        wf, "Incident : retrait Shopify non propagé", (7, 8.4), "Paramètres — désinscription Shopify",
+        "DESINSCRIPTION_NON_CONFIRME", "Désinscription Shopify non propagée à l’outil d’emailing",
+        "Retirer à la main la personne de l’outil d’emailing sans délai ; envois marketing suspendus jusqu’à la reprise.",
+    )  # fmt: skip
+    after_s = noop(wf, "Journal : retrait manuel demandé", (8, 8.4))
     wf.chain(cust, is_unsub)
-    wf.link(is_unsub, norm, 0)
-    wf.chain(norm, u1, u2, journal)
+    wf.link(is_unsub, ps, 0)
+    wf.chain(ps, norm_s, u1s)
+    wf.link(u1s, bilan_s, 0)
+    wf.link(u1s, bilan_s, 1)
+    wf.chain(bilan_s, ok_s)
+    wf.link(ok_s, done_s, 0)
+    wf.link(ok_s, inc_s, 1)
+    wf.link(inc_s, after_s, 0)
+    wf.link(inc_s, after_s, 1)
+    # E. Refus des demandes d'avis (email 11, note C3).
+    _optout_flow(
+        wf,
+        row=9.6,
+        path="avis-refus",
+        label="refus d’avis",
+        params_name="Paramètres — refus d’avis",
+        emailing_name="Enregistrer le refus d’avis — outil d’emailing (désactivé)",
+        emailing_url=f"{EMAILING_PLACEHOLDER}/review-opt-out",
+        emailing_ok_field="opted_out",
+        shopify_name="Poser l’étiquette avis-refus — Shopify (désactivé)",
+        shopify_body="{ query: 'mutation($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { field message } } }', variables: { id: 'gid://shopify/Customer/' + $json.shopify_customer_id, tags: ['avis-refus'] } }",
+        shopify_mutation="tagsAdd",
+        success_page_redirect=None,
+        success_html=html_page(
+            "Demande reçue",
+            "Nous avons bien reçu votre demande : elle a été transmise à nos outils et vous ne recevrez plus de "
+            "demande d'avis.",
+            "Si un outil n'a pas confirmé, nous le faisons à la main sans délai. Vous en recevez encore une ? "
+            f"Écrivez-nous à {SUPPORT_EMAIL_PLACEHOLDER}.",
+        ),
+        invalid_html=html_page(
+            "Lien invalide",
+            "Votre lien est incomplet ou invalide : nous n'avons pas pu identifier votre demande, et elle n'est "
+            "<strong>pas</strong> enregistrée.",
+            f"Pour ne plus recevoir de demande d'avis, écrivez à {SUPPORT_EMAIL_PLACEHOLDER} : nous l'enregistrons à la "
+            "main et vous le confirmons.",
+        ),
+        kind="REFUS_AVIS",
+        cause_unconfirmed="Refus des demandes d’avis non confirmé par tous les outils",
+        cause_invalid="Lien de refus des demandes d’avis invalide ou incomplet (jeton absent ou mal formé)",
+        action="Enregistrer à la main l’opposition (étiquette avis-refus du client Shopify, outil d’emailing) sans "
+        "délai ; aucune demande d’avis à cette personne.",
+    )
+    # F. Préférences (emails 02 à 05, 12, 13).
+    hp = webhook(
+        wf,
+        "Lien des préférences (emails)",
+        (0, 12.4),
+        "alertes-preferences",
+        method="GET",
+        auth="none",
+        response_mode="responseNode",
+        notes="Jeton unique par lien ; page de préférences de l'outil d'emailing, sinon page honnête.",
+    )
+    pp = params_node(wf, "Paramètres — préférences", (1, 12.4), WORKFLOW_KEYS["06"])
+    np = code_node(wf, "Normaliser le lien de préférences", (2, 12.4), JS_LINK_TOKEN)
+    vp = if_node(wf, "Lien de préférences valide ?", (3, 12.4), [condition("={{ $json.valide }}", "boolean", "true")])
+    bad_p = respond_html(
+        wf,
+        "Répondre : lien de préférences invalide",
+        (4, 13),
+        html_page(
+            "Lien invalide",
+            "Votre lien de préférences est incomplet ou invalide.",
+            "Pour ne plus rien recevoir, utilisez le lien « se désinscrire » de l'email ou écrivez à "
+            f"{SUPPORT_EMAIL_PLACEHOLDER}.",
+        ),
+        400,
+    )
+    gp = external(
+        wf,
+        "Obtenir la page de préférences — outil d’emailing (désactivé)",
+        "POST",
+        f"{EMAILING_PLACEHOLDER}/preferences-link",
+        (4, 12),
+        "emailing",
+        body="{ token: $json.jeton }",
+        notes="Réponse attendue : { preferences_url: 'https://…' } (contrat à adapter à l'outil retenu, B04).",
+        on_error="continueErrorOutput",
+    )
+    ap = code_node(
+        wf,
+        "Choisir la réponse (préférences)",
+        (5, 12),
+        js_preferences_answer(
+            "Normaliser le lien de préférences",
+            html_page(
+                "Vos préférences",
+                "La page de préférences n'est pas disponible pour le moment.",
+                'Pour ne plus recevoir aucun email : <a href="alertes-desinscrire?jeton=__JETON__">se désinscrire</a>. '
+                f"Pour modifier vos choix, écrivez à {SUPPORT_EMAIL_PLACEHOLDER}.",
+            ),
+        ),
+    )
+    hasp = if_node(
+        wf,
+        "Page de l’outil disponible ?",
+        (6, 12),
+        [condition("={{ $json.preferences_url }}", "string", "notEmpty")],
+    )
+    go_p = respond_redirect(wf, "Répondre : page de préférences de l’outil", (7, 11.6), "={{ $json.preferences_url }}")
+    page_p = wf.add(
+        "Répondre : préférences par écrit",
+        "n8n-nodes-base.respondToWebhook",
+        1.1,
+        {
+            "respondWith": "text",
+            "responseBody": "={{ $json.html }}",
+            "options": {"responseHeaders": {"entries": [{"name": "Content-Type", "value": "text/html; charset=utf-8"}]}},
+        },
+        (7, 12.4),
+    )
+    wf.chain(hp, pp, np, vp)
+    wf.link(vp, gp, 0)
+    wf.link(vp, bad_p, 1)
+    wf.link(gp, ap, 0)
+    wf.link(gp, ap, 1)
+    wf.link(ap, hasp)
+    wf.link(hasp, go_p, 0)
+    wf.link(hasp, page_p, 1)
+    # G. Confirmation d'inscription (double opt-in, email 01).
+    hc = webhook(
+        wf,
+        "Lien de confirmation (email 01)",
+        (0, 14.4),
+        "alertes-confirmer",
+        method="GET",
+        auth="none",
+        response_mode="responseNode",
+        notes="Double opt-in : seule une confirmation explicite de l'outil active les alertes (puis email 02 par l'outil).",
+    )
+    pc = params_node(wf, "Paramètres — confirmation", (1, 14.4), WORKFLOW_KEYS["06"])
+    nc = code_node(wf, "Normaliser le lien de confirmation", (2, 14.4), JS_LINK_TOKEN)
+    vc = if_node(wf, "Lien de confirmation valide ?", (3, 14.4), [condition("={{ $json.valide }}", "boolean", "true")])
+    confirm = external(
+        wf,
+        "Confirmer l’inscription — outil d’emailing (désactivé)",
+        "POST",
+        f"{EMAILING_PLACEHOLDER}/confirm",
+        (4, 14),
+        "emailing",
+        body="{ token: $json.jeton }",
+        notes="Réponse attendue : { confirmed: true } ; l'outil envoie ensuite l'email 02 (bienvenue et préférences).",
+        on_error="continueErrorOutput",
+    )
+    ac = code_node(wf, "Bilan de la confirmation", (5, 14), JS_CONFIRM_ANSWER)
+    okc = if_node(wf, "Inscription confirmée ?", (6, 14), [condition("={{ $json.confirmed }}", "boolean", "true")])
+    go_c = respond_redirect(
+        wf, "Répondre : inscription confirmée", (7, 13.6), f"{LANDING_PLACEHOLDER}/inscription-confirmee.html"
+    )
+    not_c = respond_html(
+        wf,
+        "Répondre : confirmation non enregistrée",
+        (7, 14.4),
+        html_page(
+            "Confirmation non enregistrée",
+            "Votre confirmation n'a pas pu être enregistrée (lien expiré ou service momentanément indisponible) : "
+            "vos alertes ne sont <strong>pas</strong> activées.",
+            "Réessayez dans quelques minutes, ou réinscrivez-vous depuis la page d'accueil.",
+        ),
+        200,
+    )
+    bad_c = respond_html(
+        wf,
+        "Répondre : lien de confirmation invalide",
+        (4, 15),
+        html_page(
+            "Lien invalide",
+            "Votre lien de confirmation est incomplet ou invalide : vos alertes ne sont <strong>pas</strong> activées.",
+            "Réinscrivez-vous depuis la page d'accueil pour recevoir un nouveau lien.",
+        ),
+        400,
+    )
+    wf.chain(hc, pc, nc, vc)
+    wf.link(vc, confirm, 0)
+    wf.link(vc, bad_c, 1)
+    wf.link(confirm, ac, 0)
+    wf.link(confirm, ac, 1)
+    wf.link(ac, okc)
+    wf.link(okc, go_c, 0)
+    wf.link(okc, not_c, 1)
     return wf
 
 
-def wf07(cmap: Mapping[str, str] | None = None) -> Workflow:
-    """Surveillance horaire du stop-loss : gel et coupure via API, notification immédiate (cause, chiffres, action, réarmement)."""
-    wf = Workflow(
-        "pkshp07StopLossW", "Pokeshop 07 — Surveillance du stop-loss", "07_stoploss_watch.json", credentials_map=cmap
+def _optout_incident(
+    wf: Workflow, name: str, pos: tuple[float, float], params: str, kind: str, cause: str, action: str
+) -> str:
+    """Incident S2 (MAJEUR) sur la clé « marketing » : traitement manuel, envois marketing suspendus (hors simulation)."""
+    return engine(
+        wf,
+        name,
+        "POST",
+        "/incidents",
+        pos,
+        params=params,
+        body=(
+            f"{{ cause: '{cause} : ' + ($json.resume || 'lien invalide'), kind: '{kind}', severity: 'MAJEUR', "
+            f"scope: 'WORKFLOW', workflow: {ref(params)}.first().json.workflow, proposed_action: '{action}', "
+            f"actor: 'n8n:06-marketing', simulation: {ref(params)}.first().json.simulation, "
+            "details: { jeton: $json.jeton || null, bilan: $json.resume || null } }"
+        ),
+        on_error="continueErrorOutput",
+        notes="Toujours suivi de la réponse à la personne, même si le moteur ne répond pas (sortie d'erreur).",
     )
+
+
+def _optout_flow(
+    wf: Workflow,
+    *,
+    row: float,
+    path: str,
+    label: str,
+    params_name: str,
+    emailing_name: str,
+    emailing_url: str,
+    emailing_ok_field: str,
+    shopify_name: str,
+    shopify_body: str,
+    shopify_mutation: str,
+    success_page_redirect: str | None,
+    success_html: str | None,
+    invalid_html: str,
+    kind: str,
+    cause_unconfirmed: str,
+    cause_invalid: str,
+    action: str,
+) -> None:
+    """Lien d'opposition d'un email (désinscription, refus d'avis) : réponse APRÈS les appels aux outils.
+
+    Webhook GET public (jeton) → jeton valide ? → outil d'emailing → (client Shopify lié ?) Shopify → bilan honnête →
+    confirmé partout : page de confirmation ; sinon incident S2 puis la même page (« demande reçue », traitement
+    manuel annoncé) ; lien invalide : incident S2 puis page d'erreur (400). Aucun appel n'en bloque un autre
+    (sorties d'erreur), aucune réponse de succès n'est envoyée avant le bilan.
+    """
+    norm_name = f"Normaliser le lien de {label}"
+    prep_name = f"Préparer l’étape Shopify ({label})"
+
+    def respond_success(name: str, pos: tuple[float, float]) -> str:
+        if success_page_redirect is not None:
+            return respond_redirect(wf, name, pos, success_page_redirect)
+        assert success_html is not None
+        return respond_html(wf, name, pos, success_html, 200)
+
+    hook = webhook(
+        wf,
+        f"Lien de {label} (emails)",
+        (0, row),
+        path,
+        method="GET",
+        auth="none",
+        response_mode="responseNode",
+        notes="Jeton unique par lien (EMAILS §4 règle 7) ; la réponse attend le bilan des outils (CON-05).",
+    )
+    params = params_node(wf, params_name, (1, row), WORKFLOW_KEYS["06"])
+    norm = code_node(wf, norm_name, (2, row), JS_LINK_TOKEN)
+    valid = if_node(wf, f"Lien de {label} valide ?", (3, row), [condition("={{ $json.valide }}", "boolean", "true")])
+    mail_tool = external(
+        wf,
+        emailing_name,
+        "POST",
+        emailing_url,
+        (4, row - 0.4),
+        "emailing",
+        body="{ token: $json.jeton, source: 'lien' }",
+        notes=f"Réponse attendue : {{ {emailing_ok_field}: true, shopify_customer_id?: … }} (contrat à adapter à l'outil "
+        "retenu, B04). À activer AVANT tout envoi.",
+        on_error="continueErrorOutput",
+    )
+    prep = code_node(wf, prep_name, (5, row - 0.4), js_prepare_shopify(norm_name, emailing_ok_field))
+    linked = if_node(
+        wf, f"Client Shopify lié ({label}) ?", (6, row - 0.4), [condition("={{ $json.shopify_applicable }}", "boolean", "true")]
+    )
+    shop = external(
+        wf,
+        shopify_name,
+        "POST",
+        SHOPIFY_GRAPHQL_PLACEHOLDER,
+        (7, row - 0.8),
+        "shopify",
+        predefined=True,
+        body=shopify_body,
+        notes="Mutation hors liste blanche du client du moteur : à valider (agent integrations) avant activation.",
+        on_error="continueErrorOutput",
+    )
+    bilan = code_node(wf, f"Bilan ({label})", (8, row - 0.4), js_bilan(prep_name, shopify_mutation))
+    ok = if_node(
+        wf, f"Confirmé par tous les outils ({label}) ?", (9, row - 0.4), [condition("={{ $json.tous_confirmes }}", "boolean", "true")]
+    )
+    page_ok = respond_success(f"Répondre : demande de {label} traitée", (10, row - 0.8))
+    inc = _optout_incident(
+        wf, f"Incident : demande de {label} non confirmée", (10, row), params_name, f"{kind}_NON_CONFIRME",
+        cause_unconfirmed, action,
+    )  # fmt: skip
+    page_manual = respond_success(f"Répondre : demande de {label} reçue (traitement manuel)", (11, row))
+    inc_bad = _optout_incident(
+        wf, f"Incident : lien de {label} invalide", (4, row + 0.6), params_name, f"{kind}_LIEN_INVALIDE",
+        cause_invalid,
+        "Vérifier les liens générés par l’outil d’emailing ; traiter à la main toute demande reçue par email.",
+    )  # fmt: skip
+    page_bad = respond_html(wf, f"Répondre : lien de {label} invalide", (5, row + 0.6), invalid_html, 400)
+    wf.chain(hook, params, norm, valid)
+    wf.link(valid, mail_tool, 0)
+    wf.link(valid, inc_bad, 1)
+    wf.link(inc_bad, page_bad, 0)
+    wf.link(inc_bad, page_bad, 1)
+    wf.link(mail_tool, prep, 0)
+    wf.link(mail_tool, prep, 1)
+    wf.link(prep, linked)
+    wf.link(linked, shop, 0)
+    wf.link(linked, bilan, 1)
+    wf.link(shop, bilan, 0)
+    wf.link(shop, bilan, 1)
+    wf.link(bilan, ok)
+    wf.link(ok, page_ok, 0)
+    wf.link(ok, inc, 1)
+    wf.link(inc, page_manual, 0)
+    wf.link(inc, page_manual, 1)
+
+
+def wf07(cmap: Mapping[str, str] | None = None) -> Workflow:
+    """Surveillance horaire du stop-loss : photo construite par le moteur, gel et coupure via API, notification au changement."""
+    wf = Workflow(WORKFLOW_IDS["07"], WORKFLOW_NAMES["07"], "07_stoploss_watch.json", credentials_map=cmap)
     sticky(
         wf,
         "Note — à lire",
-        (-1, -2.2),
+        (-1, -2.6),
         """
 ## 07 — Surveillance du stop-loss (toutes les heures)
-`GET /stoploss/status` → si un déclencheur (ou un gel verrouillé, ou une photo non évaluable) **change** :
+`POST /stoploss/state/refresh` : le **moteur construit la photo d'activité** à partir de ses registres (apports
+attestés par la propriétaire, soldes PayPal et banque relevés par les connecteurs, stock au coût historique,
+catalogue, prix publics, publicité) ; puis `GET /stoploss/status` → si l'état **change** :
 - gel global → **`POST /stoploss/freeze`** (action protectrice : autonomie niveau 1, incident INC-09) ;
 - campagnes à couper → plateforme publicitaire (nœud désactivé tant que le connecteur n'est pas recetté) ;
 - **notification immédiate** à la propriétaire : cause, chiffres (mesure / seuil), action, **comment réarmer**.
+Une alerte par changement (empreinte mémorisée ; un état qui revient est de nouveau signalé).
+Branche « relevés de trésorerie » (désactivée) : PayPal et banque → `/treasury/*-balance` (connecteurs à recetter).
+Jeton **nommé** `n8n-07-stoploss` : la photo et les soldes ne viennent jamais du jeton qui demande une dépense.
 Aucun réarmement ici : seule la propriétaire réarme, avec son jeton, depuis son terminal.
 **Activation** : niveau 1, juste après 04.
-**Validation humaine requise** : canal d'alerte immédiate ; recette du connecteur publicitaire (coupure).
+**Validation humaine requise** : canal d'alerte immédiate ; apports déclarés (votre jeton) ; recette des connecteurs PayPal, banque et publicité.
 """,
-        width=640,
-        height=360,
+        width=700,
+        height=460,
     )
     t = wf.add(
         "Toutes les heures — stop-loss",
@@ -1975,13 +2594,24 @@ Aucun réarmement ici : seule la propriétaire réarme, avec son jeton, depuis s
         {"rule": {"interval": [{"field": "hours", "hoursInterval": 1, "triggerAtMinute": 10}]}},
         (0, 0),
     )
-    p = params_node(wf, "Paramètres", (1, 0), "07-stoploss-watch")
-    st = engine(wf, "État du stop-loss (GET /stoploss/status)", "GET", "/stoploss/status", (2, 0))
-    an = code_node(wf, "Analyser l’état (cause, chiffres, action, réarmement)", (3, 0), JS_STOPLOSS_ANALYSIS)
+    p = params_node(wf, "Paramètres", (1, 0), WORKFLOW_KEYS["07"])
+    refresh = engine(
+        wf,
+        "Construire la photo (POST /stoploss/state/refresh)",
+        "POST",
+        "/stoploss/state/refresh",
+        (2, 0),
+        on_error="continueRegularOutput",
+        cred="api_photo",
+        notes="Photo tirée des registres du moteur. Source manquante ou périmée : 409 (la photo précédente reste et se "
+        "périme) ; l'état est quand même lu et signalé « non évaluable ».",
+    )
+    st = engine(wf, "État du stop-loss (GET /stoploss/status)", "GET", "/stoploss/status", (3, 0), cred="api_photo")
+    an = code_node(wf, "Analyser l’état (cause, chiffres, action, réarmement)", (4, 0), JS_STOPLOSS_ANALYSIS)
     report = if_node(
         wf,
         "À signaler ?",
-        (4, 0),
+        (5, 0),
         [
             condition("={{ $json.has_triggers }}", "boolean", "true"),
             condition("={{ $json.global_frozen }}", "boolean", "true"),
@@ -1989,50 +2619,112 @@ Aucun réarmement ici : seule la propriétaire réarme, avec son jeton, depuis s
         ],
         combinator="or",
     )
-    quiet = noop(wf, "Aucun déclencheur : rien à faire", (5, 0.8))
-    changed = dedupe(wf, "Nouvel état ? (une alerte par changement)", (5, -0.2), "={{ $json.fingerprint }}")
+    forget = code_node(wf, "Aucun déclencheur : oublier l’état signalé", (6, 0.8), JS_FORGET_STATE)
+    quiet = noop(wf, "Aucun déclencheur : rien à faire", (7, 0.8))
+    changed = code_node(
+        wf,
+        "Nouvel état ? (une alerte par changement)",
+        (6, -0.2),
+        JS_ON_CHANGE,
+        notes="Compare l'empreinte à la dernière signalée (données statiques du workflow) : alerte au changement, "
+        "pas seulement à la première apparition.",
+    )
     freeze_if = if_node(
-        wf, "Gel global à appliquer ?", (6, -1), [condition("={{ $json.has_freeze_all }}", "boolean", "true")]
+        wf, "Gel global à appliquer ?", (7, -1), [condition("={{ $json.has_freeze_all }}", "boolean", "true")]
     )
     freeze = engine(
         wf,
         "Appliquer le gel global (POST /stoploss/freeze)",
         "POST",
         "/stoploss/freeze",
-        (7, -1),
+        (8, -1),
         body="{ actor: 'n8n:07-stoploss-watch', reason: $json.freeze_reason || 'Gel global constaté par n8n:07' }",
         notes="Action protectrice ouverte à tous ; le réarmement reste réservé à la propriétaire.",
+        cred="api_photo",
     )
-    cut_if = if_node(wf, "Campagnes à couper ?", (6, -0.2), [condition("={{ $json.must_cut }}", "boolean", "true")])
+    cut_if = if_node(wf, "Campagnes à couper ?", (7, -0.2), [condition("={{ $json.must_cut }}", "boolean", "true")])
     cut = external(
         wf,
         "Couper les campagnes — plateforme publicitaire (désactivé)",
         "POST",
         "https://REMPLACER-plateforme-publicitaire.exemple.invalid/campaigns/pause",
-        (7, -0.2),
+        (8, -0.2),
         "ads",
         body="{ campaigns: $json.cut_campaigns, reason: 'stop-loss pub (CAC > contribution 7 j ou plafond jour)' }",
         notes="Protecteur (niveau 1 admis) mais externe : activer après recette du connecteur CONN-PUB.",
     )
-    mail = email(wf, "Notification immédiate à la propriétaire (email, désactivé)", (6, 0.6))
-    sk = slack(wf, "Notification immédiate (Slack, désactivé)", (6, 1.2))
-    wf.chain(t, p, st, an, report)
+    mail = email(wf, "Notification immédiate à la propriétaire (email, désactivé)", (7, 0.6))
+    sk = slack(wf, "Notification immédiate (Slack, désactivé)", (7, 1.2))
+    wf.chain(t, p, refresh, st, an, report)
     wf.link(report, changed, 0)
-    wf.link(report, quiet, 1)
+    wf.link(report, forget, 1)
+    wf.link(forget, quiet)
     wf.link(changed, freeze_if)
     wf.link(changed, cut_if)
     wf.link(changed, mail)
     wf.link(changed, sk)
     wf.link(freeze_if, freeze, 0)
     wf.link(cut_if, cut, 0)
+    # Relevés de trésorerie (connecteurs) : déclencheur désactivé tant que les connecteurs ne sont pas recettés.
+    t2 = wf.add(
+        "Toutes les heures (:05) — relevés de trésorerie (désactivé)",
+        "n8n-nodes-base.scheduleTrigger",
+        1.2,
+        {"rule": {"interval": [{"field": "hours", "hoursInterval": 1, "triggerAtMinute": 5}]}},
+        (0, 2.4),
+        disabled=True,
+        notes="Activer avec les connecteurs PayPal et banque recettés (CONN-PAYPAL, connecteur bancaire) : la photo "
+        "du stop-loss exige des soldes de moins de 24 h, et le mandat de moins de 60 min.",
+    )
+    pt = params_node(wf, "Paramètres — trésorerie", (1, 2.4), WORKFLOW_KEYS["07"])
+    pp_read = external(
+        wf,
+        "Lire le solde PayPal — API PayPal (désactivé)",
+        "GET",
+        "https://api-m.paypal.com/v1/reporting/balances?currency_code=CHF",
+        (2, 2),
+        "paypal",
+        notes="Lecture seule du compte PayPal dédié (scope reporting) ; activer après recette CONN-PAYPAL.",
+    )
+    pp_norm = code_node(wf, "Normaliser le solde PayPal", (3, 2), JS_PAYPAL_BALANCE)
+    pp_post = engine(
+        wf,
+        "Déposer le solde PayPal (POST /treasury/paypal-balance)",
+        "POST",
+        "/treasury/paypal-balance",
+        (4, 2),
+        params="Paramètres — trésorerie",
+        body="{ as_of: $json.as_of, balance_chf: $json.balance_chf, source: $json.source }",
+        cred="api_photo",
+    )
+    bk_read = external(
+        wf,
+        "Lire le solde bancaire — connecteur bancaire (désactivé)",
+        "GET",
+        "https://REMPLACER-connecteur-bancaire.exemple.invalid/solde",
+        (2, 2.8),
+        "bank",
+        notes="Connecteur en lecture seule du compte de l'activité (banque à choisir) ; contrat de réponse dans le nœud suivant.",
+    )
+    bk_norm = code_node(wf, "Normaliser le solde bancaire", (3, 2.8), JS_BANK_BALANCE)
+    bk_post = engine(
+        wf,
+        "Déposer le solde bancaire (POST /treasury/bank-balance)",
+        "POST",
+        "/treasury/bank-balance",
+        (4, 2.8),
+        params="Paramètres — trésorerie",
+        body="{ as_of: $json.as_of, balance_chf: $json.balance_chf, source: $json.source }",
+        cred="api_photo",
+    )
+    wf.chain(t2, pt, pp_read, pp_norm, pp_post)
+    wf.chain(pt, bk_read, bk_norm, bk_post)
     return wf
 
 
 def wf08(cmap: Mapping[str, str] | None = None) -> Workflow:
     """Mandat de dépense : POST /mandate/check -> approuvée (préparer, journaliser) / validation 1 clic / refusée."""
-    wf = Workflow(
-        "pkshp08MandatDep", "Pokeshop 08 — Mandat de dépense", "08_mandat_depenses.json", credentials_map=cmap
-    )
+    wf = Workflow(WORKFLOW_IDS["08"], WORKFLOW_NAMES["08"], "08_mandat_depenses.json", credentials_map=cmap)
     sticky(
         wf,
         "Note — à lire",
@@ -2058,9 +2750,10 @@ Contrôle impossible (mandat illisible, stop-loss non évalué) → **refus par 
         (0, 0),
         "pokeshop-depense",
         response_mode="responseNode",
-        notes='Corps : {"request": SpendRequest, "treasury": TreasurySnapshot} — montants en chaînes.',
+        notes='Corps : {"request": SpendRequest} — montants en chaînes. Aucune trésorerie : le moteur la lit dans ses '
+        "registres (photo du stop-loss, soldes relevés).",
     )
-    p = params_node(wf, "Paramètres", (1, 0), "08-mandat-depenses")
+    p = params_node(wf, "Paramètres", (1, 0), WORKFLOW_KEYS["08"])
     read, guard = suspension_guard(wf, 2, 0)
     wf.chain(hook, p, read)
     suspended = respond(
@@ -2078,9 +2771,11 @@ Contrôle impossible (mandat illisible, stop-loss non évalué) → **refus par 
         "POST",
         "/mandate/check",
         (4, 0.2),
-        body=f"{{ request: {req}.request, treasury: {req}.treasury, record: true }}",
+        body=f"{{ request: {req}.request, record: true }}",
         on_error="continueErrorOutput",
-        notes="Décision tracée au registre (record: true), idempotente par clé ; aucune exécution ici.",
+        notes="Décision tracée au registre (record: true), idempotente par clé ; aucune exécution ici. Jeton commun : "
+        "demande non attribuable => validation humaine (TREASURY_UNVERIFIED) ; incident ouvert sur "
+        "« mandat-depenses » => 423 (refus).",
     )
     wf.link(guard, check, 1)
     cannot = respond(

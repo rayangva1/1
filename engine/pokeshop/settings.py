@@ -6,9 +6,21 @@
 * Les jetons d'API et de la propriétaire ne sont **jamais** stockés en clair : seule leur
   empreinte sha256 est configurée (``POKESHOP_API_TOKEN_SHA256``,
   ``POKESHOP_OWNER_TOKEN_SHA256``). Les deux empreintes doivent différer (jetons distincts).
+  **Jetons nommés** (``POKESHOP_AGENT_TOKENS_SHA256`` = ``nom:empreinte,nom2:empreinte``) : l'acteur
+  est déduit du jeton (jamais auto-déclaré) ; une photo de trésorerie déposée par le jeton qui
+  demande une dépense (ou par le jeton commun) n'est pas vérifiable (validation humaine).
+* **Empreintes signées par la propriétaire** (coffre) : mandat (``POKESHOP_MANDATE_FINGERPRINT``,
+  obligatoire pour un mandat actif), seuils du stop-loss (``POKESHOP_STOPLOSS_FINGERPRINT``) et
+  règles de prix (``POKESHOP_RULES_FINGERPRINT``) ; absentes => seuils les plus stricts, et
+  :meth:`Settings.real_write_blockers` les liste.
 * **Simulation par défaut** (SPEC §0.6) : ``POKESHOP_DRY_RUN`` vaut ``true`` tant qu'il n'est
   pas explicitement mis à ``false`` ; une écriture réelle exige en plus le niveau d'autonomie
   adéquat (:mod:`pokeshop.autonomy`).
+* **États de sécurité persistés** (verrou et journal du stop-loss, dernière photo valide, registre
+  du mandat, étoile polaire, incidents et confinements, historique des prix, niveau d'autonomie) :
+  table ``pokeshop.engine_state_journal`` si ``POKESHOP_DATABASE_URL`` est fourni, sinon fichiers
+  JSON Lines en ajout seul dans ``POKESHOP_STATE_DIR`` (défaut : :func:`default_state_dir`).
+  ``POKESHOP_STATE_DIR=:memory:`` (tests) est refusé en production.
 * Dépendances : stdlib + pydantic (SPEC §1). ``pydantic-settings`` n'est pas requis : la
   lecture de ``os.environ`` est faite ici, variable par variable (:data:`ENV_VARIABLES`).
 
@@ -39,6 +51,9 @@ __all__ = [
     "load_settings",
     "get_settings",
     "sha256_hex",
+    "is_owner_like",
+    "STATE_DIR_MEMORY",
+    "default_state_dir",
 ]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -49,6 +64,19 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _SHOP_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,60}\.myshopify\.com$")
 _API_VERSION_RE = re.compile(r"^(\d{4}-(01|04|07|10)|unstable)$")
 _LOCATION_RE = re.compile(r"^gid://shopify/Location/\d+$")
+_PRINCIPAL_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{1,63}$")
+_OWNER_LIKE = ("propri", "owner", "proprio")
+STATE_DIR_MEMORY = ":memory:"
+"""Valeur de ``POKESHOP_STATE_DIR`` qui garde les états en mémoire (tests, jamais en production)."""
+
+
+def default_state_dir() -> Path:
+    """Dossier d'état par défaut : ``$XDG_STATE_HOME/pokeshop`` sinon ``~/.local/state/pokeshop``.
+
+    Hors du dépôt (rien à ignorer dans git) ; lu à chaque construction de :class:`Settings`.
+    """
+    base = os.environ.get("XDG_STATE_HOME", "").strip()
+    return (Path(base) if base else Path.home() / ".local" / "state") / "pokeshop"
 
 ENV_VARIABLES: dict[str, tuple[str, ...]] = {
     "env": ("POKESHOP_ENV",),
@@ -59,8 +87,11 @@ ENV_VARIABLES: dict[str, tuple[str, ...]] = {
     "stoploss_path": ("POKESHOP_STOPLOSS_PATH",),
     "mandate_path": ("POKESHOP_MANDATE_PATH",),
     "mandate_fingerprint": ("POKESHOP_MANDATE_FINGERPRINT",),
+    "stoploss_fingerprint": ("POKESHOP_STOPLOSS_FINGERPRINT",),
+    "rules_fingerprint": ("POKESHOP_RULES_FINGERPRINT",),
     "owner_token_sha256": ("POKESHOP_OWNER_TOKEN_SHA256",),
     "api_token_sha256": ("POKESHOP_API_TOKEN_SHA256",),
+    "agent_tokens_sha256": ("POKESHOP_AGENT_TOKENS_SHA256",),
     "shopify_shop_domain": ("POKESHOP_SHOPIFY_SHOP_DOMAIN",),
     "shopify_api_version": ("POKESHOP_SHOPIFY_API_VERSION",),
     "shopify_admin_token": ("POKESHOP_SHOPIFY_ADMIN_TOKEN", "SHOPIFY_ADMIN_TOKEN"),
@@ -76,6 +107,7 @@ ENV_VARIABLES: dict[str, tuple[str, ...]] = {
     "notify_dry_run": ("POKESHOP_NOTIFY_DRY_RUN",),
     "autonomy_level": ("POKESHOP_AUTONOMY_LEVEL",),
     "autonomy_state_path": ("POKESHOP_AUTONOMY_STATE_PATH",),
+    "state_dir": ("POKESHOP_STATE_DIR",),
     "imports_dir": ("POKESHOP_IMPORTS_DIR",),
 }
 """Champ de :class:`Settings` -> variables d'environnement acceptées (la première présente gagne)."""
@@ -88,6 +120,14 @@ class SettingsError(PokeshopError, ValueError):
 def sha256_hex(value: str) -> str:
     """Empreinte sha256 hexadécimale d'un jeton (comparée en temps constant par l'appelant)."""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def is_owner_like(name: str) -> bool:
+    """Vrai si un nom d'acteur se fait passer pour la propriétaire (comparaison sans accents ni casse)."""
+    import unicodedata
+
+    plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    return any(word in plain for word in _OWNER_LIKE)
 
 
 class Settings(FrozenModel):
@@ -103,8 +143,12 @@ class Settings(FrozenModel):
     stoploss_path: Path | None = None
     mandate_path: Path | None = None
     mandate_fingerprint: str | None = None
+    stoploss_fingerprint: str | None = None
+    rules_fingerprint: str | None = None
     owner_token_sha256: str | None = None
     api_token_sha256: str | None = None
+    agent_tokens_sha256: dict[str, str] = Field(default_factory=dict)
+    """Jetons nommés : nom de l'agent -> empreinte sha256 (``nom:empreinte,…``) ; l'acteur est déduit du jeton."""
     shopify_shop_domain: str | None = None
     shopify_api_version: str = DEFAULT_SHOPIFY_API_VERSION
     shopify_admin_token: SecretStr | None = None
@@ -122,10 +166,53 @@ class Settings(FrozenModel):
     autonomy_level: int = Field(default=1, ge=1, le=4)
     """Niveau initial si aucun niveau n'est encore stocké (BP §13 : 1 = simulation)."""
     autonomy_state_path: Path | None = None
+    """Historique du niveau sans base ; vide = ``<state_dir>/autonomy.jsonl``."""
+    state_dir: Path | None = Field(default_factory=default_state_dir)
+    """Dossier des journaux d'état JSON Lines (sans base) ; ``None`` = mémoire (``:memory:``, hors prod)."""
     imports_dir: Path = REPO_ROOT / "data" / "samples"
     """Seul dossier lisible par la route ``/imports/{supplier}/run`` (pas de chemin arbitraire)."""
 
-    @field_validator("owner_token_sha256", "api_token_sha256", "mandate_fingerprint")
+    @field_validator("state_dir", mode="before")
+    @classmethod
+    def _state_dir(cls, v: object) -> object:
+        if isinstance(v, str) and v.strip() == STATE_DIR_MEMORY:
+            return None
+        return v
+
+    @field_validator("agent_tokens_sha256", mode="before")
+    @classmethod
+    def _agents(cls, v: object) -> object:
+        if not isinstance(v, str):
+            return v
+        out: dict[str, str] = {}
+        for item in (part.strip() for part in v.split(",")):
+            if not item:
+                continue
+            name, sep, digest = item.partition(":")
+            if not sep:
+                raise ValueError("format attendu nom:empreinte_sha256, séparés par des virgules")
+            name, digest = name.strip().lower(), digest.strip().lower()
+            if name in out:
+                raise ValueError(f"jeton nommé en double : {name}")
+            out[name] = digest
+        return out
+
+    @field_validator("agent_tokens_sha256")
+    @classmethod
+    def _agents_valid(cls, v: dict[str, str]) -> dict[str, str]:
+        for name, digest in v.items():
+            if not _PRINCIPAL_RE.match(name) or name == "api":
+                raise ValueError(f"nom de jeton invalide : {name!r} ([a-z0-9_.-], 2 à 64 caractères, pas « api »)")
+            if is_owner_like(name):
+                raise ValueError(f"nom de jeton réservé à la propriétaire : {name!r}")
+            if not _SHA256_RE.match(digest):
+                raise ValueError(f"empreinte sha256 attendue pour {name}")
+        if len(set(v.values())) != len(v):
+            raise ValueError("deux jetons nommés ont la même empreinte : un jeton par agent")
+        return v
+
+    @field_validator("owner_token_sha256", "api_token_sha256", "mandate_fingerprint", "stoploss_fingerprint",
+                     "rules_fingerprint")
     @classmethod
     def _sha(cls, v: str | None) -> str | None:
         if v is None:
@@ -190,9 +277,24 @@ class Settings(FrozenModel):
             and self.api_token_sha256 == self.owner_token_sha256
         ):
             raise ValueError("jeton d'API et jeton de la propriétaire identiques : deux jetons distincts exigés")
+        reserved = {h for h in (self.api_token_sha256, self.owner_token_sha256) if h is not None}
+        if reserved & set(self.agent_tokens_sha256.values()):
+            raise ValueError("un jeton nommé reprend le jeton d'API ou celui de la propriétaire : jetons distincts exigés")
         if self.shopify_backoff_max_ms < self.shopify_backoff_base_ms:
             raise ValueError("POKESHOP_SHOPIFY_BACKOFF_MAX_MS < POKESHOP_SHOPIFY_BACKOFF_BASE_MS")
+        if self.env == "prod" and self.database_url is None and self.state_dir is None:
+            raise ValueError(
+                "POKESHOP_STATE_DIR=:memory: interdit en production : les états de sécurité doivent survivre "
+                "au redémarrage (dossier d'état ou POKESHOP_DATABASE_URL)"
+            )
         return self
+
+    @property
+    def state_backend(self) -> str:
+        """Stockage des états de sécurité : ``postgres``, ``fichier`` ou ``memoire``."""
+        if self.database_url is not None:
+            return "postgres"
+        return "fichier" if self.state_dir is not None else "memoire"
 
     # -- dérivés -----------------------------------------------------------------
     @property
@@ -220,6 +322,12 @@ class Settings(FrozenModel):
             out.append("POKESHOP_API_TOKEN_SHA256 absent")
         if self.owner_token_sha256 is None:
             out.append("POKESHOP_OWNER_TOKEN_SHA256 absent")
+        if self.mandate_fingerprint is None:
+            out.append("POKESHOP_MANDATE_FINGERPRINT absent (coffre) : mandat inactif, aucune dépense autonome")
+        if self.stoploss_fingerprint is None:
+            out.append("POKESHOP_STOPLOSS_FINGERPRINT absent (coffre) : seuils du stop-loss non signés")
+        if self.rules_fingerprint is None:
+            out.append("POKESHOP_RULES_FINGERPRINT absent (coffre) : règles de prix non signées")
         return out
 
     def public_summary(self) -> dict[str, object]:
@@ -232,10 +340,15 @@ class Settings(FrozenModel):
             "shopify_configured": self.shopify_configured,
             "shopify_test_store": self.shopify_test_store,
             "database_configured": self.database_url is not None,
+            "state_backend": self.state_backend,
             "notifications_webhook": self.n8n_webhook_url is not None,
             "notify_dry_run": self.notify_dry_run,
             "api_token_configured": self.api_token_sha256 is not None,
             "owner_token_configured": self.owner_token_sha256 is not None,
+            "named_agent_tokens": sorted(self.agent_tokens_sha256),
+            "mandate_fingerprint_configured": self.mandate_fingerprint is not None,
+            "stoploss_fingerprint_configured": self.stoploss_fingerprint is not None,
+            "rules_fingerprint_configured": self.rules_fingerprint is not None,
         }
 
 

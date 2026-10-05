@@ -11,7 +11,7 @@
                          │ A physique · B légal une fois ·           │
                          │ C validations hors mandat + réarmement    │
                          └───────────────▲──────────────────────────┘
-                     E2 (48 h) / E3 (immédiat) │  décisions journalisées
+               E2 (24 ou 48 h) / E3 (immédiat) │  décisions journalisées
                          ┌───────────────┴──────────────────────────┐
                          │ A-01 CHEF DE PROJET                       │
                          │ backlog · dispatch · boîte dédiée ·       │
@@ -59,7 +59,7 @@
  A-01 TRIE (revue quotidienne, ou immédiat si E3)
    ├── E1 : dans le mandat → A-01 tranche, consigne, renvoie à l'agent
    ├── E2 : hors mandat → dossier de décision (options, chiffres A-05, risques A-12)
-   │        → P décide sous 48 h (24 h si gate/achat) → sinon STATU QUO SÛR
+   │        → P décide sous 24 h (gate, dépense hors mandat) ou 48 h → sinon STATU QUO SÛR
    └── E3 : alerte immédiate à P (canal d'alerte du mandat) ; le gel tient
    ▼
  Décision journalisée dans la fiche (qui, quand, quoi, conditions)
@@ -73,7 +73,7 @@
 | Gel conservatoire (E3) | A-12 (ou moteur) | Immédiat | Incident + gel journalisé |
 | Triage | A-01 | Revue quotidienne ; immédiat pour E3 | Niveau confirmé, destinataire, échéance |
 | Dossier de décision (E2) | A-01, chiffres A-05, risques A-12 | 24 h après triage | Options A/B/C chiffrées par le moteur, recommandation, effet sur l'étoile polaire |
-| Décision | P | 48 h (24 h gate ou achat) | `APPROUVÉ` / `APPROUVÉ SOUS CONDITIONS` / `REFUSÉ` / `REPORTÉ` |
+| Décision | P | 24 h pour un gate ou toute dépense hors mandat (le workflow 08 fait expirer la demande) ; 48 h sinon | `APPROUVÉ` / `APPROUVÉ SOUS CONDITIONS` / `REFUSÉ` / `REPORTÉ` |
 | Exécution et vérification | Agent concerné, puis A-12 | Selon la décision | Rapport, test, fiche `CLOSE` |
 
 **Statu quo sûr :** sans décision dans le délai, rien n'est engagé, rien n'est publié, la proposition expire ; A-01 relance une fois et l'inscrit à la revue hebdomadaire (BL-162).
@@ -169,5 +169,5 @@ Lecture rapide de la charge de la propriétaire : elle est **A** sur 32 lignes. 
 
 - [ ] Valider le RACI, en particulier les 32 lignes où la propriétaire est **A** : chaque ligne déplacée vers A-01 ou A-12 réduit sa charge.
 - [ ] Choisir le **canal d'alerte E3** (SMS, appel, notification) et l'inscrire au mandat : les agents n'en ont pas encore.
-- [ ] Confirmer le délai de 48 h (24 h pour un gate ou un achat) et le principe du statu quo sûr à l'expiration.
+- [ ] Confirmer les délais (24 h pour un gate ou toute dépense hors mandat, 48 h pour les autres décisions) et le principe du statu quo sûr à l'expiration.
 - [ ] Désigner l'emplacement documentaire **hors dépôt** des pièces fournisseurs réelles (`POKESHOP_DOCS_PRIVES`) : prix B2B et contrats n'entrent pas dans git.

@@ -46,10 +46,12 @@ from pokeshop.mandate import (
     MandateOutcome,
     PaymentMethod,
     SpendCategory,
+    PayPalBalanceReading,
     SpendRequest,
     TreasurySnapshot,
     mandate_fingerprint,
     parse_mandate,
+    treasury_from_registers,
 )
 from pokeshop.stoploss import (
     AdSpend,
@@ -61,6 +63,7 @@ from pokeshop.stoploss import (
     StopLossState,
     hash_owner_token,
     load_stoploss_config,
+    net_worth,
 )
 
 TZ = ZoneInfo("Europe/Zurich")
@@ -85,7 +88,7 @@ def signed_mandate() -> Mandate:
     data["valid_from"], data["valid_until"] = "2026-10-10", "2027-01-31"
     data["limits"].update(per_transaction_chf="500", per_month_chf="3000", stock_budget_chf="3000",
                           ads_daily_cap_chf="33", email_daily_send_quota=20)
-    for name, value in {"STOCK": "3000", "ACCESSORIES": "300", "SAMPLES": "100", "SITE_TOOLS": "1500",
+    for name, value in {"STOCK": "2700", "ACCESSORIES": "300", "SAMPLES": "100", "SITE_TOOLS": "1500",
                         "DA_CONTENT": "400", "PACKAGING": "300", "SHIPPING": "600", "ADVERTISING": "500"}.items():
         data["categories"][name]["envelope_chf"] = value
     data["suppliers"] = [
@@ -99,7 +102,8 @@ def signed_mandate() -> Mandate:
     data["approval"] = {"approved_by": "FICTIF Propriétaire", "approved_at": "2026-10-10T09:00:00+02:00",
                         "fingerprint_sha256": None, "revoked_at": None}
     data["approval"]["fingerprint_sha256"] = mandate_fingerprint(data)
-    return parse_mandate(data)
+    # empreinte reportée au coffre par la propriétaire (POKESHOP_MANDATE_FINGERPRINT) : sans elle, inactif
+    return parse_mandate(data, expected_fingerprint=data["approval"]["fingerprint_sha256"])
 
 
 def template_mandate() -> Mandate:
@@ -144,9 +148,12 @@ class Rig:
                                          on_critical=self.autonomy.on_critical_incident, clock=self.clock)
         self.state = None if no_state else (st or state())
         self.mandate = mandate
+        self.paypal: PayPalBalanceReading | None = PayPalBalanceReading(
+            as_of=NOW, balance_chf=D("500"), source="relevé PayPal FICTIF", recorded_by="agent-05-finance")
         self.gate = GovernanceGate(
             self.autonomy, audit=self.audit, stoploss_engine=self.engine, state_provider=lambda: self.state,
             mandate_provider=lambda: self.mandate, incidents=self.incidents, real_writes_enabled=real, clock=self.clock,
+            treasury_provider=lambda: treasury_from_registers(self.state, self.paypal),
         )
 
 
@@ -333,7 +340,8 @@ def test_global_freeze_refuses_everything_opens_incident_and_returns_to_level_on
     rig.gate.invalidate()
     still = rig.gate.authorize(WriteAction.SYNC_PRICE, dry_run=False)
     assert still.has(GateReason.STOPLOSS_GLOBAL_FREEZE)
-    rig.engine.rearm(OWNER_TOKEN, "Valeur nette examinée, reprise décidée (FICTIF)", now=NOW, state=rig.state)
+    rig.engine.rearm(OWNER_TOKEN, "Valeur nette examinée, reprise décidée (FICTIF)", now=NOW, state=rig.state,
+                     attested_reference_chf=net_worth(rig.state.net_worth, rig.engine.config).total)
     rig.gate.invalidate()
     after = rig.gate.authorize(WriteAction.SYNC_PRICE, dry_run=False)
     assert not after.has(GateReason.STOPLOSS_GLOBAL_FREEZE)
@@ -370,8 +378,7 @@ def test_cash_stoploss_blocks_purchases_and_campaigns() -> None:
     proposal = rig.gate.authorize(WriteAction.PROPOSE_PURCHASE, dry_run=False, extension="FICTIF_ALPHA")
     assert proposal.has(GateReason.STOPLOSS_CASH)
     campaign = rig.gate.authorize(WriteAction.LAUNCH_CAMPAIGN, dry_run=False, campaign_id="FICTIF-CAMP-2",
-                                  spend_request=spend(category=SpendCategory.ADVERTISING, supplier="FICTIF_PUB"),
-                                  treasury=TREASURY)
+                                  spend_request=spend(category=SpendCategory.ADVERTISING, supplier="FICTIF_PUB"))
     assert campaign.has(GateReason.STOPLOSS_CASH)
     assert rig.gate.authorize(WriteAction.SYNC_STOCK, dry_run=False, product_key="FICTIF-P1").allowed
 
@@ -387,7 +394,7 @@ def test_ads_stoploss_cuts_campaign() -> None:
     rig = Rig(level=3, st=state(**ADS_CUT), mandate=signed_mandate())
     request = spend(category=SpendCategory.ADVERTISING, supplier="FICTIF_PUB", campaign_id="FICTIF-CAMP-1", amount="20")
     cut = rig.gate.authorize(WriteAction.LAUNCH_CAMPAIGN, dry_run=False, campaign_id="FICTIF-CAMP-1",
-                             spend_request=request, treasury=TREASURY)
+                             spend_request=request)
     assert not cut.allowed and cut.has(GateReason.STOPLOSS_ADS)
     assert rig.gate.authorize(WriteAction.CUT_CAMPAIGN, dry_run=False, campaign_id="FICTIF-CAMP-1").allowed
 
@@ -405,20 +412,20 @@ def test_mandate_must_be_signed_and_available() -> None:
 def test_spend_actions_go_through_mandate_check(rig: Rig) -> None:
     missing = rig.gate.authorize(WriteAction.SPEND_WITHIN_MANDATE, dry_run=False)
     assert missing.has(GateReason.SPEND_REQUEST_MISSING)
-    approved = rig.gate.authorize(WriteAction.SPEND_WITHIN_MANDATE, dry_run=False, spend_request=spend(), treasury=TREASURY)
+    approved = rig.gate.authorize(WriteAction.SPEND_WITHIN_MANDATE, dry_run=False, spend_request=spend())
     assert approved.allowed and approved.mandate_decision is not None
     assert approved.mandate_decision.outcome is MandateOutcome.APPROVED_WITHIN_MANDATE
-    above = rig.gate.authorize(WriteAction.SPEND_WITHIN_MANDATE, dry_run=False, treasury=TREASURY,
+    above = rig.gate.authorize(WriteAction.SPEND_WITHIN_MANDATE, dry_run=False, 
                                spend_request=spend(amount="600", key="FICTIF-SPEND-0002"))
     assert not above.allowed and above.pending_human_approval and above.has(GateReason.MANDATE_NEEDS_HUMAN_APPROVAL)
-    forbidden = rig.gate.authorize(WriteAction.SPEND_WITHIN_MANDATE, dry_run=False, treasury=TREASURY,
+    forbidden = rig.gate.authorize(WriteAction.SPEND_WITHIN_MANDATE, dry_run=False, 
                                    spend_request=spend(category=SpendCategory.FINANCING, key="FICTIF-SPEND-0003"))
     assert not forbidden.allowed and forbidden.has(GateReason.MANDATE_REJECTED) and not forbidden.pending_human_approval
     ledger = rig.gate.spend_ledger
     assert {e.idempotency_key for e in ledger.entries()} == {"FICTIF-SPEND-0001", "FICTIF-SPEND-0002", "FICTIF-SPEND-0003"}
-    replay = rig.gate.authorize(WriteAction.SPEND_WITHIN_MANDATE, dry_run=False, spend_request=spend(), treasury=TREASURY)
+    replay = rig.gate.authorize(WriteAction.SPEND_WITHIN_MANDATE, dry_run=False, spend_request=spend())
     assert replay.allowed and replay.mandate_decision.replayed and len(ledger.entries()) == 3
-    conflict = rig.gate.authorize(WriteAction.SPEND_WITHIN_MANDATE, dry_run=False, treasury=TREASURY,
+    conflict = rig.gate.authorize(WriteAction.SPEND_WITHIN_MANDATE, dry_run=False, 
                                   spend_request=spend(amount="41"))
     assert conflict.has(GateReason.MANDATE_REJECTED) and "IDEMPOTENCY_CONFLICT" in conflict.mandate_decision.reasons
 
@@ -426,14 +433,14 @@ def test_spend_actions_go_through_mandate_check(rig: Rig) -> None:
 def test_approved_spend_blocked_by_gate_is_not_booked() -> None:
     rig = Rig(level=1, mandate=signed_mandate())
     rig.incidents.open(code=IncidentCode.INC_14, cause="agent hors mandat (exercice FICTIF)")
-    decision = rig.gate.authorize(WriteAction.SPEND_WITHIN_MANDATE, dry_run=False, spend_request=spend(), treasury=TREASURY)
+    decision = rig.gate.authorize(WriteAction.SPEND_WITHIN_MANDATE, dry_run=False, spend_request=spend())
     assert decision.mandate_decision.outcome is MandateOutcome.APPROVED_WITHIN_MANDATE
     assert not decision.allowed and decision.has(GateReason.ALL_WRITES_SUSPENDED)
     assert rig.gate.spend_ledger.entries() == ()  # aucune enveloppe consommée par une dépense non exécutée
     ads = spend(category=SpendCategory.ADVERTISING, supplier="FICTIF_PUB", campaign_id="FICTIF-CAMP-9", amount="20",
                 key="FICTIF-SPEND-0009")
     pending = rig.gate.authorize(WriteAction.LAUNCH_CAMPAIGN, dry_run=False, campaign_id="FICTIF-CAMP-9",
-                                 spend_request=ads, treasury=TREASURY)
+                                 spend_request=ads)
     assert pending.mandate_decision.outcome is MandateOutcome.NEEDS_HUMAN_APPROVAL  # niveau 1 < niveau 3 du mandat
     assert [e.idempotency_key for e in rig.gate.spend_ledger.entries()] == ["FICTIF-SPEND-0009"]
 
@@ -442,7 +449,7 @@ def test_auto_reorder_needs_level_four_and_mandate(rig: Rig) -> None:
     request = spend(category=SpendCategory.STOCK, supplier="FICTIF_EMBALLAGES", key="FICTIF-SPEND-0004",
                     product_key="FICTIF-P1", product_language="FR", extension="FICTIF_ALPHA", justification_ref="abc")
     decision = rig.gate.authorize(WriteAction.AUTO_REORDER, dry_run=False, product_key="FICTIF-P1",
-                                  extension="FICTIF_ALPHA", spend_request=request, treasury=TREASURY)
+                                  extension="FICTIF_ALPHA", spend_request=request)
     assert not decision.allowed and decision.has(GateReason.AUTONOMY_LEVEL_TOO_LOW)
     assert decision.has(GateReason.MANDATE_REJECTED)  # bénéficiaire non autorisé pour la catégorie STOCK
 

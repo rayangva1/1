@@ -25,7 +25,7 @@
   <text x="72" y="1318" font-family="'Bricolage Grotesque', 'Trebuchet MS', Arial, sans-serif" font-size="54" font-weight="800" fill="#0B0B12" letter-spacing="-0.54">display {{extension}}</text>
   <text x="72" y="1394" font-family="'Space Grotesk', 'DM Sans', Arial, sans-serif" font-size="56" font-weight="700" fill="#0B0B12" id="PRIX">CHF {{PRIX_VALIDE}}</text>
   <text x="72" y="1446" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="400" fill="#0B0B12">Expédition depuis la Suisse sous {{DELAI_EXPEDITION}}</text>
-  <text x="72" y="1488" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="400" fill="#545466">Limite : {{LIMITE_PAR_COMMANDE}} par commande · {{MENTION_TVA}}</text>
+  <text x="72" y="1488" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="400" fill="#545466">Limite : {{LIMITE_PAR_CLIENT}} · {{MENTION_TVA}}</text>
   <g id="ZONE_STICKER_LIEN">
     <rect x="280" y="1510" width="520" height="62" rx="40" fill="none" stroke="#83839A" stroke-width="3" stroke-dasharray="10 8"/>
     <text x="540" y="1550" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="24" font-weight="400" fill="#545466" text-anchor="middle">Zone sticker lien (ajouté dans l'app)</text>

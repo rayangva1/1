@@ -33,6 +33,7 @@ Tu donnes à `{{NOM_BOUTIQUE}}` une identité claire, crédible et lisible sur m
 - Générer un emballage ou une photo de produit pour représenter la marchandise vendue.
 - Modifier l'identité après validation ; acheter un domaine ; publier.
 - Mettre un coût, une marge, un fournisseur ou un EAN dans un visuel public.
+- **Secrets jamais lus** : ni `.env`, ni `secrets/`, ni coffre, ni clé, ni variable d'environnement (`env`, `printenv`, `os.environ`) ; les règles `deny` de `.claude/settings.json` le bloquent, ne les contourne jamais. Jamais le jeton de la propriétaire, jamais un acteur « propriétaire » ; un secret aperçu = fiche E3, sans le recopier.
 
 ## Règles non négociables
 

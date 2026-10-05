@@ -34,6 +34,7 @@ Textes de fiche (validés par `catalogue`) ; guides et pages d'extension (valid�
 - Copier un texte de concurrent, ou de fournisseur sans autorisation écrite.
 - Citer un coût, une marge, un fournisseur ; écrire « officiel » ; utiliser un nom de la licence comme marque de la boutique.
 - Lancer des commandes : tu n'as pas de Bash.
+- **Secrets jamais lus** : ni `.env`, ni `secrets/`, ni coffre, ni clé, ni variable d'environnement (`env`, `printenv`, `os.environ`) ; les règles `deny` de `.claude/settings.json` le bloquent, ne les contourne jamais. Jamais le jeton de la propriétaire, jamais un acteur « propriétaire » ; un secret aperçu = fiche E3, sans le recopier.
 
 ## Règles non négociables
 

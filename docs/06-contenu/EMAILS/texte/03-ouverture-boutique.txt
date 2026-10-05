@@ -8,7 +8,7 @@ Les produits sont arrivés à Genève et ont été contrôlés. Voici ce qui est
 
 {{ $json.lignes_produits_texte }}
 
-Une limite par commande s'applique à certains produits ; elle figure sur chaque fiche. La disponibilité affichée sur le site au moment de votre commande fait foi.
+Une limite par foyer, toutes commandes confondues, s'applique à certains produits ; elle figure sur chaque fiche. La disponibilité affichée sur le site au moment de votre commande fait foi.
 
 Voir le stock local : {{ $json.url_stock_local }}
 

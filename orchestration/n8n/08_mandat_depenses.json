@@ -42,7 +42,7 @@
           "name": "Passerelle agents — X-Pokeshop-Gateway"
         }
       },
-      "notes": "Corps : {\"request\": SpendRequest, \"treasury\": TreasurySnapshot} — montants en chaînes.",
+      "notes": "Corps : {\"request\": SpendRequest} — montants en chaînes. Aucune trésorerie : le moteur la lit dans ses registres (photo du stop-loss, soldes relevés).",
       "notesInFlow": true
     },
     {
@@ -62,9 +62,9 @@
               "type": "boolean"
             },
             {
-              "id": "01fd63f0-9090-5fa3-a716-8b0c5b87e1b4",
+              "id": "51e7abfa-42e2-51bb-a82c-59e5f603979c",
               "name": "workflow",
-              "value": "08-mandat-depenses",
+              "value": "mandat-depenses",
               "type": "string"
             },
             {
@@ -182,7 +182,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ request: $('Demande de dépense (passerelle agents)').first().json.body.request, treasury: $('Demande de dépense (passerelle agents)').first().json.body.treasury, record: true }) }}"
+        "jsonBody": "={{ JSON.stringify({ request: $('Demande de dépense (passerelle agents)').first().json.body.request, record: true }) }}"
       },
       "id": "b668ad32-836e-5e5d-96b4-87cd9d368de5",
       "name": "Contrôle du mandat (POST /mandate/check)",
@@ -198,7 +198,7 @@
           "name": "Pokeshop API — X-Pokeshop-Token"
         }
       },
-      "notes": "Décision tracée au registre (record: true), idempotente par clé ; aucune exécution ici.",
+      "notes": "Décision tracée au registre (record: true), idempotente par clé ; aucune exécution ici. Jeton commun : demande non attribuable => validation humaine (TREASURY_UNVERIFIED) ; incident ouvert sur « mandat-depenses » => 423 (refus).",
       "notesInFlow": true,
       "onError": "continueErrorOutput"
     },

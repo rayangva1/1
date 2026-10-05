@@ -60,9 +60,9 @@
               "type": "boolean"
             },
             {
-              "id": "58e0b4b3-3f4f-567b-9f17-61ccc336b8bf",
+              "id": "6309fda0-ebb3-5e56-9a66-fd7abdd1b989",
               "name": "workflow",
-              "value": "03-facture-marge",
+              "value": "facture-marge",
               "type": "string"
             },
             {

@@ -36,17 +36,30 @@ Définitions exactes (bornes) :
 * **Global** : capital engagé = apports cumulés − retraits de la propriétaire ; valeur nette =
   cash + stock valorisé au **min(coût historique, valeur de liquidation prudente)** + créances −
   dettes ; perte = capital − valeur nette ; déclenche si perte **≥** 20 % × capital. Le gel est
-  **verrouillé** (latch) : il persiste, même si les métriques redeviennent bonnes, jusqu'à
-  :meth:`StopLossEngine.rearm` avec le jeton de la propriétaire (journalisé). Aucun réarmement
-  automatique. Après réarmement « rebasé », le capital engagé de référence devient la valeur
-  nette au moment du réarmement (+ apports ultérieurs − retraits ultérieurs). La propriétaire
+  **verrouillé** (latch) : il persiste, même si les métriques redeviennent bonnes, et au
+  redémarrage (journal d'état ``stoploss``, :meth:`StopLossEngine.restore`), jusqu'à
+  :meth:`StopLossEngine.rearm` avec le jeton de la propriétaire (≥ 16 caractères, journalisé).
+  Aucun réarmement automatique. Après réarmement « rebasé », le capital engagé de référence devient
+  la valeur nette au moment du réarmement, **attestée** par la propriétaire (``attested_reference_chf``,
+  ± 1 CHF de la photo) (+ apports ultérieurs − retraits ultérieurs). La propriétaire
   peut aussi poser un **point zéro** (:meth:`StopLossEngine.set_baseline`) une fois les
   investissements de lancement assumés : au sens littéral, dépenser l'enveloppe de lancement du
   BP §3 (2 900 CHF non récupérables sur 8 000) suffit à déclencher le gel.
+  **Fermé par défaut** : une photo sans apport (ni point zéro), dont les apports diminuent par
+  rapport à ceux déjà constatés (mémoire persistée dans le verrou) ou au point zéro, ou dont le
+  capital de référence est ≤ 0, est **refusée** (:class:`StopLossError`) : stop-loss non
+  évaluable, toute écriture non protectrice et toute dépense sont refusées.
 * **Temps** : à partir de ``started_at + 60 jours`` (inclus), chaque seuil de validation non
   atteint (30 commandes payées nettes, contribution après pub > 0, zéro survente, ≥ 50 % du stock
   pilote écoulé en valeur de coût) produit un ``DECISION_REPORT``. Avant l'ouverture, 60 jours
   après le premier apport sans fenêtre de validation ouverte => ``DECISION_REPORT`` « ouverture ».
+
+**Seuils signés** : ``config/stoploss.vN.yaml`` porte une empreinte (:func:`stoploss_fingerprint`)
+que la propriétaire recopie dans le coffre (``POKESHOP_STOPLOSS_FINGERPRINT``). Empreinte du
+coffre présente mais différente => :class:`StopLossError` au chargement (stop-loss indisponible :
+tout est refusé). Empreinte absente => chaque seuil vaut **le plus strict** entre le fichier et
+la référence du code (:data:`REFERENCE_THRESHOLDS`, BP) : éditer le YAML ne peut que durcir.
+Même règle pour les seuils de prix (:func:`strictest_price_rules`, ``POKESHOP_RULES_FINGERPRINT``).
 
 Le module n'exécute rien : il renvoie des déclencheurs. Les workflows (n8n), le mandat de
 dépense (:mod:`pokeshop.mandate`) et le réassort (:func:`pokeshop.stock.propose_reorder`,
@@ -57,6 +70,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import os
 import re
 import threading
@@ -71,16 +85,30 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import yaml
 from pydantic import BeforeValidator, Field, StrictInt, ValidationError, field_validator, model_validator
 
+from .audit import StateJournal, StateStoreError
 from .costs import HistoricalCostLedger
 from .errors import PokeshopError
-from .models import FrozenModel, PriceDecision, PricingParams, StockParams, canonical_hash
+from .forecast import GLOBAL_STOPLOSS_PCT
+from .models import FrozenModel, PriceDecision, PricingParams, StockParams, canonical_hash, canonical_json
 
 __all__ = [
     "STOPLOSS_ENV_VAR",
+    "STOPLOSS_FINGERPRINT_ENV_VAR",
     "DEFAULT_STOPLOSS_PATH",
+    "REFERENCE_THRESHOLDS",
+    "REFERENCE_PRICE_RULES",
+    "ConfigApproval",
+    "stoploss_fingerprint",
+    "enforce_signature",
+    "strictest_config",
+    "strictest_price_rules",
+    "with_authoritative_limits",
     "OWNER_TOKEN_SHA256_ENV_VAR",
     "StopLossError",
     "RearmRefusedError",
+    "RearmReferenceMismatchError",
+    "StopLossPersistenceError",
+    "REARM_REFERENCE_TOLERANCE_CHF",
     "StopLossLevel",
     "StopLossAction",
     "LEVEL_LABELS_FR",
@@ -114,6 +142,7 @@ __all__ = [
     "GlobalLatch",
     "JournalEntry",
     "capital_total",
+    "contributions_total",
     "prudent_stock_value",
     "net_worth",
     "effective_capital",
@@ -122,9 +151,12 @@ __all__ = [
     "hash_owner_token",
     "format_chf",
     "render_report",
+    "main",
 ]
 
 STOPLOSS_ENV_VAR = "POKESHOP_STOPLOSS_PATH"
+STOPLOSS_FINGERPRINT_ENV_VAR = "POKESHOP_STOPLOSS_FINGERPRINT"
+"""Empreinte des seuils signés, placée par la propriétaire dans le coffre (jamais par un agent)."""
 DEFAULT_STOPLOSS_PATH = Path(__file__).resolve().parents[2] / "config" / "stoploss.v1.yaml"
 OWNER_TOKEN_SHA256_ENV_VAR = "POKESHOP_OWNER_TOKEN_SHA256"
 """Empreinte sha256 (hex) du jeton de réarmement de la propriétaire, lue dans le coffre (jamais le jeton)."""
@@ -136,6 +168,9 @@ _US_PER_DAY = Decimal(86_400_000_000)
 _FUTURE_SKEW = timedelta(minutes=5)
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _MIN_TOKEN_LENGTH = 16
+REARM_REFERENCE_TOLERANCE_CHF = Decimal("1.00")
+"""Écart maximal entre la référence attestée par la propriétaire et la valeur nette de la photo (réarmement)."""
+logger = logging.getLogger("pokeshop.stoploss")
 
 
 # --------------------------------------------------------------------------- erreurs
@@ -147,6 +182,18 @@ class StopLossError(PokeshopError, ValueError):
 
 class RearmRefusedError(StopLossError):
     """Réarmement refusé : jeton propriétaire absent ou invalide (tentative journalisée)."""
+
+
+class RearmReferenceMismatchError(StopLossError):
+    """Réarmement rebasé refusé : la référence attestée ne correspond pas à la photo (tentative journalisée)."""
+
+
+class StopLossPersistenceError(StopLossError, StateStoreError):
+    """Verrou ou journal du stop-loss non enregistré (ou non relu) : fermé par défaut.
+
+    Un gel (seuil ou manuel) s'applique quand même en mémoire ; un réarmement ou un point zéro
+    non enregistré n'est jamais appliqué.
+    """
 
 
 # --------------------------------------------------------------- types d'entrée stricts
@@ -311,6 +358,24 @@ class TimeThresholds(_ConfigSection):
     min_sell_through_share_at_cost: StrictDecimal = Field(ge=0, le=1)
 
 
+class ConfigApproval(_ConfigSection):
+    """Signature des seuils : l'empreinte qui fait foi est celle du **coffre** (``POKESHOP_STOPLOSS_FINGERPRINT``)."""
+
+    approved_by: str | None = None
+    approved_at: datetime | date | None = None
+    fingerprint_sha256: str | None = None
+
+    @field_validator("fingerprint_sha256")
+    @classmethod
+    def _fp(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip().lower()
+        if not _SHA256_RE.match(v):
+            raise ValueError("empreinte sha256 hexadécimale attendue")
+        return v
+
+
 _CONFIG_SECTIONS: dict[str, type[_ConfigSection]] = {
     "product": ProductThresholds,
     "extension": ExtensionThresholds,
@@ -319,7 +384,7 @@ _CONFIG_SECTIONS: dict[str, type[_ConfigSection]] = {
     "global": GlobalThresholds,
     "time": TimeThresholds,
 }
-_TOP_KEYS = {"stoploss_version", "status", "source", "effective_date", "timezone", "state_max_age_hours"} | set(
+_TOP_KEYS = {"stoploss_version", "status", "source", "effective_date", "timezone", "state_max_age_hours", "approval"} | set(
     _CONFIG_SECTIONS
 )
 _VERSION_RE = re.compile(r"^\S{1,64}$")
@@ -340,8 +405,16 @@ class StopLossConfig(FrozenModel):
     cash: CashThresholds
     global_: GlobalThresholds = Field(alias="global")
     time: TimeThresholds
+    approval: ConfigApproval = ConfigApproval()
     source_path: str = "<memory>"
     content_sha256: str = ""
+    fingerprint: str = ""
+    """Empreinte canonique des seuils (:func:`stoploss_fingerprint`), comparée à celle du coffre."""
+    signature: Literal["UNVERIFIED", "SIGNED", "UNSIGNED_STRICTEST"] = "UNVERIFIED"
+    """``SIGNED`` : empreinte du coffre conforme ; ``UNSIGNED_STRICTEST`` : seuil le plus strict entre le
+    fichier et :data:`REFERENCE_THRESHOLDS` ; ``UNVERIFIED`` : lecture brute (tests, outils)."""
+    tightened: tuple[str, ...] = ()
+    """Seuils du fichier plus souples que la référence, remplacés par la référence (fichier non signé)."""
 
     model_config = FrozenModel.model_config | {"populate_by_name": True}
 
@@ -421,7 +494,31 @@ def validate_stoploss_data(data: Any) -> list[str]:
             model.model_validate(dict(section))
         except ValidationError as exc:
             errors.extend(_errors_from(exc, name))
+    approval = data.get("approval")
+    if approval is not None:
+        if not isinstance(approval, Mapping):
+            errors.append("approval : section mal formée")
+        else:
+            try:
+                ConfigApproval.model_validate(dict(approval))
+            except ValidationError as exc:
+                errors.extend(_errors_from(exc, "approval"))
     return errors
+
+
+def stoploss_fingerprint(data: Mapping[str, Any]) -> str:
+    """sha256 du contenu canonique des seuils, hors ``approval.fingerprint_sha256``.
+
+    Toute modification d'un seuil, d'une date ou du signataire change l'empreinte : sans nouvelle
+    empreinte reportée au coffre par la propriétaire, le fichier n'est plus « signé ».
+    """
+    content = {k: v for k, v in data.items() if k != "approval"}
+    approval = data.get("approval") if isinstance(data.get("approval"), Mapping) else {}
+    content["approval"] = {k: approval.get(k) for k in ("approved_by", "approved_at")}  # type: ignore[union-attr]
+    try:
+        return hashlib.sha256(canonical_json(content).encode("utf-8")).hexdigest()
+    except (TypeError, ValueError) as exc:
+        raise StopLossError(f"seuils non canonisables : {exc}") from exc
 
 
 def parse_stoploss_config(
@@ -435,13 +532,15 @@ def parse_stoploss_config(
     payload = {k: v for k, v in data.items()}
     if isinstance(eff, str):
         payload["effective_date"] = date.fromisoformat(eff)
+    if payload.get("approval") is None:
+        payload.pop("approval", None)
     payload["source_path"] = source
     payload["content_sha256"] = content_sha256
+    payload["fingerprint"] = stoploss_fingerprint(data)
     return StopLossConfig.model_validate(payload)
 
 
-def load_stoploss_config(path: str | Path | None = None) -> StopLossConfig:
-    """Charge et valide ``config/stoploss.v1.yaml`` (ou ``POKESHOP_STOPLOSS_PATH``)."""
+def _read_stoploss_yaml(path: str | Path | None) -> tuple[Mapping[str, Any], Path, str]:
     target = Path(path) if path is not None else default_stoploss_path()
     try:
         raw = target.read_bytes()
@@ -453,7 +552,173 @@ def load_stoploss_config(path: str | Path | None = None) -> StopLossConfig:
         raise StopLossError(f"YAML invalide : {target}") from exc
     if not isinstance(data, Mapping):
         raise StopLossError("document de stop-loss : mapping YAML attendu")
-    return parse_stoploss_config(data, source=str(target), content_sha256=hashlib.sha256(raw).hexdigest())
+    return data, target, hashlib.sha256(raw).hexdigest()
+
+
+def load_stoploss_config(
+    path: str | Path | None = None, *, expected_fingerprint: str | None = None
+) -> StopLossConfig:
+    """Charge, valide et **vérifie la signature** de ``config/stoploss.v1.yaml`` (ou ``POKESHOP_STOPLOSS_PATH``).
+
+    Empreinte attendue : argument, sinon variable ``POKESHOP_STOPLOSS_FINGERPRINT`` (coffre). Voir
+    :func:`enforce_signature` : empreinte différente => :class:`StopLossError` ; absente => seuils les
+    plus stricts entre le fichier et la référence du code.
+    """
+    data, target, sha = _read_stoploss_yaml(path)
+    config = parse_stoploss_config(data, source=str(target), content_sha256=sha)
+    expected = expected_fingerprint if expected_fingerprint is not None else os.environ.get(STOPLOSS_FINGERPRINT_ENV_VAR)
+    return enforce_signature(config, expected or None)
+
+
+# ------------------------------------------------------------- référence et signature
+
+REFERENCE_THRESHOLDS: dict[str, Any] = {
+    "state_max_age_hours": 24,
+    "timezone": "Europe/Zurich",
+    "product": {"min_contribution_pct": Decimal("0.12"), "min_contribution_chf_per_order": Decimal("8.00")},
+    "extension": {"max_share_of_stock_budget": Decimal("0.25"), "max_days_without_sale": 45},
+    "ads": {"window_days": 7, "min_spend_to_judge_chf": Decimal("20.00")},
+    "cash": {"reserve_chf": Decimal("1600")},
+    "global": {
+        "max_loss_share_of_capital": Decimal("0.20"),
+        "default_liquidation_ratio": Decimal("0.70"),
+        "autonomy_level_on_freeze": 1,
+    },
+    "time": {
+        "validation_days": 60,
+        "prelaunch_max_days": 60,
+        "min_paid_orders": 30,
+        "min_contribution_after_ads_chf": Decimal("0"),
+        "max_oversells": 0,
+        "min_sell_through_share_at_cost": Decimal("0.50"),
+    },
+}
+"""Seuils de référence (BP §1, §3, §5, §9, §13 ; contexte propriétaire du 4.10.2026), figés dans le code.
+
+Un fichier non signé ne peut que les **durcir** (:func:`strictest_config`). Les relâcher exige la
+signature de la propriétaire (empreinte au coffre).
+"""
+
+_STRICTER: dict[tuple[str, str], Literal["max", "min", "ref"]] = {
+    ("", "state_max_age_hours"): "min",
+    ("", "timezone"): "ref",
+    ("product", "min_contribution_pct"): "max",
+    ("product", "min_contribution_chf_per_order"): "max",
+    ("extension", "max_share_of_stock_budget"): "min",
+    ("extension", "max_days_without_sale"): "min",
+    ("ads", "window_days"): "ref",
+    ("ads", "min_spend_to_judge_chf"): "min",
+    ("cash", "reserve_chf"): "max",
+    ("global", "max_loss_share_of_capital"): "min",
+    ("global", "default_liquidation_ratio"): "min",
+    ("global", "autonomy_level_on_freeze"): "min",
+    ("time", "validation_days"): "min",
+    ("time", "prelaunch_max_days"): "min",
+    ("time", "min_paid_orders"): "max",
+    ("time", "min_contribution_after_ads_chf"): "max",
+    ("time", "max_oversells"): "min",
+    ("time", "min_sell_through_share_at_cost"): "max",
+}
+"""Sens « plus strict » de chaque seuil (``ref`` : sens ambigu, la référence s'impose sans signature)."""
+
+
+def _strictest(value: Any, reference: Any, rule: str) -> Any:
+    if rule == "max":
+        return max(value, reference)
+    if rule == "min":
+        return min(value, reference)
+    return reference
+
+
+def strictest_config(config: StopLossConfig) -> StopLossConfig:
+    """Seuils non signés : chaque valeur = la plus stricte entre le fichier et :data:`REFERENCE_THRESHOLDS`."""
+    tightened: list[str] = []
+    top: dict[str, Any] = {}
+    sections: dict[str, dict[str, Any]] = {}
+    for (section, name), rule in _STRICTER.items():
+        attr = "global_" if section == "global" else section
+        holder = config if not section else getattr(config, attr)
+        current = getattr(holder, name)
+        reference = REFERENCE_THRESHOLDS[name] if not section else REFERENCE_THRESHOLDS[section][name]
+        chosen = _strictest(current, reference, rule)
+        if chosen != current:
+            tightened.append(f"{section + '.' if section else ''}{name} : {current} -> {chosen}")
+            if section:
+                sections.setdefault(attr, {})[name] = chosen
+            else:
+                top[name] = chosen
+    changes: dict[str, Any] = dict(top)
+    for attr, values in sections.items():
+        changes[attr] = getattr(config, attr).replace(**values)
+    return config.replace(**changes, signature="UNSIGNED_STRICTEST", tightened=tuple(tightened))
+
+
+def enforce_signature(config: StopLossConfig, expected_fingerprint: str | None) -> StopLossConfig:
+    """Applique la règle de signature des seuils (fermé par défaut).
+
+    * empreinte du coffre fournie et conforme (et, si présente, égale à ``approval.fingerprint_sha256``)
+      => seuils du fichier tels quels (``SIGNED``) ;
+    * empreinte du coffre fournie mais différente => :class:`StopLossError` : le stop-loss n'est pas
+      chargé, toute écriture et toute dépense sont refusées jusqu'à nouvelle signature ;
+    * aucune empreinte au coffre => :func:`strictest_config` (``UNSIGNED_STRICTEST``).
+    """
+    if expected_fingerprint is None:
+        return strictest_config(config)
+    expected = expected_fingerprint.strip().lower()
+    if not _SHA256_RE.match(expected):
+        raise StopLossError("empreinte attendue des seuils invalide (sha256 hexadécimal)")
+    declared = config.approval.fingerprint_sha256
+    if expected != config.fingerprint or (declared is not None and declared != expected):
+        raise StopLossError(
+            f"seuils du stop-loss modifiés sans signature (empreinte {config.fingerprint[:12]}… ≠ coffre) : "
+            "stop-loss non chargé, tout est refusé jusqu'à une nouvelle signature de la propriétaire"
+        )
+    return config.replace(signature="SIGNED", tightened=())
+
+
+REFERENCE_PRICE_RULES: dict[str, dict[str, tuple[Decimal | int, Literal["max", "min"]]]] = {
+    "pricing": {
+        "payment_pct": (Decimal("0.025"), "max"),
+        "payment_fixed": (Decimal("0.30"), "max"),
+        "logistics_cost": (Decimal("3.00"), "max"),
+        "after_sales_provision": (Decimal("1.00"), "max"),
+        "acquisition_cost": (Decimal("5.00"), "max"),
+        "target_margin": (Decimal("0.20"), "max"),
+        "hard_floor_margin": (Decimal("0.12"), "max"),
+        "hard_floor_chf_per_order": (Decimal("8.00"), "max"),
+        "market_review_threshold": (Decimal("0.10"), "min"),
+        "max_daily_price_change": (Decimal("0.05"), "min"),
+        "price_anomaly_factor": (Decimal("10"), "min"),
+        "small_product_max_cost": (Decimal("15.00"), "min"),
+    },
+    "stock": {
+        "staleness_hours": (24, "min"),
+        "extension_budget_cap": (Decimal("0.25"), "min"),
+        "stock_budget_chf": (Decimal("3000"), "min"),
+    },
+}
+"""Seuils de prix de référence (BP §4-5, §1, §3) : sans signature des règles, chacun vaut au moins
+aussi strict que cette valeur (coûts et planchers au moins aussi hauts, tolérances au plus aussi larges)."""
+
+
+def strictest_price_rules(
+    pricing: PricingParams, stock: StockParams
+) -> tuple[PricingParams, StockParams, tuple[str, ...]]:
+    """Règles de prix non signées (``POKESHOP_RULES_FINGERPRINT`` absent) : valeurs les plus strictes."""
+    tightened: list[str] = []
+    out: dict[str, Any] = {}
+    for section, model in (("pricing", pricing), ("stock", stock)):
+        changes: dict[str, Any] = {}
+        for name, (reference, rule) in REFERENCE_PRICE_RULES[section].items():
+            current = getattr(model, name)
+            if current is None:  # règle désactivée (petits produits) : déjà la plus stricte
+                continue
+            chosen = _strictest(current, reference, rule)
+            if chosen != current:
+                changes[name] = chosen
+                tightened.append(f"{section}.{name} : {current} -> {chosen}")
+        out[section] = model.replace(**changes) if changes else model
+    return out["pricing"], out["stock"], tuple(tightened)
 
 
 def consistency_errors(
@@ -464,14 +729,23 @@ def consistency_errors(
     treasury_reserve: Decimal | None = None,
     mandate_cash_reserve: Decimal | None = None,
     mandate_extension_share: Decimal | None = None,
+    mandate_stock_budget: Decimal | None = None,
 ) -> list[str]:
     """Écarts entre les seuils du stop-loss et les autres sources (règles de prix, trésorerie, mandat).
 
     Une même règle ne doit avoir qu'une valeur : plancher produit = plancher dur du moteur de
     prix ; part par extension = ``StockParams.extension_budget_cap`` ; réserve cash =
-    ``treasury.CASH_STOPLOSS_RESERVE`` = réserve du mandat.
+    ``treasury.CASH_STOPLOSS_RESERVE`` = réserve du mandat ; budget stock du mandat signé =
+    ``StockParams.stock_budget_chf`` ; part de perte du gel global = celle de la projection
+    (:data:`pokeshop.forecast.GLOBAL_STOPLOSS_PCT`). Appelé au démarrage de l'API : un écart gèle le service.
     """
     errors: list[str] = []
+    if config.global_.max_loss_share_of_capital != GLOBAL_STOPLOSS_PCT:
+        errors.append(
+            f"part de perte du gel global {config.global_.max_loss_share_of_capital} ≠ projection {GLOBAL_STOPLOSS_PCT}"
+        )
+    if mandate_stock_budget is not None and stock is not None and mandate_stock_budget != stock.stock_budget_chf:
+        errors.append(f"budget stock du mandat {mandate_stock_budget} ≠ règles {stock.stock_budget_chf}")
     if pricing is not None:
         if pricing.hard_floor_margin != config.product.min_contribution_pct:
             errors.append(
@@ -734,6 +1008,26 @@ class StopLossState(FrozenModel):
         return self
 
 
+def with_authoritative_limits(
+    state: StopLossState, *, ads_daily_cap_chf: Decimal | None, stock_budget_chf: Decimal
+) -> tuple[StopLossState, list[str]]:
+    """Remplace les plafonds de la photo par ceux du moteur (mandat signé, règles) ; renvoie les écarts.
+
+    Le plafond jour pub et le budget stock ne sont **jamais** lus dans la photo postée : plafond pub =
+    mandat signé **actif** (sinon ``None`` : toute dépense du jour coupe les campagnes), budget stock =
+    le plus petit entre mandat signé actif et règles de stock.
+    """
+    notes: list[str] = []
+    changes: dict[str, Any] = {}
+    if state.ads_daily_cap_chf != ads_daily_cap_chf:
+        notes.append(f"plafond jour pub de la photo {state.ads_daily_cap_chf} remplacé par {ads_daily_cap_chf} (mandat)")
+        changes["ads_daily_cap_chf"] = ads_daily_cap_chf
+    if state.stock_budget_chf != stock_budget_chf:
+        notes.append(f"budget stock de la photo {state.stock_budget_chf} remplacé par {stock_budget_chf}")
+        changes["stock_budget_chf"] = stock_budget_chf
+    return (state.replace(**changes) if changes else state), notes
+
+
 # ------------------------------------------------------------------- déclencheurs
 
 
@@ -776,14 +1070,28 @@ class StopLossStatus(FrozenModel):
     ads_globally_cut: bool = False
     decision_report_due: bool = False
     triggers_hash: str = ""
+    state_as_of: datetime | None = None
+    """Date de la **photo** évaluée (``as_of`` = heure d'évaluation) : la fraîcheur se juge sur elle."""
 
-    @field_validator("as_of")
+    @field_validator("as_of", "state_as_of")
     @classmethod
-    def _tz(cls, v: datetime) -> datetime:
-        return _aware(v, "as_of")
+    def _tz(cls, v: datetime | None) -> datetime | None:
+        return None if v is None else _aware(v, "as_of")
+
+    @property
+    def photo_as_of(self) -> datetime:
+        """Date de la photo d'activité (à défaut, de l'évaluation)."""
+        return self.state_as_of if self.state_as_of is not None else self.as_of
 
     @classmethod
-    def from_triggers(cls, triggers: Sequence[Trigger], *, as_of: datetime, autonomy_level: int) -> StopLossStatus:
+    def from_triggers(
+        cls,
+        triggers: Sequence[Trigger],
+        *,
+        as_of: datetime,
+        autonomy_level: int,
+        state_as_of: datetime | None = None,
+    ) -> StopLossStatus:
         """Agrège des déclencheurs ; le gel global ramène l'autonomie au niveau imposé (1)."""
         if isinstance(autonomy_level, bool) or not isinstance(autonomy_level, int) or not 1 <= autonomy_level <= 4:
             raise StopLossError("autonomy_level doit être un entier de 1 à 4")
@@ -806,6 +1114,7 @@ class StopLossStatus(FrozenModel):
             ads_globally_cut="*" in cut,
             decision_report_due=bool(by_action[StopLossAction.DECISION_REPORT]),
             triggers_hash=canonical_hash(list(_sorted(triggers))),
+            state_as_of=state_as_of,
         )
 
     def blocks_reorder_of(self, product_key: str, extension: str) -> bool:
@@ -828,6 +1137,8 @@ class CapitalBaseline(FrozenModel):
     origin: Literal["POINT_ZERO", "REARM"] = "REARM"
     net_value_chf: Decimal = Field(gt=0)
     capital_total_chf: Decimal
+    contributions_total_chf: Decimal | None = None
+    """Apports cumulés connus à cette date : une photo ultérieure qui en déclare moins est refusée."""
 
 
 def capital_total(movements: Iterable[CapitalMovement]) -> Decimal:
@@ -836,6 +1147,11 @@ def capital_total(movements: Iterable[CapitalMovement]) -> Decimal:
     for mv in movements:
         total += mv.amount if mv.kind == "CONTRIBUTION" else -mv.amount
     return total
+
+
+def contributions_total(movements: Iterable[CapitalMovement]) -> Decimal:
+    """Apports cumulés seuls (CHF) : un historique d'apports ne peut que croître."""
+    return sum((mv.amount for mv in movements if mv.kind == "CONTRIBUTION"), ZERO)
 
 
 def effective_capital(movements: Iterable[CapitalMovement], baseline: CapitalBaseline | None = None) -> Decimal:
@@ -1103,9 +1419,27 @@ def _cash_triggers(state: StopLossState, config: StopLossConfig) -> list[Trigger
 def _global_triggers(
     state: StopLossState, config: StopLossConfig, baseline: CapitalBaseline | None
 ) -> list[Trigger]:
+    contributions = contributions_total(state.capital_movements)
+    if baseline is None and contributions <= 0:
+        raise StopLossError(
+            "aucun apport de capital dans la photo : stop-loss global non évaluable, photo refusée "
+            "(achats, publicité et écritures refusés tant qu'une photo complète n'est pas déposée)"
+        )
+    if (
+        baseline is not None
+        and baseline.contributions_total_chf is not None
+        and contributions < baseline.contributions_total_chf
+    ):
+        raise StopLossError(
+            f"apports déclarés {format_chf(contributions)} < apports connus au point zéro "
+            f"{format_chf(baseline.contributions_total_chf)} : mouvements de capital incomplets, photo refusée"
+        )
     capital = effective_capital(state.capital_movements, baseline)
     if capital <= 0:
-        return []
+        raise StopLossError(
+            f"capital engagé de référence {format_chf(capital)} ≤ 0 (retraits ≥ apports ou mouvements incomplets) : "
+            "stop-loss global non évaluable, photo refusée"
+        )
     worth = net_worth(state.net_worth, config)
     loss = capital - worth.total
     limit = config.global_.max_loss_share_of_capital * capital
@@ -1241,14 +1575,23 @@ def evaluate_levels(
 
 
 class GlobalLatch(FrozenModel):
-    """État persistant du gel global (à sauvegarder en base et à restaurer au démarrage)."""
+    """État persistant du gel global (journal d'état ``stoploss``, relu au démarrage).
+
+    ``RESTORE_FAILED`` : gel de sécurité posé au démarrage quand un journal d'état est illisible ;
+    ``CONFIG_UNSIGNED`` : configuration de sécurité incohérente ou modifiée sans signature. Ces deux
+    gels ne sont jamais enregistrés : ils se lèvent par réparation (stockage, configuration signée)
+    puis redémarrage, jamais par un agent ni par un réarmement.
+    """
 
     frozen: bool = False
     since: datetime | None = None
-    cause: Literal["THRESHOLD", "MANUAL"] | None = None
+    cause: Literal["THRESHOLD", "MANUAL", "RESTORE_FAILED", "CONFIG_UNSIGNED"] | None = None
     trigger: Trigger | None = None
     detail: str = ""
     baseline: CapitalBaseline | None = None
+    contributions_seen_chf: Decimal | None = None
+    """Apports cumulés les plus élevés déjà constatés dans une photo acceptée (mémoire persistée) :
+    une photo qui en déclare moins est refusée (mouvements omis). Réinitialisable par la propriétaire."""
 
     @model_validator(mode="after")
     def _check(self) -> GlobalLatch:
@@ -1263,7 +1606,15 @@ class JournalEntry(FrozenModel):
     seq: int
     at: datetime
     event: Literal[
-        "EVALUATION", "GLOBAL_TRIP", "MANUAL_FREEZE", "REARM", "REARM_REFUSED", "BASELINE_SET", "BASELINE_REFUSED"
+        "EVALUATION",
+        "GLOBAL_TRIP",
+        "MANUAL_FREEZE",
+        "REARM",
+        "REARM_REFUSED",
+        "BASELINE_SET",
+        "BASELINE_REFUSED",
+        "CAPITAL_MEMORY_RESET",
+        "CAPITAL_MEMORY_RESET_REFUSED",
     ]
     actor: str
     detail: str
@@ -1282,8 +1633,12 @@ class StopLossEngine:
 
     ``owner_token_sha256`` : empreinte du jeton de la propriétaire (défaut : variable
     ``POKESHOP_OWNER_TOKEN_SHA256``). Sans empreinte configurée, aucun réarmement n'est possible
-    (sécurité par défaut). ``latch`` et ``journal`` permettent de restaurer l'état persistant.
+    (sécurité par défaut). ``latch`` et ``journal`` permettent de restaurer l'état persistant ;
+    ``store`` (journal d'état ``stoploss``) reçoit **avant application** chaque ligne du journal
+    avec l'état du verrou qui en résulte (:meth:`restore` relit l'ensemble au démarrage).
     """
+
+    STREAM = "stoploss"
 
     def __init__(
         self,
@@ -1292,6 +1647,7 @@ class StopLossEngine:
         owner_token_sha256: str | None = None,
         latch: GlobalLatch | None = None,
         journal: Sequence[JournalEntry] = (),
+        store: StateJournal | None = None,
     ) -> None:
         expected = owner_token_sha256 if owner_token_sha256 is not None else os.environ.get(OWNER_TOKEN_SHA256_ENV_VAR)
         if expected is not None:
@@ -1305,7 +1661,62 @@ class StopLossEngine:
         for i, entry in enumerate(self._journal, start=1):
             if entry.seq != i:
                 raise StopLossError("journal restauré non séquentiel")
+        self._store = store
+        self._restore_hold: str | None = None
         self._lock = threading.RLock()
+
+    @classmethod
+    def restore(
+        cls, config: StopLossConfig, *, store: StateJournal, owner_token_sha256: str | None = None
+    ) -> StopLossEngine:
+        """Relit verrou (point zéro compris) et journal depuis ``store`` ; StopLossPersistenceError si illisible."""
+        try:
+            records = store.load()
+        except StateStoreError as exc:
+            raise StopLossPersistenceError(str(exc)) from exc
+        journal: list[JournalEntry] = []
+        latch = GlobalLatch()
+        for n, record in enumerate(records, start=1):
+            try:
+                journal.append(JournalEntry.model_validate(record["entry"]))
+                latch = GlobalLatch.model_validate(record["latch"])
+            except (KeyError, TypeError, ValidationError) as exc:
+                raise StopLossPersistenceError(
+                    f"journal d'état {store.stream} : enregistrement {n} illisible"
+                ) from exc
+        try:
+            return cls(config, owner_token_sha256=owner_token_sha256, latch=latch, journal=journal, store=store)
+        except StopLossError as exc:
+            raise StopLossPersistenceError(f"journal d'état {store.stream} : {exc}") from exc
+
+    def hold_restore_failed(self, reason: str, now: datetime) -> GlobalLatch:
+        """Gel de sécurité au démarrage (journal d'état illisible) : en mémoire, réarmement impossible.
+
+        Un gel déjà enregistré est conservé tel quel. La levée passe par la réparation du stockage
+        puis un redémarrage (jamais par un agent, jamais par un réarmement).
+        """
+        return self._hold("RESTORE_FAILED", f"états de sécurité non relus au démarrage : {reason}", reason, now)
+
+    def hold_config_unsigned(self, reason: str, now: datetime) -> GlobalLatch:
+        """Gel de sécurité au démarrage (règles modifiées sans signature, seuils incohérents) : en mémoire.
+
+        Même régime que :meth:`hold_restore_failed` : aucun réarmement ; la propriétaire signe (ou
+        corrige) la configuration puis redémarre le service.
+        """
+        return self._hold("CONFIG_UNSIGNED", f"configuration de sécurité non signée ou incohérente : {reason}", reason, now)
+
+    def _hold(self, cause: Literal["RESTORE_FAILED", "CONFIG_UNSIGNED"], detail: str, reason: str, now: datetime) -> GlobalLatch:
+        _require_aware(now, "now")
+        with self._lock:
+            self._restore_hold = reason if self._restore_hold is None else f"{self._restore_hold} ; {reason}"
+            if not self._latch.frozen:
+                self._latch = self._latch.replace(frozen=True, since=now, cause=cause, trigger=None, detail=detail)
+            return self._latch
+
+    @property
+    def restore_hold(self) -> str | None:
+        """Motif du gel de sécurité de démarrage (None si tous les journaux ont été relus)."""
+        return self._restore_hold
 
     # -- lecture ----------------------------------------------------------------
     @property
@@ -1323,12 +1734,56 @@ class StopLossEngine:
         """Journal append-only."""
         return tuple(self._journal)
 
-    def _log(self, at: datetime, event: Any, actor: str, detail: str, triggers_hash: str | None = None) -> JournalEntry:
+    def _log(
+        self,
+        at: datetime,
+        event: Any,
+        actor: str,
+        detail: str,
+        triggers_hash: str | None = None,
+        *,
+        latch: GlobalLatch | None = None,
+    ) -> JournalEntry:
+        """Écrit la ligne et le verrou résultant dans le journal d'état **puis** les applique en mémoire."""
+        new_latch = latch if latch is not None else self._latch
         entry = JournalEntry(
             seq=len(self._journal) + 1, at=at, event=event, actor=actor, detail=detail, triggers_hash=triggers_hash
         )
+        if self._store is not None:
+            try:
+                self._store.append(
+                    {"entry": entry.model_dump(mode="json"), "latch": new_latch.model_dump(mode="json")}
+                )
+            except StateStoreError as exc:
+                raise StopLossPersistenceError(f"stop-loss : {event} non enregistré ({exc})") from exc
         self._journal.append(entry)
+        self._latch = new_latch
         return entry
+
+    def _log_restrictive(
+        self, at: datetime, event: Any, actor: str, detail: str, latch: GlobalLatch, **kw: Any
+    ) -> None:
+        """Gel : appliqué en mémoire même si l'enregistrement échoue (fermé par défaut), puis erreur levée."""
+        try:
+            self._log(at, event, actor, detail, latch=latch, **kw)
+        except StopLossPersistenceError:
+            self._latch = latch
+            raise
+
+    def _log_refusal(self, at: datetime, event: Any, actor: str, detail: str) -> None:
+        """Tentative refusée : journalisée si possible (le refus s'applique dans tous les cas)."""
+        try:
+            self._log(at, event, actor, detail)
+        except StopLossPersistenceError as exc:
+            logger.error("tentative refusée non journalisée : %s", exc)
+
+    def record_refused_attempt(
+        self, event: Literal["REARM_REFUSED", "BASELINE_REFUSED"], *, now: datetime, actor: str, detail: str
+    ) -> None:
+        """Journalise une tentative refusée en amont (en-tête propriétaire absent ou égal au jeton d'API)."""
+        _require_aware(now, "now")
+        with self._lock:
+            self._log_refusal(now, event, actor or "inconnu", detail)
 
     # -- évaluation -------------------------------------------------------------
     def _latched_trigger(self, worth_loss: Trigger | None) -> Trigger:
@@ -1351,36 +1806,70 @@ class StopLossEngine:
             autonomy_level=self.config.global_.autonomy_level_on_freeze,
         )
 
+    def _check_capital_memory(self, state: StopLossState) -> Decimal:
+        """Apports de la photo, refusée s'ils sont inférieurs aux apports déjà constatés (mouvements omis)."""
+        contributions = contributions_total(state.capital_movements)
+        seen = self._latch.contributions_seen_chf
+        if seen is not None and contributions < seen:
+            raise StopLossError(
+                f"apports déclarés {format_chf(contributions)} < apports déjà constatés {format_chf(seen)} : "
+                "mouvements de capital omis ou modifiés, photo refusée (correction : la propriétaire réinitialise "
+                "la mémoire des apports, POST /stoploss/capital-memory/reset)"
+            )
+        return contributions
+
+    def validate_photo(self, state: StopLossState, now: datetime) -> list[Trigger]:
+        """Contrôle une photo **sans rien journaliser** (dépôt) : fraîcheur, six niveaux, mémoire des apports."""
+        _require_aware(now, "now")
+        with self._lock:
+            triggers = evaluate_levels(state, now, self.config, baseline=self._latch.baseline)
+            self._check_capital_memory(state)
+            return triggers
+
     def evaluate(self, state: StopLossState, now: datetime) -> list[Trigger]:
         """Évalue les six niveaux, verrouille le gel global au premier déclenchement, journalise."""
         _require_aware(now, "now")
         with self._lock:
             triggers = evaluate_levels(state, now, self.config, baseline=self._latch.baseline)
+            contributions = self._check_capital_memory(state)
             current = next((t for t in triggers if t.level is StopLossLevel.GLOBAL), None)
             if current is not None and not self._latch.frozen:
-                self._latch = GlobalLatch(
-                    frozen=True,
-                    since=now,
-                    cause="THRESHOLD",
-                    trigger=current,
-                    detail=current.reason,
-                    baseline=self._latch.baseline,
+                tripped = self._latch.replace(
+                    frozen=True, since=now, cause="THRESHOLD", trigger=current, detail=current.reason
                 )
-                self._log(now, "GLOBAL_TRIP", "moteur", current.reason, canonical_hash(current))
+                self._log_restrictive(
+                    now, "GLOBAL_TRIP", "moteur", current.reason, tripped, triggers_hash=canonical_hash(current)
+                )
             if self._latch.frozen:
                 triggers = [t for t in triggers if t.level is not StopLossLevel.GLOBAL]
                 triggers.append(self._latched_trigger(current))
             triggers = _sorted(triggers)
             digest = canonical_hash(triggers)
-            self._log(now, "EVALUATION", "moteur", f"{len(triggers)} déclencheur(s)", digest)
+            seen = self._latch.contributions_seen_chf
+            latch = self._latch
+            if seen is None or contributions > seen:
+                latch = self._latch.replace(contributions_seen_chf=contributions)
+            self._log(now, "EVALUATION", "moteur", f"{len(triggers)} déclencheur(s)", digest, latch=latch)
             return triggers
 
-    def status(self, triggers: Sequence[Trigger], *, as_of: datetime, autonomy_level: int) -> StopLossStatus:
-        """Résumé pour le mandat ; le gel verrouillé est reporté même s'il manque dans ``triggers``."""
+    def status(
+        self,
+        triggers: Sequence[Trigger],
+        *,
+        as_of: datetime,
+        autonomy_level: int,
+        state_as_of: datetime | None = None,
+    ) -> StopLossStatus:
+        """Résumé pour le mandat ; le gel verrouillé est reporté même s'il manque dans ``triggers``.
+
+        ``state_as_of`` = date de la photo évaluée : le mandat juge la fraîcheur sur elle (pas sur ``as_of``).
+        """
         items = list(triggers)
         if self._latch.frozen and not any(t.action is StopLossAction.FREEZE_ALL for t in items):
             items.append(self._latched_trigger(None))
-        return StopLossStatus.from_triggers(items, as_of=as_of, autonomy_level=autonomy_level)
+        return StopLossStatus.from_triggers(
+            items, as_of=as_of, autonomy_level=autonomy_level, state_as_of=state_as_of
+        )
 
     # -- gel manuel et réarmement -------------------------------------------------
     def freeze(self, actor: str, reason: str, now: datetime) -> GlobalLatch:
@@ -1392,17 +1881,26 @@ class StopLossEngine:
             if self._latch.frozen:
                 self._log(now, "MANUAL_FREEZE", actor, f"déjà gelé ; motif ajouté : {reason}")
                 return self._latch
-            self._latch = GlobalLatch(
-                frozen=True, since=now, cause="MANUAL", detail=reason, baseline=self._latch.baseline
-            )
-            self._log(now, "MANUAL_FREEZE", actor, reason)
+            frozen = self._latch.replace(frozen=True, since=now, cause="MANUAL", trigger=None, detail=reason)
+            self._log_restrictive(now, "MANUAL_FREEZE", actor, reason, frozen)
             return self._latch
 
     def _verify(self, owner_token: str) -> bool:
+        """Jeton de la propriétaire : même règle que partout (≥ 16 caractères, empreinte sha256)."""
         if self._owner_hash is None or not isinstance(owner_token, str) or not owner_token:
             return False
-        candidate = hashlib.sha256(owner_token.encode("utf-8")).hexdigest()
+        try:
+            candidate = hash_owner_token(owner_token)
+        except StopLossError:
+            return False
         return hmac.compare_digest(candidate, self._owner_hash)
+
+    def _check_restore_hold(self) -> None:
+        if self._restore_hold is not None:
+            raise StopLossPersistenceError(
+                "service gelé au démarrage (états de sécurité non relus ou configuration non signée) : réparer "
+                f"puis redémarrer le service (aucun réarmement possible avant) — {self._restore_hold}"
+            )
 
     def rearm(
         self,
@@ -1412,12 +1910,16 @@ class StopLossEngine:
         now: datetime,
         state: StopLossState | None = None,
         rebase: bool = True,
+        attested_reference_chf: Decimal | None = None,
         actor: str = "propriétaire",
     ) -> JournalEntry:
         """Réarme le gel global (propriétaire uniquement), avec motif, journalisé.
 
         ``rebase=True`` (défaut) : le capital engagé de référence devient la valeur nette de
-        ``state`` (obligatoire, > 0) ; la perte se mesure ensuite depuis ce point.
+        ``state`` (obligatoire, > 0) ; la perte se mesure ensuite depuis ce point. La propriétaire
+        **atteste** cette valeur (``attested_reference_chf``, lue dans le rapport) : un écart de plus
+        de :data:`REARM_REFERENCE_TOLERANCE_CHF` avec la photo (photo minorée ou remplacée entre-temps)
+        refuse le réarmement et le journalise ; la référence n'est jamais la seule photo d'un agent.
         ``rebase=False`` : référence inchangée ; si la perte dépasse encore le seuil, la
         prochaine évaluation regèle aussitôt. Le niveau d'autonomie n'est **pas** restauré :
         le remonter est une décision distincte (BP §13, après recette).
@@ -1425,11 +1927,20 @@ class StopLossEngine:
         _require_aware(now, "now")
         if not isinstance(reason, str) or not reason.strip():
             raise StopLossError("motif de réarmement obligatoire")
+        attested: Decimal | None = None
+        if attested_reference_chf is not None:
+            try:
+                attested = _strict_decimal(attested_reference_chf)
+            except ValueError as exc:
+                raise StopLossError(f"référence attestée : {exc}") from exc
+            if not isinstance(attested, Decimal):
+                raise StopLossError("référence attestée : montant Decimal attendu")
         with self._lock:
             if not self._verify(owner_token):
                 why = "aucune empreinte de jeton configurée" if self._owner_hash is None else "jeton invalide"
-                self._log(now, "REARM_REFUSED", actor, f"{why} ; motif annoncé : {reason}")
+                self._log_refusal(now, "REARM_REFUSED", actor, f"{why} ; motif annoncé : {reason}")
                 raise RearmRefusedError(f"réarmement refusé : {why}")
+            self._check_restore_hold()
             if not self._latch.frozen:
                 raise StopLossError("aucun gel global à réarmer")
             baseline = self._latch.baseline
@@ -1437,10 +1948,52 @@ class StopLossEngine:
                 if state is None:
                     raise StopLossError("réarmement rebasé : état (valeur nette) obligatoire")
                 baseline = self._baseline_from(state, now, "REARM")
-            self._latch = GlobalLatch(frozen=False, baseline=baseline)
+                photo = f"photo du {state.as_of.isoformat()}, valeur nette {format_chf(baseline.net_value_chf)}"
+                if attested is None:
+                    raise StopLossError(
+                        f"réarmement rebasé : référence attestée obligatoire ({photo}) ; vérifier ce montant puis "
+                        "le renvoyer comme référence attestée"
+                    )
+                if abs(attested - baseline.net_value_chf) > REARM_REFERENCE_TOLERANCE_CHF:
+                    self._log_refusal(
+                        now,
+                        "REARM_REFUSED",
+                        actor,
+                        f"référence attestée {format_chf(attested)} ≠ {photo} ; motif annoncé : {reason}",
+                    )
+                    raise RearmReferenceMismatchError(
+                        f"réarmement refusé : référence attestée {format_chf(attested)} ≠ {photo} "
+                        "(photo remplacée ou erronée : vérifier avant de réarmer)"
+                    )
             basis = f"rebasé sur {format_chf(baseline.net_value_chf)}" if rebase and baseline else "référence inchangée"
             detail = f"réarmé ({basis}) : {reason}"
-            return self._log(now, "REARM", actor, detail)
+            rearmed = self._latch.replace(frozen=False, since=None, cause=None, trigger=None, detail="", baseline=baseline)
+            return self._log(now, "REARM", actor, detail, latch=rearmed)
+
+    def reset_capital_memory(
+        self, owner_token: str, reason: str, *, now: datetime, actor: str = "propriétaire"
+    ) -> JournalEntry:
+        """Oublie les apports déjà constatés (propriétaire uniquement, journalisé) : correction d'un apport erroné.
+
+        La photo suivante redevient la référence de la mémoire des apports. Le gel éventuel n'est pas levé.
+        """
+        _require_aware(now, "now")
+        if not isinstance(reason, str) or not reason.strip():
+            raise StopLossError("motif obligatoire")
+        with self._lock:
+            if not self._verify(owner_token):
+                why = "aucune empreinte de jeton configurée" if self._owner_hash is None else "jeton invalide"
+                self._log_refusal(now, "CAPITAL_MEMORY_RESET_REFUSED", actor, f"{why} ; motif annoncé : {reason}")
+                raise RearmRefusedError(f"réinitialisation refusée : {why}")
+            self._check_restore_hold()
+            seen = format_chf(self._latch.contributions_seen_chf)
+            return self._log(
+                now,
+                "CAPITAL_MEMORY_RESET",
+                actor,
+                f"mémoire des apports ({seen}) réinitialisée : {reason}",
+                latch=self._latch.replace(contributions_seen_chf=None),
+            )
 
 
     def _baseline_from(
@@ -1454,8 +2007,13 @@ class StopLossEngine:
         worth = net_worth(state.net_worth, self.config).total if reference is None else reference
         if worth <= 0:
             raise StopLossError("valeur nette ≤ 0 : un apport de capital est requis")
+        self._check_capital_memory(state)
         return CapitalBaseline(
-            set_at=now, origin=origin, net_value_chf=worth, capital_total_chf=capital_total(state.capital_movements)
+            set_at=now,
+            origin=origin,
+            net_value_chf=worth,
+            capital_total_chf=capital_total(state.capital_movements),
+            contributions_total_chf=contributions_total(state.capital_movements),
         )
 
     def set_baseline(
@@ -1473,8 +2031,8 @@ class StopLossEngine:
         Sans point zéro, dépenser plus de 20 % du capital en coûts de lancement non récupérables
         déclenche le gel global par construction. Deux usages :
 
-        * dès J1, ``reference_chf`` = apports − investissements de lancement assumés (ex. BP §3 :
-          8 000 − 2 900 de lancement − 900 de décote prudente du stock = 4 200) ;
+        * dès J3, avec la décision de budget (C03), ``reference_chf`` = apports − investissements de
+          lancement assumés (ex. BP §3 : 8 000 − 2 900 de lancement − 900 de décote prudente du stock = 4 200) ;
         * à l'ouverture, sans ``reference_chf`` : la valeur nette constatée dans ``state``.
 
         La perte se mesure ensuite depuis cette référence (+ apports ultérieurs − retraits).
@@ -1493,13 +2051,19 @@ class StopLossEngine:
         with self._lock:
             if not self._verify(owner_token):
                 why = "aucune empreinte de jeton configurée" if self._owner_hash is None else "jeton invalide"
-                self._log(now, "BASELINE_REFUSED", actor, f"{why} ; motif annoncé : {reason}")
+                self._log_refusal(now, "BASELINE_REFUSED", actor, f"{why} ; motif annoncé : {reason}")
                 raise RearmRefusedError(f"point zéro refusé : {why}")
+            self._check_restore_hold()
             if self._latch.frozen:
                 raise StopLossError("gel global actif : décider d'abord du réarmement (rearm)")
             baseline = self._baseline_from(state, now, "POINT_ZERO", reference_chf)
-            self._latch = self._latch.replace(baseline=baseline)
-            return self._log(now, "BASELINE_SET", actor, f"point zéro {format_chf(baseline.net_value_chf)} : {reason}")
+            return self._log(
+                now,
+                "BASELINE_SET",
+                actor,
+                f"point zéro {format_chf(baseline.net_value_chf)} : {reason}",
+                latch=self._latch.replace(baseline=baseline),
+            )
 
 
 # ----------------------------------------------------------------------------- rapport
@@ -1550,3 +2114,62 @@ def render_report(triggers: Sequence[Trigger], *, now: datetime, title: str = "A
     if StopLossAction.NO_REORDER in actions and StopLossAction.PROPOSE_MARKDOWN not in actions:
         lines.append("- [ ] Extensions sans réassort : confirmer.")
     return "\n".join(lines) + "\n"
+
+
+# --------------------------------------------------------------------------------- CLI
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """``python -m pokeshop.stoploss fingerprint [chemin]`` : empreinte à reporter au coffre, état de signature."""
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(prog="python -m pokeshop.stoploss", description="Outils des seuils du stop-loss")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    fp = sub.add_parser("fingerprint", help="empreinte à recopier dans le coffre (POKESHOP_STOPLOSS_FINGERPRINT)")
+    fp.add_argument("path", nargs="?", default=None)
+    rf = sub.add_parser("rules-fingerprint", help="empreinte des règles de prix (POKESHOP_RULES_FINGERPRINT)")
+    rf.add_argument("path", nargs="?", default=None)
+    args = parser.parse_args(argv)
+    if args.cmd == "rules-fingerprint":
+        from .rules import default_rules_path, load_rules
+
+        target = Path(args.path) if args.path else default_rules_path()
+        try:
+            rules = load_rules(target)
+        except PokeshopError as exc:
+            print(f"ERREUR : {exc}", file=sys.stderr)
+            return 2
+        _, _, tightened = strictest_price_rules(rules.pricing, rules.stock)
+        print(f"règles      : {target}")
+        print(f"version     : {rules.rules_version}")
+        print(f"empreinte   : {rules.content_sha256}")
+        for line in tightened:
+            print(f"  sans signature, durci : {line}")
+        return 0
+    try:
+        data, target, sha = _read_stoploss_yaml(args.path)
+        config = parse_stoploss_config(data, source=str(target), content_sha256=sha)
+    except StopLossError as exc:
+        print(f"ERREUR : {exc}", file=sys.stderr)
+        return 2
+    expected = os.environ.get(STOPLOSS_FINGERPRINT_ENV_VAR) or None
+    print(f"seuils      : {target}")
+    print(f"version     : {config.stoploss_version}")
+    print(f"empreinte   : {config.fingerprint}")
+    try:
+        state = enforce_signature(config, expected)
+    except StopLossError as exc:
+        print(f"état        : REFUSÉ ({exc})")
+        return 0
+    if state.signature == "SIGNED":
+        print("état        : SIGNÉ (empreinte du coffre conforme)")
+    else:
+        print("état        : NON SIGNÉ (seuils les plus stricts entre le fichier et la référence)")
+        for line in state.tightened:
+            print(f"  durci     : {line}")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

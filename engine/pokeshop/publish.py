@@ -17,20 +17,34 @@ Principes (BP §5-§7, SPEC §0.2 et §2.6) :
 * **Nouvelle référence -> brouillon.** Publication automatique (niveau 3) seulement si la règle
   de catégorie est validée, tous les champs présents, les droits d'images acquis, le contenu
   validé et la décision de prix ``OK`` (BP §6).
-* **Prix** : celui de la décision ``OK`` du moteur (ou validé par une personne) ; variation au-delà
-  du plafond journalier (5 %) ou ×10 : aucun nouveau prix sans validation ; décision ``DRAFT``
-  ou ``BLOCKED`` : aucun nouveau prix public. Ce module ne produit **aucune** écriture de
-  commande : le prix d'une commande conclue n'est jamais modifié (il est figé dans ses lignes).
-* Référence en quarantaine ou bloquée par le stop-loss produit : dépubliée (brouillon), dernier
-  prix validé conservé.
+* **Prix** : celui de la décision ``OK`` du moteur, ou celui d'une **approbation de la
+  propriétaire** enregistrée côté moteur (:class:`PriceApprovalBook`, route propriétaire
+  ``POST /pricing/approvals`` ; jamais un champ libre de requête). Une approbation lève le
+  plafond de 5 %/jour et la revue, **jamais** le plancher dur 12 % / 8 CHF (sauf exception
+  écrite C18 référencée) ni le contrôle ×10. Variation au-delà du plafond journalier (5 %) ou ×10 :
+  aucun nouveau prix sans approbation ; décision ``DRAFT`` ou ``BLOCKED`` : aucun nouveau prix
+  public. Ce module ne produit **aucune** écriture de commande : le prix d'une commande conclue
+  n'est jamais modifié (il est figé dans ses lignes).
+* Référence en quarantaine ou bloquée par le stop-loss produit : dépubliée par une charge
+  **minimale** ``{"status": "DRAFT"}`` (ni prix, ni contenu, possible sans prix courant) ;
+  dernier prix validé conservé.
+* **Statut de stock** recalculé par le moteur (stock local vendable, allocation ferme) : le statut
+  déclaré par l'appelant n'est jamais publié tel quel ; nouvelle référence sans stock : brouillon.
+* **Petits produits** (règle active seulement avec un minimum de commande imposé par la boutique) :
+  étiquette ``petit-produit`` lue par la validation de panier.
+* Contenu public filtré : vocabulaire coûts/marges/fournisseurs (FR, DE, IT, EN), montants,
+  pourcentages, données personnelles, noms de fournisseurs ; étiquette ``ext:`` = métachamp
+  ``boutique.extension``.
 """
 
 from __future__ import annotations
 
 import re
+import threading
 import unicodedata
+import uuid
 from collections.abc import Collection, Mapping, Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Literal
@@ -48,9 +62,18 @@ from .catalog import (
     product_title_fr,
     validate_gtin,
 )
+from .audit import StateJournal, StateStoreError
 from .errors import PokeshopError
-from .models import AvailabilityPromise, DecisionStatus, FrozenModel, PriceDecision, ProductIdentity, PromiseKind
-from .pricing import is_price_anomaly, q2
+from .models import (
+    AvailabilityPromise,
+    DecisionStatus,
+    FrozenModel,
+    PriceDecision,
+    PricingParams,
+    ProductIdentity,
+    PromiseKind,
+)
+from .pricing import is_price_anomaly, price_floor_violations, q2, small_product_rule_active
 
 __all__ = [
     "PUBLIC_METAFIELD_NAMESPACE",
@@ -63,17 +86,23 @@ __all__ = [
     "PublicImage",
     "StockStatus",
     "stock_status_from_promise",
+    "stock_status_for",
     "ReleaseDateStatus",
     "ShopStatus",
     "CatalogListing",
     "PriceValidation",
+    "PriceApprovalBook",
+    "PriceApprovalPersistenceError",
+    "MAX_APPROVAL_VALIDITY",
     "PublishBlocker",
     "BLOCKER_LABELS_FR",
     "PlanOutcome",
     "PublicationPlan",
     "assert_no_sensitive_fields",
     "assert_metafields_public",
+    "assert_protective_payload",
     "sensitive_violations",
+    "SMALL_PRODUCT_TAG",
     "forbidden_claims",
     "slugify",
     "build_publication",
@@ -155,15 +184,48 @@ SENSITIVE_KEY_FRAGMENTS: tuple[str, ...] = (
 """Fragments de nom de clé révélant une donnée interne ou personnelle (comparaison sans accents ni casse)."""
 
 _SENSITIVE_VALUE_RE = re.compile(
-    r"\b(prix\s+d\W?achat|prix\s+net|couts?|marges?|margins?|fournisseurs?|grossistes?|b2b|wholesale|landed|"
-    r"contributions?|costs?|suppliers?|purchase|prix\s+plancher|coefficient)\b"
+    r"\b(prix\s+d\W?achat|prix\s+net|prix\s+de\s+revient|revient|couts?|marges?|margins?|margine|"
+    r"fournisseurs?|fornitor[ei]|grossistes?|grossista|b2b|wholesale|landed|contributions?|costs?|suppliers?|"
+    r"purchase|prix\s+plancher|coefficient|benefices?|profits?|rendements?|distributeurs?|distributors?|"
+    r"distrib|revendeurs?|resellers?|remises?\s+(revendeur|grossiste|fournisseur|pro)|tarifs?\s+pro|"
+    r"prix\s+pro|mark\W?up|ricarico|guadagno|prezzo\s+d\W?acquisto|einkauf\w*|lieferant\w*|"
+    r"handler\w*|grosshandel\w*|gewinn\w*|selbstkosten|haendler\w*|bon\s+de\s+livraison|"
+    r"bon\s+de\s+commande|purchase\s+order|commande\s+n\W?\s*po|po-\d+)\b"
 )
-_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
-_PHONE_RE = re.compile(r"(?<!\d)(\+41|0041|0)\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}(?!\d)")
+"""Vocabulaire interne (coûts, marges, fournisseurs, conditions d'achat ; FR, DE, IT, EN), texte replié sans accents."""
+_INTERNAL_PRICE_RE = re.compile(
+    r"\bp[av]\s*[:=]?\s*(chf\s*|eur\s*)?\d{1,6}[.,]\d{2}\b|\d\s*(chf\s*)?ht\b|\bprix\s+ht\b|\bhors\s+taxes?\b"
+)
+"""Abréviations d'achat/vente suivies d'un montant (« PA 98.50 », « PV 154.90 ») et montants HT."""
+_AMOUNT_RE = re.compile(
+    r"(?<![\d.,])\d{1,6}[.,]\d{2}(?![\d.,])|\d\s*(chf|eur|usd|fr\.|€|\$)|(chf|eur|usd|€|\$)\s*\d|\d\s*%"
+)
+"""Montant, devise ou pourcentage dans un texte public : le prix public passe **uniquement** par ``variants[].price``."""
+_SLUG_AMOUNT_RE = re.compile(r"\b(pa|pv|prix|chf|eur|usd)( \d+)+\b|\b(\d+ )+(chf|eur|usd)\b")
+_EMAIL_RE = re.compile(
+    r"[\w.+-]+@[\w-]+(\.[\w-]+)+|[\w.+-]+\s*(\[at\]|\(at\)|\{at\}|\s(at|arobase)\s)\s*[\w-]+\s*"
+    r"(\[dot\]|\(dot\)|\{dot\}|\.|\s(dot|point)\s)\s*\w{2,}",
+    re.IGNORECASE,
+)
+_PHONE_RE = re.compile(
+    r"(?<!\d)(\+|00)\d{1,3}[\s./-]?\(?\d{1,4}\)?([\s./-]?\d{2,4}){2,5}(?!\d)"
+    r"|(?<!\d)0\d{2}[\s./-]?\d{3}[\s./-]?\d{2}[\s./-]?\d{2}(?!\d)"
+)
+_ADDRESS_RE = re.compile(
+    r"\b(rue|avenue|av\.|chemin|ch\.|route|boulevard|bd|impasse|quai|strasse|str\.|gasse|weg|platz|via|viale)"
+    r"\s+[^,<]{1,40}?\s\d{1,4}\w?\s*,?\s*(ch-)?\d{4}\b"
+)
+"""Adresse postale (voie + numéro + NPA à 4 chiffres) : donnée personnelle."""
 _IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}(?:\s?[A-Z0-9]{1,3})?\b")
 _PRICE_RE = re.compile(r"^\d{1,6}\.\d{2}$")
 _HANDLE_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
-_TAG_RE = re.compile(r"^(statut:(stock-local|precommande|rupture)|ext:[a-z0-9]+(-[a-z0-9]+)*|nouveaute|cadeau)$")
+_TAG_RE = re.compile(
+    r"^(statut:(stock-local|precommande|rupture)|ext:[a-z0-9]+(-[a-z0-9]+)*|nouveaute|cadeau|petit-produit)$"
+)
+SMALL_PRODUCT_TAG = "petit-produit"
+"""Étiquette des petits produits (règle « frais par commande exclus ») : la validation de panier de la
+boutique refuse un panier composé uniquement de ces produits sous ``small_product_min_order_ttc``."""
+_TEXT_METAFIELDS = frozenset({"contenu_valide", "delai_expedition", "extension", "format"})
 _SKU_RE = re.compile(r"^[A-Z0-9][A-Z0-9._-]{2,60}$")
 _UNSAFE_HTML_RE = re.compile(r"<\s*(script|iframe|object|embed|form)|javascript:|\son\w+\s*=", re.IGNORECASE)
 _TAG_STRIP_RE = re.compile(r"<[^>]+>")
@@ -228,22 +290,49 @@ def forbidden_claims(*texts: str | None) -> list[str]:
     return found
 
 
-def _scan_value(value: str, path: str, terms: Sequence[str], out: list[str]) -> None:
+_STRUCTURAL_KEYS = frozenset(
+    {"price", "barcode", "sku", "originalSource", "contentType", "namespace", "key", "type", "status",
+     "inventoryPolicy", "handle", "tags"}
+)
+"""Champs structurés (validés par format) : seuls vocabulaire et références internes y sont cherchés."""
+
+
+def _scan_value(value: str, path: str, terms: Sequence[str], out: list[str], *, free_text: bool = True) -> None:
     folded = _fold(value)
     plain = _fold(_TAG_STRIP_RE.sub(" ", value))
-    match = _SENSITIVE_VALUE_RE.search(plain)
-    if match:
-        out.append(f"{path} : terme interne « {match.group(0)} »")
-    if _EMAIL_RE.search(value):
-        out.append(f"{path} : adresse email (donnée personnelle)")
-    if _PHONE_RE.search(value):
-        out.append(f"{path} : numéro de téléphone (donnée personnelle)")
-    if _IBAN_RE.search(value.upper()) and not value.startswith("https://"):
-        out.append(f"{path} : IBAN ou numéro de compte")
+    for pattern in (_SENSITIVE_VALUE_RE, _INTERNAL_PRICE_RE):
+        match = pattern.search(plain)
+        if match:
+            out.append(f"{path} : terme interne « {match.group(0)} »")
     for term in terms:
         t = _fold(term).strip()
-        if len(t) >= 3 and t in folded:
+        if len(t) >= 3 and (t in folded or t in plain):
             out.append(f"{path} : référence interne « {term} »")
+    if not free_text:
+        return
+    if _EMAIL_RE.search(value):
+        out.append(f"{path} : adresse email (donnée personnelle)")
+    if _PHONE_RE.search(value) and not value.startswith("https://"):
+        out.append(f"{path} : numéro de téléphone (donnée personnelle)")
+    if _ADDRESS_RE.search(plain):
+        out.append(f"{path} : adresse postale (donnée personnelle)")
+    if _IBAN_RE.search(value.upper()) and not value.startswith("https://"):
+        out.append(f"{path} : IBAN ou numéro de compte")
+
+
+def _scan_slug(value: str, path: str, terms: Sequence[str], out: list[str]) -> None:
+    """Handle ou étiquette : mêmes contrôles sur le texte « dé-slugifié » (tirets -> espaces)."""
+    words = value.replace("-", " ").replace(":", " ")
+    _scan_value(words, path, terms, out)
+    if _SLUG_AMOUNT_RE.search(words):
+        out.append(f"{path} : montant dans un identifiant public")
+
+
+def _scan_amounts(value: str, path: str, out: list[str]) -> None:
+    """Texte public libre : aucun montant, devise ni pourcentage (prix uniquement dans ``variants[].price``)."""
+    match = _AMOUNT_RE.search(_fold(_TAG_STRIP_RE.sub(" ", value)))
+    if match:
+        out.append(f"{path} : montant ou pourcentage « {match.group(0).strip()} » dans un texte public")
 
 
 def _walk(obj: Any, schema: Any, path: str, terms: Sequence[str], out: list[str]) -> None:
@@ -276,7 +365,8 @@ def _walk(obj: Any, schema: Any, path: str, terms: Sequence[str], out: list[str]
     if not isinstance(obj, str):
         out.append(f"{path} : texte attendu (montants en chaîne, jamais de nombre flottant)")
         return
-    _scan_value(obj, path, terms, out)
+    leaf = re.sub(r"\[\d+\]$", "", path).rsplit(".", 1)[-1]
+    _scan_value(obj, path, terms, out, free_text=leaf not in _STRUCTURAL_KEYS)
 
 
 _METAFIELD_VALUES: dict[str, re.Pattern[str]] = {
@@ -318,9 +408,42 @@ def sensitive_violations(product_input: Mapping[str, Any], *, sensitive_terms: C
     handle = product_input.get("handle")
     if handle is not None and (not isinstance(handle, str) or not _HANDLE_RE.match(handle)):
         out.append("handle : minuscules, chiffres et tirets")
+    elif isinstance(handle, str):
+        _scan_slug(handle, "handle", terms, out)
+    extension_values = [
+        mf.get("value")
+        for mf in product_input.get("metafields") or ()
+        if isinstance(mf, Mapping) and mf.get("namespace") == PUBLIC_METAFIELD_NAMESPACE and mf.get("key") == "extension"
+    ]
+    allowed_ext = {"ext:" + slugify(v) for v in extension_values if isinstance(v, str)}
+    ext_tags = 0
     for i, tag in enumerate(product_input.get("tags") or ()):
         if not isinstance(tag, str) or not _TAG_RE.match(tag):
             out.append(f"tags[{i}] : étiquette invalide")
+            continue
+        _scan_slug(tag, f"tags[{i}]", terms, out)
+        if tag.startswith("ext:"):
+            ext_tags += 1
+            if tag not in allowed_ext:
+                out.append(f"tags[{i}] : étiquette d'extension différente du métachamp boutique.extension")
+    if ext_tags > 1:
+        out.append("tags : une seule étiquette d'extension")
+    free_texts: list[tuple[str, Any]] = [
+        ("title", product_input.get("title")),
+        ("descriptionHtml", product_input.get("descriptionHtml")),
+    ]
+    seo = product_input.get("seo")
+    if isinstance(seo, Mapping):
+        free_texts += [(f"seo.{k}", v) for k, v in seo.items()]
+    for i, f in enumerate(product_input.get("files") or ()):
+        if isinstance(f, Mapping):
+            free_texts.append((f"files[{i}].alt", f.get("alt")))
+    for i, mf in enumerate(product_input.get("metafields") or ()):
+        if isinstance(mf, Mapping) and mf.get("key") in _TEXT_METAFIELDS:
+            free_texts.append((f"metafields[{i}].value", mf.get("value")))
+    for path, text in free_texts:
+        if isinstance(text, str):
+            _scan_amounts(text, path, out)
     for i, variant in enumerate(product_input.get("variants") or ()):
         if not isinstance(variant, Mapping):
             continue
@@ -382,6 +505,8 @@ def assert_metafields_public(
             out.append(f"{path}.value : texte attendu")
         else:
             _scan_value(value, f"{path}.value", tuple(sensitive_terms), out)
+            if mf.get("key") in _TEXT_METAFIELDS:
+                _scan_amounts(value, f"{path}.value", out)
         _check_metafield(mf, path, require_owner, out)
     if out:
         raise SensitiveFieldError(list(dict.fromkeys(out)))
@@ -521,20 +646,162 @@ class CatalogListing(FrozenModel):
         return self
 
 
+MAX_APPROVAL_VALIDITY = timedelta(days=7)
+"""Durée maximale d'une approbation de prix (au-delà : nouvelle approbation de la propriétaire)."""
+
+
+class PriceApprovalPersistenceError(PublishError, StateStoreError):
+    """Registre des approbations de prix non enregistré ou non relu : aucune approbation utilisable."""
+
+
 class PriceValidation(FrozenModel):
-    """Prix validé par une personne (décision REVIEW, variation > plafond, exception C18)."""
+    """Approbation d'un prix public par la **propriétaire**, enregistrée côté moteur (BP §5, C18).
 
-    price: Decimal = Field(gt=0)
-    validated_by: str = Field(min_length=2)
-    validated_at: datetime
-    note: str = ""
+    Jamais un champ libre d'une requête : seule la route ``POST /pricing/approvals`` (jeton de la
+    propriétaire vérifié) en crée, et le moteur la relit dans son registre (:class:`PriceApprovalBook`).
+    Elle remplace le prix du moteur (décision ``REVIEW`` ou variation au-delà du plafond de 5 %/jour),
+    mais **jamais** le plancher dur 12 % / 8 CHF, sauf référence d'exception C18 explicite
+    (``floor_exception_ref``) ; elle expire (``expires_at``, 7 jours au plus).
+    """
 
-    @field_validator("validated_at")
+    approval_id: str = Field(min_length=8, max_length=64)
+    product_key: str = Field(min_length=1)
+    price: Decimal = Field(gt=0, le=Decimal("100000"))
+    approved_by: Literal["propriétaire"] = "propriétaire"
+    approved_at: datetime
+    expires_at: datetime
+    reason: str = Field(min_length=10, max_length=500)
+    floor_exception_ref: str | None = Field(default=None, min_length=3, max_length=120)
+    """Référence de l'exception écrite C18 : seule voie d'un prix sous le plancher dur."""
+
+    @field_validator("approved_at", "expires_at")
     @classmethod
     def _aware(cls, v: datetime) -> datetime:
         if v.tzinfo is None or v.utcoffset() is None:
-            raise ValueError("validated_at doit porter un fuseau horaire")
+            raise ValueError("horodatage avec fuseau horaire obligatoire")
         return v
+
+    @field_validator("price")
+    @classmethod
+    def _cents(cls, v: Decimal) -> Decimal:
+        if not v.is_finite() or v != q2(v):
+            raise ValueError("prix au centime (0.00)")
+        return v
+
+    @model_validator(mode="after")
+    def _window(self) -> PriceValidation:
+        if not self.approved_at < self.expires_at <= self.approved_at + MAX_APPROVAL_VALIDITY:
+            raise ValueError("validité : après l'approbation et 7 jours au plus")
+        return self
+
+    def active(self, now: datetime) -> bool:
+        """Vrai si l'approbation est en vigueur à ``now``."""
+        return self.approved_at <= now < self.expires_at
+
+    @classmethod
+    def new(
+        cls,
+        *,
+        product_key: str,
+        price: Decimal,
+        reason: str,
+        now: datetime,
+        valid_for: timedelta = timedelta(hours=48),
+        floor_exception_ref: str | None = None,
+    ) -> PriceValidation:
+        """Nouvelle approbation (identifiant aléatoire)."""
+        return cls(
+            approval_id=f"PA-{now:%Y%m%d}-{uuid.uuid4().hex[:12].upper()}",
+            product_key=product_key,
+            price=price,
+            approved_at=now,
+            expires_at=now + valid_for,
+            reason=reason,
+            floor_exception_ref=floor_exception_ref,
+        )
+
+
+class PriceApprovalBook:
+    """Registre des approbations de prix de la propriétaire (journal d'état ``price_approvals``).
+
+    Écriture d'abord, application ensuite ; relu au démarrage (illisible =>
+    :class:`PriceApprovalPersistenceError`, le service est gelé par l'appelant). La dernière
+    approbation en vigueur d'une référence l'emporte (à horodatage égal : la dernière inscrite) ;
+    une révocation (acte protecteur) la retire.
+    """
+
+    STREAM = "price_approvals"
+
+    def __init__(self, *, store: StateJournal | None = None) -> None:
+        self._lock = threading.RLock()
+        self._items: dict[str, PriceValidation] = {}
+        self._revoked: set[str] = set()
+        self._store = store
+
+    @classmethod
+    def restore(cls, store: StateJournal) -> PriceApprovalBook:
+        """Relit le registre."""
+        book = cls()
+        try:
+            records = store.load()
+        except StateStoreError as exc:
+            raise PriceApprovalPersistenceError(f"approbations de prix : {exc}") from exc
+        for n, record in enumerate(records, start=1):
+            try:
+                if "revoked" in record:
+                    book._revoked.add(str(record["revoked"]))
+                else:
+                    item = PriceValidation.model_validate(record["approval"])
+                    book._items[item.approval_id] = item
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PriceApprovalPersistenceError(f"approbations de prix : enregistrement {n} illisible") from exc
+        book._store = store
+        return book
+
+    def _append(self, record: dict[str, Any]) -> None:
+        if self._store is None:
+            return
+        try:
+            self._store.append(record)
+        except StateStoreError as exc:
+            raise PriceApprovalPersistenceError(f"approbation de prix non enregistrée ({exc})") from exc
+
+    def record(self, approval: PriceValidation) -> PriceValidation:
+        """Enregistre une approbation (créée par la route propriétaire)."""
+        with self._lock:
+            if approval.approval_id in self._items:
+                raise PublishError(f"approbation {approval.approval_id} déjà enregistrée")
+            self._append({"approval": approval.model_dump(mode="json")})
+            self._items[approval.approval_id] = approval
+            return approval
+
+    def revoke(self, approval_id: str) -> bool:
+        """Retire une approbation (acte protecteur) ; False si inconnue ou déjà retirée."""
+        with self._lock:
+            if approval_id not in self._items or approval_id in self._revoked:
+                return False
+            self._append({"revoked": approval_id})
+            self._revoked.add(approval_id)
+            return True
+
+    def active_for(self, product_key: str, now: datetime) -> PriceValidation | None:
+        """Dernière approbation en vigueur de la référence (None sinon)."""
+        with self._lock:
+            items = [
+                a
+                for a in self._items.values()
+                if a.product_key == product_key and a.approval_id not in self._revoked and a.active(now)
+            ]
+        if not items:
+            return None
+        return sorted(items, key=lambda a: a.approved_at)[-1]  # tri stable : à égalité, la dernière inscrite
+
+    def active(self, now: datetime) -> dict[str, PriceValidation]:
+        """Approbations en vigueur par référence."""
+        with self._lock:
+            keys = {a.product_key for a in self._items.values()}
+        out = {k: self.active_for(k, now) for k in sorted(keys)}
+        return {k: v for k, v in out.items() if v is not None}
 
 
 class PublishBlocker(str, Enum):
@@ -559,6 +826,10 @@ class PublishBlocker(str, Enum):
     PRICE_CHANGE_ABOVE_CAP = "PRICE_CHANGE_ABOVE_CAP"
     PRICE_ANOMALY = "PRICE_ANOMALY"
     PRICE_UNKNOWN = "PRICE_UNKNOWN"
+    PRICE_APPROVAL_INVALID = "PRICE_APPROVAL_INVALID"
+    APPROVED_PRICE_BELOW_FLOOR = "APPROVED_PRICE_BELOW_FLOOR"
+    STOCK_STATUS_CORRECTED = "STOCK_STATUS_CORRECTED"
+    NO_SELLABLE_STOCK = "NO_SELLABLE_STOCK"
     CATEGORY_RULE_NOT_VALIDATED = "CATEGORY_RULE_NOT_VALIDATED"
     CONTENT_NOT_VALIDATED = "CONTENT_NOT_VALIDATED"
     MAX_QTY_MISSING = "MAX_QTY_MISSING"
@@ -588,6 +859,14 @@ BLOCKER_LABELS_FR: dict[PublishBlocker, str] = {
     PublishBlocker.PRICE_CHANGE_ABOVE_CAP: "Variation au-delà du plafond journalier : validation requise.",
     PublishBlocker.PRICE_ANOMALY: "Nouveau prix ×10 ou ÷10 par rapport à la veille : bloqué.",
     PublishBlocker.PRICE_UNKNOWN: "Aucun prix public connu ni calculé.",
+    PublishBlocker.PRICE_APPROVAL_INVALID: (
+        "Approbation de prix inutilisable (autre référence, expirée ou plancher non vérifiable) : aucun nouveau prix."
+    ),
+    PublishBlocker.APPROVED_PRICE_BELOW_FLOOR: (
+        "Prix approuvé sous le plancher dur 12 % / 8 CHF sans exception écrite C18 : non publié."
+    ),
+    PublishBlocker.STOCK_STATUS_CORRECTED: "Statut de stock déclaré ≠ stock réel du moteur : statut recalculé.",
+    PublishBlocker.NO_SELLABLE_STOCK: "Nouvelle référence sans stock vendable ni allocation ferme : brouillon.",
     PublishBlocker.CATEGORY_RULE_NOT_VALIDATED: "Règle de catégorie non validée : nouvelle référence en brouillon.",
     PublishBlocker.CONTENT_NOT_VALIDATED: "Contenu non confirmé par écrit (boutique.contenu_valide).",
     PublishBlocker.MAX_QTY_MISSING: "Quantité maximale obligatoire pour une nouveauté ou une précommande.",
@@ -652,6 +931,10 @@ class PublicationPlan(FrozenModel):
     decision_status: str | None = None
     rules_version: str | None = None
     inputs_hash: str | None = None
+    price_approval_id: str | None = None
+    """Approbation de la propriétaire appliquée (registre du moteur), si le prix vient d'elle."""
+    stock_status: str | None = None
+    """Statut de stock publié (recalculé par le moteur quand il est fourni)."""
 
     @property
     def send(self) -> bool:
@@ -702,8 +985,10 @@ def _metafields(listing: CatalogListing, fmt: ProductFormat, extension_name: str
     return out
 
 
-def _tags(listing: CatalogListing, extension_name: str | None, target: ShopStatus) -> list[str]:
+def _tags(listing: CatalogListing, extension_name: str | None, target: ShopStatus, small: bool = False) -> list[str]:
     tags = {"statut:" + listing.stock_status.value.replace("_", "-")}
+    if small:
+        tags.add(SMALL_PRODUCT_TAG)  # validation de panier de la boutique (minimum de commande)
     if extension_name:
         tags.add("ext:" + slugify(extension_name))
     if listing.new_arrival and target is ShopStatus.ACTIVE and listing.stock_status is not StockStatus.RUPTURE:
@@ -723,6 +1008,30 @@ def _extension_name(identity: ProductIdentity, table: ExtensionTable | None) -> 
     return table.name_fr(identity.extension or "") or identity.extension or ""
 
 
+def assert_protective_payload(product_input: Mapping[str, Any]) -> None:
+    """Charge d'une action **protectrice** (dépublication) : ``{"status": "DRAFT"}`` uniquement.
+
+    Les actions protectrices sont permises pendant un gel et au niveau 1 : elles ne doivent jamais
+    réécrire contenu, images ou prix (SEC-15). Toute autre clé => :class:`SensitiveFieldError`.
+    """
+    if dict(product_input) != {"status": ShopStatus.DRAFT.value}:
+        raise SensitiveFieldError(["action protectrice : seule la charge {'status': 'DRAFT'} est admise"])
+
+
+def stock_status_for(
+    listing: CatalogListing, *, local_sellable: int, firm_allocation: int = 0
+) -> StockStatus:
+    """Statut public **calculé** (jamais celui déclaré par l'appelant), cohérent avec le SKU.
+
+    Fiche de stock local : ``stock_local`` si stock vendable local > 0, sinon ``rupture``.
+    Fiche de précommande (SKU ``-PRECO``) : ``precommande`` seulement avec une allocation ferme
+    connue du moteur (offres fraîches), sinon ``rupture`` (SPEC §0.3).
+    """
+    if listing.public_sku.endswith("-PRECO"):
+        return StockStatus.PRECOMMANDE if firm_allocation > 0 else StockStatus.RUPTURE
+    return StockStatus.STOCK_LOCAL if local_sellable > 0 else StockStatus.RUPTURE
+
+
 def build_publication(
     listing: CatalogListing,
     decision: PriceDecision | None,
@@ -730,20 +1039,32 @@ def build_publication(
     max_daily_change: Decimal,
     reference_price_24h: Decimal | None = None,
     price_validation: PriceValidation | None = None,
+    params: PricingParams | None = None,
+    now: datetime | None = None,
     stoploss_blocked: bool = False,
     quarantined: bool = False,
     sensitive_terms: Collection[str] = (),
     table: ExtensionTable | None = None,
     real_shop: bool = False,
+    stock_status: StockStatus | None = None,
 ) -> PublicationPlan:
     """Plan de publication d'une fiche selon les règles BP §5-§7 (voir l'en-tête du module).
 
     ``reference_price_24h`` : prix public d'il y a 24 h (base du plafond journalier).
+    ``price_validation`` : approbation de la propriétaire **lue dans le registre du moteur**
+    (:class:`PriceApprovalBook`) ; utilisable seulement pour la même référence, en vigueur à ``now``,
+    avec ``params`` et le coût rendu de la décision pour revérifier le plancher dur (fermé par défaut).
+    ``stock_status`` : statut calculé par le moteur (stock local réel, allocation ferme) ; il remplace
+    le statut déclaré par la fiche. Les appelants de production (synchronisation, aperçu de l'API)
+    le fournissent toujours.
     ``real_shop`` : vrai pour une écriture réelle (refuse les données FICTIVES).
     """
     blockers: list[PublishBlocker] = []
     reviews: list[PublishBlocker] = []
     content: list[PublishBlocker] = []
+    if stock_status is not None and stock_status is not listing.stock_status:
+        reviews.append(PublishBlocker.STOCK_STATUS_CORRECTED)
+        listing = listing.model_copy(update={"stock_status": stock_status})
     ident = listing.identity
     try:
         title = product_title_fr(ident, table)
@@ -775,6 +1096,17 @@ def build_publication(
     current = listing.current_price_chf
     new_price: Decimal | None = None
     source: Literal["ENGINE", "HUMAN_VALIDATED", "UNCHANGED"] | None = None
+    approval = price_validation
+    if approval is not None and (
+        approval.product_key != listing.product_key
+        or now is None
+        or not approval.active(now)
+        or params is None
+        or decision is None
+        or decision.landed_cost is None
+    ):
+        reviews.append(PublishBlocker.PRICE_APPROVAL_INVALID)
+        approval = None
     if decision is None:
         reviews.append(PublishBlocker.DECISION_MISSING)
     elif decision.status is DecisionStatus.BLOCKED:
@@ -782,17 +1114,23 @@ def build_publication(
     elif decision.status is DecisionStatus.DRAFT:
         reviews.append(PublishBlocker.DECISION_DRAFT)
     elif decision.status is DecisionStatus.REVIEW:
-        if price_validation is not None:
-            new_price, source = price_validation.price, "HUMAN_VALIDATED"
+        if approval is not None:
+            new_price, source = approval.price, "HUMAN_VALIDATED"
         else:
             reviews.append(PublishBlocker.DECISION_REVIEW)
     else:
         engine_price = decision.evaluated_price or decision.recommended_price
-        if price_validation is not None and price_validation.price != engine_price:
-            new_price, source = price_validation.price, "HUMAN_VALIDATED"
+        if approval is not None and approval.price != engine_price:
+            new_price, source = approval.price, "HUMAN_VALIDATED"
         elif engine_price is not None:
             new_price = engine_price
-            source = "HUMAN_VALIDATED" if price_validation is not None else "ENGINE"
+            source = "HUMAN_VALIDATED" if approval is not None else "ENGINE"
+    if source == "HUMAN_VALIDATED" and new_price is not None:
+        assert approval is not None and params is not None and decision is not None and decision.landed_cost is not None
+        below = price_floor_violations(new_price, decision.landed_cost, params, small_product=decision.small_product)
+        if below and not approval.floor_exception_ref:
+            reviews.append(PublishBlocker.APPROVED_PRICE_BELOW_FLOOR)
+            new_price, source, approval = None, None, None
     if new_price is not None and reference_price_24h is not None and reference_price_24h > 0:
         if is_price_anomaly(new_price, reference_price_24h):
             reviews.append(PublishBlocker.PRICE_ANOMALY)
@@ -800,6 +1138,8 @@ def build_publication(
         elif source == "ENGINE" and abs(new_price - reference_price_24h) / reference_price_24h > max_daily_change:
             reviews.append(PublishBlocker.PRICE_CHANGE_ABOVE_CAP)
             new_price, source = None, None
+    if source != "HUMAN_VALIDATED":
+        approval = None
     if new_price is not None and current is not None and q2(new_price) == q2(current):
         source = "UNCHANGED"
     price = new_price if new_price is not None else current
@@ -832,8 +1172,9 @@ def build_publication(
             if not listing.approved and not hard:
                 reviews.append(PublishBlocker.NOT_APPROVED)
             if listing.shopify_status is ShopStatus.ACTIVE:
+                # Dépublication protectrice : statut seulement, jamais de prix ni de contenu (SEC-09, SEC-15).
                 outcome, target, action = PlanOutcome.UNPUBLISH, ShopStatus.DRAFT, "UNPUBLISH_PRODUCT"
-                price, source = current, "UNCHANGED"
+                price, source, approval = None, None, None
             elif not hard and price is not None:
                 outcome, target, action = PlanOutcome.SEND_DRAFT, ShopStatus.DRAFT, "SAVE_DRAFT_PRODUCT"
         elif content:
@@ -846,14 +1187,17 @@ def build_publication(
             and not content
             and decision is not None
             and decision.status in (DecisionStatus.OK, DecisionStatus.REVIEW)
+            and listing.stock_status is not StockStatus.RUPTURE
         )
         if auto:
             outcome, target, action = PlanOutcome.SEND_ACTIVE, ShopStatus.ACTIVE, "PUBLISH_NEW_PRODUCT"
         else:
             if not listing.category_rule_validated:
                 reviews.append(PublishBlocker.CATEGORY_RULE_NOT_VALIDATED)
+            if listing.stock_status is StockStatus.RUPTURE:
+                reviews.append(PublishBlocker.NO_SELLABLE_STOCK)
             outcome, target, action = PlanOutcome.SEND_DRAFT, ShopStatus.DRAFT, "SAVE_DRAFT_PRODUCT"
-    if outcome is not PlanOutcome.NOT_SENT and price is None:
+    if outcome not in (PlanOutcome.NOT_SENT, PlanOutcome.UNPUBLISH) and price is None:
         reviews.append(PublishBlocker.PRICE_UNKNOWN)
         outcome, target, action = PlanOutcome.NOT_SENT, None, None
     if outcome is PlanOutcome.NOT_SENT and price is None and PublishBlocker.PRICE_UNKNOWN not in reviews:
@@ -863,8 +1207,14 @@ def build_publication(
     product_input: dict[str, Any] | None = None
     identifier: dict[str, str] | None = None
     violations: list[str] = []
-    if outcome is not PlanOutcome.NOT_SENT and title is not None and price is not None and target is not None:
+    if outcome is PlanOutcome.UNPUBLISH and listing.shopify_product_id is not None:
+        product_input = {"status": ShopStatus.DRAFT.value}
+        identifier = {"id": listing.shopify_product_id}
+    elif outcome is not PlanOutcome.NOT_SENT and title is not None and price is not None and target is not None:
         ext_name = _extension_name(ident, table)
+        small = decision.small_product if decision is not None else (
+            params is not None and small_product_rule_active(params)
+        )
         option, value = (
             ("Disponibilité", "Précommande")
             if listing.stock_status is StockStatus.PRECOMMANDE
@@ -875,7 +1225,7 @@ def build_publication(
             "handle": handle,
             "status": target.value,
             "productType": FORMAT_LABELS_FR[fmt],
-            "tags": _tags(listing, ext_name, target),
+            "tags": _tags(listing, ext_name, target, small),
             "productOptions": [{"name": option, "values": [{"name": value}]}],
             "variants": [
                 {
@@ -898,15 +1248,18 @@ def build_publication(
             blockers.append(PublishBlocker.SENSITIVE_FIELD)
             product_input, identifier = None, None
             outcome, target, action = PlanOutcome.NOT_SENT, None, None
+    elif outcome is PlanOutcome.UNPUBLISH:  # pragma: no cover - fiche existante = identifiant connu
+        outcome, target, action = PlanOutcome.NOT_SENT, None, None
     all_codes = list(dict.fromkeys([*blockers, *reviews, *content]))
+    sent = outcome is not PlanOutcome.NOT_SENT
     return PublicationPlan(
         product_key=listing.product_key,
         handle=handle,
         outcome=outcome,
         target_status=target,
         action=action,
-        price_chf=q2(price) if price is not None and outcome is not PlanOutcome.NOT_SENT else None,
-        price_source=source if outcome is not PlanOutcome.NOT_SENT else None,
+        price_chf=q2(price) if price is not None and sent else None,
+        price_source=source if sent else None,
         product_input=product_input,
         identifier=identifier,
         blockers=tuple(b.value for b in dict.fromkeys(blockers)),
@@ -916,4 +1269,6 @@ def build_publication(
         decision_status=decision.status.value if decision is not None else None,
         rules_version=decision.rules_version if decision is not None else None,
         inputs_hash=decision.inputs_hash if decision is not None else None,
+        price_approval_id=approval.approval_id if approval is not None and sent else None,
+        stock_status=listing.stock_status.value,
     )

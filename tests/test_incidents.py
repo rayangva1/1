@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import uuid
@@ -113,7 +114,7 @@ def test_codes_for_reasons() -> None:
 def test_open_reference_incident_quarantines_and_notifies(audit: InMemoryAuditLog, notifier: LogNotifier, clock: Clock) -> None:
     mgr = manager(audit, notifier, clock)
     inc = mgr.open(code=IncidentCode.INC_01, product_key="FICTIF-P1", cause="Prix fournisseur ×10 sur FICTIF-A-001")
-    assert inc.incident_id == "INC-20261004-00001"
+    assert re.fullmatch(r"INC-20261004-[0-9A-F]{8}", inc.incident_id)  # unique entre processus (SEC-14)
     assert (inc.severity, inc.scope, inc.status, inc.escalation_level) == (
         Severity.MAJEUR, IncidentScope.REFERENCE, IncidentStatus.OUVERT, Escalation.E1)
     assert inc.title == "Prix anormal" and inc.target == "FICTIF-P1"
@@ -327,7 +328,9 @@ def test_webhook_url_rules_and_multi_notifier() -> None:
     log = LogNotifier(logging.getLogger("test.incidents"))
     hook = WebhookNotifier("https://n8n.example.org/webhook/x")
     receipt = MultiNotifier([hook, log]).send(_sample_notification())
-    assert receipt.channel == "log" and receipt.delivered and len(hook.sent) == 1
+    # E2E-13 : le journal seul n'alerte personne ; webhook simulé => ni « livré » ni silence sur la simulation.
+    assert receipt.channel == "webhook-n8n+log" and not receipt.delivered and receipt.dry_run and len(hook.sent) == 1
+    assert "webhook-n8n : simulé" in receipt.detail and "log : livré" in receipt.detail
 
 
 def _sample_notification():

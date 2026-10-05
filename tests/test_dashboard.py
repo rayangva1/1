@@ -746,3 +746,36 @@ def test_static_build_api_mode_requires_token_env(monkeypatch: pytest.MonkeyPatc
     assert build.main(["--api", "http://127.0.0.1:9", "--out", str(tmp_path / "y.html")]) == 2
     assert not (tmp_path / "y.html").exists()
     assert build.main(["--check", "--out", str(tmp_path / "absent.html")]) == 1
+
+
+def test_real_dashboard_is_never_written_inside_the_repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """SEC-20 / COH-09 : ``--api`` (coûts et marges réels) refuse toute sortie dans le dépôt ; défaut hors dépôt."""
+    build = _build_module()
+    monkeypatch.setenv(build.TOKEN_ENV, "FICTIF-jeton-api-0000000000000001")
+    fetched: list[str] = []
+
+    def fake_fetch(api: str, token: str, **_: object) -> dict[str, dict[str, object]]:
+        fetched.append(api)
+        return build.demo_payloads()
+
+    monkeypatch.setattr(build, "fetch_payloads", fake_fetch)
+    tracked = build.DEFAULT_OUT
+    before = tracked.read_bytes()
+    for inside in (tracked, build.ROOT / "dashboard" / "out" / "reel.html", build.ROOT / "tableau.html"):
+        assert build.main(["--api", "http://127.0.0.1:9", "--out", str(inside)]) == 2
+        assert not fetched, "aucune donnée réelle lue avant le refus"
+    assert tracked.read_bytes() == before and not (build.ROOT / "dashboard" / "out" / "reel.html").exists()
+    # Lien symbolique hors dépôt vers le dépôt : refusé aussi (chemin résolu).
+    link = tmp_path / "lien"
+    link.symlink_to(build.ROOT / "dashboard" / "out", target_is_directory=True)
+    assert build.main(["--api", "http://127.0.0.1:9", "--out", str(link / "x.html")]) == 2
+    # Défaut avec --api : hors du dépôt, fichier lisible par son seul auteur.
+    assert not build.API_DEFAULT_OUT.resolve().is_relative_to(build.ROOT.resolve())
+    monkeypatch.setattr(build, "API_DEFAULT_OUT", tmp_path / "prive" / "tableau.html")
+    assert build.main(["--api", "http://127.0.0.1:9"]) == 0
+    written = tmp_path / "prive" / "tableau.html"
+    assert written.exists() and (written.stat().st_mode & 0o777) == 0o600 and fetched
+    assert tracked.read_bytes() == before
+    # .gitignore : seules les sorties réelles éventuelles de dashboard/out sont ignorées, pas l'exemple FICTIF.
+    ignore = (build.ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "dashboard/out/*" in ignore and "!dashboard/out/index.html" in ignore

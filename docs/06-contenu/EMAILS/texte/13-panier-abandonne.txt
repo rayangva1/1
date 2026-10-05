@@ -20,6 +20,6 @@ Une question avant de commander ? Répondez à cet email.
 Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
 {{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
 Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
-Vous recevez cet email parce que cette adresse est inscrite à nos alertes (inscription confirmée le {{ $json.date_consentement }}).
-Modifier mes préférences : {{ $json.url_preferences }} · Me désinscrire en un clic : {{ $json.url_desinscription }}
+Vous recevez cet email parce que vous avez accepté nos emails lors de votre passage en caisse le {{ $json.date_consentement }}.
+Me désinscrire en un clic : {{ $json.url_desinscription }}
 Confidentialité : {{URL_CONFIDENTIALITE}}

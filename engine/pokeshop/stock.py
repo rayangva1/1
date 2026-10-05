@@ -16,12 +16,15 @@ concurrence) ; il applique le même contrôle compare-and-set que ``inventorySet
 
 from __future__ import annotations
 
+import copy
 import threading
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
 
+from .audit import StateJournal, StateStoreError
 from .errors import ConcurrencyError, InsufficientStockError, InvalidStateError, ReservationNotFoundError, StockError
 from .models import (
     AvailabilityPromise,
@@ -48,6 +51,8 @@ __all__ = [
     "pooled_quantity",
     "availability_promise",
     "StockRegistry",
+    "PersistentStockRegistry",
+    "StockPersistenceError",
     "reorder_point",
     "REORDER_SKIP_REASONS",
     "propose_reorder",
@@ -154,17 +159,19 @@ def availability_promise(
     * Sinon, précommande seulement si activée et couverte par une allocation ferme
       d'offres **fraîches** (pools non additionnés) -> ``PREORDER``.
     * Sinon ``UNAVAILABLE``. Le stock amont non alloué ne donne qu'un ``restock_signal``
-      interne ; une offre périmée est exclue (motif ``STALE_OFFER``).
+      interne ; une offre périmée est exclue (motif ``STALE_OFFER``), de même qu'une offre dont
+      l'horodatage est **supposé** (source non datée : motif ``SOURCE_TS_ASSUMED``).
     """
     local = _check_count(local_sellable, "local_sellable")
     fresh: list[SupplierOffer] = []
     excluded: list[str] = []
     reasons: list[str] = []
     for offer in offers:
-        if is_stale(offer.source_ts, now, max_age):
+        if is_stale(offer.source_ts, now, max_age) or offer.source_ts_assumed:
             excluded.append(_offer_label(offer))
-            if "STALE_OFFER" not in reasons:
-                reasons.append("STALE_OFFER")
+            code = "SOURCE_TS_ASSUMED" if offer.source_ts_assumed else "STALE_OFFER"
+            if code not in reasons:
+                reasons.append(code)
         else:
             fresh.append(offer)
     firm = pooled_quantity(fresh, "allocation_qty")
@@ -476,6 +483,155 @@ class StockRegistry:
             slot.on_hand -= qty
             self._log(sku, slot, MovementKind.WRITE_OFF, qty, ref, now)
             return self.level(sku)
+
+
+class StockPersistenceError(StockError, StateStoreError):
+    """Mouvement de stock non enregistré (annulé en mémoire) ou journal illisible au démarrage."""
+
+
+_JOURNALED_OPS = ("receive", "set_safety", "reserve", "cancel", "fulfill", "refund", "mark_damaged", "write_off_damaged")
+
+
+class PersistentStockRegistry(StockRegistry):
+    """Registre du stock local dont chaque mutation est écrite dans le journal d'état ``stock_movements``.
+
+    Chaque opération est appliquée en mémoire puis écrite ; si l'écriture échoue, l'état mémoire est
+    restauré (rien n'est retenu) et :class:`StockPersistenceError` est levée. Au démarrage,
+    :meth:`restore` rejoue les opérations dans l'ordre (horodatages explicites : rejeu déterministe) ;
+    un journal illisible ou incohérent lève :class:`StockPersistenceError` (fermé par défaut).
+    """
+
+    STREAM = "stock_movements"
+
+    def __init__(self, *, clock: Callable[[], datetime] | None = None, store: StateJournal | None = None) -> None:
+        super().__init__(clock=clock)
+        self._store = store
+        self._depth = 0
+
+    @classmethod
+    def restore(cls, store: StateJournal, *, clock: Callable[[], datetime] | None = None) -> PersistentStockRegistry:
+        """Rejoue le journal (StockPersistenceError si illisible ou si une opération ne se rejoue pas)."""
+        registry = cls(clock=clock)
+        try:
+            records = store.load()
+        except StateStoreError as exc:
+            raise StockPersistenceError(f"journal du stock : {exc}") from exc
+        for n, record in enumerate(records, start=1):
+            try:
+                op = record["op"]
+                if op not in _JOURNALED_OPS:
+                    raise KeyError(op)
+                args = dict(record["args"])
+                args["at"] = datetime.fromisoformat(args["at"])
+                getattr(StockRegistry, op)(registry, **args)
+            except (KeyError, TypeError, ValueError, StockError) as exc:
+                raise StockPersistenceError(f"journal du stock : opération {n} non rejouable ({exc})") from exc
+        registry._store = store
+        return registry
+
+    def _snapshot(self) -> tuple[Any, ...]:
+        return (
+            copy.deepcopy(self._slots),
+            dict(self._reservations),
+            dict(self._by_order),
+            set(self._refunds),
+            len(self._movements),
+            self._seq,
+        )
+
+    def _rollback(self, snap: tuple[Any, ...]) -> None:
+        slots, reservations, by_order, refunds, n_movements, seq = snap
+        self._slots, self._reservations, self._by_order, self._refunds = slots, reservations, by_order, refunds
+        del self._movements[n_movements:]
+        self._seq = seq
+
+    def _journaled(self, op: str, args: dict[str, Any]) -> Any:
+        with self._lock:
+            args["at"] = self._now(args.get("at"))
+            if self._depth or self._store is None:
+                self._depth += 1
+                try:
+                    return getattr(StockRegistry, op)(self, **args)
+                finally:
+                    self._depth -= 1
+            snap = self._snapshot()
+            self._depth += 1
+            try:
+                result = getattr(StockRegistry, op)(self, **args)
+            finally:
+                self._depth -= 1
+            record = {"op": op, "args": {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in args.items()}}
+            try:
+                self._store.append(record)
+            except StateStoreError as exc:
+                self._rollback(snap)
+                raise StockPersistenceError(f"mouvement de stock non enregistré ({exc}) : rien n'est retenu") from exc
+            return result
+
+    def receive(self, sku: str, qty: int, ref: str, *, expected_version: int | None = None, at: datetime | None = None) -> StockLevel:
+        """Voir :meth:`StockRegistry.receive` (persisté)."""
+        return self._journaled("receive", {"sku": sku, "qty": qty, "ref": ref, "expected_version": expected_version, "at": at})
+
+    def receive_once(self, sku: str, qty: int, ref: str, *, at: datetime | None = None) -> tuple[StockLevel, bool]:
+        """Réception idempotente par (SKU, référence) : (niveau, rejouée) ; autre quantité => StockError."""
+        if not ref or not ref.strip():
+            raise StockError("référence de réception obligatoire (bon de livraison, lot)")
+        with self._lock:
+            previous = [m for m in self._movements if m.sku == sku and m.kind is MovementKind.RECEIPT and m.ref == ref]
+            if previous:
+                if previous[0].qty != qty:
+                    raise InvalidStateError(f"réception {ref} déjà enregistrée pour {sku} avec {previous[0].qty} unité(s)")
+                return self.level(sku), True
+            return self.receive(sku, qty, ref, at=at), False
+
+    def set_safety(self, sku: str, qty: int, *, ref: str = "", expected_version: int | None = None, at: datetime | None = None) -> StockLevel:
+        """Voir :meth:`StockRegistry.set_safety` (persisté)."""
+        return self._journaled("set_safety", {"sku": sku, "qty": qty, "ref": ref, "expected_version": expected_version, "at": at})
+
+    def reserve(self, sku: str, qty: int, order_id: str, *, expected_version: int | None = None, at: datetime | None = None) -> Reservation:
+        """Voir :meth:`StockRegistry.reserve` (persisté)."""
+        return self._journaled(
+            "reserve", {"sku": sku, "qty": qty, "order_id": order_id, "expected_version": expected_version, "at": at}
+        )
+
+    def cancel(self, reservation_id: str, *, at: datetime | None = None) -> Reservation:
+        """Voir :meth:`StockRegistry.cancel` (persisté)."""
+        return self._journaled("cancel", {"reservation_id": reservation_id, "at": at})
+
+    def fulfill(self, reservation_id: str, *, at: datetime | None = None) -> Reservation:
+        """Voir :meth:`StockRegistry.fulfill` (persisté)."""
+        return self._journaled("fulfill", {"reservation_id": reservation_id, "at": at})
+
+    def refund(
+        self,
+        reservation_id: str,
+        refund_id: str,
+        qty: int | None = None,
+        *,
+        returned: bool,
+        damaged: bool = False,
+        at: datetime | None = None,
+    ) -> Reservation:
+        """Voir :meth:`StockRegistry.refund` (persisté)."""
+        return self._journaled(
+            "refund",
+            {"reservation_id": reservation_id, "refund_id": refund_id, "qty": qty, "returned": returned,
+             "damaged": damaged, "at": at},
+        )  # fmt: skip
+
+    def mark_damaged(self, sku: str, qty: int, ref: str, *, expected_version: int | None = None, at: datetime | None = None) -> StockLevel:
+        """Voir :meth:`StockRegistry.mark_damaged` (persisté)."""
+        return self._journaled(
+            "mark_damaged", {"sku": sku, "qty": qty, "ref": ref, "expected_version": expected_version, "at": at}
+        )
+
+    def write_off_damaged(
+        self, sku: str, qty: int, ref: str, *, expected_version: int | None = None, at: datetime | None = None
+    ) -> StockLevel:
+        """Voir :meth:`StockRegistry.write_off_damaged` (persisté)."""
+        return self._journaled(
+            "write_off_damaged", {"sku": sku, "qty": qty, "ref": ref, "expected_version": expected_version, "at": at}
+        )
 
 
 # ------------------------------------------------------------------- reorder

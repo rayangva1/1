@@ -8,9 +8,12 @@ Deux sources :
 
 * ``python dashboard/build.py`` : données de démonstration **FICTIVES** (``pokeshop.dashboard.demo_inputs``),
   rendu déterministe (exemple committé dans ``dashboard/out/index.html``) ;
-* ``python dashboard/build.py --api http://127.0.0.1:8000`` : lit ``GET /dashboard/daily|weekly|monthly``
-  avec le jeton de la variable d'environnement ``POKESHOP_API_TOKEN`` (jamais en argument de ligne de
-  commande : il resterait dans l'historique du terminal).
+* ``python dashboard/build.py --api http://127.0.0.1:8000 --out ~/pokeshop/tableau.html`` : lit
+  ``GET /dashboard/daily|weekly|monthly`` avec le jeton de la variable d'environnement ``POKESHOP_API_TOKEN``
+  (jamais en argument de ligne de commande : il resterait dans l'historique du terminal). Les données
+  réelles (coûts, marges, prix B2B) ne s'écrivent **jamais dans le dépôt** : sans ``--out``, la page va
+  dans ``~/.pokeshop/tableau_de_bord.html`` ; un ``--out`` situé dans le dépôt est refusé (code 2), y
+  compris l'exemple FICTIF suivi par git ``dashboard/out/index.html``.
 
 Options : ``--day AAAA-MM-JJ``, ``--week AAAA-MM-JJ`` (un jour de la semaine), ``--month AAAA-MM``,
 ``--out CHEMIN`` ; ``--check`` vérifie que l'exemple committé correspond au rendu de démonstration.
@@ -46,6 +49,9 @@ from pokeshop.dashboard import (  # noqa: E402
 )
 
 DEFAULT_OUT = ROOT / "dashboard" / "out" / "index.html"
+"""Exemple FICTIF suivi par git (démonstration seulement)."""
+API_DEFAULT_OUT = Path.home() / ".pokeshop" / "tableau_de_bord.html"
+"""Sortie par défaut du tableau de bord réel (``--api``) : hors du dépôt."""
 TOKEN_ENV = "POKESHOP_API_TOKEN"
 DEMO_MONTH = "2026-11"
 KINDS = (("daily", "Jour"), ("weekly", "Semaine"), ("monthly", "Mois"))
@@ -547,6 +553,11 @@ def build(
     return out
 
 
+def _inside_repo(path: Path) -> bool:
+    """Vrai si ``path`` (liens résolus) est dans le dépôt : les données réelles n'y vont jamais."""
+    return path.expanduser().resolve().is_relative_to(ROOT.resolve())
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Point d'entrée en ligne de commande."""
     parser = argparse.ArgumentParser(description="Tableau de bord interne (INTERNE — ne jamais publier).")
@@ -554,9 +565,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--day", help="jour AAAA-MM-JJ (défaut : la veille)")
     parser.add_argument("--week", help="un jour de la semaine voulue AAAA-MM-JJ (défaut : dernière semaine close)")
     parser.add_argument("--month", help="mois AAAA-MM (défaut : mois précédent)")
-    parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="fichier HTML produit")
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="fichier HTML produit (défaut : exemple FICTIF du dépôt ; avec --api : ~/.pokeshop/tableau_de_bord.html, "
+        "jamais dans le dépôt)",
+    )
     parser.add_argument("--check", action="store_true", help="vérifie que l'exemple committé est à jour")
     args = parser.parse_args(argv)
+    if args.api and args.out is not None and _inside_repo(args.out):
+        print(
+            f"Sortie réelle interdite dans le dépôt ({args.out}) : coûts et marges réels. "
+            "Utiliser --out hors du dépôt (ex. ~/pokeshop/tableau.html).",
+            file=sys.stderr,
+        )
+        return 2
+    if args.out is None:
+        args.out = API_DEFAULT_OUT if args.api else DEFAULT_OUT
     if args.check:
         expected = render_html(demo_payloads(), source_label="démonstration FICTIVE (pokeshop.dashboard.demo_inputs)")
         current = args.out.read_text(encoding="utf-8") if args.out.exists() else ""
@@ -574,6 +600,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         payloads = fetch_payloads(args.api, token, day=args.day, week=args.week, month=args.month)
         path = build(args.out, payloads, source_label=f"API {args.api}")
+        path.chmod(0o600)  # coûts et marges réels : lisible par la seule personne qui l'a produit
     else:
         if args.day or args.week or args.month:
             print("--day/--week/--month s'appliquent à --api ; la démonstration est figée.", file=sys.stderr)

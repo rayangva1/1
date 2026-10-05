@@ -16,7 +16,7 @@
 | Extension | > 25 % du budget stock, ou 45 j sans vente | plus de réassort + proposition de démarque |
 | Pub | CAC > contribution sur 7 j glissants, ou plafond jour atteint | campagne coupée |
 | Cash | cash disponible < 1 600 CHF | plus d'achat ni de pub |
-| Global | perte cumulée = 20 % du capital engagé | tout gelé, retour au niveau d'autonomie 1, alerte ; réarmement par la propriétaire uniquement |
+| Global | perte de valeur nette ≥ 20 % du capital engagé de référence (840 CHF avec le point zéro recommandé, C19) ; photo non évaluable = tout refusé | tout gelé, retour au niveau d'autonomie 1, alerte ; réarmement par la propriétaire uniquement, avec son jeton et la valeur nette attestée |
 | Temps | 60 j sans atteindre les seuils de validation | dossier continuer/ajuster/arrêter |
 
 **Les quatre issues d'un gate :**
@@ -93,7 +93,7 @@ Les six conditions de lancement du BP, rendues mesurables :
 | 3.3 | « Des marges positives sur une sélection pilote » | 8 à 12 références en stock, chacune ≥ 12 % et ≥ 8 CHF par commande au prix public prévu ; contribution moyenne pondérée ≥ 20 % du CA net (cible §5) | moyenne entre 12 % et 20 % | une référence sous le plancher dur, ou moins de 8 références |
 | 3.4 | « Des paiements et une expédition testés » | 5 scénarios de paiement OK (réussi, refusé, doublon, remboursement, versement reçu) en carte et TWINT ; colis test et retour test livrés avec suivi | TWINT pas encore actif, carte OK | paiement ou colis non testé |
 | 3.5 | « Une trésorerie qui finance le stock et les remboursements » | prévision sur 13 semaines **avec** l'achat : cash disponible ≥ 1 600 CHF chaque semaine ; aucune précommande sans allocation ferme | réserve tenue avec un achat réduit (≤ 1 500 CHF) | réserve entamée |
-| 3.6 | « Des règles d'automatisation validées » | règles de prix v1 approuvées (BL-084) ; stop-loss testés (BL-085) ; **20 synchronisations sans erreur critique** (§13 S3-4) ; recette du parcours OK (BL-099) ; textes légaux validés (BL-096) | textes légaux en relecture, sans précommande | une erreur critique sur les 20 dernières synchronisations |
+| 3.6 | « Des règles d'automatisation validées » | règles de prix v1 approuvées (BL-084) ; seuils du stop-loss et règles de prix **signés** au coffre (BL-181) ; stop-loss testés (BL-085) ; **20 synchronisations sans erreur critique** (§13 S3-4) ; recette du parcours OK (BL-099) ; textes légaux validés (BL-096) | textes légaux en relecture, sans précommande ; seuils non signés (les valeurs les plus strictes s'appliquent) | une erreur critique sur les 20 dernières synchronisations |
 | 3.7 | §9 J16-30 « Paiement et stock sans erreur critique » | 0 erreur critique | — | ≥ 1 |
 
 **Décide :** la propriétaire (BL-107). **Issues :**
@@ -113,9 +113,11 @@ Les six conditions de lancement du BP, rendues mesurables :
 | 4.4 | Survente, erreur critique | 0 | — | ≥ 1 |
 | 4.5 | Cash disponible avant le test (réserve + budget pub) | ≥ 1 600 + plafond pub engagé | — | < 1 600 (le stop-loss cash interdit la pub) |
 
-**Décide :** la propriétaire (BL-123), avec activation du niveau 3 (BL-132). **Recommandation saisonnière (EC-10) :** le Black Friday tombe le 27.11.2026 (J54). Démarrer le test **après le 30.11** ou diviser le plafond quotidien par deux jusqu'au 30.11.
+**Décide :** la propriétaire (BL-123), avec activation du niveau 3 (BL-132). **Recommandation saisonnière (EC-10) :** le Black Friday tombe le 27.11.2026 (J54). Démarrer le test **après le 30.11** (option A, recommandée : premier jour complet de données le 30.11, J57) ou dès J46 avec le plafond quotidien divisé par deux jusqu'au 30.11 (option B). Le choix fixe la date de G5.
 
-### G5 — J60 : CAC inférieur à la contribution disponible (BP §9 J46-60)
+### G5 — J60 (option B) / J64, 7.12 (option A, recommandée) : CAC inférieur à la contribution disponible (BP §9 J46-60)
+
+La décision exige **7 jours complets** de données. Option B (test dès J46, plafond réduit) : décision à J60 (3.12). Option A (test démarré le 30.11, J57) : à J60, il n'y aurait que 4 jours de données ; la décision tombe donc à **J64 (7.12)**, sur J57-J63, hors de la fenêtre J46-60 du BP (écart EC-22).
 
 On compare le CAC (calculé sur les commandes payées, nettes d'annulations et de remboursements, produits offerts et commissions des créateurs compris) à la contribution par commande **avant** acquisition :
 
@@ -125,7 +127,7 @@ On compare le CAC (calculé sur les commandes payées, nettes d'annulations et d
 | contribution − 8 CHF < CAC ≤ contribution | ORANGE | Réduire le plafond quotidien, changer de création ou d'offre, rejouer 7 jours |
 | CAC > contribution | ROUGE | Campagne coupée (le stop-loss pub s'en charge automatiquement) |
 
-Ordre de grandeur avec les hypothèses du BP §10 (panier de 95 CHF, contribution avant acquisition de 19,33 CHF) : le VERT s'arrête à un CAC de **11,33 CHF** et la coupure intervient au-delà de 19,33 CHF (voir l'harmonisation proposée par l'agent finance, EC-F-04 et EC-F-05). **Décide :** la propriétaire (BL-136).
+Ordre de grandeur avec les hypothèses du BP §10 (panier de 95 CHF, contribution avant acquisition de 19,33 CHF) : le VERT s'arrête à un CAC de **11,33 CHF** et la coupure intervient au-delà de 19,33 CHF (voir l'harmonisation proposée par l'agent finance, EC-F-04, EC-F-05 et EC-F-10). **Décide :** la propriétaire (BL-136), à J60 (option B) ou J64 (option A).
 
 ### G6 — J90 : bilan des 90 jours (BP §9 J61-90 « rotation et trésorerie compatibles avec croissance » ; §13 S7-12)
 
@@ -189,7 +191,7 @@ J_V1 est la date de la première commande payée. La décision tombe à J_V1 + 6
 | G2 | J15 (19.10) | Flux et marges pilote sont-ils identifiés ? | Agent 01 (escalade si ROUGE) | Fiche G2 + comparateur |
 | G3 | J30 (3.11) | Achète-t-on le stock ? | Propriétaire | Fiche G3 + panier final |
 | G4 | J45 (18.11) | Lance-t-on le test pub ? | Propriétaire | Fiche G4 |
-| G5 | J60 (3.12) | La pub est-elle rentable ? | Propriétaire | Fiche G5 |
+| G5 | J60 (3.12) option B ; J64 (7.12) option A, recommandée | La pub est-elle rentable ? | Propriétaire | Fiche G5 |
 | G6 | J90 (2.1.2027) | Bilan 90 jours | Agent 01 | Bilan |
 | G7 | J_V1 + 60 (≈ 3 au 17.1.2027) | Poursuivre, ajuster, reporter ou arrêter ? | Propriétaire | Dossier de décision |
 
@@ -215,6 +217,6 @@ Décision de la propriétaire (si requise) : … — date, signature
 - [ ] Valider (ou amender) chaque seuil marqué **(hypothèse)** : 2.4, 4.1, 6.1, 6.6, 7.5, 7.6 et la définition de l'« erreur critique ».
 - [ ] Valider la date de G7 (J_V1 + 60) à la place d'une décision à J90 (écart EC-07).
 - [ ] Valider le principe d'une décision par l'agent 01 pour G1, G2 et G6, avec escalade uniquement en cas de ROUGE.
-- [ ] Choisir la règle de démarrage du test publicitaire autour du Black Friday : après le 30.11, ou plafond quotidien divisé par deux.
+- [ ] Choisir la règle de démarrage du test publicitaire autour du Black Friday : après le 30.11 (option A, G5 à J64), ou plafond quotidien divisé par deux (option B, G5 à J60).
 - [ ] Confirmer que le GO sous conditions de G3 autorise un achat réduit à 1 500 CHF.
 - [ ] Confirmer avec l'agent gouvernance que les seuils de stop-loss cités ici sont identiques à `STOP_LOSS.md`.

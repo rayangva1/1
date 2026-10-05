@@ -19,6 +19,12 @@ et gravités : ``docs/07-ops/SOP_INCIDENTS.md``.
   mention ``[SIMULATION]`` mais n'applique ni confinement ni rétrogradation.
 * Doublon : un incident ouvert de même code et même cible est renvoyé tel quel (pas de
   seconde notification) — un cycle répété ne noie pas la propriétaire.
+* **Persistance** : chaque incident (à chaque transition) et l'état complet des quarantaines et
+  suspensions sont écrits dans le journal d'état ``incidents`` (:mod:`pokeshop.audit`) avant
+  d'être appliqués (une levée de confinement non enregistrée n'est jamais appliquée) ;
+  :meth:`IncidentManager.restore` les relit au démarrage. Journal illisible => toutes les
+  écritures suspendues (fermé par défaut). Identifiant ``INC-AAAAMMJJ-XXXXXXXX`` (aléatoire,
+  unique entre processus) ; le miroir ``pokeshop.incidents`` refuse d'écraser un autre incident.
 
 Une panne de flux fournisseur ne touche jamais au stock local confirmé : ce module ne modifie
 aucun stock. Chaque transition est journalisée (:mod:`pokeshop.audit`).
@@ -29,6 +35,7 @@ from __future__ import annotations
 import builtins
 import json
 import logging
+import secrets
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
@@ -37,14 +44,16 @@ from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
 import httpx
-from pydantic import Field
+from pydantic import Field, ValidationError
 
-from .audit import ActorKind, AuditLog, ConnectionFactory, _PgRunner, to_jsonable
+from .audit import ActorKind, AuditLog, ConnectionFactory, StateJournal, StateStoreError, _PgRunner, to_jsonable
 from .errors import PokeshopError
 from .models import FrozenModel, Reason
 
 __all__ = [
     "IncidentError",
+    "IncidentPersistenceError",
+    "RESTORE_HOLD",
     "Severity",
     "IncidentScope",
     "IncidentStatus",
@@ -71,10 +80,23 @@ logger = logging.getLogger("pokeshop.incidents")
 
 ALL_WRITES = "*"
 """Cible de suspension globale (incident de périmètre GLOBAL)."""
+RESTORE_HOLD = "RESTAURATION-IMPOSSIBLE"
+"""Porteur de la suspension globale posée quand le journal des incidents n'a pas pu être relu."""
 
 
 class IncidentError(PokeshopError, ValueError):
     """Transition d'incident interdite (reprise sans test, réarmement non autorisé…)."""
+
+
+class IncidentPersistenceError(IncidentError, StateStoreError):
+    """Incident ou confinement non enregistré (ou non relu) : fermé par défaut.
+
+    ``incident`` : l'incident ouvert et **confiné en mémoire** malgré l'échec d'écriture (ou None).
+    """
+
+    def __init__(self, message: str, *, incident: Incident | None = None) -> None:
+        super().__init__(message)
+        self.incident = incident
 
 
 class Severity(str, Enum):
@@ -455,7 +477,14 @@ class WebhookNotifier:
 
 
 class MultiNotifier:
-    """Diffuse sur plusieurs canaux ; renvoie l'accusé du premier canal livré (sinon le dernier)."""
+    """Diffuse sur plusieurs canaux ; renvoie un accusé **agrégé** honnête.
+
+    Le journal applicatif (canal ``log``) n'alerte personne : ``delivered`` n'est vrai que si au moins
+    un canal **hors journal** (webhook n8n…) a réellement livré ; ``dry_run`` est vrai si l'un d'eux a
+    seulement simulé l'envoi (``POKESHOP_NOTIFY_DRY_RUN=true``). ``detail`` liste l'issue de chaque
+    canal, pour l'audit ``incident.notify`` (revue E2E-13 : un incident critique non transmis à n8n
+    était journalisé « livré » grâce au seul canal ``log``).
+    """
 
     channel = "multi"
 
@@ -465,10 +494,27 @@ class MultiNotifier:
         self.notifiers = tuple(notifiers)
 
     def send(self, notification: Notification) -> NotificationReceipt:
-        """Envoie sur chaque canal."""
+        """Envoie sur chaque canal et agrège les accusés."""
         receipts = [n.send(notification) for n in self.notifiers]
-        delivered = [r for r in receipts if r.delivered]
-        return delivered[0] if delivered else receipts[-1]
+        alerting = [r for r in receipts if r.channel != LogNotifier.channel]
+        if not alerting:  # journal seul : rien n'est transmis à une personne
+            alerting = receipts
+        delivered = any(r.delivered for r in alerting)
+        simulated = not delivered and any(r.dry_run for r in alerting)
+
+        def outcome(r: NotificationReceipt) -> str:
+            if r.delivered:
+                return "livré"
+            if r.dry_run:
+                return "simulé (aucun envoi)"
+            return f"échec {r.detail}".strip()
+
+        return NotificationReceipt(
+            channel="+".join(r.channel for r in receipts),
+            delivered=delivered,
+            dry_run=simulated,
+            detail=" ; ".join(f"{r.channel} : {outcome(r)}" for r in receipts),
+        )
 
 
 # --------------------------------------------------------------------- persistance
@@ -487,15 +533,24 @@ class PostgresIncidentSink:
     """Écrit les incidents dans ``pokeshop.incidents`` (SQL paramétré, ligne repérée par ``details->>'ref'``).
 
     Les colonnes ``product_id`` / ``supplier_id`` (clés étrangères internes) restent nulles : la
-    référence produit et le fournisseur sont recopiés dans ``details``.
+    référence produit et le fournisseur sont recopiés dans ``details``. La ligne d'un incident
+    n'est mise à jour que si son identité (type, gravité, périmètre, cause, code) est la même :
+    sinon :class:`IncidentError` (jamais d'écrasement d'un autre incident ; index unique sur
+    ``details->>'ref'``, migration 004).
     """
 
     UPSERT_SQL = (
-        "WITH upd AS (UPDATE pokeshop.incidents SET status = %s, escalation_level = %s, resolved_at = %s, "
-        "resolved_by = %s, details = %s::jsonb WHERE details->>'ref' = %s RETURNING incident_id) "
-        "INSERT INTO pokeshop.incidents (kind, severity, scope, status, escalation_level, workflow, cause, "
+        "WITH existing AS (SELECT incident_id, kind, severity, scope, cause, details->>'code' AS code "
+        "FROM pokeshop.incidents WHERE details->>'ref' = %s FOR UPDATE), "
+        "upd AS (UPDATE pokeshop.incidents i SET status = %s, escalation_level = %s, resolved_at = %s, "
+        "resolved_by = %s, details = %s::jsonb FROM existing e WHERE i.incident_id = e.incident_id "
+        "AND e.kind = %s AND e.severity = %s AND e.scope = %s AND e.cause = %s "
+        "AND e.code IS NOT DISTINCT FROM %s RETURNING i.incident_id), "
+        "ins AS (INSERT INTO pokeshop.incidents (kind, severity, scope, status, escalation_level, workflow, cause, "
         "proposed_action, details, opened_at, resolved_at, resolved_by, fictif) "
-        "SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM upd)"
+        "SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM existing) "
+        "ON CONFLICT DO NOTHING RETURNING incident_id) "
+        "SELECT (SELECT count(*) FROM existing), (SELECT count(*) FROM upd), (SELECT count(*) FROM ins)"
     )
 
     def __init__(self, connect: ConnectionFactory) -> None:
@@ -518,19 +573,25 @@ class PostgresIncidentSink:
         return json.dumps(to_jsonable(body), sort_keys=True, ensure_ascii=False)
 
     def record(self, incident: Incident) -> None:
-        """Upsert de l'incident."""
+        """Upsert de l'incident ; IncidentError si la référence appartient à un autre incident."""
         details = self._details(incident)
         esc = incident.escalation_level.value if incident.escalation_level else None
         workflow = incident.workflow or (incident.target if incident.scope is IncidentScope.WORKFLOW else None)
-        self._db.run(
+        code = incident.code.value if incident.code else None
+        row = self._db.run(
             self.UPSERT_SQL,
             (
+                incident.incident_id,
                 incident.status.value,
                 esc,
                 incident.resolved_at,
                 incident.resolved_by,
                 details,
-                incident.incident_id,
+                incident.kind,
+                incident.severity.value,
+                incident.scope.value,
+                incident.cause,
+                code,
                 incident.kind,
                 incident.severity.value,
                 incident.scope.value,
@@ -545,8 +606,14 @@ class PostgresIncidentSink:
                 incident.resolved_by,
                 incident.fictif,
             ),
-            "none",
+            "one",
         )
+        existing, updated, inserted = (int(v) for v in (row or (0, 0, 0)))
+        if (existing and not updated) or (not existing and not inserted):
+            raise IncidentError(
+                f"pokeshop.incidents : la référence {incident.incident_id} appartient à un autre incident "
+                "(aucun écrasement)"
+            )
 
 
 # ----------------------------------------------------------------------- gestion
@@ -570,18 +637,91 @@ class IncidentManager:
         on_critical: OnCritical | None = None,
         sink: IncidentSink | None = None,
         clock: Callable[[], datetime] | None = None,
+        store: StateJournal | None = None,
     ) -> None:
         self._audit = audit
         self._notifier: Notifier = notifier or LogNotifier()
         self._on_critical = on_critical
         self._sink = sink
+        self._store = store
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lock = threading.RLock()
         self._incidents: dict[str, Incident] = {}
         self._quarantine: dict[str, set[str]] = {}
         self._suspended: dict[str, set[str]] = {}
-        self._seq = 0
         self.receipts: list[NotificationReceipt] = []
+
+    STREAM = "incidents"
+
+    # -- persistance ----------------------------------------------------------------
+    @staticmethod
+    def _registry_json(registry: Mapping[str, set[str]]) -> dict[str, builtins.list[str]]:
+        return {k: sorted(v) for k, v in sorted(registry.items()) if v}
+
+    def restore(self) -> int:
+        """Relit incidents, quarantaines et suspensions depuis le journal d'état ; renvoie le nombre d'incidents.
+
+        :class:`IncidentPersistenceError` si le journal est illisible (l'appelant applique
+        :meth:`hold_all_writes`).
+        """
+        if self._store is None:
+            return 0
+        try:
+            records = self._store.load()
+        except StateStoreError as exc:
+            raise IncidentPersistenceError(str(exc)) from exc
+        incidents: dict[str, Incident] = {}
+        quarantine: dict[str, set[str]] = {}
+        suspended: dict[str, set[str]] = {}
+        for n, record in enumerate(records, start=1):
+            try:
+                incident = Incident.model_validate(record["incident"])
+                quarantine = {str(k): set(map(str, v)) for k, v in dict(record["quarantine"]).items()}
+                suspended = {str(k): set(map(str, v)) for k, v in dict(record["suspended"]).items()}
+            except (KeyError, TypeError, ValueError, ValidationError) as exc:
+                raise IncidentPersistenceError(f"journal des incidents : enregistrement {n} illisible") from exc
+            incidents[incident.incident_id] = incident
+        with self._lock:
+            self._incidents = incidents
+            self._quarantine = quarantine
+            self._suspended = suspended
+        return len(incidents)
+
+    def hold_all_writes(self, reason: str) -> None:
+        """Journal illisible : toutes les écritures suspendues (actions protectrices permises), en mémoire.
+
+        Levée uniquement par réparation du stockage puis redémarrage (aucune reprise possible).
+        """
+        logger.error("incidents non relus : toutes les écritures suspendues (%s)", reason)
+        with self._lock:
+            self._suspended.setdefault(ALL_WRITES, set()).add(RESTORE_HOLD)
+
+    def _journal(
+        self,
+        incident: Incident,
+        quarantine: Mapping[str, set[str]] | None = None,
+        suspended: Mapping[str, set[str]] | None = None,
+    ) -> None:
+        """Écrit l'incident et l'état complet des confinements dans le journal d'état."""
+        if self._store is None:
+            return
+        try:
+            self._store.append(
+                {
+                    "incident": incident.model_dump(mode="json"),
+                    "quarantine": self._registry_json(quarantine if quarantine is not None else self._quarantine),
+                    "suspended": self._registry_json(suspended if suspended is not None else self._suspended),
+                }
+            )
+        except StateStoreError as exc:
+            raise IncidentPersistenceError(f"incident {incident.incident_id} non enregistré ({exc})") from exc
+
+    def _new_id(self, now: datetime) -> str:
+        """Identifiant unique entre processus : date + 8 caractères hexadécimaux aléatoires."""
+        while True:
+            candidate = f"INC-{now:%Y%m%d}-{secrets.token_hex(4).upper()}"
+            if candidate not in self._incidents:
+                return candidate
 
     def set_on_critical(self, hook: OnCritical | None) -> None:
         """Branche (ou débranche) la rétrogradation d'autonomie sur incident critique."""
@@ -692,8 +832,7 @@ class IncidentManager:
                         payload={"cause": cause, "target": tgt},
                     )
                     return existing
-            self._seq += 1
-            incident_id = f"INC-{now:%Y%m%d}-{self._seq:05d}"
+            incident_id = self._new_id(now)
             containment: list[str] = []
             before = after = None
             if not simulation and contain:
@@ -751,7 +890,11 @@ class IncidentManager:
                 "containment": list(incident.containment),
             },
         )
-        self._persist(incident)
+        try:
+            self._persist(incident)  # confinement déjà appliqué en mémoire : fermé même si l'écriture échoue
+        except IncidentPersistenceError as exc:
+            self._notify(incident)
+            raise IncidentPersistenceError(str(exc), incident=incident) from exc
         self._notify(incident)
         return incident
 
@@ -841,12 +984,19 @@ class IncidentManager:
         )
 
     def _persist(self, incident: Incident) -> None:
+        with self._lock:
+            self._journal(incident)
+        if self._sink is not None:
+            self._sink.record(incident)
+
+    def _mirror(self, incident: Incident) -> None:
         if self._sink is not None:
             self._sink.record(incident)
 
     # -- transitions ----------------------------------------------------------------
     def _update(self, incident: Incident, action: str, actor: str, actor_kind: ActorKind | str, **payload: Any) -> None:
         with self._lock:
+            self._journal(incident)  # écriture d'abord : rien n'est appliqué si elle échoue
             self._incidents[incident.incident_id] = incident
         self._audit.append(
             actor=actor,
@@ -857,7 +1007,7 @@ class IncidentManager:
             dry_run=incident.simulation,
             payload={"status": incident.status.value, **payload},
         )
-        self._persist(incident)
+        self._mirror(incident)
 
     def start(self, incident_id: str, *, actor: str, actor_kind: ActorKind | str = ActorKind.AGENT) -> Incident:
         """OUVERT -> EN_COURS (correction en cours)."""
@@ -908,17 +1058,32 @@ class IncidentManager:
             raise IncidentError("incident critique : reprise autorisée par la propriétaire uniquement")
         lifted: list[str] = []
         with self._lock:
-            for registry in (self._quarantine, self._suspended):
+            quarantine = {k: set(v) for k, v in self._quarantine.items()}
+            suspended = {k: set(v) for k, v in self._suspended.items()}
+            for registry in (quarantine, suspended):
                 holders = registry.get(incident.target)
                 if holders and incident_id in holders:
                     holders.discard(incident_id)
                     if not holders:
                         lifted.append(incident.target)
             now = self._clock()
-        updated = incident.replace(
-            status=IncidentStatus.RESOLU, resolved_at=now, resolved_by=actor, lifted=tuple(lifted)
+            updated = incident.replace(
+                status=IncidentStatus.RESOLU, resolved_at=now, resolved_by=actor, lifted=tuple(lifted)
+            )
+            # Écriture d'abord : une levée de quarantaine ou de suspension non enregistrée n'est jamais appliquée.
+            self._journal(updated, quarantine, suspended)
+            self._quarantine, self._suspended = quarantine, suspended
+            self._incidents[incident_id] = updated
+        self._audit.append(
+            actor=actor,
+            actor_kind=kind,
+            action="incident.resume",
+            entity="incident",
+            entity_id=incident_id,
+            dry_run=updated.simulation,
+            payload={"status": updated.status.value, "lifted": lifted},
         )
-        self._update(updated, "incident.resume", actor, kind, lifted=lifted)
+        self._mirror(updated)
         return updated
 
     def close(self, incident_id: str, *, actor: str, actor_kind: ActorKind | str = ActorKind.AGENT) -> Incident:

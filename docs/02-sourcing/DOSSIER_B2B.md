@@ -40,7 +40,7 @@
 
 | Élément | Valeur indicative | Nature |
 |---|---|---|
-| Première commande (assortiment pilote) | Environ **3 000 CHF** rendu Suisse, répartis sur 15 à 25 références | Budget de lancement décidé ; montant final selon vos conditions |
+| Première commande (assortiment pilote) | Environ **3 000 CHF** rendu Suisse, répartis sur **8 à 12 références achetées en stock** (catalogue de 15 à 25 références, les autres en alerte de réassort ou en précommande sur allocation ferme) | Budget de lancement décidé ; montant final selon vos conditions |
 | Réassorts | Hebdomadaires ou bimensuels selon les ventes réelles | Pas d'engagement de volume à ce stade |
 | Croissance visée après le pilote | Réassorts mensuels de plusieurs milliers de francs si les ventes le confirment | Hypothèse de plan, non garantie |
 | Mode de commande souhaité | Fichier de prix et de stock régulier, commande par email ou électronique (EDI/API si disponible) | Voir la demande technique |

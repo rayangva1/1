@@ -50,7 +50,7 @@ Variables Liquid utilisées (notifications « Confirmation de commande » et « 
 
 ## 4. Règles pour le workflow n8n (agent integrations)
 
-1. **Consentement d'abord** : 02 à 05, 12 et 13 ne partent qu'à une personne au statut `confirme`, non désinscrite, avec la préférence correspondante ; 13 uniquement si le consentement marketing a été coché au checkout (note C4) ; 11 uniquement si la personne ne s'y est pas opposée (note C3).
+1. **Consentement d'abord** : 02 à 05 ne partent qu'à une personne inscrite aux alertes au statut `confirme`, non désinscrite, avec la préférence correspondante ; 12 seulement à un client avec consentement marketing (ou non opposé, note C2), non désinscrit ; 13 uniquement si le consentement marketing a été coché au checkout (note C4) ; 11 uniquement si la personne ne s'y est pas opposée (note C3). Le pied de chaque email marketing dit le motif réel d'envoi (`motif_pied` de la source : `alertes`, `client` ou `checkout`) ; seuls les emails `alertes` ont un lien « Modifier mes préférences », tous ont la désinscription en un clic.
 2. **Jamais de donnée interne** dans un nœud qui compose un email : prix, statut et titre sont lus sur la **page publique** (ou `/publish/preview`) au moment de l'envoi ; un produit dont le statut n'est plus « stock local » ou « précommande » est retiré de l'email ; si plus aucun produit ne reste, l'email n'est pas envoyé.
 3. **Stop-loss** : aucun email promotionnel (03, 04, 05, 12, 13) sur une référence sous stop-loss produit ; aucun envoi pendant un gel global.
 4. `salutation` = « Bonjour {prénom}, » si le prénom est renseigné, sinon « Bonjour, ».
@@ -63,7 +63,7 @@ Variables Liquid utilisées (notifications « Confirmation de commande » et « 
 
 ## 5. Contrôles automatiques
 
-`python docs/06-contenu/outils/verifier_contenu.py` vérifie notamment : modèles synchronisés avec la source ; aucune donnée interne, aucun EAN, aucune fausse urgence ni promesse interdite ; tout prix est une variable (aucun montant en dur dans les modèles) ; lien de désinscription et de préférences dans chaque email marketing ; mention d'indépendance et identité de l'exploitant dans chaque pied ; aucun `<script>`, `<style>` ni `var()` ; champs `{{CHAMP}}` connus du registre ; variables n8n déclarées.
+`python docs/06-contenu/outils/verifier_contenu.py` vérifie notamment : modèles synchronisés avec la source ; aucune donnée interne, aucun EAN, aucune fausse urgence ni promesse interdite ; tout prix est une variable (aucun montant en dur dans les modèles) ; lien de désinscription dans chaque email marketing, lien de préférences dans ceux des inscrits aux alertes, motif d'envoi conforme au segment ; expressions n8n intactes (« $json » en minuscules, y compris dans les titres de la version texte) ; aucune affirmation inexacte (« une personne vous répond », limite « par commande ») ; mention d'indépendance et identité de l'exploitant dans chaque pied ; aucun `<script>`, `<style>` ni `var()` ; champs `{{CHAMP}}` connus du registre ; variables n8n déclarées.
 
 ## 6. Points à trancher
 

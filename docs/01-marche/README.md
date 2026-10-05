@@ -7,7 +7,7 @@ BP §1 « Validation avant de commander » : concurrence, entretiens, page de pr
 | Fichier | Rôle | Tâches |
 |---|---|---|
 | `PROTOCOLE_CONCURRENCE.md` | 5 boutiques suisses (+ 3 remplaçants), 15 références, procédure de relevé, calcul de la référence marché | BL-020 à BL-022 |
-| `GRILLE_CONCURRENCE.csv` | 75 lignes (15 × 5) pré-structurées ; prix vides tant qu'ils n'ont pas été lus sur la page | BL-020 |
+| `GRILLE_CONCURRENCE.csv` | 75 lignes (15 × 5) pré-structurées, dont les 12 références STOCK du panier pilote ; prix vides tant qu'ils n'ont pas été lus sur la page (relevé à faire avant tout achat) | BL-020 |
 | `GUIDE_ENTRETIENS.md` | Script de 20-25 min, consentement, 23 questions, grille de synthèse | BL-024 à BL-027 |
 | `QUESTIONNAIRE.md` | Version formulaire en ligne (mêmes codes de questions) | BL-023 |
 | `PROTOCOLE_LANDING_TEST.md` | Page de présentation sans faux stock ni précommande ; KPI et seuils de signal | BL-031 à BL-034 |

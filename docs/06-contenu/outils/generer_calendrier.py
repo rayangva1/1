@@ -190,6 +190,10 @@ LIGNES: tuple[Ligne, ...] = (
           "Aucune donnée client visible ; aucun « dernière chance »", "A-09, H (tournage)"),
     Ligne(78, "Publication", RS + " + site", "Article SEO + Reel", "Guide", "S12", "Ranger et classer sa collection",
           "Votre collection déborde ? Trois façons de la ranger.", "Voir les accessoires", "Photos réelles d'accessoires en stock", COND_EDUC, "A-08, A-09"),
+    Ligne(79, "Publication", RS, "Carrousel 4:5 (photos)", "Nouveauté accessible", "—", "Nouveauté accessible de la semaine (semaine de Noël)",
+          "[Format] [extension] en français : en stock local.", "Voir la fiche", VIS_PRODUIT, COND_NOUV, "A-09",
+          "Cadence BP §9 (3 publications par semaine) tenue en S12 ; sans produit réellement en stock local, publication "
+          "annulée et signalée dans le rapport hebdomadaire, jamais remplacée par un produit indisponible"),
     Ligne(80, "Publication", RS, "Story + carrousel", "Preuve de service", "S15", "Expéditions pendant les fêtes : notre calendrier",
           "Nos jours d'expédition entre Noël et Nouvel An.", "Voir le stock local", VIS_GABARIT,
           "Jours d'expédition décidés par la propriétaire (absence planifiée)", "A-09", "Pas d'email le 24.12 ni le 31.12, sauf information d'expédition"),

@@ -39,6 +39,7 @@ Tu ouvres l'accès au stock Pokémon JCC **en français** pour une boutique suis
 - Citer à un fournisseur le prix ou le nom d'un concurrent.
 - Lire un portail par automatisme ou contourner un contrôle d'accès.
 - Lancer des commandes : tu n'as pas de Bash ; les calculs sont faits par `finance-pricing`.
+- **Secrets jamais lus** : ni `.env`, ni `secrets/`, ni coffre, ni clé, ni variable d'environnement (`env`, `printenv`, `os.environ`) ; les règles `deny` de `.claude/settings.json` le bloquent, ne les contourne jamais. Jamais le jeton de la propriétaire, jamais un acteur « propriétaire » ; un secret aperçu = fiche E3, sans le recopier.
 
 ## Règles non négociables
 

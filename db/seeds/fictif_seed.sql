@@ -2,7 +2,10 @@
 --
 -- Fournisseurs « fictif_* », extensions « FICTIF_* », GTIN de test 200… (SPEC §0.7),
 -- prix, coûts, taux de change et commandes INVENTÉS. Toutes les lignes portent fictif = true :
--- la vue storefront.public_catalog ne les montre qu'avec SET pokeshop.include_fictif = 'on'.
+-- jamais visibles dans storefront.public_catalog (migration 005) ; vue d'essai du moteur :
+-- pokeshop.public_catalog_test. Les décisions de prix, la commande et la proposition référencent la
+-- version RÉELLE des règles qui les a calculées (config/pricing_rules.v1.yaml, contenu complet et sha256) :
+-- blocs « genere:* » produits par python db/seeds/regles_seed.py (vérifiés par tests/test_seed_fictif.py).
 -- À appliquer après les migrations (et après reference_seed.sql si souhaité).
 
 BEGIN;
@@ -27,13 +30,14 @@ INSERT INTO pokeshop.fx_rates (currency, rate_to_chf, source, rate_date, fictif)
     ('EUR', 0.94000000, 'FICTIF (taux inventé pour essais, pas une cotation)', '2026-10-04', true),
     ('CHF', 1, 'CHF', '2026-10-04', true);
 
-WITH c AS (
-    SELECT '{"acquisition_cost":"5.00","after_sales_provision":"1.00","hard_floor_chf_per_order":"8.00","hard_floor_margin":"0.12","logistics_cost":"3.00","note":"FICTIF : copie partielle des hypothèses BP §4-5 pour essais","payment_fixed":"0.30","payment_pct":"0.025","rules_version":"FICTIF-seed-v1","target_margin":"0.20","vat_rate_sales":"0.081"}'::text AS t
-)
+-- >>> genere:regles (python db/seeds/regles_seed.py — ne pas éditer à la main)
+-- Règles appliquées par le moteur aux décisions FICTIVES ci-dessous : contenu COMPLET du fichier
+-- config/pricing_rules.v1.yaml (JSON) et sha256 du fichier brut (même valeur que RuleSet.content_sha256).
 INSERT INTO pokeshop.pricing_rules (rules_version, status, vat_mode, effective_date, content_sha256, content, source_path, fictif)
-SELECT 'FICTIF-seed-v1', 'PROPOSITION', 'EFFECTIVE', '2026-10-04', encode(sha256(convert_to(t, 'UTF8')), 'hex'), t::jsonb,
-       'db/seeds/fictif_seed.sql', true
-  FROM c;
+VALUES ('v1-2026-10-04', 'PROPOSITION', NULL, '2026-10-04', 'bf09f2fdafc95d069b54d179794f4dd3fbf31b07e9e1d221de82593b39553a3d',
+        '{"effective_date":"2026-10-04","pricing":{"acquisition_cost":"5.00","after_sales_provision":"1.00","hard_floor_chf_per_order":"8.00","hard_floor_margin":"0.12","logistics_cost":"3.00","market_review_threshold":"0.10","max_daily_price_change":"0.05","payment_fixed":"0.30","payment_pct":"0.025","price_anomaly_factor":"10","rounding_tiers":[{"endings":["0.50","0.90"],"min_price":"0","step":"1.00"},{"endings":["0.90"],"min_price":"10","step":"1.00"},{"endings":["4.90","9.90"],"min_price":"100","step":"10.00"}],"small_product_max_cost":"15.00","small_product_max_shipping_ttc":null,"small_product_min_order_ttc":null,"target_margin":"0.20"},"profiles":{"EFFECTIVE":{"description":"Assujetti méthode effective : TVA suisse récupérable, ventes HT, t = 8,1 %","vat_rate_sales":"0.081"},"NOT_REGISTERED":{"description":"Non assujetti : TVA non récupérable dans C, t = 0 ; saisir L, R, A TTC","vat_rate_sales":"0"}},"rules_version":"v1-2026-10-04","source":"docs/business-plan/business_plan_extrait.txt §4 (formule, exemple) et §5 (table de règles)","status":"hypotheses BP §4-5, à confirmer par devis","stock":{"extension_budget_cap":"0.25","future_skew_minutes":5,"reorder_coverage_days":14,"staleness_hours":24,"stock_budget_chf":"3000"}}'::jsonb,
+        'config/pricing_rules.v1.yaml', true);
+-- <<< genere:regles
 
 -- ---------------------------------------------------------------- import
 WITH c AS (SELECT convert_to('sku;prix;devise' || chr(10) || 'FICTIF-A-001;95,00;EUR' || chr(10), 'UTF8') AS b)
@@ -103,23 +107,27 @@ SELECT v.lot_id, p.product_id, 'fictif_grossiste_a', v.received_at, v.qty, v.rem
        ) AS v(lot_id, public_sku, received_at, qty, remaining, unit_cost, basis, invoice_ref)
   JOIN pokeshop.products p ON p.public_sku = v.public_sku;
 
+-- >>> genere:decisions (python db/seeds/regles_seed.py — ne pas éditer à la main)
 INSERT INTO pokeshop.replacement_costs (product_id, supplier_id, offer_id, unit_cost_chf, source_ts, rules_version, fictif)
-SELECT p.product_id, 'fictif_grossiste_a', o.offer_id, 99.8000, '2026-10-04 06:00+02', 'FICTIF-seed-v1', true
+SELECT p.product_id, 'fictif_grossiste_a', o.offer_id, 99.8000, '2026-10-04 06:00+02', 'v1-2026-10-04', true
   FROM pokeshop.products p JOIN pokeshop.supplier_offers o ON o.supplier_sku = 'FICTIF-A-001'
  WHERE p.public_sku = 'FICTIF-DSP-ALPHA';
 
 INSERT INTO pokeshop.price_decisions (product_id, rules_version, inputs_hash, status, reasons, landed_cost_chf, floor_price_chf,
     profitable_price_chf, recommended_price_chf, evaluated_price_chf, contribution_chf, contribution_pct, fictif)
-SELECT p.product_id, 'FICTIF-seed-v1', v.h, v.status::pokeshop.decision_status, v.reasons, v.cost, v.floor, v.floor, v.reco, v.reco,
+SELECT p.product_id, 'v1-2026-10-04', v.h, v.status::pokeshop.decision_status, v.reasons, v.cost, v.floor, v.floor, v.reco, v.reco,
        v.contrib, v.pct, true
   FROM (VALUES
-          -- Valeurs calculées par pokeshop.pricing.decide_price avec config/pricing_rules.v1.yaml (coûts FICTIFS).
-          ('FICTIF-DSP-ALPHA', '709a95ab7023d13a595c7cd46c4c68cdf186e670122fac730829edb8c575a472', 'OK', '{}'::text[],
+          -- pokeshop.pricing.decide_price(coût, règles v1-2026-10-04 profil EFFECTIVE, marché) : coûts et marché FICTIFS.
+          -- FICTIF-DSP-ALPHA : coût rendu 101.2345, sans référence marché.
+          ('FICTIF-DSP-ALPHA', '9b8f534b20c6591c8a2638fc2f393d7534d1aa3af3a06c47ee2a1a0eb8ba02cc', 'OK', '{}'::text[],
            101.2345::numeric, 154.58::numeric, 154.90::numeric, 28.89::numeric, 0.2016::numeric),
-          ('FICTIF-ETB-ALPHA', '43cb47bbc89aadeb65f69b6d1c25da6650fba80557f5ec3b22acb7dacd0f2ccd', 'REVIEW', '{ABOVE_MARKET}'::text[],
+          -- FICTIF-ETB-ALPHA : coût rendu 41.1000, référence marché FICTIVE 63.90.
+          ('FICTIF-ETB-ALPHA', '794425e1cb738cd4c199cde83713bd1e5787726e10c68f9b5e40d6276cb39a3c', 'REVIEW', '{ABOVE_MARKET}'::text[],
            41.1000::numeric, 70.48::numeric, 70.90::numeric, 13.42::numeric, 0.2046::numeric)
        ) AS v(public_sku, h, status, reasons, cost, floor, reco, contrib, pct)
   JOIN pokeshop.products p ON p.public_sku = v.public_sku;
+-- <<< genere:decisions
 
 -- Historique des prix publics (append-only) : le dernier PUBLISHED/ROLLED_BACK est le prix affiché.
 INSERT INTO pokeshop.price_events (product_id, kind, price_ttc_chf, decision_id, validated, actor, note, at, fictif)
@@ -163,11 +171,13 @@ SELECT p.product_id, 'fictif_grossiste_c', 12, 3, 1, true, 'FICTIF-email-allocat
   FROM pokeshop.products p WHERE p.public_sku = 'FICTIF-DSP-GAMMA';
 
 -- --------------------------------------------------------------- commandes
+-- >>> genere:commande (python db/seeds/regles_seed.py — ne pas éditer à la main)
 INSERT INTO pokeshop.orders (shop_order_ref, status, paid_at, goods_ttc_chf, discount_ttc_chf, shipping_charged_ttc_chf,
                              total_paid_ttc_chf, customer_ref, contribution_chf, rules_version, inputs_hash, fictif) VALUES
-    -- Contribution calculée par pokeshop.pricing.basket_contribution (port facturé 7.00, coût FICTIF).
-    ('FICTIF-#1001', 'PAYEE', '2026-10-04 12:00+02', 154.90, 0, 7.00, 161.90, 'FICTIF-client-0001', 28.71, 'FICTIF-seed-v1',
-     '656ad33188562135b09d73d294414762f2df18c110a354a1e04ed0ca3f164e4b', true);
+    -- pokeshop.pricing.basket_contribution (règles v1-2026-10-04, port facturé 7.00, coût FICTIF).
+    ('FICTIF-#1001', 'PAYEE', '2026-10-04 12:00+02', 154.90, 0, 7.00, 161.90, 'FICTIF-client-0001', 28.71, 'v1-2026-10-04',
+     'bcc833633765709a2227eab32c13274501b1aa06dcd69e17606175add714d40f', true);
+-- <<< genere:commande
 
 INSERT INTO pokeshop.order_lines (order_id, product_id, qty, unit_price_ttc_chf, unit_cost_chf)
 SELECT o.order_id, p.product_id, 1, 154.90, 101.2345
@@ -180,11 +190,14 @@ SELECT 'FICTIF-RES-0001', p.product_id, o.order_id, 1, 'ACTIVE'
  WHERE o.shop_order_ref = 'FICTIF-#1001' AND p.public_sku = 'FICTIF-DSP-ALPHA';
 
 -- ------------------------------------------------------------------ achats
+-- >>> genere:proposition (python db/seeds/regles_seed.py — ne pas éditer à la main)
 INSERT INTO pokeshop.purchase_proposals (generated_at, status, supplier_id, total_cost_chf, budget_available_chf, budget_remaining_chf,
                                          rules_version, inputs_hash, skipped, fictif)
-VALUES ('2026-10-04 07:00+02', 'PROPOSITION_A_VALIDER', 'fictif_grossiste_a', 607.41, 2400.00, 1792.59, 'FICTIF-seed-v1',
+-- inputs_hash : identifiant FICTIF de la proposition (candidats d'essai non conservés).
+VALUES ('2026-10-04 07:00+02', 'PROPOSITION_A_VALIDER', 'fictif_grossiste_a', 607.41, 2400.00, 1792.59, 'v1-2026-10-04',
         '4768b8ca1ca1b7322c1eeffa45acce7668922227efb5764b17c807a95add8a91',
         '[{"product_key": "FICTIF-ETB-BETA", "reason": "IDENTITY_INCOMPLETE"}]', true);
+-- <<< genere:proposition
 
 INSERT INTO pokeshop.purchase_proposal_lines (proposal_id, product_id, supplier_id, supplier_sku, extension, qty, unit_cost_chf, line_cost_chf, position, notes)
 SELECT pp.proposal_id, p.product_id, 'fictif_grossiste_a', 'FICTIF-A-001', 'FICTIF_ALPHA', 6, 101.2345, 607.41, 1, '{FICTIF}'

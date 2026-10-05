@@ -522,9 +522,31 @@ class TestIdentity:
                 gtin=fictitious_gtin13(9), language=lang, extension=None, format="Protège-cartes",
                 content="100 protège-cartes", sealed=True, table=table,
             ).key
-            for lang in ("FR", "multilingue", None, "Anglais", "VO")
+            for lang in ("FR", "multilingue", None, "VO", "sans objet")
         }
         assert keys == {f"{fictitious_gtin13(9)}|NA|SANS_EXTENSION|SLEEVES|100 PROTEGE CARTES|SEALED"}
+
+    @pytest.mark.parametrize("lang,expected", [("Anglais", "EN"), ("Japonais", "JP"), ("FR", "NA"), (None, "NA")])
+    def test_accessory_keeps_a_declared_foreign_language(self, table: ExtensionTable, lang: str | None, expected: str) -> None:
+        """MOT-14 : un libellé d'accessoire n'efface jamais une langue étrangère déclarée (règle FR uniquement)."""
+        result = normalize_identity(
+            gtin=fictitious_gtin13(9), language=lang, extension=None, format="Classeur 9 cases",
+            content="1 classeur", sealed=True, table=table,
+        )
+        assert result.identity.format == "BINDER" and result.identity.language == expected
+
+    @pytest.mark.parametrize("label", ["Classeur + 2 boosters", "Sleeves + 3 boosters", "Portfolio avec 4 boosters",
+                                       "Deck box et 1 booster"])
+    def test_accessory_with_boosters_is_ambiguous_and_keeps_language(self, table: ExtensionTable, label: str) -> None:
+        """MOT-14 : accessoire + boosters = cartes incluses => format inconnu (brouillon), langue JP conservée."""
+        assert normalize_format(label) is ProductFormat.UNKNOWN
+        result = normalize_identity(
+            gtin=fictitious_gtin13(9), language="Japonais", extension=None, format=label, content="2 boosters",
+            sealed=True, table=table,
+        )
+        assert result.identity.language == "JP"
+        assert IdentityIssue.UNKNOWN_FORMAT in result.issues
+        assert expected_language_for(result.identity.format) == "FR"
 
     def test_key_is_stable_across_spellings(self, table: ExtensionTable) -> None:
         a = product_identity_key(ident(), table)  # type: ignore[arg-type]

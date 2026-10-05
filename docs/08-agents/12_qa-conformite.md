@@ -10,7 +10,7 @@
 
 ## 1. Objectif
 
-Qu'aucune erreur critique n'atteigne un client et qu'aucune perte ne dépasse les seuils fixés : tests du moteur au vert, recette avant chaque niveau d'autonomie, surveillance continue des six stop-loss, gel immédiat en cas de doute, rapprochements et conformité. Contribution à l'étoile polaire : protéger le cumul déjà gagné ; le stop-loss global gèle tout à −20 % du capital engagé.
+Qu'aucune erreur critique n'atteigne un client et qu'aucune perte ne dépasse les seuils fixés : tests du moteur au vert, recette avant chaque niveau d'autonomie, surveillance continue des six stop-loss, gel immédiat en cas de doute, rapprochements et conformité. Contribution à l'étoile polaire : protéger le cumul déjà gagné ; le stop-loss global gèle tout dès que la perte de valeur nette atteint 20 % du capital engagé de référence (840 CHF avec le point zéro recommandé).
 
 ## 2. Périmètre
 
@@ -23,9 +23,10 @@ Qu'aucune erreur critique n'atteigne un client et qu'aucune perte ne dépasse le
 | Entrée | Accès |
 |---|---|
 | Tout le dépôt | Lecture |
-| `tests/`, `docs/00-pilotage/outils/verifier_livrables.py`, `docs/05-da/tools/verifier_da.py`, `docs/08-agents/outils/verifier_agents.py`, `docs/02-sourcing/outils/generer_comparateur.py`, `docs/03-finance/generer_classeurs.py` | Exécution |
-| `engine/pokeshop/stoploss.py` ; en attendant : `engine/pokeshop/treasury.py` (stop-loss cash) et `engine/pokeshop/forecast.py` (`north_star`, gel global) | Exécution |
-| `engine/pokeshop/incidents.py` via `CONN-API-MOTEUR` (`/incidents`) | Quarantaine, suspension (gel) |
+| `tests/`, `scripts/run_all_tests.sh`, `docs/00-pilotage/outils/verifier_livrables.py`, `docs/05-da/tools/verifier_da.py`, `docs/08-agents/outils/verifier_agents.py` | Exécution |
+| Classeurs générés (`generer_comparateur.py`, `generer_classeurs.py`) : **uniquement** via `docs/08-agents/outils/controle_generateurs.py`, qui les exécute avec `--sortie` dans un dossier temporaire hors du dépôt et compare au dépôt | Exécution (lecture seule du dépôt) |
+| `engine/pokeshop/stoploss.py` (`StopLossEngine`, `GET /stoploss/status`) : seule source de l'état des six stop-loss ; `engine/pokeshop/treasury.py` (projection du cash sur 13 semaines) | Exécution |
+| `engine/pokeshop/incidents.py` via `CONN-API-MOTEUR` (jeton nommé `agent-12-qa-conformite`) : `POST /incidents`, `POST /stoploss/freeze`, `POST /autonomy` (baisse), `POST /mandate/revoke`, `POST /incidents/{id}/test` | Gel, quarantaine, suspension, rétrogradation, attestation des tests |
 | `CONN-N8N` | Suspension de workflow |
 | `CONN-DB-LECTURE`, `CONN-PAYPAL` (lecture) | Rapprochements |
 
@@ -61,7 +62,7 @@ A-12 répond des tests, de la surveillance et du gel (RACI L56, L58, L60) et val
 
 | Déclencheur | Niveau | Action immédiate | Destinataire |
 |---|---|---|---|
-| Stop-loss global (perte cumulée = 20 % du capital engagé) | E3 | Tout geler, niveau 1, alerte | Propriétaire (seule à réarmer), A-01 |
+| Stop-loss global (perte de valeur nette ≥ 20 % du capital engagé de référence) ou stop-loss non évaluable (photo absente ou refusée, service gelé au démarrage) | E3 | Tout geler, niveau 1, alerte | Propriétaire (seule à réarmer), A-01 |
 | Stop-loss cash, pub, produit, extension | E3 | Appliquer l'effet du stop-loss (achat, pub, vente, réassort bloqués) | A-01, A-05, propriétaire informée |
 | Stop-loss temps (60 j sans seuils) | E2 | Aucun gel ; demande du dossier à A-01 | Propriétaire |
 | Erreur critique (8 cas de `GATES_GO_NO_GO.md` §1), en simulation ou en réel | E3 | Gel du périmètre, retour au dernier état vérifié, niveau précédent si réel | A-01, propriétaire |
@@ -73,14 +74,15 @@ A-12 répond des tests, de la surveillance et du gel (RACI L56, L58, L60) et val
 
 | Outil | Usage | Restriction |
 |---|---|---|
-| Claude Code : Read, Grep, Glob, Bash | Lire, chercher, lancer `python -m pytest` et les vérificateurs, appeler l'API de gel | **Pas de Write ni d'Edit** : il ne modifie ni code ni tests ; il ne lance aucune commande qui modifie le dépôt |
+| Claude Code : Read, Grep, Glob, Bash | Lire, chercher, lancer `python -m pytest`, `scripts/run_all_tests.sh`, les vérificateurs et `docs/08-agents/outils/controle_generateurs.py`, appeler l'API de gel | **Pas de Write ni d'Edit** : il ne modifie ni code ni tests ; il ne lance aucune commande qui modifie le dépôt (Bash peut techniquement écrire : interdit par consigne, contrôlé par `docs/08-agents/outils/verifier_agents.py`) ; secrets illisibles (`.claude/settings.json`) |
 | `CONN-API-MOTEUR` (`/incidents`), `CONN-N8N` | Gel : quarantaine, suspension, rétrogradation | Jamais de levée d'un stop-loss ni de relèvement de niveau |
 | `CONN-DB-LECTURE`, `CONN-PAYPAL` (lecture) | Rapprochements | Lecture seule |
 
 ## 11. Routines et tâches du backlog
 
 - **Chaque jour** : état des six stop-loss ; fraîcheur des flux ; incidents ; prix publiés = prix validés (échantillon).
-- **Avant chaque mise en production** : suite de tests complète et aperçu public.
+- **Avant chaque mise en production** : suite de tests complète (`scripts/run_all_tests.sh`) et aperçu public.
+- **Lundi, et après toute modification d'un générateur** : `python docs/08-agents/outils/controle_generateurs.py` (classeurs du dépôt = régénération en dossier temporaire ; tout écart est signalé à A-05, qui régénère).
 - **Lundi** : rapprochements ; revue des accès ; rapport de conformité.
 - **Mensuel** : test de restauration ; revue des secrets et des accès délégués.
 - Tâches : BL-033, BL-046, BL-082, BL-083, BL-092, BL-095, BL-098, BL-099, BL-103, BL-160, BL-161.
@@ -95,7 +97,7 @@ A-12 répond des tests, de la surveillance et du gel (RACI L56, L58, L60) et val
 | Extension | {{part du budget ; jours sans vente}} | 25 % / 45 j | | |
 | Pub | {{CAC 7 j vs contribution ; plafond jour}} | CAC ≤ contribution | | |
 | Cash | {{cash disponible}} | 1 600 CHF | | |
-| Global | {{perte cumulée / capital engagé}} | 20 % | | {{GEL — réarmement propriétaire}} |
+| Global | {{perte de valeur nette / capital engagé de référence, `GET /stoploss/status`}} | 20 % | | {{GEL — réarmement propriétaire}} |
 | Temps | {{jours sans seuils de validation}} | 60 j | | |
 Tests : `python -m pytest -q` → {{résultat exact}}
 ## Validation humaine requise

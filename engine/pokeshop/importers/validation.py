@@ -7,6 +7,14 @@ Contrôles (SPEC §2.5, BP §12 étape 2 « Valider devise, TVA, unité, langue 
   fraîcheur de la ligne, marquage FICTIF ;
 * import : doublons de SKU, prix ×10 / ÷10, devise ou base HT/TTC changées depuis le
   dernier import, import incomplet (lignes < seuil), import vide, capture > 24 h.
+* source **non datée** par le fournisseur (ni horodatage d'export ni date par ligne) : l'âge
+  retenu est la **première capture de ce contenu** (référence « dernier import » au même
+  sha256), jamais l'heure de la capture courante ; un horodatage déclaré par l'appelant ne peut
+  que vieillir la donnée. Les offres sont marquées ``source_ts_assumed`` : aucun réassort ni
+  aucune promesse de disponibilité fondés sur elles ; le même fichier ré-importé plus de 24 h
+  après sa première capture est périmé (quarantaine ``STALE_SNAPSHOT``).
+* accessoire : langue « sans objet » (``NA``) sauf langue étrangère fournie, conservée (elle
+  bloque la publication) ; un accessoire accompagné de boosters a un format inconnu.
 
 Une donnée non critique inconnue (format, extension, contenu, scellé, TVA) n'est **pas**
 mise en quarantaine : l'offre passe avec une anomalie et le catalogue/pricing la laissent
@@ -27,6 +35,7 @@ from pokeshop.catalog import (
     ExtensionTable,
     Language,
     ProductFormat,
+    accessory_language,
     booster_count,
     clean_gtin,
     is_accessory,
@@ -183,8 +192,11 @@ class _RowBuilder:
         policy: ImportPolicy,
         now: datetime,
         default_ts: datetime | None,
+        ts_assumed: bool = False,
     ) -> None:
         self.snapshot = snapshot
+        self.ts_assumed = ts_assumed
+        """Vrai si ``default_ts`` est supposé (source non datée par le fournisseur)."""
         self.mapping = mapping
         self.columns = columns
         self.table = table
@@ -242,6 +254,7 @@ class _RowBuilder:
         ship_from = self._country(row, "ship_from_country")
         vat_country = self._country(row, "vat_country")
         row_ts = self._row_ts(row)
+        row_assumed = row.row_ts is None and self.ts_assumed
         tiers = self._tiers(row, price, currency, pack_size)
         if row.reasons:
             return row
@@ -276,6 +289,7 @@ class _RowBuilder:
                 raw_ref=f"{self.snapshot.supplier_id}:{self.snapshot.checksum_sha256[:12]}#L{record.line_no}",
                 vat_country=vat_country,
                 stock_pool_id=pool,
+                source_ts_assumed=row_assumed,
             )
         except ValidationError as exc:
             row.reject(QuarantineReason.INVALID_ROW, "; ".join(e["msg"] for e in exc.errors()))
@@ -425,9 +439,13 @@ class _RowBuilder:
         return fmt
 
     def _language(self, row: _Row, fmt: ProductFormat) -> str | None:
-        if is_accessory(fmt):
-            return Language.NA.value
         raw = self._text(row.record, "language")
+        if is_accessory(fmt):
+            # Langue « sans objet » sauf langue étrangère fournie : conservée (LANGUAGE_MISMATCH à l'évaluation).
+            if raw is None:
+                return Language.NA.value
+            mapped = mapped_value(raw, self.maps.get("language", {}))
+            return str(accessory_language(normalize_language(mapped if mapped is not None else raw)).value)
         if raw is None:
             default = self.mapping.defaults.language
             lang = Language(default) if default else Language.UNKNOWN
@@ -627,6 +645,7 @@ class _RowBuilder:
 
 
 def _snapshot_ts(batch: RecordBatch, snapshot: RawSnapshot, mapping: SupplierMapping, anomalies: list[Anomaly]) -> datetime | None:
+    """Horodatage d'export **contenu dans le fichier** (None si absent ou illisible)."""
     if batch.source_ts_raw is not None:
         try:
             ts = parse_datetime(batch.source_ts_raw, mapping.dates.tz, mapping.dates.formats)
@@ -637,7 +656,7 @@ def _snapshot_ts(batch: RecordBatch, snapshot: RawSnapshot, mapping: SupplierMap
             ts = None
         if ts is not None:
             return ts
-    return snapshot.source_ts
+    return None
 
 
 def failed_result(
@@ -799,14 +818,28 @@ def build_import_result(
         )
     if batch.blank_rows:
         anomalies.append(Anomaly(code=AnomalyCode.BLANK_ROWS.value, severity=Severity.INFO, detail=f"{batch.blank_rows} ligne(s) vide(s) ignorée(s)"))
-    declared_ts = _snapshot_ts(batch, snapshot, mapping, anomalies)
-    builder = _RowBuilder(snapshot, mapping, columns, table, pol, now, declared_ts)
+    in_file_ts = _snapshot_ts(batch, snapshot, mapping, anomalies)
+    # Source non datée par le fournisseur (MOT-15) : l'âge retenu est la PREMIÈRE capture de ce contenu
+    # (référence « dernier import » au même sha256) ; un horodatage déclaré par l'appelant ne peut que
+    # vieillir la donnée, jamais la rajeunir. Offres marquées « horodatage supposé » (aucun réassort).
+    evidence = snapshot.fetched_at
+    same_content = baseline is not None and baseline.checksum_sha256 == snapshot.checksum_sha256
+    if same_content:
+        assert baseline is not None
+        evidence = min(evidence, baseline.content_first_seen_at or baseline.taken_at)
+    if in_file_ts is not None:
+        default_ts, ts_assumed = in_file_ts, False
+    elif snapshot.source_ts is not None:
+        default_ts, ts_assumed = min(snapshot.source_ts, evidence), True
+    else:
+        default_ts, ts_assumed = evidence, True
+    builder = _RowBuilder(snapshot, mapping, columns, table, pol, now, default_ts, ts_assumed)
     rows = [builder.build(record) for record in batch.records]
     rows_read = len(rows)
     rows = _dedupe(rows, anomalies)
     if baseline is not None:
         _compare_baseline(rows, baseline, pol, anomalies)
-        if baseline.checksum_sha256 == snapshot.checksum_sha256:
+        if same_content:
             anomalies.append(
                 Anomaly(
                     code=AnomalyCode.SAME_CONTENT_AS_PREVIOUS.value,
@@ -814,18 +847,23 @@ def build_import_result(
                     detail="contenu identique à l'import précédent : la source n'a peut-être pas été mise à jour",
                 )
             )
-    effective_ts = declared_ts
+    effective_ts = in_file_ts
     if effective_ts is None:
         row_times = [r.row_ts for r in rows if r.row_ts is not None]
         plausible = [ts for ts in row_times if ts <= now + pol.future_skew]  # une ligne « future » ne date pas l'import
         effective_ts = max(plausible or row_times) if row_times else None
     if effective_ts is None:
-        effective_ts = snapshot.fetched_at
+        effective_ts = default_ts
+        detail = (
+            "aucun horodatage du fournisseur : horodatage déclaré par l'appelant, borné par la première capture"
+            if snapshot.source_ts is not None
+            else "aucun horodatage dans la source : première capture de ce contenu retenue"
+        )
         anomalies.append(
             Anomaly(
                 code=AnomalyCode.SOURCE_TS_ASSUMED.value,
                 severity=Severity.WARNING,
-                detail="aucun horodatage dans la source : heure de capture retenue",
+                detail=f"{detail} ({effective_ts.isoformat()}) ; offres inéligibles au réassort",
             )
         )
     snapshot_reasons: list[tuple[QuarantineReason, str]] = []

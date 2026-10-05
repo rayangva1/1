@@ -1,7 +1,8 @@
 # 04-legal — textes légaux (brouillons) — {{NOM_BOUTIQUE}}
 
 > **À FAIRE REVOIR PAR UN JURISTE AVANT PUBLICATION**
-> Tous les textes de ce dossier sont des **brouillons** rédigés par l'agent legal-ops le 4.10.2026. Aucun n'est un avis juridique ; aucun ne doit être publié avant la relecture du juriste (BL-096) et la validation de la propriétaire (C11).
+> Tous les textes de ce dossier sont des **brouillons** rédigés par l'agent legal-ops le 4.10.2026. Aucun n'est un avis juridique ; aucun ne doit être publié avant la relecture du juriste (BL-096, J28) et la validation de la propriétaire (C11).
+> **Seule exception : `CONFIDENTIALITE_LANDING.md`**, notice limitée aux traitements réels de la landing (inscription aux alertes, réponses facultatives, emailing, n8n, hébergement, polices, messages reçus). Elle est publiable à J10 (BL-032) après une **relecture express** du juriste et le GO de la propriétaire (C07), sans attendre BL-096 : elle n'utilise aucun champ lié à la boutique, au paiement, au transporteur ni à la relecture complète. La liste fermée des champs exigés est `CHAMPS_LANDING` (`site/outils/publication.py etat`).
 > Source métier : BP du 4.10.2026, §5 (stock, précommandes), §7 (paiement et conformité), §12 (workflows). Contrat technique : `docs/SPEC.md`.
 
 ## Contenu
@@ -11,7 +12,8 @@
 | `CGV.md` | Conditions générales de vente : droit suisse, prix CHF TTC, Suisse uniquement, précommandes sur allocation ferme, limites par foyer, erreurs de prix, garantie art. 197 ss CO, retour volontaire, for à Genève | Oui (bloc public) |
 | `LIVRAISON_RETOURS.md` | Frais, délais, suivi, colis perdu ou endommagé, retours volontaires, remboursements | Oui (bloc public) |
 | `PRECOMMANDES.md` | Page client + règles internes (définition de l'allocation ferme, checklist d'ouverture, événements) | Oui (partie 1) |
-| `CONFIDENTIALITE.md` | Déclaration LPD : responsable, finalités, prestataires, étranger, durées, droits, marketing, IA ; registre simplifié | Oui (bloc public) |
+| `CONFIDENTIALITE.md` | Déclaration LPD complète de la boutique : responsable, finalités (dont réponses facultatives des alertes et panier non finalisé), prestataires, étranger, durées, droits, marketing, IA ; registre simplifié | Oui (bloc public), à l'ouverture |
+| `CONFIDENTIALITE_LANDING.md` | Notice LPD de la seule landing (avant ouverture) : chaque champ du formulaire, finalités agrégées, prestataires de la landing ; source de `site/landing/confidentialite.html` | Oui (landing, J10), remplacée à l'ouverture |
 | `MENTIONS_LEGALES.md` | Impressum : identité, adresse, email, IDE, RC, TVA, hébergeur, non-affiliation | Oui (bloc public) |
 | `COOKIES.md` | Information et refus des cookies (art. 45c LTC), mode d'emploi du relevé réel | Oui (bloc public) |
 | `USAGE_MARQUES.md` | Règles internes « Pokémon désigne les produits » ; mentions de non-affiliation ; droits des images fournisseurs | Mentions seulement |
@@ -74,6 +76,7 @@ Consultées le **4.10.2026**. Les domaines officiels (admin.ch, fedlex, kmu, hel
 ## Validation humaine requise
 
 - [ ] Propriétaire : mandater le juriste (B12/BL-057) et lui transmettre ce dossier (lire en priorité `apercu/` et les notes « juriste » de chaque document).
+- [ ] Propriétaire : obtenir avant J10 la **relecture express** de `CONFIDENTIALITE_LANDING.md` (notes N1 à N6), condition du GO de publication de la landing (C07) ; le mandat du juriste doit donc être signé avant cette date.
 - [ ] Juriste : relire chaque bloc public et trancher les notes ; dater la version validée (`DATE_VERSION`).
 - [ ] Propriétaire : passer chaque champ de `champs_a_remplir.yaml` au statut `valide` (identité, contrats, délais), puis lancer le rendu `--publication`.
 - [ ] Propriétaire ou agent avec accès web : relire à la source les références L1 à L18 marquées « indexée, page non ouverte ».

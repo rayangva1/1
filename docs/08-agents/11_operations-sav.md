@@ -65,6 +65,7 @@ La propriétaire valide les SOP, les litiges et les réassorts (RACI L50, L53, L
 | Déclencheur | Niveau | Destinataire | Délai |
 |---|---|---|---|
 | Litige, menace de recours, demande hors CGV, geste commercial hors règle | E2 | Propriétaire via A-01 | 48 h ; réponse d'attente au client |
+| Client qui demande qu'une personne lui réponde, reprenne sa demande ou réexamine une réponse (`docs/07-ops/SOP_SAV_RETOURS.md`, principe 4 bis ; promis par les textes publics) | E2 | Propriétaire (C18), **toujours** ; jamais traité par un agent seul | 48 h ; accusé de réception sans autre promesse de délai que `{{DELAI_REPONSE_SUPPORT}}` |
 | Suspicion de fraude (adresse incohérente, paiement contesté, commandes multiples inhabituelles) | E3 | A-12 (blocage de la commande) + propriétaire | Immédiat |
 | Écart à la réception (quantité, langue, dommage, scellé douteux) | E2 | Propriétaire + A-04 (quarantaine de la référence) + A-05 (coût) | 24 h |
 | Survente ou commande payée sans réservation | E3 | A-12 (gel de la référence) | Immédiat |

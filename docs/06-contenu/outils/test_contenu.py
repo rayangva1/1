@@ -42,13 +42,19 @@ def _csv(modifier) -> str:  # type: ignore[no-untyped-def]
 
 
 def test_calendrier_trois_publications_par_semaine_apres_ouverture() -> None:
+    """BP §9 : 3 publications par semaine (1 guide, 1 nouveauté accessible, 1 preuve de service), Noël compris (COH-18)."""
     lignes = list(csv.DictReader(io.StringIO(gc.contenu_csv())))
     for numero in range(6, 14):
         piliers = sorted(lg["Pilier"] for lg in lignes if lg["Type"] == "Publication" and lg["Semaine"] == f"S{numero}")
-        if numero == 12:
-            assert len(piliers) >= 2
-        else:
-            assert piliers == ["Guide", "Nouveauté accessible", "Preuve de service"], (numero, piliers)
+        assert piliers == ["Guide", "Nouveauté accessible", "Preuve de service"], (numero, piliers)
+
+
+def test_calendrier_detecte_une_semaine_a_deux_publications() -> None:
+    def retirer(lignes: list[dict[str, str]]) -> None:
+        lignes[:] = [lg for lg in lignes if not (lg["Semaine"] == "S12" and lg["Pilier"] == "Nouveauté accessible")]
+
+    erreurs = vc.verifier_calendrier(_csv(retirer), controler_synchro=False)
+    assert "S12 : 2 publications (3 attendues)" in erreurs
 
 
 def test_calendrier_aucun_contenu_stock_avant_reception() -> None:
@@ -170,7 +176,9 @@ def test_emails_marketing_ont_desinscription_et_preferences() -> None:
         texte = (ge.EMAILS / "texte" / f"{e['id']}.txt").read_text(encoding="utf-8")
         if e["categorie"] == "marketing":
             for contenu in (html, texte):
-                assert "{{ $json.url_desinscription }}" in contenu and "{{ $json.url_preferences }}" in contenu
+                assert "{{ $json.url_desinscription }}" in contenu
+                # Préférences d'alertes seulement pour les inscrits aux alertes (CON-09).
+                assert ("{{ $json.url_preferences }}" in contenu) == (e["motif_pied"] == "alertes"), e["id"]
         if e["categorie"] == "transactionnel":
             assert "aucune publicité" in html or e["canal"] == "n8n"
 
@@ -265,3 +273,82 @@ def test_seo_sans_volume_chiffre() -> None:
     seo = (RACINE / "SEO.md").read_text(encoding="utf-8")
     assert not vc.VOLUME_RE.search(seo)
     assert vc.VOLUME_RE.search("display pokémon : 1 200 recherches par mois")
+
+
+# ----------------------------------------------------------------------------- revue F5a (CON-02, 07, 08, 09)
+def test_titre_texte_garde_les_expressions_n8n_intactes() -> None:
+    """CON-08 : la mise en majuscules du titre texte ne touche pas aux variables (n8n est sensible à la casse)."""
+    assert ge.majuscules_hors_expressions("Bonjour {{ $json.titre_semaine }} [[x]] {{CHAMP}}") == (
+        "BONJOUR {{ $json.titre_semaine }} [[x]] {{CHAMP}}"
+    )
+    assert ge.majuscules_hors_expressions("{% if a %}oui{% endif %} ⟦à valider⟧") == "{% if a %}OUI{% endif %} ⟦à valider⟧"
+    for chemin in (ge.EMAILS / "texte").glob("*.txt"):
+        texte = chemin.read_text(encoding="utf-8")
+        assert "$JSON" not in texte and "{{ $J" not in texte, chemin.name
+    recap = (ge.EMAILS / "texte" / "05-recapitulatif-hebdo.txt").read_text(encoding="utf-8")
+    assert recap.splitlines()[2] == "{{ $json.titre_semaine }}"
+
+
+def test_verifier_detecte_une_expression_n8n_alteree() -> None:
+    base = (ge.EMAILS / "texte" / "05-recapitulatif-hebdo.txt").read_text(encoding="utf-8")
+    abime = base.replace("{{ $json.titre_semaine }}\n", "{{ $JSON.TITRE_SEMAINE }}\n", 1)
+    assert any("expression n8n altérée" in e for e in vc.verifier_email("x.txt", abime, "n8n", "marketing", vc.champs_registre()))
+
+
+def test_pied_conforme_au_segment() -> None:
+    """CON-09 : 12 (clients) et 13 (consentement au checkout) ne se disent pas « inscrits à nos alertes »."""
+    source = {e["id"]: e for e in ge.charger_source()["emails"]}
+    assert source["12-reachat"]["motif_pied"] == "client" and source["13-panier-abandonne"]["motif_pied"] == "checkout"
+    reachat = (ge.EMAILS / "texte" / "12-reachat.txt").read_text(encoding="utf-8")
+    panier = (ge.EMAILS / "texte" / "13-panier-abandonne.txt").read_text(encoding="utf-8")
+    for texte in (reachat, panier):
+        assert "inscrite à nos alertes" not in texte and "Modifier mes préférences" not in texte
+        assert "Me désinscrire en un clic : {{ $json.url_desinscription }}" in texte
+    assert "avez commandé chez nous" in reachat
+    assert "lors de votre passage en caisse le {{ $json.date_consentement }}" in panier
+    alerte = (ge.EMAILS / "texte" / "04-alerte-stock-local.txt").read_text(encoding="utf-8")
+    assert "inscrite à nos alertes" in alerte and "Modifier mes préférences" in alerte
+
+
+def test_source_refuse_un_motif_absent_ou_incoherent(tmp_path: Path) -> None:
+    texte = ge.SOURCE.read_text(encoding="utf-8")
+    sans_motif = tmp_path / "a.yaml"
+    sans_motif.write_text(texte.replace("    motif_pied: checkout\n", "", 1), encoding="utf-8")
+    with pytest.raises(ge.EmailError, match="13-panier-abandonne : motif_pied obligatoire"):
+        ge.charger_source(sans_motif)
+    incoherent = tmp_path / "b.yaml"
+    incoherent.write_text(texte.replace("    motif_pied: checkout\n", "    motif_pied: alertes\n", 1), encoding="utf-8")
+    with pytest.raises(ge.EmailError, match="incohérent avec le segment"):
+        ge.charger_source(incoherent)
+    base = (ge.EMAILS / "texte" / "04-alerte-stock-local.txt").read_text(encoding="utf-8")
+    assert any("faux pour ce segment" in e for e in vc.verifier_email("x.txt", base, "n8n", "marketing", vc.champs_registre(), "checkout"))
+
+
+def test_emails_sans_affirmation_inexacte() -> None:
+    """CON-02 et CON-07 : aucune promesse de réponse humaine systématique ni de limite « par commande »."""
+    for dossier in ("html", "texte"):
+        for chemin in (ge.EMAILS / dossier).glob("*"):
+            contenu = chemin.read_text(encoding="utf-8")
+            for motif, libelle in vc.AFFIRMATIONS_INEXACTES:
+                assert not motif.search(contenu), (chemin.name, libelle)
+    avis = (ge.EMAILS / "texte" / "11-demande-avis.txt").read_text(encoding="utf-8")
+    assert "une personne reprend votre demande si vous le souhaitez" in avis
+    ouverture = (ge.EMAILS / "texte" / "03-ouverture-boutique.txt").read_text(encoding="utf-8")
+    assert "Une limite par foyer, toutes commandes confondues" in ouverture
+    base = (ge.EMAILS / "texte" / "11-demande-avis.txt").read_text(encoding="utf-8")
+    abime = base.replace("Nous vous répondons", "Une personne vous répond")
+    assert any("service client" in e for e in vc.verifier_email("x.txt", abime, "n8n", "avis", vc.champs_registre()))
+
+
+def test_textes_reutilisables_sans_champ_hors_registre(tmp_path: Path) -> None:
+    """CON-07 : {{LIMITE_PAR_COMMANDE}} n'existait dans aucun registre (une valeur, un endroit)."""
+    assert vc.verifier_textes_reutilisables() == []
+    copie = tmp_path / "contenu"
+    copie.mkdir()
+    ton = (RACINE / "TON_EDITORIAL.md").read_text(encoding="utf-8")
+    (copie / "TON_EDITORIAL.md").write_text(
+        ton.replace("« Limite : {{LIMITE_PAR_CLIENT}}, toutes commandes confondues", "« Limite : {{LIMITE_PAR_COMMANDE}} par commande"),
+        encoding="utf-8",
+    )
+    erreurs = " ".join(vc.verifier_textes_reutilisables(copie))
+    assert "{{LIMITE_PAR_COMMANDE}} absent du registre" in erreurs and "par commande" in erreurs

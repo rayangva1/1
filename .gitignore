@@ -6,3 +6,12 @@ __pycache__/
 *.env.local
 secrets/
 *.pyc
+# Données réelles jamais versionnées : tableaux de bord produits depuis l'API (seul l'exemple FICTIF
+# dashboard/out/index.html est suivi), sauvegardes de la base (coûts, marges, prix B2B), flux importés.
+dashboard/out/*
+!dashboard/out/index.html
+*.dump
+*.dump.age
+*.manifest
+pokeshop-sauvegardes/
+data/imports/

@@ -20,9 +20,8 @@
       - lignes_produits_html : Articles encore disponibles (stock local ou précommande), prix relus
       - note_ruptures : « Un article de votre panier n'est plus disponible. » ou vide
       - url_panier : Lien de reprise du panier
-      - url_preferences : Page de préférences
       - url_desinscription : Désinscription en un clic
-      - date_consentement : Date du consentement
+      - date_consentement : Date du consentement marketing coché au checkout
     Champs fixes (MAJUSCULES entre doubles accolades) : registre docs/04-legal/champs_a_remplir.yaml, plus URL_LOGO_PNG
     (PNG du logo hébergé, docs/05-da/logo/png/). Pour Shopify, coller la copie produite par --integration, jamais ce fichier.
     Règles : aucune donnée interne ; prix publics relus à l'envoi ; aucune fausse urgence.
@@ -82,7 +81,7 @@
           </tr>
           <tr>
             <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
-              Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.<br>{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que cette adresse est inscrite à nos alertes (inscription confirmée le {{ $json.date_consentement }}).<br><a href="{{ $json.url_preferences }}" style="color:#B33F00;">Modifier mes préférences</a> · <a href="{{ $json.url_desinscription }}" style="color:#B33F00;">Me désinscrire en un clic</a><br>Confidentialité : {{URL_CONFIDENTIALITE}}
+              Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.<br>{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous avez accepté nos emails lors de votre passage en caisse le {{ $json.date_consentement }}.<br><a href="{{ $json.url_desinscription }}" style="color:#B33F00;">Me désinscrire en un clic</a><br>Confidentialité : {{URL_CONFIDENTIALITE}}
             </td>
           </tr>
         </table>

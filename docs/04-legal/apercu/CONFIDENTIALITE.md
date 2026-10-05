@@ -20,7 +20,9 @@ Cette déclaration explique quelles données personnelles nous traitons lorsque 
 | Livraison | Nom, adresse, numéro de suivi, téléphone si requis par le transporteur | Acheminer le colis et suivre la livraison | Durée de la commande et de la garantie |
 | Compte client (facultatif) | Identifiants, historique de commandes, adresses enregistrées | Faciliter vos prochaines commandes | Jusqu'à suppression à votre demande, ou 36 mois sans connexion ni commande ⟦à valider⟧ |
 | Alertes de stock et email récapitulatif | Email, préférences (formats, extensions), date et preuve du consentement, ouvertures et clics | Vous prévenir des produits et réassorts que vous avez choisis ; au maximum un email récapitulatif par semaine | jusqu'à la désinscription, ou 24 mois sans ouverture ni clic ⟦à valider⟧ |
-| Service client | Vos messages, nos réponses, numéro de commande, photos que vous nous envoyez | Répondre, traiter un retour, une réclamation ou une garantie | 24 mois après le dernier échange ⟦à valider⟧ |
+| Réponses facultatives et origine de l'inscription | Prénom, formats, budget habituel par achat, pour qui vous achetez, canton ; source, support et campagne du lien suivi (paramètres « utm ») | Vous saluer et cibler vos alertes ; de façon agrégée (jamais personne par personne), étudier la demande pour choisir notre assortiment, nos contenus, nos canaux et les régions où faire connaître la boutique | jusqu'à la désinscription, ou 24 mois sans ouverture ni clic ⟦à valider⟧ |
+| Panier non finalisé | Email saisi en caisse, articles du panier, acceptation de nos emails cochée en caisse | Vous envoyer **un seul** rappel, uniquement si vous avez accepté nos emails lors du passage en caisse | 30 jours après l'abandon du panier ⟦à valider⟧ |
+| Service client | Vos messages, nos réponses, numéro de commande, photos que vous nous envoyez | Répondre, traiter un retour, une réclamation ou une garantie ; les réponses courantes sont préparées et envoyées par des outils automatisés (ch. 6) | 24 mois après le dernier échange ⟦à valider⟧ |
 | Prévention de la fraude et des abus | Données de la commande, adresse IP et signaux de risque fournis par la boutique et le prestataire de paiement | Protéger nos clients et nous-mêmes ; faire respecter les limites de quantité | Durée de la commande et des éventuelles contestations |
 | Navigation sur le site | Données techniques (adresse IP, navigateur, pages vues) et cookies, selon vos choix | Faire fonctionner le site, le sécuriser et, avec votre accord, mesurer son audience | Voir la page Cookies (⟦À REMPLIR : URL_COOKIES⟧) |
 
@@ -30,6 +32,7 @@ Nous ne vendons pas vos données. Nous ne traitons pas de données sensibles au 
 
 - Nous vous envoyons des alertes de stock et un email récapitulatif **uniquement** si vous l'avez demandé (case non pré-cochée et confirmation par email).
 - Si vous êtes déjà client, nous pouvons vous écrire sur des produits semblables à ceux que vous avez achetés, si vous ne vous y êtes pas opposé lors de la commande. Chaque email permet de refuser les suivants.
+- Lors du passage en caisse, une case non pré-cochée vous permet d'accepter nos emails. Si vous l'avez cochée et ne terminez pas votre commande, nous vous envoyons **un seul** rappel de votre panier ; sans cette case cochée, aucun rappel.
 - Chaque email contient un lien de désinscription gratuit, en un clic. La désinscription est appliquée à tous nos outils sans délai.
 - Nous n'envoyons pas de SMS publicitaires.
 - Les emails liés à une commande (confirmation, expédition, remboursement) ne sont pas publicitaires et vous sont toujours envoyés.
@@ -45,7 +48,7 @@ Nous confions certains traitements à des prestataires qui agissent pour notre c
 | Livraison | ⟦À REMPLIR : ST_TRANSPORT⟧ | ⟦À REMPLIR : ST_TRANSPORT_PAYS⟧ |
 | Envoi des alertes et de l'email récapitulatif | ⟦À REMPLIR : ST_EMAILING⟧ | ⟦À REMPLIR : ST_EMAILING_PAYS⟧ |
 | Messagerie du service client | ⟦À REMPLIR : ST_MESSAGERIE⟧ | ⟦À REMPLIR : ST_MESSAGERIE_PAYS⟧ |
-| Outils d'intelligence artificielle pour trier les messages et préparer les réponses du service client | ⟦À REMPLIR : ST_IA⟧ | ⟦À REMPLIR : ST_IA_PAYS⟧ |
+| Outils d'intelligence artificielle pour trier les messages, préparer et envoyer les réponses courantes du service client | ⟦À REMPLIR : ST_IA⟧ | ⟦À REMPLIR : ST_IA_PAYS⟧ |
 | Hébergement de nos outils internes de gestion du stock et des commandes | ⟦À REMPLIR : ST_BASE⟧ | ⟦À REMPLIR : ST_BASE_PAYS⟧ |
 | Mesure d'audience | ⟦À REMPLIR : ST_AUDIENCE⟧ | ⟦À REMPLIR : ST_AUDIENCE_PAYS⟧ |
 
@@ -57,7 +60,7 @@ Certains prestataires peuvent traiter des données hors de Suisse. Nous ne le fa
 
 ### 6. Décisions automatisées et intelligence artificielle
 
-- Certaines tâches sont automatisées : calcul du stock disponible, envoi des emails de commande, tri et préparation des réponses du service client.
+- Certaines tâches sont automatisées : calcul du stock disponible, envoi des emails de commande, tri des messages du service client, préparation et envoi des réponses courantes à partir de modèles que nous avons validés. Une personne traite les cas particuliers, et vous pouvez à tout moment demander qu'une personne reprenne votre demande.
 - Nous ne fondons aucune décision qui vous concerne de manière importante (par exemple le refus d'un retour ou l'annulation d'une commande pour suspicion de fraude) **exclusivement** sur un traitement automatisé sans vous en informer. Vous pouvez toujours demander qu'une personne réexamine une décision et donner votre point de vue (art. 21 LPD).
 - Nous ne transmettons à nos outils d'intelligence artificielle que les informations nécessaires pour répondre à votre demande et nous n'autorisons pas leur fournisseur à utiliser vos données pour entraîner ses modèles.
 

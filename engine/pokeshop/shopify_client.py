@@ -26,8 +26,14 @@ première écriture réelle :
 Garanties :
 
 * ``dry_run=True`` par défaut : la charge est validée et journalisée, **rien n'est envoyé** ;
-* liste blanche de mutations (``productSet``, ``inventorySetQuantities``, ``metafieldsSet``) :
-  ce client ne peut **pas** modifier une commande (prix d'une commande conclue intouchable) ;
+  l'interrupteur du client (``POKESHOP_DRY_RUN``, :meth:`ShopifyClient.from_settings`) **l'emporte**
+  sur le paramètre d'appel : un appel ne peut que restreindre (``dry_run=False`` reste une simulation
+  tant que le client est en simulation) ;
+* liste blanche de mutations : seuls les **trois documents constants** du module
+  (:data:`PRODUCT_SET_MUTATION`, :data:`INVENTORY_SET_QUANTITIES_MUTATION`,
+  :data:`METAFIELDS_SET_MUTATION`) sont acceptés, comparés à l'identique (aucun alias, aucun
+  second champ racine, aucun document fabriqué) ; ce client ne peut **pas** modifier une commande
+  (prix d'une commande conclue intouchable) ;
 * clé d'idempotence obligatoire par écriture : même clé + même requête = réponse rejouée sans
   nouvel envoi ; même clé + autre requête = refus ;
 * reprise sûre : un échec transitoire libère la clé ; une réservation restée « en cours »
@@ -36,7 +42,9 @@ Garanties :
   coût GraphQL) ; 401/403 = « API boutique refusée », sans retry ;
 * ``userErrors`` analysés (conflit de concurrence ``changeFromQuantity`` signalé) ;
 * charges ``productSet`` / ``metafieldsSet`` revérifiées par
-  :func:`pokeshop.publish.assert_no_sensitive_fields` avant tout envoi ou simulation ;
+  :func:`pokeshop.publish.assert_no_sensitive_fields` avant tout envoi ou simulation, **dans**
+  :meth:`ShopifyClient.mutate` (aucune voie d'écriture sans ce contrôle) ; une action protectrice
+  (dépublication) n'admet que ``{"status": "DRAFT"}`` ;
 * le jeton n'est jamais journalisé.
 """
 
@@ -66,7 +74,7 @@ from .audit import (
 )
 from .errors import PokeshopError
 from .models import FrozenModel, canonical_json
-from .publish import assert_metafields_public, assert_no_sensitive_fields
+from .publish import assert_metafields_public, assert_no_sensitive_fields, assert_protective_payload
 from .settings import DEFAULT_SHOPIFY_API_VERSION, Settings
 
 __all__ = [
@@ -98,6 +106,8 @@ __all__ = [
     "RemoteVariant",
     "RemoteProduct",
     "derive_idempotency_key",
+    "allowed_mutation",
+    "root_field",
     "ShopifyClient",
 ]
 
@@ -112,6 +122,8 @@ _GID_RE = {
 
 ALLOWED_MUTATIONS: frozenset[str] = frozenset({"productSet", "inventorySetQuantities", "metafieldsSet"})
 """Seules mutations émises : aucune mutation de commande, remboursement ou paiement."""
+_ALLOWED_DOCUMENTS: dict[str, str] = {}
+"""Document GraphQL constant -> champ racine (rempli après la définition des documents)."""
 IDEMPOTENT_DIRECTIVE_MUTATIONS: frozenset[str] = frozenset({"inventorySetQuantities"})
 """Mutations pour lesquelles ``@idempotent(key:)`` est exigé par Shopify depuis 2026-04."""
 INVENTORY_REASONS: frozenset[str] = frozenset(
@@ -191,6 +203,14 @@ query PokeshopProductByHandle($identifier: ProductIdentifierInput!) {
 """.strip()
 
 _ROOT_FIELD_RE = re.compile(r"^\s*(mutation|query)\b[^{]*\{\s*([A-Za-z_][A-Za-z0-9_]*)", re.DOTALL)
+_ALLOWED_DOCUMENTS.update(
+    {
+        PRODUCT_SET_MUTATION: "productSet",
+        INVENTORY_SET_QUANTITIES_MUTATION: "inventorySetQuantities",
+        METAFIELDS_SET_MUTATION: "metafieldsSet",
+    }
+)
+_ALLOWED_QUERIES: dict[str, str] = {INVENTORY_LEVELS_QUERY: "nodes", PRODUCT_BY_HANDLE_QUERY: "productByIdentifier"}
 _KEY_NAMESPACE = uuid.UUID("8f5e3a4c-6b1d-5c2e-9a7f-0d4b2c6e8a10")
 
 
@@ -403,11 +423,35 @@ def _user_errors(root: Any) -> tuple[UserError, ...]:
 
 
 def root_field(document: str) -> tuple[str, str]:
-    """(type d'opération, premier champ racine) d'un document GraphQL simple."""
+    """(type d'opération, premier champ racine) d'un document GraphQL simple.
+
+    Lecture indicative seulement (un alias ``productSet: orderCancel`` y apparaîtrait comme
+    ``productSet``) : l'autorisation d'une mutation ne repose **jamais** sur cette fonction mais sur
+    l'égalité exacte avec un document constant (:func:`allowed_mutation`).
+    """
     match = _ROOT_FIELD_RE.match(document)
     if match is None:
         raise ShopifyForbiddenOperationError("document GraphQL illisible : opération nommée attendue")
     return match.group(1), match.group(2)
+
+
+def allowed_mutation(document: str) -> str:
+    """Champ racine d'un document de mutation **constant** du module ; sinon refus.
+
+    Comparaison à l'identique (après suppression des espaces de bord) : aucun alias, aucun second
+    champ racine, aucune mutation fabriquée par l'appelant n'est envoyable.
+    """
+    field = _ALLOWED_DOCUMENTS.get(document.strip())
+    if field is None:
+        try:
+            _, name = root_field(document)
+        except ShopifyForbiddenOperationError:
+            name = "?"
+        raise ShopifyForbiddenOperationError(
+            f"mutation non autorisée : {name} (seuls les documents constants productSet, inventorySetQuantities "
+            "et metafieldsSet du client sont admis)"
+        )
+    return field
 
 
 # ----------------------------------------------------------------------- client
@@ -591,7 +635,7 @@ class ShopifyClient:
     def query(self, document: str, variables: Mapping[str, Any] | None = None) -> ShopifyResponse:
         """Requête de lecture (envoyée même en simulation : elle ne modifie rien ; configuration requise)."""
         kind, field = root_field(document)
-        if kind != "query":
+        if kind != "query" or re.search(r"\bmutation\b", document):
             raise ShopifyForbiddenOperationError("query() n'accepte que des lectures")
         if not self.configured:
             raise ShopifyConfigError("lecture Shopify impossible : domaine ou jeton absent")
@@ -632,7 +676,16 @@ class ShopifyClient:
 
     def product_by_handle(self, handle: str) -> RemoteProduct | None:
         """Produit par handle (vérification de l'état réel après publication, BP §12 étape 8)."""
-        resp = self.query(PRODUCT_BY_HANDLE_QUERY, {"identifier": {"handle": handle}})
+        return self._product_by({"handle": handle})
+
+    def product_by_id(self, product_id: str) -> RemoteProduct | None:
+        """Produit par identifiant ``gid://shopify/Product/<n>`` (vérification d'une dépublication)."""
+        if not _GID_RE["Product"].match(product_id):
+            raise ShopifyConfigError("gid://shopify/Product/<n> attendu")
+        return self._product_by({"id": product_id})
+
+    def _product_by(self, identifier: Mapping[str, str]) -> RemoteProduct | None:
+        resp = self.query(PRODUCT_BY_HANDLE_QUERY, {"identifier": dict(identifier)})
         node = (resp.data or {}).get("productByIdentifier")
         if not isinstance(node, Mapping):
             return None
@@ -668,15 +721,31 @@ class ShopifyClient:
         entity_id: str | None = None,
         autonomy_level: int | None = None,
     ) -> ShopifyResponse:
-        """Mutation de la liste blanche ; dry-run par défaut ; idempotente par clé."""
-        kind, field = root_field(document)
-        if kind != "mutation" or field not in ALLOWED_MUTATIONS:
-            raise ShopifyForbiddenOperationError(f"mutation non autorisée : {field}")
+        """Mutation de la liste blanche (documents constants) ; dry-run par défaut ; idempotente par clé.
+
+        Contrôles **toujours** appliqués ici, quelle que soit la voie d'appel : document constant,
+        champs publics de ``productSet`` (:func:`assert_no_sensitive_fields`) et de ``metafieldsSet``
+        (:func:`assert_metafields_public`). ``dry_run`` ne peut que restreindre : un client en
+        simulation (``POKESHOP_DRY_RUN=true``) n'écrit jamais, même avec ``dry_run=False``.
+        """
+        field = allowed_mutation(document)
         if field in IDEMPOTENT_DIRECTIVE_MUTATIONS and "@idempotent" not in document:
             raise ShopifyForbiddenOperationError(f"{field} exige la directive @idempotent (Shopify 2026-04)")
         if not isinstance(idempotency_key, str) or not 8 <= len(idempotency_key) <= 200:
             raise ShopifyIdempotencyError("clé d'idempotence obligatoire (8 à 200 caractères)")
-        simulate = self.dry_run if dry_run is None else dry_run
+        if field == "productSet":
+            product_input = variables.get("input")
+            if not isinstance(product_input, Mapping):
+                raise ShopifyForbiddenOperationError("productSet : variables.input attendu")
+            assert_no_sensitive_fields(product_input, sensitive_terms=self.sensitive_terms)
+            if set(variables) - {"input", "identifier", "synchronous"}:
+                raise ShopifyForbiddenOperationError("productSet : variables hors liste blanche")
+        elif field == "metafieldsSet":
+            metafields = variables.get("metafields")
+            if not isinstance(metafields, Sequence) or isinstance(metafields, (str, bytes)):
+                raise ShopifyForbiddenOperationError("metafieldsSet : variables.metafields attendu")
+            assert_metafields_public(metafields, sensitive_terms=self.sensitive_terms, require_owner=True)
+        simulate = True if self.dry_run else bool(dry_run) if dry_run is not None else False
         clean_vars = to_jsonable(dict(variables))
         content = {k: v for k, v in clean_vars.items() if k != "idempotencyKey"}
         request_sha = payload_sha256({"mutation": field, "variables": content})
@@ -820,9 +889,18 @@ class ShopifyClient:
         synchronous: bool = True,
         dry_run: bool | None = None,
         autonomy_level: int | None = None,
+        protective: bool = False,
     ) -> ShopifyResponse:
-        """``productSet`` d'une fiche **publique** (liste blanche revérifiée avant tout envoi)."""
+        """``productSet`` d'une fiche **publique** (liste blanche revérifiée avant tout envoi).
+
+        ``protective=True`` (dépublication permise pendant un gel) : charge ``{"status": "DRAFT"}``
+        uniquement, avec l'identifiant ``{"id": gid}``.
+        """
         assert_no_sensitive_fields(product_input, sensitive_terms=self.sensitive_terms)
+        if protective:
+            assert_protective_payload(product_input)
+            if identifier is None or set(identifier) != {"id"}:
+                raise ShopifyConfigError("dépublication : identifiant {'id': gid} obligatoire")
         ident: dict[str, str] | None = None
         if identifier is not None:
             if set(identifier) - {"id", "handle"} or len(identifier) != 1:

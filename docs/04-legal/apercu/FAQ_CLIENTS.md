@@ -49,7 +49,7 @@ Au moment de la commande, précommandes comprises.
 Vérifiez vos courriers indésirables. S'il n'y est pas une heure après votre commande, écrivez-nous à ⟦À REMPLIR : EMAIL_SUPPORT⟧.
 
 **Puis-je modifier ou annuler ma commande ?**
-Tant qu'elle n'est pas préparée, oui : écrivez-nous au plus vite avec votre numéro de commande. Une fois expédiée, la politique de retour s'applique.
+Tant qu'elle n'est pas préparée, oui, gratuitement : écrivez-nous au plus vite avec votre numéro de commande ; nous remboursons intégralement dans un délai de 10 jours ⟦à valider⟧ (CGV ch. 4.7). Une fois préparée ou expédiée, la politique de retour s'applique. Pour une précommande, voir la rubrique Précommandes.
 
 **Pourquoi limitez-vous les quantités ?**
 Pour que le plus grand nombre de collectionneurs puisse acheter les nouveautés. La limite est de 2 exemplaires par référence et par foyer ⟦à valider⟧ pour les nouveautés et les produits marqués « quantité limitée ». La quantité autorisée figure sur chaque fiche.
@@ -114,7 +114,7 @@ Chaque email contient un lien de désinscription en un clic. Elle s'applique san
 Nous les utilisons pour traiter vos commandes, vous livrer et vous répondre, et pour vous envoyer les alertes que vous avez demandées. Nous ne les vendons pas. Tout est expliqué dans notre déclaration de confidentialité : ⟦À REMPLIR : URL_CONFIDENTIALITE⟧.
 
 **Utilisez-vous l'intelligence artificielle pour répondre aux messages ?**
-Oui, des outils automatisés nous aident à trier les messages et à préparer les réponses. Vous pouvez toujours demander qu'une personne réexamine une décision qui vous concerne.
+Oui. Les réponses aux questions courantes sont préparées et envoyées par des outils automatisés, à partir de modèles que nous avons validés. Une personne traite les cas particuliers, et vous pouvez à tout moment demander qu'une personne reprenne votre demande ou réexamine une décision qui vous concerne.
 
 ### Nous contacter
 

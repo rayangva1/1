@@ -143,7 +143,7 @@
 - **CTA** : « Voir les accessoires ».
 
 ### S13 — Scellé et authentique : ce que nous contrôlons
-- **Angle** : nos contrôles à réception (langue, scellé, contenu, impression) ; ce que le client peut vérifier à la livraison.
+- **Angle** : nos contrôles à réception (langue, scellé, contenu annoncé sur l'emballage, impression), sans jamais ouvrir un produit ; ce que le client peut vérifier à la livraison.
 - **Hook** : « Avant d'être en vente, chaque boîte passe ce contrôle. »
 - **Plan** : 1. Comptage et code-barres. 2. Langue FR. 3. Film et scellés intacts. 4. Impression et cohérence. 5. Un doute = pas en vente. 6. À la livraison : photographiez tout dommage et écrivez-nous dans {{DELAI_SIGNALEMENT}}.
 - **Format** : Reel 35 s (script V3) ; carrousel ; page À propos.

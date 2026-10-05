@@ -68,6 +68,8 @@ Version en vigueur depuis le {{DATE_VERSION}}.
 
 4.6 La création d'un compte client est facultative.
 
+4.7 **Annulation de votre part avant préparation.** Tant que votre commande d'articles en stock local n'est pas préparée, vous pouvez l'annuler gratuitement en nous écrivant à {{EMAIL_SUPPORT}} avec votre numéro de commande ; nous vous confirmons l'annulation et remboursons intégralement les montants payés dans un délai de {{DELAI_REMBOURSEMENT}}. Une fois la commande préparée ou expédiée, la politique de retour volontaire (ch. 10) s'applique. Les précommandes suivent le ch. 7.
+
 ### 5. Paiement
 
 5.1 Moyens de paiement acceptés : {{MOYENS_PAIEMENT}}. Les paiements sont traités par notre prestataire de paiement ({{PSP_NOM}}). Nous n'avons pas accès aux données complètes de votre carte et ne les conservons pas.
@@ -179,11 +181,11 @@ Nous pouvons modifier les présentes CGV. La nouvelle version s'applique aux com
 |---|---|---|---|---|
 | J1 | 4.2 Conclusion du contrat | Contrat conclu à l'email de confirmation envoyé après paiement validé (cohérent avec la règle BP §5 « ne jamais changer le prix d'une commande déjà conclue » et l'email DA « commande confirmée »). | Option B : email immédiat = simple accusé de réception (LCD art. 3 al. 1 let. s ch. 4), contrat conclu à l'expédition. Plus protecteur en cas d'erreur de prix ou de survente, moins lisible pour le client et incompatible avec le texte actuel de l'email DA. | CO art. 1 ss, 7 ; LCD art. 3 al. 1 let. s [L3] |
 | J2 | 3.5 Erreur de prix manifeste | Information sous 2 jours ouvrés ; le client choisit prix correct ou annulation. | Invoquer l'erreur essentielle (art. 23-24 CO) sans offrir le prix correct ? Délai d'invocation (art. 31 CO). | CO art. 23-31 [L4] |
-| J3 | 4.4 Limite par foyer | Réduction de la quantité excédentaire et remboursement. | Peut-on refuser les commandes « manifestement destinées à la revente commerciale » ? La clause est-elle insolite (art. 8 LCD) ? | LCD art. 8 [L3] |
+| J3 | 4.4 Limite par foyer | Réduction de la quantité excédentaire et remboursement. | Peut-on refuser les commandes « manifestement destinées à la revente commerciale » ? La clause est-elle insolite (règle jurisprudentielle de l'insolite, p. ex. ATF 135 III 1 : intégration des conditions générales, à confirmer) ou abusive (art. 8 LCD : déséquilibre notable et injustifié au détriment du consommateur) ? Les deux tests sont distincts. | Règle de l'insolite (jurisprudence, p. ex. ATF 135 III 1) ; LCD art. 8 [L3] |
 | J4 | 6.5 Risque de transport | La boutique supporte le risque jusqu'à la remise (dérogation favorable au client). | Par défaut, le risque passe à l'acheteur (art. 185 CO). Le choix a un coût (provision SAV R du BP §4 = 1 CHF/commande, hypothèse) : décision de la propriétaire. | CO art. 185 [L4] |
 | J5 | 6.6 Colis non retiré | Remboursement des articles moins les frais d'envoi et de retour effectifs. | Validité de la déduction ; information préalable suffisante ? | CO art. 107 ss |
 | J6 | 8.2 Délai de signalement | Délai contractuel {{DELAI_SIGNALEMENT}} pour les défauts apparents, sans restreindre la garantie (ch. 8.3). | Conformité avec art. 201 CO (avis « sans délai »). La révision du CO au 1.1.2026 (avis de 60 jours) ne vise que les constructions et ventes immobilières, pas ces produits [L15]. | CO art. 201 [L4] |
-| J7 | 9.4 Marques légères | Définition de ce qui n'est pas un défaut pour un produit scellé. | Risque de clause insolite pour un public de collectionneurs attentif à l'état des boîtes. | CO art. 197 ; LCD art. 8 |
+| J7 | 9.4 Marques légères | Définition de ce qui n'est pas un défaut pour un produit scellé. | Risque de clause insolite (règle jurisprudentielle de l'insolite : clause inhabituelle non signalée, non intégrée au contrat) pour un public de collectionneurs attentif à l'état des boîtes ? Et, distinctement, clause abusive au sens de l'art. 8 LCD ? | CO art. 197 ; règle de l'insolite (jurisprudence, p. ex. ATF 135 III 1) ; LCD art. 8 |
 | J8 | 10 Retour volontaire | 14 jours proposés, scellé intact, frais de retour au client, frais initiaux non remboursés. | Exclure les nouveautés (risque de retours spéculatifs) ? La politique crée-t-elle un engagement contractuel opposable ? | BP §7 [S11] |
 | J9 | 11.1 Responsabilité | Exclusion de la négligence légère dans la mesure permise. | Validité au regard de l'art. 100 CO et de l'art. 8 LCD. | CO art. 100 |
 | J10 | 15.2 For | Genève, avec réserve des fors impératifs pour les consommateurs. | Rédaction suffisante ? | CPC art. 32, 35 [L11] |

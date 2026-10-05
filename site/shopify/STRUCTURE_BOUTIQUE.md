@@ -20,7 +20,7 @@ Ces champs sont **les seuls** que le thème lit en plus des champs natifs (titre
 
 | Métachamp | Type Shopify | Valeurs | Source dans le moteur | Utilisé par |
 |---|---|---|---|---|
-| `boutique.statut_stock` | Texte sur une ligne | `stock_local` · `precommande` · `rupture` | `stock.availability_promise(...).kind` : `LOCAL_STOCK` → `stock_local` ; `PREORDER` → `precommande` ; `UNAVAILABLE` → `rupture` | Snippets badges, statut, délai ; filtre « Disponibilité » |
+| `boutique.statut_stock` | Texte sur une ligne | `stock_local` · `precommande` · `rupture` | **Recalculé par le moteur** à chaque publication, jamais repris de la fiche déclarée (`publish.stock_status_for`) : `stock_local` seulement si le registre du stock local (`POST /stock/receive`) a du stock vendable ; `precommande` seulement pour la fiche `-PRECO` couverte par une allocation ferme d'offres fraîches ; sinon `rupture` (une nouvelle référence en rupture reste en brouillon) | Snippets badges, statut, délai ; filtre « Disponibilité » |
 | `boutique.langue` | Texte sur une ligne | `FR` (puis `DE`, `EN`… plus tard) | `catalog.normalize_language` ; `UNKNOWN` ⇒ fiche en brouillon, jamais publiée | Badge FR ; filtre « Langue » |
 | `boutique.extension` | Texte sur une ligne | Nom exact imprimé sur l'emballage FR | Catalogue (table d'alias des extensions) | Filtre « Extension » ; pages d'extension |
 | `boutique.format` | Texte sur une ligne | Libellé FR de `catalog.FORMAT_LABELS_FR` | `catalog.normalize_format` | Filtre « Format » (aussi recopié dans le **type de produit**) |
@@ -32,7 +32,7 @@ Ces champs sont **les seuls** que le thème lit en plus des champs natifs (titre
 | `boutique.alerte_reassort` | Booléen | vrai si l'inscription à l'alerte est ouverte | Catalogue | Badge « Alerte réassort », libellé « Rupture – alerte », formulaire |
 | `boutique.fin_de_serie` | Booléen | vrai si aucun réassort possible | Catalogue | Libellé « Rupture » + « Fin de série » |
 
-**Tags miroirs**, écrits **dans le même appel** `productSet` que les métachamps (donc jamais désynchronisés) : `statut:stock-local` · `statut:precommande` · `statut:rupture` ; `ext:<slug-extension>` ; `nouveaute` (posé à la mise en vente, retiré après {{N_JOURS_NOUVEAUTE}} jours par le workflow quotidien) ; `cadeau` (sélection éditoriale). Ils servent aux collections automatiques, aux notifications email et aux filtres si un métachamp n'y est pas utilisable.
+**Tags miroirs**, écrits **dans le même appel** `productSet` que les métachamps (donc jamais désynchronisés) : `statut:stock-local` · `statut:precommande` · `statut:rupture` ; `ext:<slug-extension>` ; `nouveaute` (posé à la mise en vente, retiré après {{N_JOURS_NOUVEAUTE}} jours par le workflow quotidien) ; `cadeau` (sélection éditoriale) ; `petit-produit` (petit produit prixé sans les frais par commande, seulement quand la règle petits produits est active : lu par la validation de panier du §7, point 8). Ils servent aux collections automatiques, aux notifications email et aux filtres si un métachamp n'y est pas utilisable.
 
 **Règle d'autorité** : Shopify décide si un produit **peut être acheté** (inventaire ; BP §6 « ne pas maintenir deux autorités concurrentes du stock local »). Le thème affiche donc « Rupture » dès que `product.available` est faux, quel que soit le métachamp. Un produit achetable dont le statut public est absent ou incohérent s'affiche « Disponibilité à confirmer » avec `data-statut="inconnu"` : la recette le détecte et la fiche repasse en brouillon.
 
@@ -126,7 +126,9 @@ Thème proposé : thème gratuit « Online Store 2.0 » de Shopify (ex. Dawn), �
 4. Fiche produit (`sections/main-product.liquid`) : `{% render 'da-badges', product: product %}` sous le titre ; `{% render 'da-statut-stock', product: product %}` sous le prix ; `{% render 'da-delai-sortie', product: product %}` avant le bouton d'ajout ; si `boutique.alerte_reassort` est vrai et le produit indisponible : `{% render 'da-formulaire-alertes', contexte: 'reassort', product: product %}` à la place du bouton.
 5. Carte produit (`snippets/card-product.liquid`) : `{% render 'da-badges', product: card_product %}` et `{% render 'da-statut-stock', product: card_product, contexte: 'carte' %}`.
 6. Pied de page : `{% render 'da-mention-independance' %}` ; page À propos et mentions légales : `{% render 'da-mention-independance', version: 'complete' %}`.
-7. Quantité maximale : appliquer `boutique.quantite_max` au sélecteur de quantité (`max`) **et** la contrôler côté serveur (règle de commande ou validation du panier, à choisir à la recette) : l'attribut HTML seul ne suffit pas.
+7. Quantité maximale : appliquer `boutique.quantite_max` au sélecteur de quantité (`max`) **et** la contrôler côté serveur (règle de commande ou validation du panier, à choisir à la recette) : l'attribut HTML seul ne suffit pas. La limite des CGV (ch. 4.4) est **par référence et par foyer, toutes commandes confondues** : le thème ne voit qu'une commande à la fois, le contrôle entre commandes successives relève de la SOP SAV (SAV-18). Tout texte affiché dit « par foyer », jamais « par commande » (contrôlé par `site/outils/verifier_site.py`).
+
+8. Petits produits (BP §5 « plancher dur 8 CHF par commande ; règles adaptées aux petits produits ») : tant que `small_product_min_order_ttc` et `small_product_max_shipping_ttc` sont nuls dans `config/pricing_rules.v1.yaml` (valeur livrée), la règle est **inactive** : chaque petit produit est prixé avec les frais par commande et respecte seul le plancher (un booster coûtant 3,79 CHF est affiché 23,90 CHF), aucune validation de panier n'est requise. Pour l'activer : mettre en place une **validation de panier côté serveur** (fonction de validation du panier et du paiement Shopify, ou application équivalente) qui refuse tout panier composé **uniquement** de produits étiquetés `petit-produit` dont le sous-total (après remises) est inférieur au minimum, la recetter (§8), puis renseigner ce minimum et le port maximal facturé dans le fichier de règles et le signer de nouveau. Le moteur n'active la règle que si ce minimum couvre son minimum calculé (`pricing.small_product_min_order_required` : 127,00 CHF en assujetti avec port offert, davantage si un port est facturé) ; sinon les frais par commande restent inclus (fermé par défaut).
 
 Les snippets n'affichent **aucun prix** : le prix vient du champ natif, alimenté par le moteur (`pricing.decide_price`, statut `OK` ou `REVIEW` validé).
 
@@ -138,6 +140,8 @@ Les snippets n'affichent **aucun prix** : le prix vient du champ natif, aliment�
 - [ ] Aucun produit publié n'affiche `data-statut="inconnu"` (recherche dans le code source de chaque page de collection).
 - [ ] Le filtre « Disponibilité » sépare stock local et précommande ; le filtre « Budget » fonctionne en CHF.
 - [ ] La quantité maximale est refusée au-delà de la limite, y compris par un panier modifié à la main.
+- [ ] Un produit sans stock réel au registre du moteur n'est jamais publié avec `statut:stock-local`, et une fiche de précommande sans allocation ferme reste `statut:rupture`.
+- [ ] Si la règle petits produits est activée (§7, point 8) : une commande d'un seul produit `petit-produit` sous le minimum est refusée au paiement, y compris par un panier modifié à la main ; un panier mixte (petit produit + produit principal) passe.
 - [ ] Le code source public ne contient aucun terme interne (coût, marge, fournisseur, B2B) ni métachamp autre que `boutique.*` (lecture de la page et de `/products/<handle>.json`).
 - [ ] Parcours BP §7 complet sur mobile et ordinateur (`docs/07-ops/RECETTE_AVANT_OUVERTURE.md`).
 
@@ -148,4 +152,5 @@ Les snippets n'affichent **aucun prix** : le prix vient du champ natif, aliment�
 - [ ] Valider les tranches « Idées cadeaux » (proposées : < 30, 30-60, 60-120, ≥ 120 CHF) ou les ajuster à l'assortiment réel.
 - [ ] Fixer `N_JOURS_NOUVEAUTE` (durée du badge « Nouveauté », proposée : 30 jours, **hypothèse**).
 - [ ] Choisir le mécanisme serveur de la quantité maximale (§7, point 7).
+- [ ] Décider d'activer ou non la règle petits produits (§7, point 8) : validation de panier recettée, puis minimum de commande et port maximal renseignés dans les règles signées.
 - [ ] Agent integrations : confirmer que `publish.py` écrit exactement les métachamps et tags du §2, et rien d'autre.

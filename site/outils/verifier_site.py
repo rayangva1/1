@@ -14,6 +14,12 @@ Contrôles :
 7. Synchronisation : copies DA (empreintes), pages secondaires générées.
 8. Snippets Liquid : balises équilibrées, rendus existants, libellés de statut figés, aucun terme interdit.
 9. Documents .md : dernière section « Validation humaine requise ».
+10. Affirmations inexactes : « une personne vous répond » (les réponses courantes sont automatisées),
+    « le contenu de chaque boîte est vérifié » (les produits ne sont jamais ouverts), exclusivité de finalité
+    (« servent uniquement à ces envois ») alors que le formulaire collecte des réponses facultatives.
+11. Notice de confidentialité : chaque champ du formulaire d'inscription y est déclaré (liste fermée
+    CHAMPS_NOTICE : un nouveau champ sans entrée fait échouer le contrôle).
+12. Nom de travail : jamais dans un modèle Shopify (fiches, snippets) hors des notes d'en-tête.
 
 Usage :
     python site/outils/verifier_site.py                         # dépôt
@@ -64,6 +70,48 @@ PROMESSES_RE = re.compile(
     re.IGNORECASE,
 )
 ACHAT_RE = re.compile(r"\b(acheter|ajouter au panier|pr[ée]commander|r[ée]server|payer)\b", re.IGNORECASE)
+#: Affirmations publiques inexactes au regard du modèle d'opération (LCD art. 3 al. 1 let. b).
+AFFIRMATIONS_INEXACTES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"\b(?:une|un)[\s\u00a0\u202f]+(?:vraie[\s\u00a0\u202f]+)?(?:personne|humain)[\s\u00a0\u202f]+(?:vous[\s\u00a0\u202f]+)?r[ée]pond", re.IGNORECASE),
+        "affirmation inexacte sur le service client (réponses courantes automatisées)",
+    ),
+    (
+        re.compile(r"contenu[\s\u00a0\u202f]+(?:de[\s\u00a0\u202f]+chaque|des|de[\s\u00a0\u202f]+la)[\s\u00a0\u202f]+bo[iî]tes?[\s\u00a0\u202f]+(?:est|sont)[\s\u00a0\u202f]+(?:v[ée]rifi|contr[ôo]l)", re.IGNORECASE),
+        "sur-promesse de contrôle (seul le contenu annoncé sur l'emballage est vérifié, sans ouvrir)",
+    ),
+    (
+        re.compile(r"servent[\s\u00a0\u202f]+uniquement|uniquement[\s\u00a0\u202f]+(?:pour|à)[\s\u00a0\u202f]+(?:ces|les)[\s\u00a0\u202f]+envois", re.IGNORECASE),
+        "exclusivité de finalité inexacte (réponses facultatives et origine aussi utilisées, en agrégé)",
+    ),
+    (
+        re.compile(
+            r"(?:\{\{\s*qmax\s*\}\}|\blimite\b[^.\n<]{0,40}?|\bmax(?:imum\b|\.|\b))[\s\u00a0\u202f]*par[\s\u00a0\u202f]+commande\b",
+            re.IGNORECASE,
+        ),
+        "limite de quantité exprimée « par commande » (CGV ch. 4.4 : par référence et par foyer, toutes commandes confondues)",
+    ),
+)
+#: Champs du formulaire d'inscription → terme qui doit figurer dans la notice de confidentialité publiée
+#: (None : champ technique sans donnée personnelle). Un champ absent de cette liste fait échouer le contrôle.
+CHAMPS_NOTICE: dict[str, str | None] = {
+    "email": "email",
+    "prenom": "prénom",
+    "formats": "formats",
+    "budget": "budget",
+    "pour_qui": "pour qui",
+    "canton": "canton",
+    "consentement": "consentement",
+    "consentement_texte": "consentement",
+    "consentement_version": "consentement",
+    "horodatage_client": "date",
+    "page": "page d'inscription",
+    "utm_source": "utm",
+    "utm_medium": "utm",
+    "utm_campaign": "utm",
+    "source": None,
+    "site_web": None,
+}
 ENCADRE_NEGATIONS_RE = re.compile(r'<div class="lp-encadre">.*?</div>', re.DOTALL)
 COULEUR_EN_DUR_RE = re.compile(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(")
 COMMENTAIRE_CSS_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
@@ -292,6 +340,10 @@ def verifier_page(chemin: Path, racine: Path, *, publication_mode: bool = False)
         m = motif.search(scan if motif in (URGENCE_RE,) else visible)
         if m:
             err.append(f"{nom} : {libelle} « {m.group(0)} »")
+    for motif, libelle in AFFIRMATIONS_INEXACTES:
+        m = motif.search(visible)
+        if m:
+            err.append(f"{nom} : {libelle} « {m.group(0)} »")
     for balise, libelle in a.actions:
         if ACHAT_RE.search(libelle):
             err.append(f"{nom} : action d'achat ou de précommande « {libelle} » sur la landing")
@@ -357,6 +409,42 @@ def verifier_formulaire(a: Analyse, *, publication_mode: bool) -> list[str]:
     return err
 
 
+def verifier_notice_formulaire(racine: Path = LANDING) -> list[str]:
+    """Chaque champ du formulaire (et du contrat inscription.schema.json) est déclaré dans la notice publiée."""
+    index, notice = racine / "index.html", racine / "confidentialite.html"
+    if not index.exists() or not notice.exists():
+        return ["index.html ou confidentialite.html absent : contrôle de la notice impossible"]
+    noms = {c.get("name", "") for c in analyser(index.read_text(encoding="utf-8")).champs if c.get("name")}
+    noms |= set(json.loads(SCHEMA.read_text(encoding="utf-8"))["properties"])
+    texte = _texte_visible(notice.read_text(encoding="utf-8")).lower()
+    err: list[str] = []
+    for nom in sorted(noms):
+        if nom not in CHAMPS_NOTICE:
+            err.append(f"champ « {nom} » collecté sans entrée dans CHAMPS_NOTICE : le déclarer dans la notice puis ici")
+        elif CHAMPS_NOTICE[nom] and CHAMPS_NOTICE[nom] not in texte:
+            err.append(f"champ « {nom} » collecté mais absent de la notice de confidentialité (« {CHAMPS_NOTICE[nom]} »)")
+    return err
+
+
+def verifier_nom_de_travail(dossier: Path = SITE / "shopify") -> list[str]:
+    """Le nom de travail n'apparaît dans aucun modèle Shopify publiable (seulement dans les notes d'en-tête « > »)."""
+    err: list[str] = []
+    nom = publication.NOM_DE_TRAVAIL
+
+    def rel(p: Path) -> str:
+        return p.relative_to(REPO).as_posix() if p.is_relative_to(REPO) else p.relative_to(dossier).as_posix()
+
+    for p in sorted(dossier.rglob("*.md")):
+        for i, ligne in enumerate(p.read_text(encoding="utf-8").splitlines(), start=1):
+            if nom in ligne and not ligne.lstrip().startswith(">"):
+                err.append(f"{rel(p)}:{i} : nom de travail « {nom} » dans un modèle ({{{{NOM_BOUTIQUE}}}} attendu)")
+    for p in sorted(dossier.rglob("*.liquid")):
+        sortie = re.sub(r"\{%-?\s*comment\s*-?%\}.*?\{%-?\s*endcomment\s*-?%\}", " ", p.read_text(encoding="utf-8"), flags=re.DOTALL)
+        if nom in sortie:
+            err.append(f"{rel(p)} : nom de travail « {nom} » dans un snippet")
+    return err
+
+
 def verifier_bouton_source(texte: str) -> list[str]:
     """Dans la source, le bouton d'envoi est désactivé (le script l'active si le webhook est valide)."""
     m = re.search(r'<button[^>]*id="lp-envoyer"[^>]*>', texte)
@@ -403,6 +491,7 @@ def verifier_landing(racine: Path = LANDING, *, publication_mode: bool = False) 
     if not publication_mode:
         err += verifier_bouton_source((racine / "index.html").read_text(encoding="utf-8"))
     err += verifier_css_js(racine, publication_mode=publication_mode)
+    err += verifier_notice_formulaire(racine)
     if publication_mode and not (racine / "_headers").exists():
         err.append("_headers absent du dossier de publication")
     return err
@@ -470,7 +559,7 @@ def verifier_liquid(dossier: Path = SNIPPETS) -> list[str]:
             err.append(f"{p.name} : doit commencer par un bloc de documentation {{% comment %}}")
         sortie = re.sub(r"\{%-?\s*comment\s*-?%\}.*?\{%-?\s*endcomment\s*-?%\}", " ", texte, flags=re.DOTALL)
         for motif, libelle in ((TERMES_INTERNES, "terme interne"), (PRIX_RE, "prix en dur"), (EAN_RE, "EAN en dur"),
-                               (URGENCE_RE, "fausse urgence"), (PROMESSES_RE, "promesse interdite")):
+                               (URGENCE_RE, "fausse urgence"), (PROMESSES_RE, "promesse interdite"), *AFFIRMATIONS_INEXACTES):
             m = motif.search(sortie)
             if m:
                 err.append(f"{p.name} : {libelle} « {m.group(0)} »")
@@ -508,6 +597,7 @@ def tout_verifier() -> dict[str, list[str]]:
         "pages générées": verifier_generes(LANDING),
         "copies DA": da_sync.verifier(),
         "snippets Liquid": verifier_liquid(SNIPPETS),
+        "nom de travail (Shopify)": verifier_nom_de_travail(SITE / "shopify"),
         "documents": verifier_docs(SITE),
     }
 

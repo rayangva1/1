@@ -107,7 +107,7 @@ def test_badges_jamais_stock_local_et_precommande() -> None:
 
 def test_bloc_delai_et_sortie() -> None:
     local = rendre("da-delai-sortie", product=produit("stock_local", quantite_max=2))
-    assert "Depuis Genève, sous 2 jours ouvrés." in local and "2 par commande" in local and "Date de sortie" not in local
+    assert "Depuis Genève, sous 2 jours ouvrés." in local and "2 par foyer (toutes commandes confondues)" in local and "par commande" not in local and "Date de sortie" not in local
     assert "En Suisse uniquement." in local and "Commande mixte" not in local
     preco = rendre("da-delai-sortie", product=produit("precommande", date_sortie="2026-11-06", date_sortie_statut="estimee"))
     assert "06.11.2026 (estimée, peut changer)" in preco and "Commande mixte" in preco

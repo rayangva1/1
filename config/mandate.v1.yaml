@@ -13,6 +13,10 @@
 # - toute modification après signature invalide l'empreinte => mandat inactif jusqu'à nouvelle signature ;
 # - empreinte à recopier dans approval.fingerprint_sha256 ET dans le coffre (POKESHOP_MANDATE_FINGERPRINT) :
 #     cd engine && python -m pokeshop.mandate fingerprint ../config/mandate.v1.yaml
+#   C'EST LE REPORT AU COFFRE, FAIT PAR LA PROPRIÉTAIRE SEULE, QUI VAUT SIGNATURE : sans empreinte au coffre,
+#   le mandat reste inactif même si ce fichier porte une empreinte correcte (un agent sait la calculer) ;
+# - STOCK + ACCESSORIES ne peuvent pas dépasser limits.stock_budget_chf (les accessoires sont dans le budget
+#   stock, BP §1) : sinon le mandat est refusé au chargement.
 
 mandate_version: "mandat-v1-2026-10-04"
 status: "GABARIT — à remplir et signer par la propriétaire"
@@ -23,7 +27,7 @@ valid_until: null               # AAAA-MM-JJ ; proposé : fin du pilote (J90), p
 limits:
   per_transaction_chf: null     # proposé : "500" (au-delà : validation humaine)
   per_month_chf: null           # proposé : "3000" au pilote (dépenses approuvées par les agents seuls)
-  stock_budget_chf: null        # proposé : "3000" (BP §3, stock rendu Suisse) ; base du plafond par extension
+  stock_budget_chf: null        # proposé : "3000" (BP §3, stock rendu Suisse, accessoires compris) ; base du plafond par extension
   extension_max_share: "0.25"   # BP §1 ; = stop-loss extension (config/stoploss.v1.yaml) — ne pas modifier ici seul
   cash_reserve_chf: "1600"      # BP §3 ; = stop-loss cash ; JAMAIS dépensée par un agent
   ads_daily_cap_chf: null       # proposé : "33" (≈ 500 CHF / 15 j, BP §9 jours 46 à 60) ; = plafond jour du stop-loss pub
@@ -38,14 +42,16 @@ limits:
 # Interdites en dur (refusées par le code, non modifiables ici) : SINGLE_CARDS, GRADING,
 # CUSTOMER_BUYBACK, SPECULATIVE, NON_FR_PRODUCTS, FINANCING.
 categories:
-  STOCK:        {envelope_chf: null, per_month_chf: null, min_autonomy_level: 4}  # proposé : "3000" ; réassort auto = niveau 4
-  ACCESSORIES:  {envelope_chf: null, per_month_chf: null, min_autonomy_level: 4}  # proposé : "300" (10 % du stock, BP §1)
-  SAMPLES:      {envelope_chf: null, per_month_chf: null, min_autonomy_level: 1}  # proposé : "100" (échantillons payants)
+  # --- lignes du BP §3 (stock 3 000 = STOCK 2 700 + ACCESSORIES 300 ; délégable total 5 700 CHF)
+  STOCK:        {envelope_chf: null, per_month_chf: null, min_autonomy_level: 4}  # proposé : "2700" (90 % du budget stock) ; réassort auto = niveau 4
+  ACCESSORIES:  {envelope_chf: null, per_month_chf: null, min_autonomy_level: 4}  # proposé : "300" (10 % du budget stock, BP §1)
   SITE_TOOLS:   {envelope_chf: null, per_month_chf: null, min_autonomy_level: 1}  # proposé : "1500" ; mois : "180" (BP §3)
   DA_CONTENT:   {envelope_chf: null, per_month_chf: null, min_autonomy_level: 1}  # proposé : "400" (BP §3)
   PACKAGING:    {envelope_chf: null, per_month_chf: null, min_autonomy_level: 1}  # proposé : "300" (BP §3)
-  SHIPPING:     {envelope_chf: null, per_month_chf: null, min_autonomy_level: 2}  # proposé : "600" ; étiquettes de commandes payées
   ADVERTISING:  {envelope_chf: null, per_month_chf: null, min_autonomy_level: 3}  # proposé : "500" (BP §3, test pub)
+  # --- HORS BP §3 (aucune ligne au budget initial) : financement à décider, sinon supprimer la ligne
+  SAMPLES:      {envelope_chf: null, per_month_chf: null, min_autonomy_level: 1}  # proposé : "100" pris sur STOCK (réduire STOCK d'autant) ou décision propriétaire
+  SHIPPING:     {envelope_chf: null, per_month_chf: null, min_autonomy_level: 2}  # proposé : "600" ; étiquettes de commandes payées, couvertes par le port facturé
 
 # Coût estimé d'un paiement PayPal, ajouté au montant avant contrôle des plafonds (hypothèses PRUDENTES
 # tirées d'une recherche web du 4.10.2026 sur les tarifs PayPal Suisse : conversion de devise 3 à 4 %
@@ -75,4 +81,5 @@ approval:
   approved_by: null             # nom de la propriétaire
   approved_at: null             # AAAA-MM-JJTHH:MM:SS+02:00 (date et heure de signature)
   fingerprint_sha256: null      # empreinte calculée par la commande ci-dessus, après remplissage
-  revoked_at: null              # révocation : renseigner la date (en plus de couper l'accès PayPal)
+  revoked_at: null              # révocation : renseigner la date (en plus de couper l'accès PayPal) ; elle est alors
+                                # inscrite au registre des révocations (définitive : l'effacer ne réactive rien)

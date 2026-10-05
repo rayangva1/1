@@ -94,8 +94,13 @@ ROUTES = [
     ("post", "/stock/reorder-proposal"), ("post", "/imports/fictif_grossiste_a/run"), ("post", "/publish/preview"),
     ("post", "/sync/run"), ("get", "/incidents"), ("post", "/incidents"), ("get", "/autonomy"), ("post", "/autonomy"),
     ("get", "/stoploss/status"), ("post", "/stoploss/state"), ("post", "/stoploss/freeze"), ("post", "/stoploss/rearm"),
+    ("post", "/stoploss/baseline"), ("post", "/stock/receive"), ("post", "/pricing/approvals"),
+    ("get", "/pricing/approvals"), ("post", "/pricing/approvals/PA-X/revoke"),
     ("post", "/mandate/check"), ("get", "/northstar"), ("post", "/northstar/entries"),
     ("post", "/incidents/INC-X/test"), ("post", "/incidents/INC-X/resume"), ("post", "/incidents/INC-X/close"),
+    ("post", "/catalog/items"), ("post", "/catalog/cost-inputs"), ("get", "/catalog"), ("get", "/sync/history"),
+    ("post", "/stoploss/state/refresh"), ("post", "/capital/movements"), ("get", "/capital/movements"),
+    ("post", "/treasury/bank-balance"), ("post", "/treasury/balance-items"), ("post", "/ads/activity"),
 ]
 
 
@@ -177,13 +182,17 @@ def candidate(product_key: str = "FICTIF-P1", extension: str = "FICTIF_ALPHA") -
 
 
 def test_reorder_proposal_is_a_proposal_to_validate(client: TestClient) -> None:
+    # MOT-24 : sans photo stop-loss, les gels sont inconnus => aucune proposition (fermé par défaut)
+    unknown = client.post("/stock/reorder-proposal", headers=H, json={"candidates": [candidate()], "budget_available": "5000"})
+    assert unknown.status_code == 409 and "stop-loss" in body(unknown)["erreur"]
+    assert client.post("/stoploss/state", headers=H, json=state_payload()).status_code == 200
     resp = client.post("/stock/reorder-proposal", headers=H, json={"candidates": [candidate()], "budget_available": "5000"})
     data = body(resp)
     assert resp.status_code == 200
     proposal = data["proposal"]
     assert proposal["status"] == "PROPOSAL_TO_VALIDATE" and proposal["requires_human_validation"] is True
-    assert proposal["lines"] and data["stoploss_known"] is False
-    assert data["gate"]["allowed"] is False  # stop-loss inconnu et mandat non signé : aucune exécution possible
+    assert proposal["lines"] and data["stoploss_known"] is True and data["stock_budget_chf"] == "3000"
+    assert data["gate"]["allowed"] is False  # mandat non signé : aucune exécution possible
 
 
 def test_reorder_proposal_respects_stoploss(client: TestClient) -> None:
@@ -224,7 +233,14 @@ def test_import_route_refuses_paths_and_suppliers(client: TestClient, supplier: 
 # ------------------------------------------------------------------------------- publication
 
 
+def receive_stock(client: TestClient, qty: int = 6) -> None:
+    """Réception physique FICTIVE (le statut public « stock local » exige du stock réel, E2E-12)."""
+    resp = client.post("/stock/receive", headers=H, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": qty, "ref": "FICTIF-BL-0001"})
+    assert resp.status_code == 200, resp.text
+
+
 def test_publish_preview_returns_only_the_public_payload(client: TestClient) -> None:
+    receive_stock(client)
     resp = client.post("/publish/preview", headers=H, json={"listing": LISTING, "quote": {"cost_chf": "123.45"}})
     data = body(resp)
     assert resp.status_code == 200 and data["dry_run"] is True
@@ -247,6 +263,7 @@ def test_publish_preview_refuses_leaks(client: TestClient) -> None:
 
 
 def test_sync_run_is_a_dry_run_by_default(client: TestClient) -> None:
+    receive_stock(client)
     resp = client.post("/sync/run", headers=H, json={
         "supplier": "fictif_grossiste_a", "source_path": "FICTIF_offres_grossiste_a.csv",
         "catalog": [{"product_id": "FICTIF-P1", "listing": LISTING}],
@@ -263,13 +280,27 @@ def test_sync_run_is_a_dry_run_by_default(client: TestClient) -> None:
 
 
 def test_sync_run_real_mode_with_fictif_data_is_refused_safely(client: TestClient, svc: Services) -> None:
-    data = body(client.post("/sync/run", headers=H, json={
-        "supplier": "fictif_grossiste_a", "source_path": "FICTIF_offres_grossiste_a.csv", "dry_run": False}))
-    assert data["report"]["steps"][0]["status"] == "ECHEC" and data["clean"] is True
+    real = {"supplier": "fictif_grossiste_a", "source_path": "FICTIF_offres_grossiste_a.csv", "dry_run": False}
+    first = client.post("/sync/run", headers=H, json=real)  # aucun import précédent : simulation obligatoire
+    assert first.status_code == 409 and "simulation" in body(first)["erreur"]
+    client.post("/imports/fictif_grossiste_a/run", headers=H, json={"source_path": "FICTIF_offres_grossiste_a.csv"})
+    assert client.post("/sync/run", headers=H, json=real).status_code == 409  # E2E-07 : catalogue requis
+    data = body(client.post("/sync/run", headers=H, json=dict(real, catalog=[{"product_id": "FICTIF-P1", "listing": LISTING}])))
+    # Écriture réelle refusée dès l'étape 1 : rien n'est évalué, le cycle est VIDE (jamais compté propre).
+    assert data["report"]["steps"][0]["status"] == "ECHEC" and data["cycle_status"] == "VIDE" and data["clean"] is False
     assert svc.client.requests_sent == 0
 
 
 # ---------------------------------------------------------------------------------- incidents
+
+
+def dry_run_id(client: TestClient) -> str:
+    """Cycle de synchronisation en simulation (preuve de test vérifiable par le moteur)."""
+    report = body(client.post("/sync/run", headers=H, json={
+        "supplier": "fictif_grossiste_a", "source_path": "FICTIF_offres_grossiste_a.csv",
+        "catalog": [{"product_id": "FICTIF-P1", "listing": LISTING}]}))["report"]
+    assert report["dry_run"] is True and report["critical_errors"] == []
+    return report["run_id"]
 
 
 def test_incident_lifecycle_through_the_api(client: TestClient) -> None:
@@ -282,9 +313,15 @@ def test_incident_lifecycle_through_the_api(client: TestClient) -> None:
     assert listing["quarantined"] == {"FICTIF-P1": [inc["incident_id"]]} and listing["summary"]["OUVERT"] == 1
     early = client.post(f"/incidents/{inc['incident_id']}/resume", headers=H, json={"actor": "agent-12"})
     assert early.status_code == 409
-    client.post(f"/incidents/{inc['incident_id']}/test", headers=H, json={"test_ref": "dry-run OK", "passed": True, "actor": "agent-12"})
+    # SEC-16 : un test « réussi » auto-déclaré sans preuve est refusé ; il doit citer un cycle en simulation.
+    free_text = client.post(f"/incidents/{inc['incident_id']}/test", headers=H,
+                            json={"test_ref": "dry-run OK", "passed": True, "actor": "agent-12"})
+    assert free_text.status_code == 409 and "non vérifiable" in body(free_text)["erreur"]
+    tested = client.post(f"/incidents/{inc['incident_id']}/test", headers=H,
+                         json={"test_ref": dry_run_id(client), "passed": True, "actor": "agent-12"})
+    assert tested.status_code == 200
     resumed = body(client.post(f"/incidents/{inc['incident_id']}/resume", headers=H, json={"actor": "agent-12"}))
-    assert resumed["incident"]["status"] == "RESOLU"
+    assert resumed["incident"]["status"] == "RESOLU" and resumed["incident"]["resolved_by"] == "agent:agent-12"
     closed = body(client.post(f"/incidents/{inc['incident_id']}/close", headers=H, json={"actor": "agent-01"}))
     assert closed["incident"]["status"] == "CLOS"
     assert body(client.get("/incidents", headers=H, params={"status": "CLOS"}))["incidents"][0]["incident_id"] == inc["incident_id"]
@@ -293,12 +330,17 @@ def test_incident_lifecycle_through_the_api(client: TestClient) -> None:
 def test_critical_incident_resume_requires_owner_token(client: TestClient, svc: Services) -> None:
     inc = body(client.post("/incidents", headers=H, json={"code": "INC-07", "product_key": "FICTIF-P1",
                                                           "cause": "champ coût publié", "actor": "agent-12"}))["incident"]
-    client.post(f"/incidents/{inc['incident_id']}/test", headers=H, json={"test_ref": "test_publish", "passed": True, "actor": "qa"})
+    # la propriétaire atteste le test avec son jeton (test_ref libre)
+    attested = client.post(f"/incidents/{inc['incident_id']}/test", headers=HO,
+                           json={"test_ref": "test_publish relu", "passed": True, "actor": "qa"})
+    assert attested.status_code == 200 and body(attested)["incident"]["test_passed"] is True
     agent = client.post(f"/incidents/{inc['incident_id']}/resume", headers=H, json={"actor": "agent-12"})
     assert agent.status_code == 409
     wrong = client.post(f"/incidents/{inc['incident_id']}/resume", headers={**H, OWNER_TOKEN_HEADER: "mauvais-jeton-0000000000"},
                         json={"actor": "agent-12"})
     assert wrong.status_code == 403
+    impostor = client.post(f"/incidents/{inc['incident_id']}/resume", headers=H, json={"actor": "Propriétaire"})
+    assert impostor.status_code == 403 and svc.audit.events(action="incidents.resume.owner_impersonation_refused")
     owner = client.post(f"/incidents/{inc['incident_id']}/resume", headers=HO, json={"actor": "propriétaire"})
     assert owner.status_code == 200 and body(owner)["incident"]["status"] == "RESOLU"
     unknown = client.post("/incidents/INC-INCONNU/test", headers=H, json={"test_ref": "x1x", "passed": True, "actor": "qa"})
@@ -350,7 +392,14 @@ def test_stoploss_state_status_freeze_and_owner_rearm(client: TestClient, svc: S
     assert wrong.status_code == 403
     short = client.post("/stoploss/rearm", headers=HO, json={"reason": "ok"})
     assert short.status_code == 422
-    rearmed = client.post("/stoploss/rearm", headers=HO, json={"reason": "valeur nette examinée, reprise (FICTIF)"})
+    # Réarmement rebasé : la propriétaire atteste la valeur nette de la photo (SEC-07).
+    unattested = client.post("/stoploss/rearm", headers=HO, json={"reason": "valeur nette examinée, reprise (FICTIF)"})
+    assert unattested.status_code == 409 and "8 000,00 CHF" in body(unattested)["erreur"] and svc.stoploss_engine.frozen
+    reference = status["rearm_reference"]
+    assert reference["net_worth_chf"] == "8000" and len(reference["photo_sha256"]) == 64
+    rearmed = client.post("/stoploss/rearm", headers=HO, json={"reason": "valeur nette examinée, reprise (FICTIF)",
+                                                               "reference_chf": reference["net_worth_chf"],
+                                                               "photo_sha256": reference["photo_sha256"]})
     data = body(rearmed)
     assert rearmed.status_code == 200 and data["latch"]["frozen"] is False and data["autonomy_level"] == 1
     assert svc.audit.events(action="stoploss.rearm") and svc.audit.events(action="stoploss.rearm_refused")
@@ -399,14 +448,18 @@ def test_northstar_report(client: TestClient) -> None:
     assert empty["cumulative"] == "0.00" and empty["rows"] == []
     entries = [
         {"entry_id": "FICTIF-1", "at": NOW.isoformat(), "post": "NET_SALES", "amount": "184.92", "order_id": "FICTIF-O1"},
-        {"entry_id": "FICTIF-2", "at": NOW.isoformat(), "post": "HISTORICAL_COST", "amount": "140.00", "order_id": "FICTIF-O1",
-         "source": "HistoricalCostLedger"},
         {"entry_id": "FICTIF-3", "at": NOW.isoformat(), "post": "PAYMENT", "amount": "5.30", "order_id": "FICTIF-O1"},
     ]
     added = body(client.post("/northstar/entries", headers=H, json={"entries": entries}))
-    assert added == {"added": 3, "received": 3}
+    assert added == {"added": 2, "received": 2}
     again = body(client.post("/northstar/entries", headers=H, json={"entries": entries}))
     assert again["added"] == 0
+    # coût historique : registre interne uniquement (réception au coût, vente au CMP calculé par le moteur)
+    receipt = {"kind": "RECEIPT", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "FICTIF-LOT-1",
+               "qty": 2, "unit_cost": "140.00"}
+    assert body(client.post("/costs/movements", headers=H, json=receipt))["northstar_added"] == 0
+    sale = {"kind": "ISSUE", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "FICTIF-O1", "qty": 1}
+    assert body(client.post("/costs/movements", headers=H, json=sale))["northstar_added"] == 1
     report = body(client.get("/northstar", headers=H))
     assert report["cumulative"] == "39.62" and report["rows"][0]["orders"] == 1 and "Contribution nette" in report["markdown"]
     bad = client.get("/northstar", headers=H, params={"start": "2026-12-01", "end": "2026-11-01"})
@@ -427,10 +480,12 @@ def parse_env_example() -> dict[str, str]:
 
 def test_env_example_documents_every_setting_without_secret_values() -> None:
     env = parse_env_example()
-    expected = {names[0] for names in ENV_VARIABLES.values()} | {"POSTGRES_PASSWORD", "N8N_ENCRYPTION_KEY", "N8N_IMAGE"}
+    expected = {names[0] for names in ENV_VARIABLES.values()} | {
+        "POSTGRES_PASSWORD", "POKESHOP_DB_PASSWORD", "N8N_ENCRYPTION_KEY", "N8N_WEBHOOK_URL", "N8N_IMAGE"}
     assert set(env) == expected
     for secret in ("POKESHOP_SHOPIFY_ADMIN_TOKEN", "POKESHOP_DATABASE_URL", "POKESHOP_API_TOKEN_SHA256",
-                   "POKESHOP_OWNER_TOKEN_SHA256", "POKESHOP_MANDATE_FINGERPRINT", "POSTGRES_PASSWORD", "N8N_ENCRYPTION_KEY"):
+                   "POKESHOP_OWNER_TOKEN_SHA256", "POKESHOP_MANDATE_FINGERPRINT", "POSTGRES_PASSWORD", "N8N_ENCRYPTION_KEY",
+                   "POKESHOP_DB_PASSWORD"):
         assert env[secret] == "", secret
     assert env["POKESHOP_DRY_RUN"] == "true" and env["POKESHOP_SHOPIFY_TEST_STORE"] == "false"
     settings = load_settings({k: v for k, v in env.items() if k.startswith("POKESHOP_")})
@@ -443,15 +498,16 @@ def test_env_example_documents_every_setting_without_secret_values() -> None:
 def test_compose_file_is_ready_but_local_only() -> None:
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
     services = compose["services"]
-    assert set(services) == {"db", "db-migrate", "api", "n8n"}
+    assert set(services) == {"db", "db-migrate", "db-backup", "api", "n8n"}
     assert services["db"]["image"] == "postgres:16"
-    assert services["db-migrate"]["entrypoint"] == ["bash", "/db/apply.sh", "none"]
+    assert services["db-migrate"]["entrypoint"] == ["bash", "-c", "bash /db/apply.sh none && bash /db/engine_login.sh"]
     for name in ("db", "api", "n8n"):
         assert all(str(p).startswith("127.0.0.1:") for p in services[name]["ports"]), name
     assert services["api"]["build"] == "."
     text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert "${POSTGRES_PASSWORD:?" in text and "${N8N_ENCRYPTION_KEY:?" in text
-    assert "POKESHOP_DRY_RUN" not in services["api"]["environment"]  # la simulation reste le défaut
+    assert services["api"]["environment"]["POKESHOP_DRY_RUN"] == "${POKESHOP_DRY_RUN:-true}"  # simulation par défaut
+    assert "env_file" not in services["api"]  # E2E-18 : jamais tout le fichier .env dans le conteneur
 
 
 def test_dockerfile_runs_the_api_factory_in_simulation() -> None:
@@ -483,6 +539,11 @@ def test_settings_validation_messages_name_the_variable() -> None:
     alias = load_settings({"SHOPIFY_ADMIN_TOKEN": "shpat_FICTIF", "POKESHOP_SHOPIFY_SHOP_DOMAIN": "fictif.myshopify.com"})
     assert alias.shopify_configured and "shpat_FICTIF" not in repr(alias)
     full = make_settings(POKESHOP_DRY_RUN="false", POKESHOP_SHOPIFY_SHOP_DOMAIN="fictif.myshopify.com",
-                         POKESHOP_SHOPIFY_ADMIN_TOKEN="shpat_FICTIF", POKESHOP_SHOPIFY_LOCATION_ID="gid://shopify/Location/1")
+                         POKESHOP_SHOPIFY_ADMIN_TOKEN="shpat_FICTIF", POKESHOP_SHOPIFY_LOCATION_ID="gid://shopify/Location/1",
+                         POKESHOP_MANDATE_FINGERPRINT="a" * 64, POKESHOP_STOPLOSS_FINGERPRINT="b" * 64,
+                         POKESHOP_RULES_FINGERPRINT="c" * 64)
     assert full.real_write_blockers() == [] and full.real_writes_enabled
+    unsigned = make_settings(POKESHOP_DRY_RUN="false")
+    assert any("POKESHOP_MANDATE_FINGERPRINT" in b for b in unsigned.real_write_blockers())
+    assert any("POKESHOP_STOPLOSS_FINGERPRINT" in b for b in unsigned.real_write_blockers())
     assert load_settings({"POKESHOP_DRY_RUN": " "}).dry_run is True  # valeur vide = défaut (simulation)

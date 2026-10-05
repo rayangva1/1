@@ -138,12 +138,19 @@ class FakeShop:
         q, v = body["query"], body.get("variables") or {}
         if "productSet" in q:
             data = v["input"]
-            self.products[data["handle"]] = data
+            ident = v.get("identifier") or {}
+            if "handle" in data:
+                self.products[data["handle"]] = data
+            else:  # charge minimale (dépublication) : mise à jour par identifiant
+                key = ident.get("id", "")
+                self.products[key] = {**self.products.get(key, {"handle": key, "title": "?", "variants": [
+                    {"price": "0.00", "barcode": None}]}), **data}
             self.applied.append({"productSet": data})
             return httpx.Response(200, json={"data": {"productSet": {"product": {"id": "gid://shopify/Product/7"},
                                                                      "productSetOperation": None, "userErrors": []}}})
         if "productByIdentifier" in q:
-            data = self.products.get(v["identifier"]["handle"])
+            ident = v["identifier"]
+            data = self.products.get(ident.get("handle") or ident.get("id"))
             if data is None:
                 return httpx.Response(200, json={"data": {"productByIdentifier": None}})
             price = self.price_override or data["variants"][0]["price"]
@@ -201,14 +208,23 @@ class Env:
             state_provider=lambda: self.state, mandate_provider=lambda: mandate,
             incidents=self.incidents, real_writes_enabled=real, clock=clock,
         )
+        # Client en écriture réelle seulement si POKESHOP_DRY_RUN=false (real) : l'appel ne peut que restreindre.
         self.client = ShopifyClient(shop_domain=SHOP if configured else None, access_token="shpat_FICTIF" if configured else None,
                                     transport=httpx.MockTransport(self.shop), audit=self.audit, clock=clock,
-                                    sleep=lambda s: None, max_retries=1)
+                                    sleep=lambda s: None, max_retries=1, dry_run=not real)
         self.history = PriceHistory()
+        self.stock = StockRegistry(clock=clock)
+        self.stock.receive("DSP-FICTIF_ALPHA-FR", 6, "FICTIF-BL-0001", at=at - timedelta(days=1))  # stock local réel
         self.sync = SyncService(client=self.client, gate=self.gate, incidents=self.incidents, audit=self.audit,
-                                price_history=self.history, clock=clock, test_store=test_store)
+                                price_history=self.history, clock=clock, test_store=test_store, stock=self.stock)
+
+    def seed_baseline(self, source: Path = CSV_A, mapping: str = "fictif_grossiste_a") -> None:
+        """Import précédent connu (référence « dernier import ») : préalable à toute écriture réelle."""
+        self.sync.baselines.update(run_import(mapping, source, now=self.now, extensions=TABLE))
 
     def cycle(self, ctx: SyncContext | None = None, *, dry_run: bool = True, source: Path = CSV_A, mapping: str = "fictif_grossiste_a"):
+        if not dry_run and self.sync.baselines.get(mapping) is None:
+            self.seed_baseline(source, mapping)
         return self.sync.run_supplier_cycle(mapping, source, ctx or context(), now=self.now, dry_run=dry_run)
 
 
@@ -390,8 +406,9 @@ def test_product_stoploss_unpublishes_existing_listing() -> None:
     report = env.cycle(context(item), dry_run=False)
     p1 = item_for(report)
     assert p1.plan_outcome == PlanOutcome.UNPUBLISH.value and p1.action == "UNPUBLISH_PRODUCT"
-    assert p1.written and p1.price_chf == D("149.90")
-    assert env.shop.products[next(iter(env.shop.products))]["status"] == "DRAFT"
+    assert p1.written and p1.verified and p1.price_chf is None  # statut seulement, prix boutique inchangé
+    assert env.shop.applied[-1] == {"productSet": {"status": "DRAFT"}}
+    assert env.shop.products["gid://shopify/Product/7"]["status"] == "DRAFT"
 
 
 def test_price_anomaly_quarantines_the_reference_in_real_mode() -> None:
@@ -526,3 +543,84 @@ def test_push_stock_input_validation() -> None:
         env.sync.push_stock([(listing(), level().replace(sku="AUTRE-SKU"))], location_id=LOC)
     with pytest.raises(SyncError):
         env.sync.push_stock([(listing(), level())], location_id=LOC, dry_run=False)  # quantité Shopify inconnue
+
+
+# ------------------------------------------------------------ lot F3 : régressions de la revue adverse
+
+CSV_J1 = SAMPLES / "FICTIF_offres_grossiste_a_J-1.csv"
+CSV_INCOMPLETE = SAMPLES / "FICTIF_offres_grossiste_a_incomplet.csv"
+
+
+def test_baseline_of_previous_import_quarantines_incomplete_and_divided_prices() -> None:
+    """MOT-16 / E2E-04 : la référence « dernier import » est conservée et appliquée par le service."""
+    env = Env()
+    env.now = SOURCE_NOW - timedelta(hours=28)  # import de la veille (J-1)
+    first = env.cycle(source=CSV_J1)
+    assert first.import_status in ("ACCEPTED", "PARTIAL")
+    baseline = env.sync.baselines.get("fictif_grossiste_a")
+    assert baseline is not None and baseline.rows_read == first.rows_read
+    env.now = SOURCE_NOW
+    incomplete = env.cycle(source=CSV_INCOMPLETE)
+    assert incomplete.import_status == "QUARANTINED" and incomplete.incident_ids
+    assert env.sync.baselines.get("fictif_grossiste_a") == baseline  # un import rejeté ne remplace pas la référence
+    day = env.cycle()
+    result = run_import("fictif_grossiste_a", CSV_A, now=SOURCE_NOW, baseline=baseline, extensions=TABLE)
+    assert "PRICE_ANOMALY" in result.reason_counts()  # ÷10 vs dernier import (FICTIF-A-006/A-007)
+    assert day.rows_quarantined == result.quarantined_count
+
+
+def test_real_write_without_previous_import_is_refused() -> None:
+    """E2E-04 : premier import d'un fournisseur => simulation obligatoire (aucune écriture réelle)."""
+    env = Env()
+    with pytest.raises(SyncError, match="simulation obligatoire"):
+        env.sync.run_supplier_cycle("fictif_grossiste_a", CSV_A, context(), now=env.now, dry_run=False)
+    assert env.shop.requests == []
+    env.cycle()  # simulation : la référence est créée
+    report = env.sync.run_supplier_cycle("fictif_grossiste_a", CSV_A, context(), now=env.now, dry_run=False)
+    assert item_for(report).written
+
+
+def test_approval_from_registry_never_publishes_below_hard_floor() -> None:
+    """MOT-04 / SEC-03 : même lue dans le registre, une approbation sous le plancher n'est jamais écrite."""
+    from pokeshop.publish import PriceValidation
+
+    env = Env()
+    below = PriceValidation.new(product_key="FICTIF-P1", price=D("9.90"), reason="FICTIF approbation à tester",
+                                now=env.now)
+    report = env.cycle(context(price_validations={"FICTIF-P1": below}), dry_run=False)
+    p1 = item_for(report)
+    assert p1.price_chf != D("9.90") and not any(
+        a.get("productSet", {}).get("variants", [{}])[0].get("price") == "9.90" for a in env.shop.applied
+    )
+    assert all(e.price != D("9.90") for e in env.history.events("FICTIF-P1"))
+
+
+def test_public_stock_status_follows_engine_stock_registry() -> None:
+    """E2E-12 : « stock local » déclaré sans stock réel => rupture ; nouvelle fiche en brouillon."""
+    env = Env()
+    env.sync.stock = StockRegistry(clock=lambda: env.now)  # aucun stock local
+    p1 = item_for(env.cycle())
+    assert p1.plan_outcome == PlanOutcome.SEND_DRAFT.value
+    payload = env.audit.events(action="shopify.dry_run")[-1].payload["variables"]["input"]
+    assert "statut:rupture" in payload["tags"] and "statut:stock-local" not in payload["tags"]
+    env2 = Env()  # 6 unités reçues
+    assert item_for(env2.cycle()).plan_outcome == PlanOutcome.SEND_ACTIVE.value
+
+
+def test_quarantined_listing_is_unpublished_without_current_price() -> None:
+    """SEC-09 : dépublication protectrice possible sans prix courant connu."""
+    env = Env()
+    env.incidents.open(cause="FICTIF anomalie de prix", code=IncidentCode.INC_01, product_key="FICTIF-P1",
+                       actor="agent-12-qa")
+    item = listing(shopify_product_id="gid://shopify/Product/7", shopify_status=ShopStatus.ACTIVE, approved=True)
+    p1 = item_for(env.cycle(context(item), dry_run=False))
+    assert p1.plan_outcome == PlanOutcome.UNPUBLISH.value and p1.written
+    assert env.shop.applied[-1] == {"productSet": {"status": "DRAFT"}}
+
+
+def test_global_dry_run_switch_blocks_real_cycle_in_client() -> None:
+    """SEC-10 : client en simulation (POKESHOP_DRY_RUN=true) => aucune écriture, même cycle dry_run=False."""
+    env = Env()
+    env.client.dry_run = True
+    report = env.cycle(dry_run=False)
+    assert not item_for(report).written and env.shop.requests == []

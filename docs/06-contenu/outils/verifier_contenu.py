@@ -4,15 +4,20 @@
 1. Documents .md : dernière section « Validation humaine requise ».
 2. Calendrier : synchronisé avec le générateur ; colonnes Notion ; dates dans les 90 jours ; aucune
    « nouveauté » ni alerte de stock avant l'ouverture ; 1 guide + 1 nouveauté + 1 preuve de service par
-   semaine après l'ouverture (hors semaine de Noël) ; au plus un récapitulatif email par semaine ;
-   les 15 sujets planifiés ; aucune accroche avec prix, urgence ou promesse interdite.
+   semaine après l'ouverture, chaque semaine sans exception (BP §9 : 3 publications par semaine) ; au plus
+   un récapitulatif email par semaine ; les 15 sujets planifiés ; aucune accroche avec prix, urgence,
+   promesse interdite ou affirmation inexacte.
 3. 15 sujets : S01 à S15, chacun avec angle, hook, plan, format, visuels réels, CTA.
 4. Scripts vidéo : 8 scripts, plans contigus depuis 0 s, durée annoncée = durée des plans, 20 à 45 s.
 5. Emails : synchronisés avec la source ; HTML bien formé, sans script/style/var() ; aucun terme interne,
    EAN, prix en dur, urgence ou promesse ; mention d'indépendance et identité dans chaque pied ;
-   préférences et désinscription dans chaque email marketing ; champs {{CHAMP}} connus du registre ;
-   syntaxe propre au canal (n8n ou Liquid).
+   désinscription dans chaque email marketing, préférences dans ceux envoyés aux inscrits des alertes, motif
+   d'envoi conforme au segment ; champs {{CHAMP}} connus du registre ; syntaxe propre au canal (n8n ou Liquid),
+   expressions n8n intactes (« $json » en minuscules) ; aucune affirmation inexacte (réponse humaine
+   systématique, contenu des boîtes vérifié, limite « par commande »).
 6. Publicité, créateurs, SEO : éléments obligatoires présents ; aucun volume de recherche chiffré.
+7. Textes réutilisables (ton, sujets, scripts, créateurs, SEO) : champs {{MAJUSCULES}} déclarés dans le registre
+   légal ou la landing, ou variables produit de VARIABLES_CONTENU ; gabarits du ton sans affirmation inexacte.
 
 Usage : python docs/06-contenu/outils/verifier_contenu.py   (code 1 si erreur)
 """
@@ -36,12 +41,18 @@ sys.path.insert(0, str(REPO / "site" / "outils"))
 import generer_calendrier as gc  # noqa: E402
 import generer_emails as ge  # noqa: E402
 import yaml  # noqa: E402
-from verifier_site import EAN_RE, PROMESSES_RE, TERMES_INTERNES, URGENCE_RE, analyser  # noqa: E402
+from verifier_site import AFFIRMATIONS_INEXACTES, EAN_RE, PROMESSES_RE, TERMES_INTERNES, URGENCE_RE, analyser  # noqa: E402
 
 PRIX_EN_DUR_RE = re.compile(r"CHF\s*\d|\d+[.,]\d{2}\s*CHF")
 CHAMPS_HORS_REGISTRE = {"URL_LOGO_PNG"}
 MENTION_COURTE = "Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus."
 CHAMPS_SUJET = ("**Angle**", "**Hook**", "**Plan**", "**Format**", "**Visuels réels nécessaires**", "**CTA**")
+#: Expression n8n valide : « {{ $json.nom }} » en minuscules (n8n est sensible à la casse : « $JSON » n'existe pas).
+EXPRESSION_N8N_RE = re.compile(r"\{\{\s*\$[^}]*\}\}")
+EXPRESSION_N8N_VALIDE_RE = re.compile(r"\{\{ \$json\.[a-z_][a-z0-9_]* \}\}")
+#: Variables propres à un produit ou à un message (pas des règles) admises dans les textes réutilisables.
+VARIABLES_CONTENU = frozenset({"EXTENSION", "DATE_SORTIE", "CONTENU_VALIDE", "PRODUIT", "NOUVELLE_DATE", "DATE_ANNONCE"})
+DOCS_REUTILISABLES = ("TON_EDITORIAL.md", "15_SUJETS.md", "SCRIPTS_VIDEO.md", "BRIEF_CREATEURS.md", "SEO.md")
 VOLUME_RE = re.compile(r"\d[\d'  ]*\s*(recherches|requêtes|searches)\b|volume\s*(mensuel)?\s*:\s*\d", re.IGNORECASE)
 
 
@@ -89,7 +100,7 @@ def verifier_calendrier(texte: str | None = None, *, controler_synchro: bool = T
             erreurs.append(f"ligne {i} : type ou pilier inconnu")
         texte_public = f"{lg['Nom']} {lg['Accroche']}"
         for motif, libelle in ((PRIX_EN_DUR_RE, "prix"), (URGENCE_RE, "fausse urgence"), (PROMESSES_RE, "promesse interdite"),
-                               (TERMES_INTERNES, "terme interne")):
+                               (TERMES_INTERNES, "terme interne"), *AFFIRMATIONS_INEXACTES):
             m = motif.search(texte_public)
             if m:
                 erreurs.append(f"ligne {i} : {libelle} « {m.group(0)} »")
@@ -108,10 +119,6 @@ def verifier_calendrier(texte: str | None = None, *, controler_synchro: bool = T
     for numero in range(semaine_ouverture, 14):
         s = f"S{numero}"
         liste = piliers.get(s, [])
-        if numero == 12:  # semaine de Noël : rythme réduit annoncé
-            if len(liste) < 2:
-                erreurs.append(f"{s} : moins de 2 publications")
-            continue
         for pilier in ("Guide", "Nouveauté accessible", "Preuve de service"):
             if pilier not in liste:
                 erreurs.append(f"{s} : pilier « {pilier} » absent")
@@ -173,12 +180,14 @@ def champs_registre() -> set[str]:
     return set(registre["champs"])
 
 
-def verifier_email(nom: str, contenu: str, canal: str, categorie: str, connus: set[str]) -> list[str]:
-    """Contrôles d'un modèle (HTML ou texte)."""
+def verifier_email(
+    nom: str, contenu: str, canal: str, categorie: str, connus: set[str], motif_pied: str | None = "alertes"
+) -> list[str]:
+    """Contrôles d'un modèle (HTML ou texte). ``motif_pied`` : motif d'envoi déclaré (emails marketing)."""
     erreurs = []
     corps = re.sub(r"<!--.*?-->", " ", contenu, flags=re.DOTALL)
     for motif, libelle in ((TERMES_INTERNES, "terme interne"), (EAN_RE, "EAN"), (URGENCE_RE, "fausse urgence"),
-                           (PROMESSES_RE, "promesse interdite"), (PRIX_EN_DUR_RE, "prix en dur")):
+                           (PROMESSES_RE, "promesse interdite"), (PRIX_EN_DUR_RE, "prix en dur"), *AFFIRMATIONS_INEXACTES):
         m = motif.search(corps)
         if m:
             erreurs.append(f"{nom} : {libelle} « {m.group(0)} »")
@@ -186,8 +195,17 @@ def verifier_email(nom: str, contenu: str, canal: str, categorie: str, connus: s
         erreurs.append(f"{nom} : mention d'indépendance absente")
     if "{{RAISON_SOCIALE}}" not in corps or "{{ADRESSE_POSTALE}}" not in corps:
         erreurs.append(f"{nom} : identité de l'exploitant absente du pied")
-    if categorie == "marketing" and ("url_desinscription" not in corps or "url_preferences" not in corps):
-        erreurs.append(f"{nom} : lien de désinscription ou de préférences absent (email marketing)")
+    if categorie == "marketing":
+        if "url_desinscription" not in corps:
+            erreurs.append(f"{nom} : lien de désinscription absent (email marketing)")
+        if motif_pied == "alertes" and "url_preferences" not in corps:
+            erreurs.append(f"{nom} : lien de préférences absent (email aux inscrits des alertes)")
+        if motif_pied != "alertes" and "inscrite à nos alertes" in corps:
+            erreurs.append(f"{nom} : motif d'envoi « inscrite à nos alertes » faux pour ce segment ({motif_pied})")
+    if canal == "n8n":
+        for expr in EXPRESSION_N8N_RE.findall(corps):
+            if not EXPRESSION_N8N_VALIDE_RE.fullmatch(expr):
+                erreurs.append(f"{nom} : expression n8n altérée « {expr} » (attendu « {{{{ $json.nom }}}} » en minuscules)")
     inconnus = sorted(set(ge.CHAMP_RE.findall(contenu)) - connus - CHAMPS_HORS_REGISTRE)
     if inconnus:
         erreurs.append(f"{nom} : champs hors registre {inconnus}")
@@ -228,7 +246,9 @@ def verifier_emails() -> list[str]:
     for e in source["emails"]:
         for chemin in (ge.EMAILS / "html" / f"{e['id']}.html", ge.EMAILS / "texte" / f"{e['id']}.txt"):
             if chemin.exists():
-                erreurs += verifier_email(chemin.name, chemin.read_text(encoding="utf-8"), e["canal"], e["categorie"], connus)
+                erreurs += verifier_email(
+                    chemin.name, chemin.read_text(encoding="utf-8"), e["canal"], e["categorie"], connus, e.get("motif_pied")
+                )
     if len(source["emails"]) < 13:
         erreurs.append("moins de 13 emails dans la source")
     return erreurs
@@ -255,6 +275,36 @@ def verifier_publicite_seo() -> list[str]:
     return erreurs
 
 
+def champs_landing() -> set[str]:
+    donnees = yaml.safe_load((REPO / "site" / "config" / "publication_landing.yaml").read_text(encoding="utf-8"))
+    return set(donnees["champs"])
+
+
+def verifier_textes_reutilisables(racine: Path = RACINE) -> list[str]:
+    """Champs {{MAJUSCULES}} déclarés ; gabarits du ton (§5) sans affirmation inexacte."""
+    erreurs = []
+    connus = champs_registre() | champs_landing() | VARIABLES_CONTENU
+    for nom in DOCS_REUTILISABLES:
+        chemin = racine / nom
+        if not chemin.exists():
+            continue
+        texte = chemin.read_text(encoding="utf-8")
+        for champ in sorted(set(ge.CHAMP_RE.findall(texte)) - connus):
+            erreurs.append(f"{nom} : champ {{{{{champ}}}}} absent du registre légal et des champs de la landing")
+    ton = racine / "TON_EDITORIAL.md"
+    if ton.exists():
+        texte = ton.read_text(encoding="utf-8")
+        m = re.search(r"^## 5\..*?(?=^## )", texte, re.MULTILINE | re.DOTALL)
+        gabarits = m.group(0) if m else ""
+        if not gabarits:
+            erreurs.append("TON_EDITORIAL.md : section « 5. Gabarits » introuvable")
+        for motif, libelle in AFFIRMATIONS_INEXACTES:
+            a = motif.search(gabarits)
+            if a:
+                erreurs.append(f"TON_EDITORIAL.md (gabarits) : {libelle} « {a.group(0)} »")
+    return erreurs
+
+
 def tout_verifier() -> dict[str, list[str]]:
     return {
         "documents": verifier_docs(),
@@ -263,6 +313,7 @@ def tout_verifier() -> dict[str, list[str]]:
         "scripts vidéo": verifier_scripts(),
         "emails": verifier_emails(),
         "publicité, créateurs, SEO": verifier_publicite_seo(),
+        "textes réutilisables": verifier_textes_reutilisables(),
     }
 
 

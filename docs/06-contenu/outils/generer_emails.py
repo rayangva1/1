@@ -115,6 +115,24 @@ def en_html(texte: str, r: Rendu) -> str:
     return _champs_fixes(t, r)
 
 
+EXPRESSION_RE = re.compile(r"\{\{.*?\}\}|\{%.*?%\}|\[\[.*?\]\]|⟦.*?⟧", re.DOTALL)
+
+
+def majuscules_hors_expressions(texte: str) -> str:
+    """Met le texte en majuscules sans toucher aux expressions ({{ $json.x }}, {% … %}, {{CHAMP}}, [[var]], ⟦…⟧).
+
+    Les expressions n8n et Liquid sont sensibles à la casse : « {{ $JSON.X }} » n'existe pas.
+    """
+    morceaux: list[str] = []
+    fin = 0
+    for m in EXPRESSION_RE.finditer(texte):
+        morceaux.append(texte[fin : m.start()].upper())
+        morceaux.append(m.group(0))
+        fin = m.end()
+    morceaux.append(texte[fin:].upper())
+    return "".join(morceaux)
+
+
 def en_texte(texte: str, r: Rendu) -> str:
     """Texte source → texte brut (liens « libellé : url »)."""
     t = LIEN_RE.sub(lambda m: f"{m.group(1)} : {m.group(2)}", str(texte))
@@ -336,8 +354,30 @@ def partiel_html(partiel: dict[str, Any], r: Rendu) -> str:
 
 
 # ----------------------------------------------------------------------------- pied de page
-def pied(categorie: str, r: Rendu, mode_texte: bool = False) -> list[str]:
-    """Lignes du pied de page selon la catégorie (texte source, converti ensuite)."""
+#: Motif d'envoi affiché dans le pied d'un email marketing (clé ``motif_pied`` de la source, obligatoire pour
+#: cette catégorie) : il doit décrire la base réelle du segment, jamais une inscription que la personne n'a pas faite.
+MOTIFS_PIED: dict[str, tuple[str, str]] = {
+    "alertes": (
+        "Vous recevez cet email parce que cette adresse est inscrite à nos alertes (inscription confirmée le [[date_consentement]]).",
+        "[Modifier mes préférences]([[url_preferences]]) · [Me désinscrire en un clic]([[url_desinscription]])",
+    ),
+    "client": (
+        "Vous recevez cet email parce que vous avez commandé chez nous et avez accepté nos emails, ou ne vous y êtes pas "
+        "opposé lors de votre commande.",
+        "[Me désinscrire en un clic]([[url_desinscription]])",
+    ),
+    "checkout": (
+        "Vous recevez cet email parce que vous avez accepté nos emails lors de votre passage en caisse le [[date_consentement]].",
+        "[Me désinscrire en un clic]([[url_desinscription]])",
+    ),
+}
+
+
+def pied(categorie: str, r: Rendu, mode_texte: bool = False, motif: str | None = None) -> list[str]:
+    """Lignes du pied de page selon la catégorie (texte source, converti ensuite).
+
+    Pour un email marketing, ``motif`` (clé de :data:`MOTIFS_PIED`) est obligatoire : sans motif connu, refus.
+    """
     identite = "{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}"
     mention = "Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus."
     contact = "Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}."
@@ -345,10 +385,10 @@ def pied(categorie: str, r: Rendu, mode_texte: bool = False) -> list[str]:
         return [contact, "Conditions de vente : {{URL_CGV}} · Livraison et retours : {{URL_RETOURS}}", identite, mention,
                 "Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité."]
     if categorie == "marketing":
-        return [contact, identite, mention,
-                "Vous recevez cet email parce que cette adresse est inscrite à nos alertes (inscription confirmée le [[date_consentement]]).",
-                "[Modifier mes préférences]([[url_preferences]]) · [Me désinscrire en un clic]([[url_desinscription]])",
-                "Confidentialité : {{URL_CONFIDENTIALITE}}"]
+        if motif not in MOTIFS_PIED:
+            raise EmailError(f"motif de pied inconnu ou absent pour un email marketing : {motif!r}")
+        raison, liens = MOTIFS_PIED[motif]
+        return [contact, identite, mention, raison, liens, "Confidentialité : {{URL_CONFIDENTIALITE}}"]
     if categorie == "avis":
         return [identite, mention,
                 "Vous recevez cet email parce que vous avez commandé chez nous, sans opposition de votre part à ce type de message. "
@@ -371,7 +411,7 @@ def document_html(email: dict[str, Any], r: Rendu) -> str:
     nom = _champs_fixes("{{NOM_BOUTIQUE}}", r)
     logo = _champs_fixes("{{URL_LOGO_PNG}}", r)
     blocs = "\n".join(bloc_html(b, r, email) for b in email["blocs"])
-    lignes_pied = "<br>".join(en_html(ligne, r) for ligne in pied(email["categorie"], r))
+    lignes_pied = "<br>".join(en_html(ligne, r) for ligne in pied(email["categorie"], r, motif=email.get("motif_pied")))
     variables = "\n".join(f"      - {v[0]} : {v[1]}" for v in email["variables"])
     entete = (
         f"  <!--\n    FICHIER GÉNÉRÉ par docs/06-contenu/outils/generer_emails.py depuis EMAILS/source/emails.yaml — ne pas modifier.\n"
@@ -423,7 +463,7 @@ def bloc_texte(bloc: dict[str, Any], r: Rendu) -> list[str]:
     """Rendu texte d'un bloc (liste de paragraphes)."""
     (type_bloc, valeur), = bloc.items()
     if type_bloc == "titre":
-        return [en_texte(valeur, r).upper()]
+        return [majuscules_hors_expressions(en_texte(valeur, r))]
     if type_bloc == "sous_titre":
         return [en_texte(valeur, r)]
     if type_bloc == "p":
@@ -469,7 +509,7 @@ def bloc_texte(bloc: dict[str, Any], r: Rendu) -> list[str]:
 def document_texte(email: dict[str, Any], r: Rendu) -> str:
     """Version texte d'un email."""
     paragraphes = [p for b in email["blocs"] for p in bloc_texte(b, r)]
-    pied_txt = [en_texte(ligne, r) for ligne in pied(email["categorie"], r)]
+    pied_txt = [en_texte(ligne, r) for ligne in pied(email["categorie"], r, motif=email.get("motif_pied"))]
     return f"Objet : {en_texte(email['objet'], r)}\n\n" + "\n\n".join(paragraphes) + "\n\n--\n" + "\n".join(pied_txt) + "\n"
 
 
@@ -491,7 +531,15 @@ def charger_source(chemin: Path = SOURCE) -> dict[str, Any]:
             erreurs.append(f"{e.get('id')} : catégorie inconnue {e.get('categorie')}")
         declarees = {v[0].split(".")[0] for v in e.get("variables", [])} | {"salutation"}
         texte = json.dumps(e.get("blocs", []), ensure_ascii=False) + e.get("objet", "") + e.get("pre_entete", "")
-        texte += json.dumps(pied(e.get("categorie", "transactionnel"), Rendu("n8n", {}, {})) if e.get("categorie") in CATEGORIES else [], ensure_ascii=False)
+        if e.get("categorie") == "marketing" and e.get("motif_pied") not in MOTIFS_PIED:
+            erreurs.append(f"{e.get('id')} : motif_pied obligatoire pour un email marketing ({sorted(MOTIFS_PIED)})")
+        elif e.get("motif_pied") == "alertes" and re.search(r"checkout|client", f"{e.get('segment', '')} {e.get('base', '')}", re.I):
+            # Un segment de clients ou de consentement au checkout n'est pas « inscrit à nos alertes ».
+            erreurs.append(f"{e.get('id')} : motif_pied « alertes » incohérent avec le segment ou la base (clients, checkout)")
+        elif e.get("categorie") != "marketing" and "motif_pied" in e:
+            erreurs.append(f"{e.get('id')} : motif_pied réservé aux emails marketing")
+        elif e.get("categorie") in CATEGORIES:
+            texte += json.dumps(pied(e["categorie"], Rendu("n8n", {}, {}), motif=e.get("motif_pied")), ensure_ascii=False)
         for nom in VAR_RE.findall(texte):
             racine = nom.split("|")[0].strip().split(".")[0]
             if racine not in declarees:

@@ -67,8 +67,12 @@ _PRICING_BOUNDS: dict[str, tuple[Decimal, Decimal]] = {
     "max_daily_price_change": (Decimal("0.001"), Decimal("0.50")),
     "price_anomaly_factor": (Decimal("1.5"), Decimal("1000")),
     "small_product_max_cost": (Decimal("0"), Decimal("500")),
+    "small_product_min_order_ttc": (Decimal("1"), Decimal("1000")),
+    "small_product_max_shipping_ttc": (Decimal("0"), Decimal("100")),
 }
 _OPTIONAL_PRICING = set(_PRICING_BOUNDS) - set(_REQUIRED_PRICING) | {"rounding_tiers"}
+_NULLABLE_PRICING = {"small_product_max_cost", "small_product_min_order_ttc", "small_product_max_shipping_ttc"}
+"""Clés dont la valeur ``null`` désactive une règle (petits produits)."""
 _STOCK_KEYS = set(StockParams.model_fields)
 _VAT_EFFECTIVE_BOUNDS = (Decimal("0.001"), Decimal("0.20"))
 
@@ -161,7 +165,7 @@ def _build_pricing(data: Mapping[str, Any], profile: VatMode, errors: list[str])
             if tiers is not None:
                 fields["rounding_tiers"] = tiers
             continue
-        if key == "small_product_max_cost" and value is None:
+        if key in _NULLABLE_PRICING and value is None:
             fields[key] = None
             continue
         dec = _dec(value, where, errors)

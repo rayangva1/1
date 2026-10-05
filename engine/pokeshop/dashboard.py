@@ -913,9 +913,12 @@ def _metric_display(metric: str, value: Decimal | None) -> str:
 REARM_INSTRUCTIONS: tuple[str, ...] = (
     "Seule la propriétaire réarme, depuis un canal direct (terminal ou formulaire authentifié), jamais via un "
     "agent, un workflow ou un chat.",
-    "Lire le rapport (valeur nette, cause), décider et écrire le motif (docs/00-pilotage/STOP_LOSS.md §5).",
+    "Lire le rapport (valeur nette, cause) et GET /stoploss/status : rearm_reference.net_worth_chf (valeur nette "
+    "de la photo) et rearm_reference.photo_sha256 ; décider et écrire le motif (docs/00-pilotage/STOP_LOSS.md §5).",
     "Appel : POST /stoploss/rearm avec les en-têtes X-Pokeshop-Token et X-Pokeshop-Owner-Token (votre jeton, "
-    'distinct) et le corps {"reason": "…", "rebase": true}. Un jeton erroné est refusé et journalisé.',
+    'distinct) et le corps {"reason": "…", "rebase": true, "reference_chf": "<rearm_reference.net_worth_chf>", '
+    '"photo_sha256": "<rearm_reference.photo_sha256>"} : vous attestez la valeur nette (écart > 1 CHF ou photo '
+    "remplacée => 409). Un jeton erroné est refusé et journalisé.",
     "L'autonomie reste au niveau 1 : la remonter est une décision distincte (POST /autonomy, un niveau à la fois).",
 )
 

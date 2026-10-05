@@ -43,6 +43,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT / "engine") not in sys.path:
     sys.path.insert(0, str(ROOT / "engine"))
 
+from pokeshop.pricing import round_up_retail  # noqa: E402
+from pokeshop.rules import load_rules  # noqa: E402
 from pokeshop.treasury import WeeklyInput  # noqa: E402
 
 OUT_DIR = Path(__file__).resolve().parent
@@ -620,6 +622,40 @@ def _sheet_breakeven(wb: Workbook) -> None:
     page_setup(ws)
 
 
+def _tier_points(x: str, step: Decimal, endings: Sequence[Decimal]) -> str:
+    """Plus petit point ``n × step + e`` ≥ x (n entier, e parmi ``endings``) en formule tableur."""
+    parts = [f"-INT(-(({x})-{e})/{step})*{step}+{e}" for e in endings]
+    return parts[0] if len(parts) == 1 else "MIN(" + ",".join(parts) + ")"
+
+
+def engine_retail_formula(c: str) -> str:
+    """Formule du prix public **du moteur** (COH-05) pour la colonne ``c`` de la feuille Prix plancher.
+
+    Prix rentable = MAX(plancher cible m, plancher 8 CHF pour une commande d'une unité), puis grille
+    ``rounding_tiers`` de ``config/pricing_rules.v1.yaml`` (même algorithme que
+    :func:`pokeshop.pricing.round_up_retail` : point de la tranche ≥ prix, sinon premier point de la
+    tranche suivante). La grille est lue dans le fichier de règles livré : classeur et moteur restent
+    alignés à chaque régénération.
+    """
+    tiers = load_rules().pricing.rounding_tiers
+    order_floor = f"({c}7+{c}9+{c}10+{c}11+{c}12+Plancher_CHF)/(1/(1+{c}14)-{c}8)"
+    p = f"ROUND(MAX({c}17,{order_floor}),6)"
+
+    def from_tier(i: int, x: str) -> str:
+        tier = tiers[i]
+        best = _tier_points(x, tier.step, tier.endings)
+        if i + 1 == len(tiers):
+            return best
+        upper = tiers[i + 1].min_price
+        overflow = round_up_retail(upper, tiers=tiers)  # premier point de la tranche suivante
+        return f"IF({best}<{upper},{best},{overflow})"
+
+    formula = from_tier(len(tiers) - 1, p)
+    for i in range(len(tiers) - 2, -1, -1):
+        formula = f"IF({p}<{tiers[i + 1].min_price},{from_tier(i, p)},{formula})"
+    return f'=IF(ISNUMBER({c}17),{formula},"n.c.")'
+
+
 def _sheet_floor_price(wb: Workbook) -> None:
     ws = wb.create_sheet(S_PRX)
     title(ws, "Prix plancher et contrôle de contribution (BP §4)",
@@ -658,20 +694,23 @@ def _sheet_floor_price(wb: Workbook) -> None:
         for c in ("B", "C"):
             put(ws, f"{c}{row}", formula.replace("{c}", c), fmt=fmt, border=BOX,
                 font=F_BOLD if row == 18 else F_BASE, fill=FILL_RESULT if row == 18 else None)
-    put(ws, "A19", "Pas d'arrondi du prix public", border=BOX)
-    inp(ws, "B19", 10, fmt=NF_CHF2, comment="BP : 208,79 → 209,90 implique un pas de 10 CHF et une terminaison 9,90.")
+    put(ws, "A19", "Lecture BP — pas d'arrondi du prix public", border=BOX)
+    inp(ws, "B19", 10, fmt=NF_CHF2, comment="BP : 208,79 → 209,90 implique un pas de 10 CHF et une terminaison 9,90. "
+        "Lecture du BP seulement : le moteur applique la grille par tranches (ligne 26).")
     put(ws, "C19", "=B19", fmt=NF_CHF2, border=BOX)
-    put(ws, "A20", "Terminaison du prix public", border=BOX)
+    put(ws, "A20", "Lecture BP — terminaison du prix public", border=BOX)
     inp(ws, "B20", 9.90, fmt=NF_CHF2)
     put(ws, "C20", "=B20", fmt=NF_CHF2, border=BOX)
-    put(ws, "A21", "Prix public arrondi vers le haut", font=F_BOLD, border=BOX)
+    put(ws, "A21", "Prix public — lecture BP (pas 10 / 9,90), différente du moteur v1", font=F_BOLD, border=BOX)
     for c in ("B", "C"):
         put(ws, f"{c}21", f"=ROUNDUP(({c}17-{c}20)/{c}19,0)*{c}19+{c}20", font=F_BOLD, fmt=NF_CHF2,
             fill=FILL_RESULT, border=BOX)
+    put(ws, "E21", "Concorde avec le moteur sur le cas BP seulement (coût 50 : 89,90 ici, 83,90 moteur)",
+        font=F_WARN, border=BOX)
     put(ws, "A22", "Lecture alternative « prochain X,90 » (pas de 1 CHF)", border=BOX)
     for c in ("B", "C"):
         put(ws, f"{c}22", f"=ROUNDUP(({c}17-0.9)/1,0)*1+0.9", fmt=NF_CHF2, border=BOX)
-    put(ws, "E22", "Ambiguïté BP/SPEC : règle d'arrondi à trancher", font=F_WARN, border=BOX)
+    put(ws, "E22", "Lectures du BP ; règle appliquée par le moteur : ligne 26", font=F_WARN, border=BOX)
     put(ws, "A23", "Valeur BP — prix plancher", border=BOX)
     bp(ws, "B23", 208.79, NF_CHF2)
     bp(ws, "C23", 207.28, NF_CHF2)
@@ -679,14 +718,22 @@ def _sheet_floor_price(wb: Workbook) -> None:
     bp(ws, "B24", 209.90, NF_CHF2)
     put(ws, "C24", "n.c.", font=F_SUB, border=BOX)
     put(ws, "A25", "Statut", font=F_BOLD, border=BOX)
-    put(ws, "B25", '=IF(AND(B18=B23,ROUND(B21,2)=B24),"OK — conforme BP","ÉCART")', font=F_BOLD, border=BOX)
+    put(ws, "B25", '=IF(AND(B18=B23,ROUND(B21,2)=B24,ROUND(B26,2)=B24),"OK — conforme BP","ÉCART")', font=F_BOLD,
+        border=BOX)
     put(ws, "C25", '=IF(C18=C23,"OK — conforme BP","ÉCART")', font=F_BOLD, border=BOX)
+    put(ws, "A26", "Prix public moteur v1 (grille rounding_tiers, prix rentable ≥ 8 CHF par commande)", font=F_BOLD,
+        border=BOX)
+    for c in ("B", "C"):
+        put(ws, f"{c}26", engine_retail_formula(c), font=F_BOLD, fmt=NF_CHF2, fill=FILL_RESULT, border=BOX)
+    put(ws, "D26", "CHF", border=BOX)
+    put(ws, "E26", "pokeshop.pricing (fait foi) : config/pricing_rules.v1.yaml, avant revérification", font=F_SUB,
+        border=BOX)
 
     section(ws, 27, "Contribution d'une vente unitaire à un prix donné (cas 1)", 5)
     header(ws, 28, ["Indicateur", "Prix testé", "Prix public arrondi", "BP à 199,90", "Statut (prix testé)"])
     put(ws, "A29", "Prix public TTC", border=BOX)
     inp(ws, "B29", 199.90, fmt=NF_CHF2)
-    put(ws, "C29", "=B21", fmt=NF_CHF2, border=BOX)
+    put(ws, "C29", "=B26", fmt=NF_CHF2, border=BOX)
     bp(ws, "D29", 199.90, NF_CHF2)
     lines = [
         (30, "Vente nette = P / (1 + t)", "={c}29/(1+$B$14)", NF_CHF2, 184.92),

@@ -7,7 +7,7 @@ File d'attente des décisions, au format `docs/08-agents/modeles/FICHE_EXCEPTION
 | Règle | Détail |
 |---|---|
 | Nom de fichier | `EXC-AAAAMMJJ-NN_<agent>.md` (NN = numéro d'ordre du jour, à partir de 01) |
-| Niveaux | E1 : le chef de projet tranche dans le mandat · E2 : la propriétaire décide (48 h ; 24 h pour un gate ou un achat) · E3 : gel immédiat par `qa-conformite`, alerte |
+| Niveaux | E1 : le chef de projet tranche dans le mandat · E2 : la propriétaire décide (24 h pour un gate ou toute dépense hors mandat ; 48 h sinon) · E3 : gel immédiat par `qa-conformite`, alerte |
 | Statuts | `OUVERTE` → `TRIÉE` → `EN DÉCISION` → `DÉCIDÉE` → `CLOSE` ; ou `EXPIRÉE` (statu quo sûr appliqué) |
 | Décision | Écrite dans la fiche : qui, quand, option, conditions. Une fiche ne modifie jamais le mandat |
 | Contenu interdit | Secret, identifiant, IBAN, document d'identité, donnée personnelle de client |

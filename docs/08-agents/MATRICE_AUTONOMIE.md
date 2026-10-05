@@ -15,7 +15,7 @@
 
 **Règles de changement de niveau**
 
-- **Monter** : uniquement la propriétaire, sur dossier de A-01 et certificat de recette de A-12 (RACI L09). Jamais un agent.
+- **Monter** : uniquement la propriétaire, sur dossier de A-01 et certificat de recette de A-12 (RACI L09), par `POST /autonomy` avec **son** jeton (`X-Pokeshop-Owner-Token`). Jamais un agent : le jeton nommé d'un agent ne permet que d'abaisser le niveau.
 - **Descendre** : automatique au niveau précédent après un incident critique (BP §13) ; **au niveau 1** si le stop-loss global se déclenche ; A-12 peut rétrograder à tout moment par précaution (gel conservatoire).
 - **Portée** : le BP décrit un niveau unique pour tout le système. Proposition (écart, voir §7) : permettre à la propriétaire d'activer un niveau **par domaine** (ex. niveau 3 « campagnes » sans « publication automatique de nouveaux produits »). Tant que ce n'est pas tranché, le niveau est **global**.
 
@@ -178,7 +178,7 @@
 |---|---|---|---|
 | `CONN-PAYPAL` | Paiement par passerelle ; lecture des transactions | 1 (après B05) | Par transaction et par mois : mandat ; à défaut 0 CHF |
 | `CONN-DB-LECTURE` | Lecture | 1 | — |
-| `CONN-API-MOTEUR` | Calculs | 1 | — |
+| `CONN-API-MOTEUR` (jeton `agent-05-finance-pricing`) | Calculs ; dépôt de la photo d'activité et du solde PayPal relevé ; étoile polaire et coûts historiques ; jamais de demande de dépense à son nom | 1 | — |
 
 ### A-06 — Direction artistique
 
@@ -314,7 +314,7 @@
 | Connecteur | Mode | Niveau min. | Plafond |
 |---|---|---|---|
 | `CONN-TRANSPORTEUR` | Étiquettes et suivi des commandes payées | 2 | Affranchissement selon le tarif du contrat transporteur |
-| `CONN-API-MOTEUR` | Stock, réservations, propositions de réassort | 1 | — |
+| `CONN-API-MOTEUR` (jeton `agent-11-operations-sav`) | Stock, réservations, propositions de réassort enregistrées, demandes de dépense (`/mandate/check`) | 1 | — |
 | Dépense | Emballages (via A-05) ; réassorts au niveau 4 | 1 ; 4 | Mandat, enveloppe BP de 300 CHF pour les emballages ; réassort : enveloppe décidée à C17 |
 
 ### A-12 — QA et conformité
@@ -336,7 +336,7 @@
 
 | Connecteur | Mode | Niveau min. | Plafond |
 |---|---|---|---|
-| `CONN-API-MOTEUR` | `/incidents` (quarantaine, suspension) | 1 | — |
+| `CONN-API-MOTEUR` (jeton `agent-12-qa-conformite`) | `/incidents` (quarantaine, suspension, test de correction), `/stoploss/freeze`, `/autonomy` (baisse seulement), `/mandate/revoke`, lecture `/stoploss/status` | 1 | — |
 | `CONN-N8N` | Suspension de workflow | 1 | — |
 | `CONN-DB-LECTURE`, `CONN-PAYPAL` (lecture) | Contrôle | 1 | — |
 | Dépense | — | — | 0 CHF |
@@ -358,11 +358,13 @@
 | Prix public | A-05 (moteur) | A-07 (workflow) | A-12 (prix publié = prix validé) |
 | Publication d'une fiche | A-04, A-08 | A-07 | A-12 (aucun champ interne) |
 | Campagne pub | A-10 | Plateforme, dans le plafond | A-05 (CAC) et A-12 (stop-loss pub) |
-| Niveau d'autonomie | A-01 (dossier) | Propriétaire | A-12 (recette) |
+| Niveau d'autonomie | A-01 (dossier) | Propriétaire (son jeton) | A-12 (recette) |
+| Chiffres décisifs d'une dépense (photo de trésorerie, solde PayPal) | A-05 ou un workflow n8n, chacun avec son jeton nommé | Moteur (`/mandate/check` lit ses registres ; une trésorerie jointe à la demande est ignorée) | A-12 ; jamais déposés par le jeton de l'agent qui demande la dépense (sinon validation humaine) |
+| Taux de change de référence, point zéro, réarmement | A-05 (dossier chiffré) | Propriétaire (son jeton) | A-12 (journal) |
 
 ## 6. Ce qu'aucun agent ne fait, à aucun niveau
 
-Ouvrir un compte, signer, passer un contrat, faire un KYC, choisir le statut TVA, valider l'identité de marque, réarmer le stop-loss global, réceptionner ou contrôler physiquement la marchandise, préparer un colis, tourner une vidéo réelle. Ces actes restent à la propriétaire (`docs/00-pilotage/INTERVENTIONS_HUMAINES.md`, catégories A, B et C).
+Ouvrir un compte, signer, passer un contrat, faire un KYC, choisir le statut TVA, valider l'identité de marque, réarmer le stop-loss global, poser le point zéro, signer un seuil, saisir un taux de change de référence, détenir le jeton de la propriétaire ou se déclarer « propriétaire », lire un secret (`.env`, coffre, variables d'environnement : règles `deny` de `.claude/settings.json`), réceptionner ou contrôler physiquement la marchandise, préparer un colis, tourner une vidéo réelle. Ces actes restent à la propriétaire (`docs/00-pilotage/INTERVENTIONS_HUMAINES.md`, catégories A, B et C).
 
 ## 7. Points ouverts
 

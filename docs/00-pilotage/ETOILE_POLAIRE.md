@@ -24,14 +24,14 @@ Elle répond à une seule question : **l'activité a-t-elle, à date, rapporté 
 | Poste | Ce qu'on compte | Source dans le système | Piège évité |
 |---|---|---|---|
 | Ventes nettes HT | Montant payé (produits + port facturé) − remises, hors TVA (TTC si l'entité n'est pas assujettie) ; remboursements en négatif | `record_order` / `record_basket`, `record_refund` | Une **précommande encaissée** n'est pas une vente tant qu'elle n'est pas livrée : c'est du cash, pas de la contribution |
-| Coût historique | Coût rendu des unités vendues au CMP, retours remis en stock déduits, casse, écart de facture sur unités déjà vendues | **Uniquement** le journal de `HistoricalCostLedger` (`sync_cost_ledger`) | Jamais le **coût de remplacement** : une offre moins chère ne change pas le coût des unités déjà achetées (BP §4) |
+| Coût historique | Coût rendu des unités vendues au CMP, retours remis en stock déduits (au coût de la vente d'origine), casse, écart de facture sur unités déjà vendues | **Uniquement** le registre de coûts interne du moteur : `POST /costs/movements` (réception d'un lot au coût rendu, vente, retour, casse, facture) → `HistoricalCostLedger` → `sync_cost_ledger`. Une sortie n'a **jamais** de coût déclaré : le moteur la sort au CMP. `POST /northstar/entries` (et `NorthStarLedger.record` / `add_entries`) **refuse** tout coût historique et toute source `HistoricalCostLedger` : l'étiquette n'est pas déclarable | Jamais le **coût de remplacement** : une offre moins chère ne change pas le coût des unités déjà achetées (BP §4) ; jamais un « avoir » inventé |
 | Paiement | Frais PSP réels (r × montant + b), frais remboursés seulement s'ils le sont vraiment | Commande, remboursement, abonnement PSP | — |
 | Logistique | Préparation, emballage, port réel des commandes | Commande ou dépense | Le port facturé n'est pas une marge (BP §3) : il est dans les ventes, le port réel ici |
 | SAV | Dépenses réelles : port retour, geste commercial, remplacement | `record_expense(…, Post.AFTER_SALES, …)` | La provision R du moteur de prix sert à fixer les prix, pas à remplir ce poste (sinon double compte) |
 | Acquisition | Publicité réellement dépensée, créateurs (produits offerts et commissions compris, BP §9) | `record_expense(…, Post.ACQUISITION, …)` | Le CAC attribué A du moteur de prix est une hypothèse, pas une dépense |
 | Charges fixes | Site, apps, comptabilité, assurance, stockage (400 CHF/mois au BP §3) | `accrue_fixed_costs` (réparti au jour, somme exacte au centime) | Les compter dès la semaine 1, même sans vente |
 
-Montants au centime exact (un montant à 3 décimales est refusé), écritures idempotentes (aucun double comptage si un import est rejoué), semaines du lundi au dimanche, fuseau Europe/Zurich.
+Montants au centime exact (un montant à 3 décimales est refusé), écritures idempotentes (aucun double comptage si un import est rejoué), semaines du lundi au dimanche, fuseau Europe/Zurich. Un lot d'écritures (`POST /northstar/entries`) est **atomique** : une écriture refusée et rien n'est enregistré ; chaque lot accepté est journalisé avec l'acteur déduit du jeton.
 
 ## 3. Exemple chiffré (FICTIF, calculé à la main et vérifié par les tests)
 
@@ -74,7 +74,7 @@ Lecture : la contribution **avant charges fixes** est positive en W46 (11,14 CHF
 
 **Préparée par l'agent 05, lue par la propriétaire.**
 
-1. Synchroniser le coût historique (`sync_cost_ledger` pour chaque référence), les commandes, remboursements et dépenses de la semaine close.
+1. Vérifier que le registre de coûts interne a reçu les mouvements de la semaine close (`POST /costs/movements` : réceptions au coût rendu, ventes, retours, casse, factures ; le moteur synchronise lui-même le coût des ventes), puis les commandes, remboursements et dépenses (`POST /northstar/entries`, sans coût historique).
 2. Produire le tableau : `NorthStarLedger.weekly_report(...).render_markdown()`.
 3. Répondre par écrit aux quatre questions :
 
@@ -112,15 +112,18 @@ Action décidée : … | Effet attendu : … CHF/semaine | Revue : semaine suiva
 ## 6. Liens avec les stop-loss et les gates
 
 - **Stop-loss temps** : il utilise la contribution **après publicité, avant charges fixes**, sur la fenêtre de validation (`NorthStarLedger.totals(début, fin).contribution_after_acquisition`), avec le seuil « > 0 » du BP §1.
-- **Stop-loss global** : il ne se calcule **pas** sur la contribution cumulée mais sur la **valeur nette** (cash + stock prudent + créances − dettes) comparée au capital engagé, parce que le stock acheté et non vendu est une perte potentielle que la contribution ne voit pas encore. La projection de l'agent finance (`pokeshop.forecast.north_star`) en donne une approximation, qui exclut les coûts de lancement : pour que les deux mesures partent du même point, poser le **point zéro** à l'ouverture (`docs/00-pilotage/STOP_LOSS.md` §5).
+- **Stop-loss global** (définition unique : `docs/00-pilotage/STOP_LOSS.md` §3) : il ne se calcule **pas** sur la contribution cumulée mais sur la **valeur nette** (cash + stock prudent + créances − dettes) comparée au capital engagé de référence, parce que le stock acheté et non vendu est une perte potentielle que la contribution ne voit pas encore. Gel si la perte atteint 20 % de la référence : **840 CHF** avec le point zéro recommandé (option A, 4 200 CHF, posé à J3 avec la décision de budget C03). La projection de l'agent finance (`pokeshop.forecast.north_star`) n'en est qu'une approximation, qui exclut les coûts de lancement : elle se lance avec `capital_engaged=BP_STOPLOSS_REFERENCE` (4 200 CHF ⇒ seuil 840 CHF). Un seuil « −1 600 CHF de contribution cumulée » n'est pas le stop-loss du projet.
 - **Plan vs réalisé** : `NorthStarReport.to_forecast_weeks()` convertit le réalisé au format de la projection pour comparer semaine par semaine.
 
 ```python
-from pokeshop.northstar import NorthStarLedger, Post
+from decimal import Decimal
+from pokeshop.northstar import CostMovement, CostRegister, NorthStarLedger, Post
 
 ledger = NorthStarLedger()
+costs = CostRegister(ledger)                                 # registre de coûts interne (seule source du coût)
 ledger.record_basket("CMD-0001", paid_at, basket)          # ventes, paiement, logistique
-ledger.sync_cost_ledger(historical_cost_ledger)              # coût historique (seule source)
+costs.apply(CostMovement(kind="RECEIPT", product_key="P1", at=received_at, ref="LOT-1", qty=4, unit_cost=Decimal("140")))
+costs.apply(CostMovement(kind="ISSUE", product_key="P1", at=paid_at, ref="CMD-0001", qty=1))  # coût au CMP
 ledger.record_expense("PUB-2026-11-08", day, Post.ACQUISITION, "20.00")
 ledger.accrue_fixed_costs("400", 2026, 11)
 print(ledger.weekly_report().render_markdown())

@@ -56,9 +56,9 @@
               "type": "boolean"
             },
             {
-              "id": "10efb56e-d202-58c0-825c-a59ef6790d3c",
+              "id": "a0f68544-e22e-54c2-a97a-fecdbb3a64b2",
               "name": "workflow",
-              "value": "05-digest",
+              "value": "digest",
               "type": "string"
             },
             {
@@ -169,14 +169,70 @@
     },
     {
       "parameters": {
-        "jsCode": "// Affichage CHF suisse romand à partir d'une chaîne décimale du moteur (aucun float).\nfunction fmt(value) {\n  if (value === undefined || value === null || value === '') return '—';\n  const text = String(value);\n  const negative = text.startsWith('-');\n  const [intPart, frac = ''] = text.replace('-', '').split('.');\n  const grouped = intPart.replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');\n  return `${negative ? '−' : ''}${grouped},${(frac + '00').slice(0, 2)} CHF`;\n}\n\n// Digest quotidien : 1. étoile polaire (GET /northstar), 2. stop-loss (GET /stoploss/status), puis le jour.\nconst ns = $('Étoile polaire (GET /northstar)').first().json;\nconst sl = $('État du stop-loss (GET /stoploss/status)').first().json;\nconst db = ($('Tableau de bord du jour (GET /dashboard/daily)').first().json || {}).report || {};\nconst rows = Array.isArray(ns.rows) ? ns.rows : [];\nconst last = rows.length ? rows[rows.length - 1] : null;\nconst north = db.north_star || {};\nconst out = [];\nout.push(`1. ÉTOILE POLAIRE — contribution nette cumulée : ${fmt(ns.cumulative)}`);\nif (last) {\n  out.push(`   Semaine ${last.iso_week} : ${fmt(last.net_contribution)} (delta vs semaine précédente : ${fmt(last.delta_vs_previous_week)})`);\n} else {\n  out.push('   Aucune écriture enregistrée (aucune vente ni charge).');\n}\nif (north.average_4_weeks !== undefined && north.average_4_weeks !== null) {\n  out.push(`   Moyenne des ${north.average_weeks_count} dernière(s) semaine(s) close(s) : ${fmt(north.average_4_weeks)} ; tendance ${String(north.trend || '').toLowerCase()}`);\n}\nconst LEVELS = { PRODUCT: 'produit', EXTENSION: 'extension', ADS: 'pub', CASH: 'cash', GLOBAL: 'GLOBAL', TIME: 'temps' };\nconst triggers = Array.isArray(sl.triggers) ? sl.triggers : [];\nif (!sl.available) {\n  out.push(`2. STOP-LOSS : NON ÉVALUÉ (${sl.error || 'photo absente'}) — dépenses refusées par défaut.${sl.global_frozen ? ' GEL GLOBAL VERROUILLÉ.' : ''}`);\n} else if (sl.global_frozen) {\n  out.push('2. STOP-LOSS : GEL GLOBAL — tout est gelé, autonomie niveau 1 ; réarmement par vous seule (POST /stoploss/rearm, votre jeton).');\n} else if (triggers.length) {\n  out.push(`2. STOP-LOSS : ${triggers.length} déclencheur(s)`);\n  triggers.forEach((t) => out.push(`   - ${LEVELS[t.level] || t.level} / ${t.scope} : ${t.reason}`));\n} else {\n  out.push('2. STOP-LOSS : aucun déclencheur.');\n}\nconst kpis = {};\n(db.kpis || []).forEach((k) => { kpis[k.key] = k; });\nconst order = ['ventes_payees', 'contribution_jour', 'cash_disponible', 'commandes_a_preparer', 'ruptures_locales', 'offres_perimees', 'incidents_ouverts'];\nlet n = 3;\norder.forEach((key) => {\n  const k = kpis[key];\n  if (!k) return;\n  out.push(`${n}. ${k.label} : ${k.display} [${k.status}]${k.detail ? ' — ' + k.detail : ''}`);\n  n += 1;\n});\nconst decisions = Array.isArray(db.decisions) ? db.decisions : [];\nout.push(`${n}. DÉCISIONS ATTENDUES (oui / non, avant l'échéance ; sans réponse : statu quo sûr) :`);\nif (!decisions.length) out.push('   aucune');\ndecisions.forEach((d, i) => out.push(`   ${String.fromCharCode(97 + (i % 26))}) ${d.label}${d.due ? ' — avant le ' + d.due : ''}`));\nif (Array.isArray(db.unavailable) && db.unavailable.length) out.push(`Sources non branchées : ${db.unavailable.join(' ; ')}`);\nout.push('');\nout.push('INTERNE — contient coûts et marges : ne jamais transférer ni publier.');\nconst day = db.period_label || '';\nreturn [{ json: { sujet: `DIGEST {{NOM_BOUTIQUE}} — ${day} — cumul ${fmt(ns.cumulative)}`, texte: out.join('\\n') } }];\n"
+        "method": "GET",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/sync/history?limit=5",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b8591494-a82c-5c11-9a0b-3e3e059a7c8b",
+      "name": "Cycles de synchronisation (GET /sync/history)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/health",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "4a30604f-d765-5546-a2a2-f60fc873f185",
+      "name": "État du moteur (GET /health)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Affichage CHF suisse romand à partir d'une chaîne décimale du moteur (aucun float).\nfunction fmt(value) {\n  if (value === undefined || value === null || value === '') return '—';\n  const text = String(value);\n  const negative = text.startsWith('-');\n  const [intPart, frac = ''] = text.replace('-', '').split('.');\n  const grouped = intPart.replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');\n  return `${negative ? '−' : ''}${grouped},${(frac + '00').slice(0, 2)} CHF`;\n}\n\n// Digest quotidien : 1. étoile polaire (GET /northstar), 2. stop-loss (GET /stoploss/status), puis le jour.\nconst ns = $('Étoile polaire (GET /northstar)').first().json;\nconst sl = $('État du stop-loss (GET /stoploss/status)').first().json;\nconst db = ($('Tableau de bord du jour (GET /dashboard/daily)').first().json || {}).report || {};\nconst hist = $('Cycles de synchronisation (GET /sync/history)').first().json || {};\nconst health = $('État du moteur (GET /health)').first().json || {};\nconst rows = Array.isArray(ns.rows) ? ns.rows : [];\nconst last = rows.length ? rows[rows.length - 1] : null;\nconst north = db.north_star || {};\nconst out = [];\nout.push(`1. ÉTOILE POLAIRE — contribution nette cumulée : ${fmt(ns.cumulative)}`);\nif (last) {\n  out.push(`   Semaine ${last.iso_week} : ${fmt(last.net_contribution)} (delta vs semaine précédente : ${fmt(last.delta_vs_previous_week)})`);\n} else {\n  out.push('   Aucune écriture enregistrée (aucune vente ni charge).');\n}\nif (north.average_4_weeks !== undefined && north.average_4_weeks !== null) {\n  out.push(`   Moyenne des ${north.average_weeks_count} dernière(s) semaine(s) close(s) : ${fmt(north.average_4_weeks)} ; tendance ${String(north.trend || '').toLowerCase()}`);\n}\nconst LEVELS = { PRODUCT: 'produit', EXTENSION: 'extension', ADS: 'pub', CASH: 'cash', GLOBAL: 'GLOBAL', TIME: 'temps' };\nconst triggers = Array.isArray(sl.triggers) ? sl.triggers : [];\nif (!sl.available) {\n  out.push(`2. STOP-LOSS : NON ÉVALUÉ (${sl.error || 'photo absente'}) — dépenses refusées par défaut.${sl.global_frozen ? ' GEL GLOBAL VERROUILLÉ.' : ''}`);\n} else if (sl.global_frozen) {\n  out.push('2. STOP-LOSS : GEL GLOBAL — tout est gelé, autonomie niveau 1 ; réarmement par vous seule (POST /stoploss/rearm, votre jeton).');\n} else if (triggers.length) {\n  out.push(`2. STOP-LOSS : ${triggers.length} déclencheur(s)`);\n  triggers.forEach((t) => out.push(`   - ${LEVELS[t.level] || t.level} / ${t.scope} : ${t.reason}`));\n} else {\n  out.push('2. STOP-LOSS : aucun déclencheur.');\n}\nconst notif = health.notifications || {};\nif (notif.real_time_alerts !== true) {\n  out.push(`   ALERTES TEMPS RÉEL INACTIVES (${notif.webhook_configured ? 'POKESHOP_NOTIFY_DRY_RUN=true' : 'webhook n8n non configuré'}) : un incident critique ne vous parvient que par ce digest.`);\n}\nconst unreadable = (health.persistence || {}).unreadable;\nif (Array.isArray(unreadable) && unreadable.length) out.push(`   JOURNAUX D'ÉTAT ILLISIBLES (${unreadable.join(', ')}) : service gelé jusqu'à réparation.`);\nconst kpis = {};\n(db.kpis || []).forEach((k) => { kpis[k.key] = k; });\nconst order = ['ventes_payees', 'contribution_jour', 'cash_disponible', 'commandes_a_preparer', 'ruptures_locales', 'offres_perimees', 'incidents_ouverts'];\nlet n = 3;\norder.forEach((key) => {\n  const k = kpis[key];\n  if (!k) return;\n  out.push(`${n}. ${k.label} : ${k.display} [${k.status}]${k.detail ? ' — ' + k.detail : ''}`);\n  n += 1;\n});\nconst runs = Array.isArray(hist.runs) ? hist.runs : [];\nconst lastRun = runs.length ? runs[runs.length - 1] : null;\nout.push(`${n}. Synchronisation fournisseurs : ${hist.consecutive_clean_runs === undefined ? '—' : hist.consecutive_clean_runs} cycle(s) propre(s) consécutif(s) sur ${hist.target || 20} visés`\n  + (lastRun ? ` ; dernier cycle ${lastRun.status} (${lastRun.supplier_id}, ${lastRun.offers_costed} offre(s) évaluée(s))` : ' ; aucun cycle'));\nn += 1;\nconst decisions = Array.isArray(db.decisions) ? db.decisions : [];\nout.push(`${n}. DÉCISIONS ATTENDUES (oui / non, avant l'échéance ; sans réponse : statu quo sûr) :`);\nif (!decisions.length) out.push('   aucune');\ndecisions.forEach((d, i) => out.push(`   ${String.fromCharCode(97 + (i % 26))}) ${d.label}${d.due ? ' — avant le ' + d.due : ''}`));\nif (Array.isArray(db.unavailable) && db.unavailable.length) out.push(`Sources non branchées : ${db.unavailable.join(' ; ')}`);\nout.push('');\nout.push('INTERNE — contient coûts et marges : ne jamais transférer ni publier.');\nconst day = db.period_label || '';\nreturn [{ json: { sujet: `DIGEST {{NOM_BOUTIQUE}} — ${day} — cumul ${fmt(ns.cumulative)}`, texte: out.join('\\n') } }];\n"
       },
       "id": "74b3df05-26a2-5954-bd83-0e7a6426ef35",
       "name": "Composer le digest (étoile polaire en premier)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1400,
+        1960,
         0
       ]
     },
@@ -196,7 +252,7 @@
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        1680,
+        2240,
         -80
       ],
       "credentials": {
@@ -225,7 +281,7 @@
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.2,
       "position": [
-        1680,
+        2240,
         80
       ],
       "credentials": {
@@ -285,6 +341,28 @@
       ]
     },
     "Tableau de bord du jour (GET /dashboard/daily)": {
+      "main": [
+        [
+          {
+            "node": "Cycles de synchronisation (GET /sync/history)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cycles de synchronisation (GET /sync/history)": {
+      "main": [
+        [
+          {
+            "node": "État du moteur (GET /health)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "État du moteur (GET /health)": {
       "main": [
         [
           {

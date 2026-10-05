@@ -5,9 +5,9 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## 06 — Automatisations marketing (BP §9, docs/06-contenu/EMAILS)\n- **Nouveau stock local** (réception contrôlée) → alerte aux inscrits **consentants** (email 04), une par produit et par personne.\n  **Garde-fous** : campagne stoppée si stock vendable < seuil, référence sous stop-loss produit (marge insuffisante),\n  gel global ou stop-loss non évaluable.\n- **Commande expédiée** → suivi (email 07 envoyé par Shopify ; alerte si aucun numéro de suivi).\n- **Livraison** → demande d'avis (email 11) **7 jours** après (hypothèse), une seule, sans réclamation ni opposition.\n- **Désinscription** → propagée à **tous** les outils (emailing, Shopify) ; page `desinscription.html`.\nAucun prix ni donnée interne dans un email : titre, statut et prix lus sur la page publique au moment de l'envoi.\n**Activation** : désinscription AVANT tout envoi ; envois au niveau 3. Pas de SMS ni d'email non sollicité.\n**Validation humaine requise** : outil d'emailing (B04), seuil de stock d'alerte, délai d'avis, notes juristes C2-C4.",
-        "height": 430,
-        "width": 700,
+        "content": "## 06 — Automatisations marketing (BP §9, docs/06-contenu/EMAILS)\n- **Réception contrôlée** → `POST /stock/receive` (stock local réel), puis alerte « nouveau stock local » aux inscrits\n  **consentants** (email 04). **Garde-fous** : incident ouvert sur « marketing », stock vendable < seuil, référence sous\n  stop-loss produit (marge insuffisante), gel global ou stop-loss non évaluable.\n- **Commande expédiée** → suivi (email 07 envoyé par Shopify ; alerte si aucun numéro de suivi).\n- **Livraison** → demande d'avis (email 11) **7 jours** après (hypothèse), une seule, sans réclamation ni opposition.\n- **Liens des emails** (jeton) : désinscription `alertes-desinscrire`, refus d'avis `avis-refus`, préférences\n  `alertes-preferences`, confirmation `alertes-confirmer`. La page de confirmation ne s'affiche **qu'après** les appels\n  aux outils ; lien invalide = page d'erreur honnête ; retrait non confirmé par un outil = incident (traitement manuel\n  sans délai, envois marketing suspendus jusqu'à la reprise).\nAucun prix ni donnée interne dans un email : titre, statut et prix lus sur la page publique au moment de l'envoi.\n**Activation** : liens des emails AVANT tout envoi ; envois au niveau 3. Pas de SMS ni d'email non sollicité.\n**Validation humaine requise** : outil d'emailing (B04), seuil de stock d'alerte, délai d'avis, notes juristes C2-C4.",
+        "height": 480,
+        "width": 720,
         "color": 4
       },
       "id": "41f23e0c-d1ba-57ba-b5b5-f8b16fb73b70",
@@ -16,7 +16,7 @@
       "typeVersion": 1,
       "position": [
         -280,
-        -520
+        -560
       ]
     },
     {
@@ -42,7 +42,7 @@
           "name": "Passerelle agents — X-Pokeshop-Gateway"
         }
       },
-      "notes": "Corps : {\"product_key\", \"sku\", \"public_title\", \"public_url\", \"format_preference\"} — aucun prix.",
+      "notes": "Corps : {\"product_key\", \"sku\", \"qty\", \"ref\" (bon de livraison), \"public_title\", \"public_url\", \"format_preference\"} — aucun prix.",
       "notesInFlow": true
     },
     {
@@ -62,9 +62,9 @@
               "type": "boolean"
             },
             {
-              "id": "0cd9d981-bf47-54d0-b784-f71b80244113",
+              "id": "94a443e9-dfb4-56f7-8f97-7d449648ce2d",
               "name": "workflow",
-              "value": "06-marketing",
+              "value": "marketing",
               "type": "string"
             },
             {
@@ -97,6 +97,115 @@
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — alertes stock').first().json.api_base_url }}/stock/receive",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ sku: $('Réception contrôlée (passerelle agent 11)').first().json.body.sku, qty: $('Réception contrôlée (passerelle agent 11)').first().json.body.qty, ref: $('Réception contrôlée (passerelle agent 11)').first().json.body.ref }) }}"
+      },
+      "id": "fa1c1f70-e16b-58bd-b291-c397ececc8e4",
+      "name": "Enregistrer la réception (POST /stock/receive)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "notes": "Registre du stock local (idempotent par SKU + bon de livraison) : sans lui, la fiche reste en rupture.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — alertes stock').first().json.api_base_url }}/incidents?open_only=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "becca9b3-7867-59f9-bced-e32ec4b25a02",
+      "name": "Garde : incidents ouverts (alertes stock)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        160
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "aade5ede-ec71-5762-a77c-1d55a5b697bc",
+              "leftValue": "={{ Object.keys($json.suspended || {}).some(t => t === $('Paramètres — alertes stock').first().json.workflow || t === '*') }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "dd42e352-4001-5926-b5a4-5af25e45e8cf",
+      "name": "Workflow suspendu ? (alertes stock)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        160
+      ],
+      "notes": "Suspension = incident ouvert sur ce workflow ou suspension globale de toutes les écritures (SOP_INCIDENTS §2).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "1f3d031d-91ac-5523-8395-08c1d7b6a74a",
+      "name": "Alertes suspendues (incident ouvert)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1400,
+        280
+      ]
+    },
+    {
+      "parameters": {
         "method": "GET",
         "url": "={{ $('Paramètres — alertes stock').first().json.api_base_url }}/stoploss/status",
         "authentication": "genericCredentialType",
@@ -110,7 +219,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        560,
+        840,
         0
       ],
       "credentials": {
@@ -141,7 +250,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        840,
+        1120,
         0
       ],
       "credentials": {
@@ -213,7 +322,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1120,
+        1400,
         0
       ],
       "notes": "Une campagne s'arrête si le stock passe sous le seuil ou si la marge est insuffisante (BP §9).",
@@ -239,7 +348,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1400,
+        1680,
         140
       ]
     },
@@ -250,7 +359,7 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        1680,
+        1960,
         140
       ]
     },
@@ -269,7 +378,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1400,
+        1680,
         -80
       ],
       "credentials": {
@@ -291,7 +400,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1680,
+        1960,
         -80
       ]
     },
@@ -310,7 +419,7 @@
       "type": "n8n-nodes-base.removeDuplicates",
       "typeVersion": 2,
       "position": [
-        1960,
+        2240,
         -80
       ]
     },
@@ -346,7 +455,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        2240,
+        2520,
         -80
       ]
     },
@@ -368,7 +477,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2520,
+        2800,
         -80
       ],
       "credentials": {
@@ -467,9 +576,9 @@
               "type": "boolean"
             },
             {
-              "id": "0cd9d981-bf47-54d0-b784-f71b80244113",
+              "id": "94a443e9-dfb4-56f7-8f97-7d449648ce2d",
               "name": "workflow",
-              "value": "06-marketing",
+              "value": "marketing",
               "type": "string"
             },
             {
@@ -662,9 +771,9 @@
               "type": "boolean"
             },
             {
-              "id": "0cd9d981-bf47-54d0-b784-f71b80244113",
+              "id": "94a443e9-dfb4-56f7-8f97-7d449648ce2d",
               "name": "workflow",
-              "value": "06-marketing",
+              "value": "marketing",
               "type": "string"
             },
             {
@@ -688,6 +797,82 @@
       ],
       "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
       "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — avis').first().json.api_base_url }}/incidents?open_only=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "76a3c6b5-2c33-5626-86cb-8f7e0bd6ba5a",
+      "name": "Garde : incidents ouverts (avis)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        840
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "82d221ad-9a57-5749-8afa-24fe781f1b09",
+              "leftValue": "={{ Object.keys($json.suspended || {}).some(t => t === $('Paramètres — avis').first().json.workflow || t === '*') }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "7a06c4c2-9072-5370-9940-efe4fb7fb38f",
+      "name": "Workflow suspendu ? (avis)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        840
+      ],
+      "notes": "Suspension = incident ouvert sur ce workflow ou suspension globale de toutes les écritures (SOP_INCIDENTS §2).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "a549f847-806d-50eb-9327-bcdc210d8867",
+      "name": "Avis suspendus (incident ouvert)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1960,
+        919
+      ]
     },
     {
       "parameters": {
@@ -886,17 +1071,275 @@
         "options": {},
         "authentication": "none"
       },
-      "id": "1a65584d-c7b7-5b33-86b6-03ae0605b327",
-      "name": "Lien de désinscription (landing et emails)",
+      "id": "45e8a48c-0ccb-51e6-a17e-bfac70e161e2",
+      "name": "Lien de désinscription (emails)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
         0,
+        1080
+      ],
+      "webhookId": "755b1992-4fc3-5e54-82ba-9ccdc580987f",
+      "notes": "Jeton unique par lien (EMAILS §4 règle 7) ; la réponse attend le bilan des outils (CON-05).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "94a443e9-dfb4-56f7-8f97-7d449648ce2d",
+              "name": "workflow",
+              "value": "marketing",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "d4da5601-fcff-5fe8-8de6-9a0c3913dd7f",
+      "name": "Paramètres — désinscription",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        1080
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lien public d'un email (jeton unique, EMAILS §4 règle 7). Jeton absent ou mal formé : la demande ne peut pas être\n// identifiée — elle n'est JAMAIS ignorée en silence (page d'erreur honnête et, pour une opposition, incident).\nconst item = $input.first().json;\nconst token = item.query && item.query.jeton ? String(item.query.jeton) : '';\nconst valide = /^[A-Za-z0-9_-]{16,128}$/.test(token);\nreturn [{ json: { etape: 'normalise', valide, jeton: valide ? token : null, received_at: new Date().toISOString() } }];\n"
+      },
+      "id": "b856d457-8f40-5601-a5d2-ed91d5f5ed69",
+      "name": "Normaliser le lien de désinscription",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        1080
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f18749fd-32dc-51a6-92b8-d6fbeecd24f1",
+              "leftValue": "={{ $json.valide }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "b69d44aa-5a13-5c99-8316-a62023ebcd16",
+      "name": "Lien de désinscription valide ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        1080
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/unsubscribe",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ token: $json.jeton, source: 'lien' }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "66fe5c13-7fba-5f1f-a6fd-7959918c115f",
+      "name": "Désinscrire dans l’outil d’emailing (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
         1000
       ],
-      "webhookId": "0c422456-2de8-5600-93f5-f5ea3cb0e447",
-      "notes": "Jeton unique par lien (EMAILS §4 règle 7) ; page de confirmation sans JavaScript.",
-      "notesInFlow": true
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Réponse attendue : { unsubscribed: true, shopify_customer_id?: … } (contrat à adapter à l'outil retenu, B04). À activer AVANT tout envoi.",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Résultat de l'outil d'emailing -> préparation de l'étape Shopify (client lié au jeton, s'il existe).\n// Nœud désactivé (outil non branché) : la donnée normalisée passe telle quelle => « non branché », jamais « confirmé ».\nconst j = $input.first().json || {};\nconst lien = $('Normaliser le lien de désinscription').first().json;\nlet emailing;\nif (j.error) emailing = `échec (${(j.error && j.error.message) || 'erreur'})`;\nelse if (j.etape === 'normalise') emailing = 'non branché (nœud désactivé)';\nelse emailing = j.unsubscribed === true ? 'confirmé' : 'réponse non conforme';\nconst customer = emailing === 'confirmé' && j.shopify_customer_id ? String(j.shopify_customer_id).replace(/\\D/g, '') : '';\nreturn [{ json: { etape: 'prepare', jeton: lien.jeton, emailing, shopify_customer_id: customer || null,\n  shopify_applicable: customer !== '' } }];\n"
+      },
+      "id": "8c167f54-ccb9-5352-a471-2341f206e1c8",
+      "name": "Préparer l’étape Shopify (désinscription)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        1000
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "458499f4-b397-5333-935c-a172853d45b3",
+              "leftValue": "={{ $json.shopify_applicable }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "6e896114-b119-5504-9138-e0d6209bcefc",
+      "name": "Client Shopify lié (désinscription) ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        1000
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-boutique.myshopify.com/admin/api/2026-10/graphql.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyAccessTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: 'mutation($input: CustomerEmailMarketingConsentUpdateInput!) { customerEmailMarketingConsentUpdate(input: $input) { userErrors { field message } } }', variables: { input: { customerId: 'gid://shopify/Customer/' + $json.shopify_customer_id, emailMarketingConsent: { marketingState: 'UNSUBSCRIBED' } } } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "2a76f87a-e820-5fb5-8513-0fa6602c7a3a",
+      "name": "Retirer le consentement marketing dans Shopify (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1960,
+        920
+      ],
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "pkshpShopifyAdm1",
+          "name": "Shopify Admin — app personnalisée"
+        }
+      },
+      "disabled": true,
+      "notes": "Mutation hors liste blanche du client du moteur : à valider (agent integrations) avant activation.",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Bilan : seul un résultat CONFIRMÉ par chaque outil compte ; nœud désactivé, erreur ou réponse non conforme => non\n// confirmé (incident pour un traitement manuel sans délai, envois marketing suspendus jusqu'à la reprise).\nconst prep = $('Préparer l’étape Shopify (désinscription)').first().json;\nconst j = $input.first().json || {};\nlet shopify;\nif (!prep.shopify_applicable) shopify = prep.emailing === 'confirmé' ? 'sans objet (aucun client Shopify lié)' : 'non vérifié';\nelse if (j.error) shopify = `échec (${(j.error && j.error.message) || 'erreur'})`;\nelse if (j.etape === 'prepare') shopify = 'non branché (nœud désactivé)';\nelse {\n  const r = j.data && j.data.customerEmailMarketingConsentUpdate;\n  shopify = r && Array.isArray(r.userErrors) && r.userErrors.length === 0 ? 'confirmé' : 'réponse non conforme';\n}\nconst ok = prep.emailing === 'confirmé' && (!prep.shopify_applicable || shopify === 'confirmé');\nreturn [{ json: { tous_confirmes: ok, jeton: prep.jeton, resume: `outil d’emailing : ${prep.emailing} ; Shopify : ${shopify}` } }];\n"
+      },
+      "id": "7185e448-45d3-5f4c-9f67-bb1c3fad5b03",
+      "name": "Bilan (désinscription)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        1000
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "096e4898-8ff4-5b10-b68d-b91bdfcec63e",
+              "leftValue": "={{ $json.tous_confirmes }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "7744e963-204a-57bf-8cd6-e7d265692865",
+      "name": "Confirmé par tous les outils (désinscription) ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2520,
+        1000
+      ]
     },
     {
       "parameters": {
@@ -904,13 +1347,115 @@
         "redirectURL": "https://REMPLACER-URL-LANDING.exemple.invalid/desinscription.html",
         "options": {}
       },
-      "id": "66fc3143-1d28-5aa8-b24d-48f4afa6ac42",
-      "name": "Afficher la page de désinscription",
+      "id": "a495d0ac-f6a5-58ec-91f3-a52eab3bd0c3",
+      "name": "Répondre : demande de désinscription traitée",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        280,
-        1000
+        2800,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — désinscription').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Désinscription non confirmée par tous les outils : ' + ($json.resume || 'lien invalide'), kind: 'DESINSCRIPTION_NON_CONFIRME', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: $('Paramètres — désinscription').first().json.workflow, proposed_action: 'Retirer à la main la personne de chaque outil (emailing, Shopify) sans délai et vérifier qu’aucun envoi ne part ; les envois marketing restent suspendus jusqu’à la reprise.', actor: 'n8n:06-marketing', simulation: $('Paramètres — désinscription').first().json.simulation, details: { jeton: $json.jeton || null, bilan: $json.resume || null } }) }}"
+      },
+      "id": "0f401210-a311-5e15-abb3-bccb0648b766",
+      "name": "Incident : demande de désinscription non confirmée",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2800,
+        1080
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "notes": "Toujours suivi de la réponse à la personne, même si le moteur ne répond pas (sortie d'erreur).",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "redirect",
+        "redirectURL": "https://REMPLACER-URL-LANDING.exemple.invalid/desinscription.html",
+        "options": {}
+      },
+      "id": "80827c24-c9f1-57db-8645-7635ac8d8b44",
+      "name": "Répondre : demande de désinscription reçue (traitement manuel)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3080,
+        1080
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — désinscription').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Lien de désinscription invalide ou incomplet (jeton absent ou mal formé) : ' + ($json.resume || 'lien invalide'), kind: 'DESINSCRIPTION_LIEN_INVALIDE', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: $('Paramètres — désinscription').first().json.workflow, proposed_action: 'Vérifier les liens générés par l’outil d’emailing ; traiter à la main toute demande reçue par email.', actor: 'n8n:06-marketing', simulation: $('Paramètres — désinscription').first().json.simulation, details: { jeton: $json.jeton || null, bilan: $json.resume || null } }) }}"
+      },
+      "id": "235db778-1045-5f7e-b6d4-eec5b25fd3d0",
+      "name": "Incident : lien de désinscription invalide",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        1200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "notes": "Toujours suivi de la réponse à la personne, même si le moteur ne répond pas (sortie d'erreur).",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<!DOCTYPE html><html lang=\"fr-CH\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"robots\" content=\"noindex, nofollow\"><title>Lien de désinscription invalide</title><style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5}</style></head><body><main><h1>Lien de désinscription invalide</h1><p>Votre lien de désinscription est incomplet ou invalide : nous n'avons pas pu identifier votre adresse, et votre désinscription n'est <strong>pas</strong> enregistrée.</p><p>Pour vous désinscrire, répondez « STOP » à l'email reçu ou écrivez à REMPLACER-email-support@exemple.invalid : nous vous retirons à la main de tous nos outils et vous le confirmons par écrit.</p><p><a href=\"https://REMPLACER-URL-LANDING.exemple.invalid/\">Retour à l'accueil</a></p></main></body></html>",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "17113c19-57e6-5938-a1ff-26a641ae244f",
+      "name": "Répondre : lien de désinscription invalide",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1400,
+        1200
       ]
     },
     {
@@ -924,7 +1469,7 @@
       "typeVersion": 1,
       "position": [
         0,
-        1200
+        1639
       ],
       "webhookId": "48995153-99f3-5671-95da-c311fcf762a8",
       "credentials": {
@@ -967,20 +1512,64 @@
       "typeVersion": 2.2,
       "position": [
         280,
-        1200
+        1639
       ]
     },
     {
       "parameters": {
-        "jsCode": "// Désinscription : jeton du lien (landing, emails) ou consentement retiré dans Shopify. Journal sans adresse.\nconst item = $input.first().json;\nconst token = item.query && item.query.jeton ? String(item.query.jeton) : null;\nif (token !== null && !/^[A-Za-z0-9_-]{16,128}$/.test(token)) return []; // jeton invalide : ignoré\nreturn [{ json: {\n  source: token ? 'lien_desinscription' : 'shopify',\n  jeton: token,\n  shopify_customer_id: token ? null : String(item.id || ''),\n  received_at: new Date().toISOString(),\n} }];\n"
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "94a443e9-dfb4-56f7-8f97-7d449648ce2d",
+              "name": "workflow",
+              "value": "marketing",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
       },
-      "id": "a97a02a1-17dd-5a0d-a703-1920156466d9",
-      "name": "Normaliser la désinscription",
+      "id": "669c41ae-7ad9-5472-8ee2-714e196ede68",
+      "name": "Paramètres — désinscription Shopify",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        560,
+        1600
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Consentement marketing retiré dans Shopify : à propager à l'outil d'emailing. Journal sans adresse.\nconst item = $input.first().json;\nreturn [{ json: { etape: 'normalise', shopify_customer_id: String(item.id || ''), received_at: new Date().toISOString() } }];\n"
+      },
+      "id": "51fbf5fd-5e46-5c35-90a1-04dc756423ec",
+      "name": "Normaliser la désinscription Shopify",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        560,
-        1100
+        840,
+        1600
       ]
     },
     {
@@ -991,18 +1580,18 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ token: $json.jeton, shopify_customer_id: $json.shopify_customer_id, source: $json.source }) }}",
+        "jsonBody": "={{ JSON.stringify({ shopify_customer_id: $json.shopify_customer_id, source: 'shopify' }) }}",
         "options": {
           "timeout": 30000
         }
       },
-      "id": "66fe5c13-7fba-5f1f-a6fd-7959918c115f",
-      "name": "Désinscrire dans l’outil d’emailing (désactivé)",
+      "id": "d8abc9bf-98db-52e8-b351-16da781cd600",
+      "name": "Désinscrire dans l’outil d’emailing — depuis Shopify (désactivé)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        840,
-        1100
+        1120,
+        1600
       ],
       "credentials": {
         "httpHeaderAuth": {
@@ -1011,8 +1600,308 @@
         }
       },
       "disabled": true,
-      "notes": "À activer en même temps que l'outil d'emailing, AVANT tout envoi (désinscription dans la minute).",
+      "notes": "Réponse attendue de l'outil : { unsubscribed: true } (contrat à adapter à l'outil retenu, B04).",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Bilan de la propagation Shopify -> outil d'emailing : seul un retrait confirmé par l'outil compte.\nconst j = $input.first().json || {};\nlet emailing;\nif (j.error) emailing = `échec (${(j.error && j.error.message) || 'erreur'})`;\nelse if (j.etape === 'normalise') emailing = 'non branché (nœud désactivé)';\nelse emailing = j.unsubscribed === true ? 'confirmé' : 'réponse non conforme';\nreturn [{ json: { tous_confirmes: emailing === 'confirmé', resume: `outil d’emailing : ${emailing} ; Shopify : retrait déjà fait (origine)` } }];\n"
+      },
+      "id": "3b7263af-25c4-5179-a902-e073f10e2eab",
+      "name": "Bilan du retrait (origine Shopify)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        1600
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "096e4898-8ff4-5b10-b68d-b91bdfcec63e",
+              "leftValue": "={{ $json.tous_confirmes }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "55e55f8d-824a-5d25-982c-94b687de1426",
+      "name": "Retrait confirmé (origine Shopify) ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        1600
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "970fbe21-f7e1-55f6-bd97-1fae32c349aa",
+      "name": "Journal de désinscription Shopify (sans adresse)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1960,
+        1520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — désinscription Shopify').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Désinscription Shopify non propagée à l’outil d’emailing : ' + ($json.resume || 'lien invalide'), kind: 'DESINSCRIPTION_NON_CONFIRME', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: $('Paramètres — désinscription Shopify').first().json.workflow, proposed_action: 'Retirer à la main la personne de l’outil d’emailing sans délai ; envois marketing suspendus jusqu’à la reprise.', actor: 'n8n:06-marketing', simulation: $('Paramètres — désinscription Shopify').first().json.simulation, details: { jeton: $json.jeton || null, bilan: $json.resume || null } }) }}"
+      },
+      "id": "f8a658f0-3730-50c5-a0ee-52d1a4b3549c",
+      "name": "Incident : retrait Shopify non propagé",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1960,
+        1680
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "notes": "Toujours suivi de la réponse à la personne, même si le moteur ne répond pas (sortie d'erreur).",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {},
+      "id": "fa70e3ea-86c3-589b-835c-ecf7b33e3a73",
+      "name": "Journal : retrait manuel demandé",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2240,
+        1680
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "avis-refus",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "none"
+      },
+      "id": "da2916a9-1960-51b4-90e7-183db12cdd41",
+      "name": "Lien de refus d’avis (emails)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1920
+      ],
+      "webhookId": "dc978dd8-d078-5dca-99dd-3b0f9d0980e2",
+      "notes": "Jeton unique par lien (EMAILS §4 règle 7) ; la réponse attend le bilan des outils (CON-05).",
       "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "94a443e9-dfb4-56f7-8f97-7d449648ce2d",
+              "name": "workflow",
+              "value": "marketing",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "b026f31b-ec09-5bef-b310-0bd652b6ea22",
+      "name": "Paramètres — refus d’avis",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        1920
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lien public d'un email (jeton unique, EMAILS §4 règle 7). Jeton absent ou mal formé : la demande ne peut pas être\n// identifiée — elle n'est JAMAIS ignorée en silence (page d'erreur honnête et, pour une opposition, incident).\nconst item = $input.first().json;\nconst token = item.query && item.query.jeton ? String(item.query.jeton) : '';\nconst valide = /^[A-Za-z0-9_-]{16,128}$/.test(token);\nreturn [{ json: { etape: 'normalise', valide, jeton: valide ? token : null, received_at: new Date().toISOString() } }];\n"
+      },
+      "id": "e744c42d-6ceb-59b3-b295-c68068740564",
+      "name": "Normaliser le lien de refus d’avis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        1920
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f18749fd-32dc-51a6-92b8-d6fbeecd24f1",
+              "leftValue": "={{ $json.valide }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "1d621f72-c892-52d9-8138-5e1bee26a509",
+      "name": "Lien de refus d’avis valide ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        1920
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/review-opt-out",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ token: $json.jeton, source: 'lien' }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "e08190e8-bd38-5112-8b87-00e88ceb8cc1",
+      "name": "Enregistrer le refus d’avis — outil d’emailing (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        1839
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Réponse attendue : { opted_out: true, shopify_customer_id?: … } (contrat à adapter à l'outil retenu, B04). À activer AVANT tout envoi.",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Résultat de l'outil d'emailing -> préparation de l'étape Shopify (client lié au jeton, s'il existe).\n// Nœud désactivé (outil non branché) : la donnée normalisée passe telle quelle => « non branché », jamais « confirmé ».\nconst j = $input.first().json || {};\nconst lien = $('Normaliser le lien de refus d’avis').first().json;\nlet emailing;\nif (j.error) emailing = `échec (${(j.error && j.error.message) || 'erreur'})`;\nelse if (j.etape === 'normalise') emailing = 'non branché (nœud désactivé)';\nelse emailing = j.opted_out === true ? 'confirmé' : 'réponse non conforme';\nconst customer = emailing === 'confirmé' && j.shopify_customer_id ? String(j.shopify_customer_id).replace(/\\D/g, '') : '';\nreturn [{ json: { etape: 'prepare', jeton: lien.jeton, emailing, shopify_customer_id: customer || null,\n  shopify_applicable: customer !== '' } }];\n"
+      },
+      "id": "ea3b6c04-4712-5a3d-a701-843f4129eaba",
+      "name": "Préparer l’étape Shopify (refus d’avis)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        1839
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "458499f4-b397-5333-935c-a172853d45b3",
+              "leftValue": "={{ $json.shopify_applicable }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "ce33b2c5-18c9-5d9a-b7bb-51791e460c94",
+      "name": "Client Shopify lié (refus d’avis) ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        1839
+      ]
     },
     {
       "parameters": {
@@ -1022,18 +1911,18 @@
         "nodeCredentialType": "shopifyAccessTokenApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ query: 'mutation($input: CustomerEmailMarketingConsentUpdateInput!) { customerEmailMarketingConsentUpdate(input: $input) { userErrors { field message } } }', variables: { input: { customerId: 'gid://shopify/Customer/' + $json.shopify_customer_id, emailMarketingConsent: { marketingState: 'UNSUBSCRIBED' } } } }) }}",
+        "jsonBody": "={{ JSON.stringify({ query: 'mutation($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { field message } } }', variables: { id: 'gid://shopify/Customer/' + $json.shopify_customer_id, tags: ['avis-refus'] } }) }}",
         "options": {
           "timeout": 30000
         }
       },
-      "id": "2a76f87a-e820-5fb5-8513-0fa6602c7a3a",
-      "name": "Retirer le consentement marketing dans Shopify (désactivé)",
+      "id": "6f195481-8a4c-5417-919c-b4b9e7c9350f",
+      "name": "Poser l’étiquette avis-refus — Shopify (désactivé)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1120,
-        1100
+        1960,
+        1759
       ],
       "credentials": {
         "shopifyAccessTokenApi": {
@@ -1043,21 +1932,729 @@
       },
       "disabled": true,
       "notes": "Mutation hors liste blanche du client du moteur : à valider (agent integrations) avant activation.",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Bilan : seul un résultat CONFIRMÉ par chaque outil compte ; nœud désactivé, erreur ou réponse non conforme => non\n// confirmé (incident pour un traitement manuel sans délai, envois marketing suspendus jusqu'à la reprise).\nconst prep = $('Préparer l’étape Shopify (refus d’avis)').first().json;\nconst j = $input.first().json || {};\nlet shopify;\nif (!prep.shopify_applicable) shopify = prep.emailing === 'confirmé' ? 'sans objet (aucun client Shopify lié)' : 'non vérifié';\nelse if (j.error) shopify = `échec (${(j.error && j.error.message) || 'erreur'})`;\nelse if (j.etape === 'prepare') shopify = 'non branché (nœud désactivé)';\nelse {\n  const r = j.data && j.data.tagsAdd;\n  shopify = r && Array.isArray(r.userErrors) && r.userErrors.length === 0 ? 'confirmé' : 'réponse non conforme';\n}\nconst ok = prep.emailing === 'confirmé' && (!prep.shopify_applicable || shopify === 'confirmé');\nreturn [{ json: { tous_confirmes: ok, jeton: prep.jeton, resume: `outil d’emailing : ${prep.emailing} ; Shopify : ${shopify}` } }];\n"
+      },
+      "id": "cb3f5eb5-764a-5ec1-9b82-c59f730d658b",
+      "name": "Bilan (refus d’avis)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        1839
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "096e4898-8ff4-5b10-b68d-b91bdfcec63e",
+              "leftValue": "={{ $json.tous_confirmes }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "2daecc8b-8ecf-5358-8431-ba654f5d7562",
+      "name": "Confirmé par tous les outils (refus d’avis) ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2520,
+        1839
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<!DOCTYPE html><html lang=\"fr-CH\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"robots\" content=\"noindex, nofollow\"><title>Demande reçue</title><style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5}</style></head><body><main><h1>Demande reçue</h1><p>Nous avons bien reçu votre demande : elle a été transmise à nos outils et vous ne recevrez plus de demande d'avis.</p><p>Si un outil n'a pas confirmé, nous le faisons à la main sans délai. Vous en recevez encore une ? Écrivez-nous à REMPLACER-email-support@exemple.invalid.</p><p><a href=\"https://REMPLACER-URL-LANDING.exemple.invalid/\">Retour à l'accueil</a></p></main></body></html>",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "288eaba7-980f-5dc4-9387-a17898e7e0c1",
+      "name": "Répondre : demande de refus d’avis traitée",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2800,
+        1759
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — refus d’avis').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Refus des demandes d’avis non confirmé par tous les outils : ' + ($json.resume || 'lien invalide'), kind: 'REFUS_AVIS_NON_CONFIRME', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: $('Paramètres — refus d’avis').first().json.workflow, proposed_action: 'Enregistrer à la main l’opposition (étiquette avis-refus du client Shopify, outil d’emailing) sans délai ; aucune demande d’avis à cette personne.', actor: 'n8n:06-marketing', simulation: $('Paramètres — refus d’avis').first().json.simulation, details: { jeton: $json.jeton || null, bilan: $json.resume || null } }) }}"
+      },
+      "id": "04f1583f-9030-5cbb-9643-09493b58fd6d",
+      "name": "Incident : demande de refus d’avis non confirmée",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2800,
+        1920
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "notes": "Toujours suivi de la réponse à la personne, même si le moteur ne répond pas (sortie d'erreur).",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<!DOCTYPE html><html lang=\"fr-CH\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"robots\" content=\"noindex, nofollow\"><title>Demande reçue</title><style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5}</style></head><body><main><h1>Demande reçue</h1><p>Nous avons bien reçu votre demande : elle a été transmise à nos outils et vous ne recevrez plus de demande d'avis.</p><p>Si un outil n'a pas confirmé, nous le faisons à la main sans délai. Vous en recevez encore une ? Écrivez-nous à REMPLACER-email-support@exemple.invalid.</p><p><a href=\"https://REMPLACER-URL-LANDING.exemple.invalid/\">Retour à l'accueil</a></p></main></body></html>",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "111fd294-4ded-5013-b02f-9e360318796a",
+      "name": "Répondre : demande de refus d’avis reçue (traitement manuel)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3080,
+        1920
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — refus d’avis').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Lien de refus des demandes d’avis invalide ou incomplet (jeton absent ou mal formé) : ' + ($json.resume || 'lien invalide'), kind: 'REFUS_AVIS_LIEN_INVALIDE', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: $('Paramètres — refus d’avis').first().json.workflow, proposed_action: 'Vérifier les liens générés par l’outil d’emailing ; traiter à la main toute demande reçue par email.', actor: 'n8n:06-marketing', simulation: $('Paramètres — refus d’avis').first().json.simulation, details: { jeton: $json.jeton || null, bilan: $json.resume || null } }) }}"
+      },
+      "id": "3bcb32b3-efe3-5bc4-a182-dcd32a4bd470",
+      "name": "Incident : lien de refus d’avis invalide",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        2039
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiToken001",
+          "name": "Pokeshop API — X-Pokeshop-Token"
+        }
+      },
+      "notes": "Toujours suivi de la réponse à la personne, même si le moteur ne répond pas (sortie d'erreur).",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<!DOCTYPE html><html lang=\"fr-CH\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"robots\" content=\"noindex, nofollow\"><title>Lien invalide</title><style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5}</style></head><body><main><h1>Lien invalide</h1><p>Votre lien est incomplet ou invalide : nous n'avons pas pu identifier votre demande, et elle n'est <strong>pas</strong> enregistrée.</p><p>Pour ne plus recevoir de demande d'avis, écrivez à REMPLACER-email-support@exemple.invalid : nous l'enregistrons à la main et vous le confirmons.</p><p><a href=\"https://REMPLACER-URL-LANDING.exemple.invalid/\">Retour à l'accueil</a></p></main></body></html>",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "047ad991-f3ef-529f-b895-cd81f9156f40",
+      "name": "Répondre : lien de refus d’avis invalide",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1400,
+        2039
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "alertes-preferences",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "none"
+      },
+      "id": "8e0e641f-115a-569d-821c-aa26f280b4a1",
+      "name": "Lien des préférences (emails)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        2480
+      ],
+      "webhookId": "fdf10fe2-17e4-545d-ab99-c3b54b55ac8f",
+      "notes": "Jeton unique par lien ; page de préférences de l'outil d'emailing, sinon page honnête.",
       "notesInFlow": true
     },
     {
-      "parameters": {},
-      "id": "38d8b1c9-9b73-51d7-802f-2a4eb18e85b7",
-      "name": "Journal de désinscription (sans adresse)",
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "94a443e9-dfb4-56f7-8f97-7d449648ce2d",
+              "name": "workflow",
+              "value": "marketing",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "6ddd4bc3-cb3b-5270-b71b-2dce955a3773",
+      "name": "Paramètres — préférences",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        2480
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lien public d'un email (jeton unique, EMAILS §4 règle 7). Jeton absent ou mal formé : la demande ne peut pas être\n// identifiée — elle n'est JAMAIS ignorée en silence (page d'erreur honnête et, pour une opposition, incident).\nconst item = $input.first().json;\nconst token = item.query && item.query.jeton ? String(item.query.jeton) : '';\nconst valide = /^[A-Za-z0-9_-]{16,128}$/.test(token);\nreturn [{ json: { etape: 'normalise', valide, jeton: valide ? token : null, received_at: new Date().toISOString() } }];\n"
+      },
+      "id": "ada541dc-8ea6-5411-a8b8-7407e1a209b1",
+      "name": "Normaliser le lien de préférences",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        2480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f18749fd-32dc-51a6-92b8-d6fbeecd24f1",
+              "leftValue": "={{ $json.valide }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "3e66e867-49e8-53ee-bea0-4ab01e2848d5",
+      "name": "Lien de préférences valide ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        2480
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<!DOCTYPE html><html lang=\"fr-CH\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"robots\" content=\"noindex, nofollow\"><title>Lien invalide</title><style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5}</style></head><body><main><h1>Lien invalide</h1><p>Votre lien de préférences est incomplet ou invalide.</p><p>Pour ne plus rien recevoir, utilisez le lien « se désinscrire » de l'email ou écrivez à REMPLACER-email-support@exemple.invalid.</p><p><a href=\"https://REMPLACER-URL-LANDING.exemple.invalid/\">Retour à l'accueil</a></p></main></body></html>",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "16b55058-8e49-5ff5-9892-7f9bfc88f764",
+      "name": "Répondre : lien de préférences invalide",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        2600
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/preferences-link",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ token: $json.jeton }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "74a1e397-59ce-5f0b-a380-35799048261a",
+      "name": "Obtenir la page de préférences — outil d’emailing (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        2400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Réponse attendue : { preferences_url: 'https://…' } (contrat à adapter à l'outil retenu, B04).",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Page de préférences : adresse https fournie par l'outil d'emailing ; sinon page honnête qui offre la désinscription.\nconst j = $input.first().json || {};\nconst lien = $('Normaliser le lien de préférences').first().json;\nconst url = !j.error && j.etape !== 'normalise' && typeof j.preferences_url === 'string' && /^https:\\/\\//.test(j.preferences_url)\n  ? j.preferences_url : null;\nreturn [{ json: { preferences_url: url, html: \"<!DOCTYPE html><html lang=\\\"fr-CH\\\"><head><meta charset=\\\"utf-8\\\"><meta name=\\\"viewport\\\" content=\\\"width=device-width, initial-scale=1\\\"><meta name=\\\"robots\\\" content=\\\"noindex, nofollow\\\"><title>Vos préférences</title><style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5}</style></head><body><main><h1>Vos préférences</h1><p>La page de préférences n'est pas disponible pour le moment.</p><p>Pour ne plus recevoir aucun email : <a href=\\\"alertes-desinscrire?jeton=__JETON__\\\">se désinscrire</a>. Pour modifier vos choix, écrivez à REMPLACER-email-support@exemple.invalid.</p><p><a href=\\\"https://REMPLACER-URL-LANDING.exemple.invalid/\\\">Retour à l'accueil</a></p></main></body></html>\".replace('__JETON__', lien.jeton) } }];\n"
+      },
+      "id": "7385ae52-2c9c-5bdc-a622-925e9519c0fb",
+      "name": "Choisir la réponse (préférences)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         1400,
-        1100
+        2400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0423e4b7-60d3-5392-8d7c-71703bbcd3cd",
+              "leftValue": "={{ $json.preferences_url }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "012020e1-13bd-5993-aa80-fa6336651567",
+      "name": "Page de l’outil disponible ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        2400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "redirect",
+        "redirectURL": "={{ $json.preferences_url }}",
+        "options": {}
+      },
+      "id": "d064d087-a10b-5cc3-a745-12c25c2a0824",
+      "name": "Répondre : page de préférences de l’outil",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1960,
+        2320
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "8eaaf37c-b732-53d3-8f8d-c41994131e19",
+      "name": "Répondre : préférences par écrit",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1960,
+        2480
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "alertes-confirmer",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "none"
+      },
+      "id": "5d293827-19b5-5d2c-9c31-263b958edcb2",
+      "name": "Lien de confirmation (email 01)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        2880
+      ],
+      "webhookId": "1cfb972f-70bd-5502-9e97-a083fb3cb175",
+      "notes": "Double opt-in : seule une confirmation explicite de l'outil active les alertes (puis email 02 par l'outil).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "94a443e9-dfb4-56f7-8f97-7d449648ce2d",
+              "name": "workflow",
+              "value": "marketing",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "5701f5cf-2913-5534-ad42-cdd24263e3cb",
+      "name": "Paramètres — confirmation",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        2880
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lien public d'un email (jeton unique, EMAILS §4 règle 7). Jeton absent ou mal formé : la demande ne peut pas être\n// identifiée — elle n'est JAMAIS ignorée en silence (page d'erreur honnête et, pour une opposition, incident).\nconst item = $input.first().json;\nconst token = item.query && item.query.jeton ? String(item.query.jeton) : '';\nconst valide = /^[A-Za-z0-9_-]{16,128}$/.test(token);\nreturn [{ json: { etape: 'normalise', valide, jeton: valide ? token : null, received_at: new Date().toISOString() } }];\n"
+      },
+      "id": "27c92533-0ab5-50ee-9a19-f8d0ffddb359",
+      "name": "Normaliser le lien de confirmation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        2880
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f18749fd-32dc-51a6-92b8-d6fbeecd24f1",
+              "leftValue": "={{ $json.valide }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "18e37eab-43b6-58c9-885e-1a46a8e40f23",
+      "name": "Lien de confirmation valide ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        2880
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/confirm",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ token: $json.jeton }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b2667bf8-c417-5d2c-953c-71719310c593",
+      "name": "Confirmer l’inscription — outil d’emailing (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        2800
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Réponse attendue : { confirmed: true } ; l'outil envoie ensuite l'email 02 (bienvenue et préférences).",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Double opt-in : seule une confirmation explicite de l'outil d'emailing ({ confirmed: true }) active les alertes.\nconst j = $input.first().json || {};\nreturn [{ json: { confirmed: !j.error && j.etape !== 'normalise' && j.confirmed === true } }];\n"
+      },
+      "id": "64bbbf5b-3130-5dcc-8e0f-3a033f7b5f38",
+      "name": "Bilan de la confirmation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        2800
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "52976dfd-89ce-5005-ba5a-bd4b639df869",
+              "leftValue": "={{ $json.confirmed }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "de7b3c58-70e5-53c5-9319-63e1a4c3c5f9",
+      "name": "Inscription confirmée ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        2800
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "redirect",
+        "redirectURL": "https://REMPLACER-URL-LANDING.exemple.invalid/inscription-confirmee.html",
+        "options": {}
+      },
+      "id": "4d397d74-a684-543b-b150-75159ce8c2b0",
+      "name": "Répondre : inscription confirmée",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1960,
+        2720
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<!DOCTYPE html><html lang=\"fr-CH\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"robots\" content=\"noindex, nofollow\"><title>Confirmation non enregistrée</title><style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5}</style></head><body><main><h1>Confirmation non enregistrée</h1><p>Votre confirmation n'a pas pu être enregistrée (lien expiré ou service momentanément indisponible) : vos alertes ne sont <strong>pas</strong> activées.</p><p>Réessayez dans quelques minutes, ou réinscrivez-vous depuis la page d'accueil.</p><p><a href=\"https://REMPLACER-URL-LANDING.exemple.invalid/\">Retour à l'accueil</a></p></main></body></html>",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "1030caa1-7a9c-59fe-922e-6be9f204b136",
+      "name": "Répondre : confirmation non enregistrée",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1960,
+        2880
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<!DOCTYPE html><html lang=\"fr-CH\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"robots\" content=\"noindex, nofollow\"><title>Lien invalide</title><style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5}</style></head><body><main><h1>Lien invalide</h1><p>Votre lien de confirmation est incomplet ou invalide : vos alertes ne sont <strong>pas</strong> activées.</p><p>Réinscrivez-vous depuis la page d'accueil pour recevoir un nouveau lien.</p><p><a href=\"https://REMPLACER-URL-LANDING.exemple.invalid/\">Retour à l'accueil</a></p></main></body></html>",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "e2ed39a2-ce73-5406-84f5-c9685c1429d6",
+      "name": "Répondre : lien de confirmation invalide",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        3000
       ]
     }
   ],
   "connections": {
+    "Garde : incidents ouverts (alertes stock)": {
+      "main": [
+        [
+          {
+            "node": "Workflow suspendu ? (alertes stock)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Réception contrôlée (passerelle agent 11)": {
       "main": [
         [
@@ -1071,6 +2668,35 @@
     },
     "Paramètres — alertes stock": {
       "main": [
+        [
+          {
+            "node": "Enregistrer la réception (POST /stock/receive)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer la réception (POST /stock/receive)": {
+      "main": [
+        [
+          {
+            "node": "Garde : incidents ouverts (alertes stock)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow suspendu ? (alertes stock)": {
+      "main": [
+        [
+          {
+            "node": "Alertes suspendues (incident ouvert)",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Garde : état du stop-loss",
@@ -1226,6 +2852,17 @@
         ]
       ]
     },
+    "Garde : incidents ouverts (avis)": {
+      "main": [
+        [
+          {
+            "node": "Workflow suspendu ? (avis)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Shopify : événement de livraison (fulfillment_events/create)": {
       "main": [
         [
@@ -1272,6 +2909,24 @@
     },
     "Paramètres — avis": {
       "main": [
+        [
+          {
+            "node": "Garde : incidents ouverts (avis)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow suspendu ? (avis)": {
+      "main": [
+        [
+          {
+            "node": "Avis suspendus (incident ouvert)",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Garde : gel global (avis)",
@@ -1343,22 +2998,181 @@
         ]
       ]
     },
-    "Lien de désinscription (landing et emails)": {
+    "Lien de désinscription (emails)": {
       "main": [
         [
           {
-            "node": "Afficher la page de désinscription",
+            "node": "Paramètres — désinscription",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Afficher la page de désinscription": {
+    "Paramètres — désinscription": {
       "main": [
         [
           {
-            "node": "Normaliser la désinscription",
+            "node": "Normaliser le lien de désinscription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliser le lien de désinscription": {
+      "main": [
+        [
+          {
+            "node": "Lien de désinscription valide ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lien de désinscription valide ?": {
+      "main": [
+        [
+          {
+            "node": "Désinscrire dans l’outil d’emailing (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Incident : lien de désinscription invalide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Incident : lien de désinscription invalide": {
+      "main": [
+        [
+          {
+            "node": "Répondre : lien de désinscription invalide",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Répondre : lien de désinscription invalide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Désinscrire dans l’outil d’emailing (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Préparer l’étape Shopify (désinscription)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Préparer l’étape Shopify (désinscription)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer l’étape Shopify (désinscription)": {
+      "main": [
+        [
+          {
+            "node": "Client Shopify lié (désinscription) ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Client Shopify lié (désinscription) ?": {
+      "main": [
+        [
+          {
+            "node": "Retirer le consentement marketing dans Shopify (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bilan (désinscription)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retirer le consentement marketing dans Shopify (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Bilan (désinscription)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bilan (désinscription)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bilan (désinscription)": {
+      "main": [
+        [
+          {
+            "node": "Confirmé par tous les outils (désinscription) ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmé par tous les outils (désinscription) ?": {
+      "main": [
+        [
+          {
+            "node": "Répondre : demande de désinscription traitée",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Incident : demande de désinscription non confirmée",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Incident : demande de désinscription non confirmée": {
+      "main": [
+        [
+          {
+            "node": "Répondre : demande de désinscription reçue (traitement manuel)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Répondre : demande de désinscription reçue (traitement manuel)",
             "type": "main",
             "index": 0
           }
@@ -1380,40 +3194,471 @@
       "main": [
         [
           {
-            "node": "Normaliser la désinscription",
+            "node": "Paramètres — désinscription Shopify",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Normaliser la désinscription": {
+    "Paramètres — désinscription Shopify": {
       "main": [
         [
           {
-            "node": "Désinscrire dans l’outil d’emailing (désactivé)",
+            "node": "Normaliser la désinscription Shopify",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Désinscrire dans l’outil d’emailing (désactivé)": {
+    "Normaliser la désinscription Shopify": {
       "main": [
         [
           {
-            "node": "Retirer le consentement marketing dans Shopify (désactivé)",
+            "node": "Désinscrire dans l’outil d’emailing — depuis Shopify (désactivé)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Retirer le consentement marketing dans Shopify (désactivé)": {
+    "Désinscrire dans l’outil d’emailing — depuis Shopify (désactivé)": {
       "main": [
         [
           {
-            "node": "Journal de désinscription (sans adresse)",
+            "node": "Bilan du retrait (origine Shopify)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bilan du retrait (origine Shopify)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bilan du retrait (origine Shopify)": {
+      "main": [
+        [
+          {
+            "node": "Retrait confirmé (origine Shopify) ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrait confirmé (origine Shopify) ?": {
+      "main": [
+        [
+          {
+            "node": "Journal de désinscription Shopify (sans adresse)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Incident : retrait Shopify non propagé",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Incident : retrait Shopify non propagé": {
+      "main": [
+        [
+          {
+            "node": "Journal : retrait manuel demandé",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Journal : retrait manuel demandé",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lien de refus d’avis (emails)": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — refus d’avis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — refus d’avis": {
+      "main": [
+        [
+          {
+            "node": "Normaliser le lien de refus d’avis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliser le lien de refus d’avis": {
+      "main": [
+        [
+          {
+            "node": "Lien de refus d’avis valide ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lien de refus d’avis valide ?": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer le refus d’avis — outil d’emailing (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Incident : lien de refus d’avis invalide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Incident : lien de refus d’avis invalide": {
+      "main": [
+        [
+          {
+            "node": "Répondre : lien de refus d’avis invalide",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Répondre : lien de refus d’avis invalide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer le refus d’avis — outil d’emailing (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Préparer l’étape Shopify (refus d’avis)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Préparer l’étape Shopify (refus d’avis)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer l’étape Shopify (refus d’avis)": {
+      "main": [
+        [
+          {
+            "node": "Client Shopify lié (refus d’avis) ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Client Shopify lié (refus d’avis) ?": {
+      "main": [
+        [
+          {
+            "node": "Poser l’étiquette avis-refus — Shopify (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bilan (refus d’avis)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poser l’étiquette avis-refus — Shopify (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Bilan (refus d’avis)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bilan (refus d’avis)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bilan (refus d’avis)": {
+      "main": [
+        [
+          {
+            "node": "Confirmé par tous les outils (refus d’avis) ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmé par tous les outils (refus d’avis) ?": {
+      "main": [
+        [
+          {
+            "node": "Répondre : demande de refus d’avis traitée",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Incident : demande de refus d’avis non confirmée",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Incident : demande de refus d’avis non confirmée": {
+      "main": [
+        [
+          {
+            "node": "Répondre : demande de refus d’avis reçue (traitement manuel)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Répondre : demande de refus d’avis reçue (traitement manuel)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lien des préférences (emails)": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — préférences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — préférences": {
+      "main": [
+        [
+          {
+            "node": "Normaliser le lien de préférences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliser le lien de préférences": {
+      "main": [
+        [
+          {
+            "node": "Lien de préférences valide ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lien de préférences valide ?": {
+      "main": [
+        [
+          {
+            "node": "Obtenir la page de préférences — outil d’emailing (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Répondre : lien de préférences invalide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtenir la page de préférences — outil d’emailing (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Choisir la réponse (préférences)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Choisir la réponse (préférences)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Choisir la réponse (préférences)": {
+      "main": [
+        [
+          {
+            "node": "Page de l’outil disponible ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Page de l’outil disponible ?": {
+      "main": [
+        [
+          {
+            "node": "Répondre : page de préférences de l’outil",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Répondre : préférences par écrit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lien de confirmation (email 01)": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — confirmation": {
+      "main": [
+        [
+          {
+            "node": "Normaliser le lien de confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliser le lien de confirmation": {
+      "main": [
+        [
+          {
+            "node": "Lien de confirmation valide ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lien de confirmation valide ?": {
+      "main": [
+        [
+          {
+            "node": "Confirmer l’inscription — outil d’emailing (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Répondre : lien de confirmation invalide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmer l’inscription — outil d’emailing (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Bilan de la confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bilan de la confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bilan de la confirmation": {
+      "main": [
+        [
+          {
+            "node": "Inscription confirmée ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inscription confirmée ?": {
+      "main": [
+        [
+          {
+            "node": "Répondre : inscription confirmée",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Répondre : confirmation non enregistrée",
             "type": "main",
             "index": 0
           }

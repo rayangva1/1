@@ -15,8 +15,10 @@ Règles (toutes appliquées, motifs cumulés, issue = la plus grave) :
 1. **Interdits en dur**, indépendants du mandat : cartes à l'unité, grading, rachats clients,
    achats spéculatifs, produits non FR, financement/dette ; moyens de paiement autres que
    PayPal ou virement préparé ; gel stop-loss global (tout), cash (stock, pub), extension,
-   produit, campagne ; trésorerie sous la réserve (1 600 CHF) pour le stock et la pub.
-2. **Mandat inactif** (incomplet, non signé, empreinte modifiée, hors période, révoqué) : aucune
+   produit, campagne ; trésorerie sous la réserve (1 600 CHF) pour le stock et la pub ; taux de
+   change déclaré à plus de 1 % du taux de référence.
+2. **Mandat inactif** (incomplet, non signé — empreinte du coffre absente comprise —, empreinte
+   modifiée, hors période, révoqué, y compris par le registre des révocations) : aucune
    approbation autonome ; tout ce qui n'est pas interdit part en validation humaine.
 3. **Mandat actif** : bénéficiaire sur liste blanche (catégorie et moyen autorisés), catégorie
    déléguée, niveau d'autonomie suffisant, plafond par transaction (coût PayPal inclus),
@@ -24,7 +26,16 @@ Règles (toutes appliquées, motifs cumulés, issue = la plus grave) :
    autonomes, enveloppe de catégorie (cumul depuis l'ouverture du registre, toutes versions
    du mandat) et plafond mensuel de catégorie, plafond de 25 % par extension
    (stock + engagés + demande), réserve cash préservée, solde PayPal suffisant, achat de stock
-   adossé à une proposition du moteur (aucun achat spéculatif), langue FR et identité connues.
+   adossé à une proposition **enregistrée** du moteur (:class:`EngineProposalBook`, < 24 h,
+   référence et montant compris dans la ligne), langue FR et identité connues (un « accessoire »
+   portant une extension est contrôlé comme du stock).
+
+**Aucune valeur décisive n'est déclarée par l'agent qui demande** : le taux de change vient du
+registre des taux (:class:`FxRateBook`, alimenté par la propriétaire ou une source officielle
+datée ; sinon ``FX_RATE_UNVERIFIED`` => validation humaine), la trésorerie des registres du
+moteur (:func:`treasury_from_registers` : dernière photo stop-loss acceptée + solde PayPal relevé ;
+absente => ``TREASURY_UNAVAILABLE``), et un rejeu d'idempotence est **réévalué** (gel, réserve,
+mandat, délai d'exécution d'1 h) : il n'est jamais ``APPROVED`` pendant un gel.
 
 Montants : ``Decimal`` (``float`` refusé), CHF à 0,01 HALF_UP. Aucune écriture externe ici.
 """
@@ -48,9 +59,10 @@ from zoneinfo import ZoneInfo
 import yaml
 from pydantic import BeforeValidator, Field, StrictInt, ValidationError, field_validator, model_validator
 
+from .audit import StateJournal, StateStoreError
 from .errors import PokeshopError
-from .models import FrozenModel, canonical_hash, canonical_json
-from .stoploss import StopLossStatus
+from .models import FrozenModel, ReorderProposal, canonical_hash, canonical_json
+from .stoploss import StopLossState, StopLossStatus
 
 __all__ = [
     "MANDATE_ENV_VAR",
@@ -59,6 +71,20 @@ __all__ = [
     "REGISTRY_COLUMNS",
     "MandateError",
     "IdempotencyConflictError",
+    "LedgerPersistenceError",
+    "RegistryPersistenceError",
+    "FX_MAX_DEVIATION",
+    "EXECUTION_TOLERANCE_PCT",
+    "EXECUTION_TOLERANCE_CHF",
+    "PROPOSAL_MAX_AGE",
+    "MandateRevocation",
+    "MandateRevocations",
+    "FxRate",
+    "FxRateBook",
+    "previous_business_day",
+    "PayPalBalanceReading",
+    "treasury_from_registers",
+    "EngineProposalBook",
     "SpendCategory",
     "PaymentMethod",
     "MandateOutcome",
@@ -103,6 +129,13 @@ TZ = ZoneInfo("Europe/Zurich")
 ZERO = Decimal("0")
 CENT = Decimal("0.01")
 HUMAN_APPROVAL_TTL = timedelta(hours=24)
+FX_MAX_DEVIATION = Decimal("0.01")
+"""Écart maximal entre le taux déclaré et le taux de référence (au-delà : refus)."""
+EXECUTION_TOLERANCE_PCT = Decimal("0.02")
+EXECUTION_TOLERANCE_CHF = Decimal("1.00")
+"""Paiement exécuté au-delà de (coût approuvé × 1,02 + 1 CHF) => alerte de rapprochement."""
+PROPOSAL_MAX_AGE = timedelta(hours=24)
+"""Âge maximal d'une proposition de réassort du moteur pour adosser un achat de stock."""
 _FUTURE_SKEW = timedelta(minutes=5)
 _KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{5,127}$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$")
@@ -124,6 +157,14 @@ REGISTRY_COLUMNS: tuple[str, ...] = (
 
 class MandateError(PokeshopError, ValueError):
     """Mandat illisible/invalide ou opération de registre interdite."""
+
+
+class LedgerPersistenceError(MandateError, StateStoreError):
+    """Registre des dépenses non enregistré ou non relu : aucune décision n'est appliquée (fermé par défaut)."""
+
+
+class RegistryPersistenceError(MandateError, StateStoreError):
+    """Registre (révocations, taux, propositions) non enregistré ou non relu : fermé par défaut."""
 
 
 class IdempotencyConflictError(MandateError):
@@ -215,7 +256,9 @@ CASH_FREEZE_CATEGORIES: frozenset[SpendCategory] = frozenset(
 )
 """Bloquées par le stop-loss cash (« plus d'achat ni de pub ») ; étiquettes et emballages restent possibles."""
 _STOCK_LIKE = frozenset({SpendCategory.STOCK, SpendCategory.ACCESSORIES})
-_LANGUAGE_CHECKED = frozenset({SpendCategory.STOCK, SpendCategory.SAMPLES})
+_LANGUAGE_CHECKED = frozenset({SpendCategory.STOCK, SpendCategory.ACCESSORIES, SpendCategory.SAMPLES})
+_NO_LANGUAGE = "NA"
+"""Langue « sans objet » (accessoire sans texte) : admise hors stock scellé, jamais pour un produit d'extension."""
 
 
 class PaymentMethod(str, Enum):
@@ -265,6 +308,9 @@ class SpendReason(str, Enum):
     SUPPLIER_NOT_WHITELISTED = "SUPPLIER_NOT_WHITELISTED"
     SUPPLIER_CATEGORY_NOT_ALLOWED = "SUPPLIER_CATEGORY_NOT_ALLOWED"
     SUPPLIER_PAYMENT_METHOD_NOT_ALLOWED = "SUPPLIER_PAYMENT_METHOD_NOT_ALLOWED"
+    FX_RATE_MISMATCH = "FX_RATE_MISMATCH"
+    REPLAY_NOT_PAYABLE = "REPLAY_NOT_PAYABLE"
+    ALREADY_EXECUTED = "ALREADY_EXECUTED"
     # --- validation humaine
     MANDATE_INCOMPLETE = "MANDATE_INCOMPLETE"
     MANDATE_NOT_SIGNED = "MANDATE_NOT_SIGNED"
@@ -286,6 +332,10 @@ class SpendReason(str, Enum):
     NO_ENGINE_PROPOSAL = "NO_ENGINE_PROPOSAL"
     CASH_RESERVE_WOULD_BE_BREACHED = "CASH_RESERVE_WOULD_BE_BREACHED"
     PAYPAL_BALANCE_INSUFFICIENT = "PAYPAL_BALANCE_INSUFFICIENT"
+    FX_RATE_UNVERIFIED = "FX_RATE_UNVERIFIED"
+    TREASURY_UNAVAILABLE = "TREASURY_UNAVAILABLE"
+    TREASURY_UNVERIFIED = "TREASURY_UNVERIFIED"
+    CATEGORY_IDENTITY_MISMATCH = "CATEGORY_IDENTITY_MISMATCH"
     # --- signalements (n'aggravent pas l'issue)
     PAYPAL_COST_ABOVE_THRESHOLD = "PAYPAL_COST_ABOVE_THRESHOLD"
     PAYPAL_FX_CONVERSION = "PAYPAL_FX_CONVERSION"
@@ -312,6 +362,9 @@ _REJECT_REASONS = frozenset(
         _R.SUPPLIER_NOT_WHITELISTED,
         _R.SUPPLIER_CATEGORY_NOT_ALLOWED,
         _R.SUPPLIER_PAYMENT_METHOD_NOT_ALLOWED,
+        _R.FX_RATE_MISMATCH,
+        _R.REPLAY_NOT_PAYABLE,
+        _R.ALREADY_EXECUTED,
     }
 )
 _WARN_REASONS = frozenset({_R.PAYPAL_COST_ABOVE_THRESHOLD, _R.PAYPAL_FX_CONVERSION})
@@ -336,6 +389,12 @@ SPEND_REASON_LABELS_FR: dict[SpendReason, str] = {
     _R.SUPPLIER_NOT_WHITELISTED: "Bénéficiaire hors liste blanche du mandat : interdit (ajout = décision C08).",
     _R.SUPPLIER_CATEGORY_NOT_ALLOWED: "Catégorie non autorisée pour ce bénéficiaire.",
     _R.SUPPLIER_PAYMENT_METHOD_NOT_ALLOWED: "Moyen de paiement non autorisé pour ce bénéficiaire.",
+    _R.FX_RATE_MISMATCH: "Taux de change déclaré à plus de 1 % du taux de référence du moteur : refus.",
+    _R.REPLAY_NOT_PAYABLE: (
+        "Rejeu d'une approbation devenue caduque (gel, réserve, mandat ou délai d'exécution d'1 h) : "
+        "aucun paiement ; resoumettre avec une nouvelle clé et des photos fraîches."
+    ),
+    _R.ALREADY_EXECUTED: "Demande déjà payée : aucun second paiement.",
     _R.MANDATE_INCOMPLETE: "Mandat incomplet (montants à remplir) : validation humaine.",
     _R.MANDATE_NOT_SIGNED: "Mandat non signé : aucune dépense autonome.",
     _R.MANDATE_FINGERPRINT_MISMATCH: "Mandat modifié après signature (empreinte) : nouvelle signature requise.",
@@ -356,6 +415,19 @@ SPEND_REASON_LABELS_FR: dict[SpendReason, str] = {
     _R.NO_ENGINE_PROPOSAL: "Achat de stock sans proposition de réassort du moteur : pas d'achat spéculatif.",
     _R.CASH_RESERVE_WOULD_BE_BREACHED: "La dépense entamerait la réserve de 1 600 CHF : décision humaine.",
     _R.PAYPAL_BALANCE_INSUFFICIENT: "Solde PayPal dédié insuffisant ou inconnu : rechargement par la propriétaire.",
+    _R.FX_RATE_UNVERIFIED: (
+        "Devise étrangère sans taux de référence contrôlé (registre des taux de la propriétaire ou source "
+        "officielle datée d'au plus un jour ouvré) : validation humaine."
+    ),
+    _R.TREASURY_UNAVAILABLE: "Trésorerie du moteur indisponible (aucune photo acceptée) : validation humaine.",
+    _R.TREASURY_UNVERIFIED: (
+        "Photo de trésorerie ou de stop-loss déposée par le jeton qui demande la dépense (ou par le jeton "
+        "commun) : chiffres non vérifiables, validation humaine."
+    ),
+    _R.CATEGORY_IDENTITY_MISMATCH: (
+        "Catégorie déclarée incompatible avec l'identité du produit (extension renseignée) : contrôlé comme "
+        "du stock scellé, validation humaine."
+    ),
     _R.PAYPAL_COST_ABOVE_THRESHOLD: "Coût PayPal estimé au-dessus du seuil : virement recommandé.",
     _R.PAYPAL_FX_CONVERSION: "Conversion de devise PayPal : marge de change ajoutée au coût.",
 }
@@ -494,7 +566,11 @@ class Mandate(FrozenModel):
     fingerprint: str
     """Empreinte recalculée du contenu (hors empreinte et révocation)."""
     expected_fingerprint: str | None = None
-    """Empreinte attendue lue dans le coffre (``POKESHOP_MANDATE_FINGERPRINT``), si configurée."""
+    """Empreinte attendue lue dans le coffre (``POKESHOP_MANDATE_FINGERPRINT``) : **obligatoire** pour un
+    mandat actif (une empreinte recopiée dans le YAML seule est calculable par n'importe quel agent)."""
+    revoked_fingerprints: frozenset[str] = frozenset()
+    """Empreintes révoquées (registre persistant :class:`MandateRevocations`) : révocation monotone,
+    effacer ``approval.revoked_at`` du YAML ne réactive jamais un mandat révoqué."""
     source_path: str = "<memory>"
     content_sha256: str = ""
 
@@ -515,6 +591,14 @@ class Mandate(FrozenModel):
                 raise ValueError(f"{s.supplier_id} : catégories non déléguées au mandat {', '.join(outside)}")
         if self.valid_from and self.valid_until and self.valid_until < self.valid_from:
             raise ValueError("valid_until antérieure à valid_from")
+        if self.stock_budget_chf is not None:
+            stock_like = [c.envelope_chf for c in self.categories if c.category in _STOCK_LIKE and c.envelope_chf]
+            total = sum(stock_like, ZERO)
+            if total > self.stock_budget_chf:
+                raise ValueError(
+                    f"enveloppes STOCK + ACCESSORIES ({total} CHF) > budget stock {self.stock_budget_chf} CHF : "
+                    "les accessoires font partie du budget stock (BP §1, §3)"
+                )
         return self
 
     def category(self, category: SpendCategory) -> CategoryLimit | None:
@@ -536,12 +620,32 @@ class Mandate(FrozenModel):
 
     @property
     def is_signed(self) -> bool:
-        """Signé : nom, date et empreinte présents et conformes au contenu."""
+        """Signé : nom, date et empreinte présents, conformes au contenu **et** à l'empreinte du coffre."""
         a = self.approval
-        return bool(a.approved_by and a.approved_at and a.fingerprint_sha256 == self.fingerprint)
+        return bool(
+            a.approved_by
+            and a.approved_at
+            and a.fingerprint_sha256 == self.fingerprint
+            and self.expected_fingerprint == self.fingerprint
+        )
+
+    @property
+    def vault_missing(self) -> bool:
+        """Vrai si le YAML porte une signature mais que l'empreinte du coffre est absente."""
+        a = self.approval
+        return bool(a.approved_by and a.approved_at and a.fingerprint_sha256) and self.expected_fingerprint is None
+
+    def with_revocations(self, fingerprints: frozenset[str] | set[str]) -> Mandate:
+        """Copie tenant compte du registre persistant des révocations."""
+        return self.replace(revoked_fingerprints=frozenset(fingerprints))
 
     def inactive_reasons(self, now: datetime) -> list[SpendReason]:
-        """Motifs empêchant toute approbation autonome à ``now`` (liste vide = mandat actif)."""
+        """Motifs empêchant toute approbation autonome à ``now`` (liste vide = mandat actif).
+
+        Fermé par défaut : sans empreinte au coffre (``POKESHOP_MANDATE_FINGERPRINT``), un mandat
+        « signé » dans le YAML reste ``MANDATE_NOT_SIGNED`` (un agent peut calculer l'empreinte, pas
+        écrire dans le coffre).
+        """
         _require_aware(now, "now")
         reasons: list[SpendReason] = []
         if self.missing_fields():
@@ -549,13 +653,15 @@ class Mandate(FrozenModel):
         a = self.approval
         if not (a.approved_by and a.approved_at and a.fingerprint_sha256):
             reasons.append(SpendReason.MANDATE_NOT_SIGNED)
-        elif a.fingerprint_sha256 != self.fingerprint or (
-            self.expected_fingerprint is not None and self.expected_fingerprint != self.fingerprint
-        ):
+        elif a.fingerprint_sha256 != self.fingerprint:
+            reasons.append(SpendReason.MANDATE_FINGERPRINT_MISMATCH)
+        elif self.expected_fingerprint is None:
+            reasons.append(SpendReason.MANDATE_NOT_SIGNED)
+        elif self.expected_fingerprint != self.fingerprint:
             reasons.append(SpendReason.MANDATE_FINGERPRINT_MISMATCH)
         elif a.approved_at is not None and a.approved_at > now:
             reasons.append(SpendReason.MANDATE_NOT_SIGNED)
-        if a.revoked_at is not None and a.revoked_at <= now:
+        if (a.revoked_at is not None and a.revoked_at <= now) or self.fingerprint in self.revoked_fingerprints:
             reasons.append(SpendReason.MANDATE_REVOKED)
         today = _local_day(now)
         if (self.valid_from and today < self.valid_from) or (self.valid_until and today > self.valid_until):
@@ -571,7 +677,9 @@ def mandate_fingerprint(data: Mapping[str, Any]) -> str:
     """sha256 du contenu canonique du mandat, hors ``approval.fingerprint_sha256`` et ``approval.revoked_at``.
 
     Toute modification d'un plafond, d'un bénéficiaire, d'une date ou du signataire change
-    l'empreinte et désactive le mandat jusqu'à nouvelle signature.
+    l'empreinte et désactive le mandat jusqu'à nouvelle signature. La révocation est hors empreinte
+    (elle vise l'empreinte signée) mais **monotone** : elle est inscrite dans le registre persistant
+    :class:`MandateRevocations`, et vider l'empreinte du coffre désactive aussi le mandat.
     """
     content = {k: v for k, v in data.items() if k != "approval"}
     approval = dict(data.get("approval") or {})
@@ -724,6 +832,188 @@ def load_mandate(path: str | Path | None = None, *, expected_fingerprint: str | 
     return parse_mandate(data, source=str(target), content_sha256=sha, expected_fingerprint=expected or None)
 
 
+# ------------------------------------------------------------------ registres persistants
+
+
+def _journal_records(store: StateJournal, what: str) -> list[Any]:
+    try:
+        return list(store.load())
+    except StateStoreError as exc:
+        raise RegistryPersistenceError(f"{what} : {exc}") from exc
+
+
+def _journal_append(store: StateJournal | None, record: dict[str, Any], what: str) -> None:
+    if store is None:
+        return
+    try:
+        store.append(record)
+    except StateStoreError as exc:
+        raise RegistryPersistenceError(f"{what} non enregistré ({exc})") from exc
+
+
+class MandateRevocation(FrozenModel):
+    """Révocation d'une empreinte de mandat signée (définitive : une nouvelle signature = nouvelle empreinte)."""
+
+    fingerprint: str
+    revoked_at: datetime
+    actor: str = Field(min_length=2)
+    reason: str = Field(min_length=3)
+
+    @field_validator("fingerprint")
+    @classmethod
+    def _fp(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not _SHA256_RE.match(v):
+            raise ValueError("empreinte sha256 attendue")
+        return v
+
+    @field_validator("revoked_at")
+    @classmethod
+    def _tz(cls, v: datetime) -> datetime:
+        return _aware(v, "revoked_at")
+
+
+class MandateRevocations:
+    """Registre **append-only** des empreintes révoquées (journal d'état ``mandate_revocations``).
+
+    Révoquer est un acte protecteur : permis à tout porteur de jeton, appliqué en mémoire même si
+    l'enregistrement échoue (puis :class:`RegistryPersistenceError`). Aucune « dé-révocation ».
+    """
+
+    STREAM = "mandate_revocations"
+
+    def __init__(self, *, store: StateJournal | None = None) -> None:
+        self._lock = threading.RLock()
+        self._items: dict[str, MandateRevocation] = {}
+        self._store = store
+
+    @classmethod
+    def restore(cls, store: StateJournal) -> MandateRevocations:
+        """Relit le registre ; :class:`RegistryPersistenceError` s'il est illisible."""
+        book = cls()
+        for n, record in enumerate(_journal_records(store, "révocations du mandat"), start=1):
+            try:
+                item = MandateRevocation.model_validate(record["revocation"])
+            except (KeyError, TypeError, ValidationError) as exc:
+                raise RegistryPersistenceError(f"révocations du mandat : enregistrement {n} illisible") from exc
+            book._items.setdefault(item.fingerprint, item)
+        book._store = store
+        return book
+
+    def fingerprints(self) -> frozenset[str]:
+        """Empreintes révoquées."""
+        with self._lock:
+            return frozenset(self._items)
+
+    def entries(self) -> tuple[MandateRevocation, ...]:
+        """Révocations dans l'ordre d'inscription."""
+        with self._lock:
+            return tuple(self._items.values())
+
+    def revoke(self, fingerprint: str, *, at: datetime, actor: str, reason: str) -> MandateRevocation:
+        """Révoque une empreinte (idempotent) ; appliquée même si l'écriture échoue (fermé par défaut)."""
+        _require_aware(at, "at")
+        item = MandateRevocation(fingerprint=fingerprint, revoked_at=at, actor=actor, reason=reason)
+        with self._lock:
+            existing = self._items.get(item.fingerprint)
+            if existing is not None:
+                return existing
+            self._items[item.fingerprint] = item
+            _journal_append(self._store, {"revocation": item.model_dump(mode="json")}, "révocation du mandat")
+            return item
+
+
+def previous_business_day(day: date) -> date:
+    """Jour ouvré (lundi-vendredi) précédant ``day``."""
+    d = day - timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
+class FxRate(FrozenModel):
+    """Taux de change de référence (CHF par unité de devise), daté et sourcé, saisi hors de portée des agents."""
+
+    currency: str
+    rate_to_chf: StrictDecimal = Field(gt=0)
+    rate_date: date
+    source: str = Field(min_length=3)
+    """Ex. « BNS cours de référence 11:00 du 2026-11-09 » ou « relevé banque de la propriétaire »."""
+    recorded_by: str = Field(min_length=2)
+    recorded_at: datetime
+
+    @field_validator("currency")
+    @classmethod
+    def _currency(cls, v: str) -> str:
+        code = v.strip().upper()
+        if not _CURRENCY_RE.match(code) or code == "CHF":
+            raise ValueError(f"devise ISO 4217 autre que CHF attendue : {v!r}")
+        return code
+
+    @field_validator("recorded_at")
+    @classmethod
+    def _tz(cls, v: datetime) -> datetime:
+        return _aware(v, "recorded_at")
+
+    @model_validator(mode="after")
+    def _not_future(self) -> FxRate:
+        if self.rate_date > _local_day(self.recorded_at):
+            raise ValueError("taux daté du futur")
+        return self
+
+
+class FxRateBook:
+    """Registre des taux de référence (journal d'état ``fx_rates``), alimenté par la propriétaire.
+
+    :meth:`reference` ne renvoie un taux que s'il date du jour ou du jour ouvré précédent : au-delà,
+    la demande en devise part en validation humaine (``FX_RATE_UNVERIFIED``).
+    """
+
+    STREAM = "fx_rates"
+
+    def __init__(self, *, store: StateJournal | None = None) -> None:
+        self._lock = threading.RLock()
+        self._rates: list[FxRate] = []
+        self._store = store
+
+    @classmethod
+    def restore(cls, store: StateJournal) -> FxRateBook:
+        """Relit le registre ; :class:`RegistryPersistenceError` s'il est illisible."""
+        book = cls()
+        for n, record in enumerate(_journal_records(store, "taux de change"), start=1):
+            try:
+                book._rates.append(FxRate.model_validate(record["rate"]))
+            except (KeyError, TypeError, ValidationError) as exc:
+                raise RegistryPersistenceError(f"taux de change : enregistrement {n} illisible") from exc
+        book._store = store
+        return book
+
+    def record(self, rate: FxRate) -> FxRate:
+        """Enregistre un taux (écrit d'abord, appliqué ensuite)."""
+        with self._lock:
+            _journal_append(self._store, {"rate": rate.model_dump(mode="json")}, "taux de change")
+            self._rates.append(rate)
+            return rate
+
+    def latest(self, currency: str) -> FxRate | None:
+        """Dernier taux connu de la devise (date du taux, puis date de saisie)."""
+        code = currency.strip().upper()
+        with self._lock:
+            items = [r for r in self._rates if r.currency == code]
+        return max(items, key=lambda r: (r.rate_date, r.recorded_at), default=None)
+
+    def reference(self, currency: str, at: datetime) -> FxRate | None:
+        """Taux de référence utilisable à ``at`` : daté du jour ou du jour ouvré précédent, sinon None."""
+        _require_aware(at, "at")
+        rate = self.latest(currency)
+        if rate is None:
+            return None
+        today = _local_day(at)
+        if rate.rate_date > today or rate.rate_date < previous_business_day(today):
+            return None
+        return rate
+
+
 # --------------------------------------------------------------------- demande
 
 
@@ -817,13 +1107,94 @@ class TreasurySnapshot(FrozenModel):
     """Banque + PayPal − précommandes encaissées non livrées (avant engagements non débités)."""
     paypal_balance_chf: StrictDecimal | None = None
     """Solde du compte PayPal dédié (None = inconnu)."""
+    paypal_balance_as_of: datetime | None = None
+    """Date du relevé du solde PayPal (None = date de la photo) ; périmé => solde inconnu."""
     extension_exposure_chf: dict[str, StrictDecimal] = Field(default_factory=dict)
     """Par extension : stock au coût historique + achats engagés non reçus, à ``as_of``."""
+
+    @field_validator("as_of", "paypal_balance_as_of")
+    @classmethod
+    def _tz(cls, v: datetime | None) -> datetime | None:
+        return None if v is None else _aware(v, "as_of")
+
+
+class PayPalBalanceReading(FrozenModel):
+    """Solde du compte PayPal dédié relevé par un connecteur (déposé hors de la demande de dépense)."""
+
+    as_of: datetime
+    balance_chf: StrictDecimal = Field(ge=0)
+    source: str = Field(min_length=3)
+    recorded_by: str = Field(min_length=2)
 
     @field_validator("as_of")
     @classmethod
     def _tz(cls, v: datetime) -> datetime:
         return _aware(v, "as_of")
+
+
+def treasury_from_registers(
+    photo: StopLossState | None, paypal: PayPalBalanceReading | None = None
+) -> TreasurySnapshot | None:
+    """Trésorerie lue dans les registres du moteur (jamais dans la demande) ; None sans photo acceptée.
+
+    Cash disponible et exposition par extension (stock au coût + engagé non reçu) : dernière photo
+    stop-loss **acceptée** ; solde PayPal : dernier relevé déposé (``POST /treasury/paypal-balance``).
+    """
+    if photo is None:
+        return None
+    return TreasurySnapshot(
+        as_of=photo.as_of,
+        cash_available_chf=photo.cash_available_chf,
+        paypal_balance_chf=None if paypal is None else paypal.balance_chf,
+        paypal_balance_as_of=None if paypal is None else paypal.as_of,
+        extension_exposure_chf={e.extension: e.exposure for e in photo.extensions},
+    )
+
+
+class EngineProposalBook:
+    """Propositions de réassort produites par le moteur (journal d'état ``reorder_proposals``).
+
+    Un achat de stock n'est adossé que si ``justification_ref`` = ``inputs_hash`` d'une proposition
+    **enregistrée ici** par ``POST /stock/reorder-proposal`` (aucune chaîne libre).
+    """
+
+    STREAM = "reorder_proposals"
+
+    def __init__(self, *, store: StateJournal | None = None) -> None:
+        self._lock = threading.RLock()
+        self._items: dict[str, ReorderProposal] = {}
+        self._store = store
+
+    @classmethod
+    def restore(cls, store: StateJournal) -> EngineProposalBook:
+        """Relit le registre ; :class:`RegistryPersistenceError` s'il est illisible."""
+        book = cls()
+        for n, record in enumerate(_journal_records(store, "propositions de réassort"), start=1):
+            try:
+                proposal = ReorderProposal.model_validate(record["proposal"])
+            except (KeyError, TypeError, ValidationError) as exc:
+                raise RegistryPersistenceError(f"propositions de réassort : enregistrement {n} illisible") from exc
+            book._items.setdefault(proposal.inputs_hash, proposal)
+        book._store = store
+        return book
+
+    def register(self, proposal: ReorderProposal, *, recorded_by: str) -> bool:
+        """Enregistre une proposition du moteur (idempotent par ``inputs_hash``) ; False si déjà connue."""
+        with self._lock:
+            if proposal.inputs_hash in self._items:
+                return False
+            _journal_append(
+                self._store,
+                {"proposal": proposal.model_dump(mode="json"), "recorded_by": recorded_by},
+                "proposition de réassort",
+            )
+            self._items[proposal.inputs_hash] = proposal
+            return True
+
+    def get(self, ref: str) -> ReorderProposal | None:
+        """Proposition par référence (``inputs_hash``)."""
+        with self._lock:
+            return self._items.get(ref)
 
 
 class DecisionContext(FrozenModel):
@@ -842,6 +1213,10 @@ class DecisionContext(FrozenModel):
     stoploss_cash_ok: bool = True
     stoploss_global_ok: bool = True
     autonomy_level: int = 1
+    fx_reference_rate: Decimal | None = None
+    fx_reference_source: str | None = None
+    fx_reference_date: date | None = None
+    treasury_source: str = "moteur"
 
 
 class TransferDraft(FrozenModel):
@@ -930,36 +1305,162 @@ def _fmt(value: Decimal | None) -> str:
     return "—" if value is None else f"{_q2(value)} CHF"
 
 
+def _sort_reasons(reasons: Sequence[SpendReason]) -> tuple[str, ...]:
+    order = list(SpendReason)
+    return tuple(r.value for r in sorted(reasons, key=lambda r: (-REASON_OUTCOME[r].severity, order.index(r))))
+
+
+def _replay(
+    existing: SpendEntry,
+    request: SpendRequest,
+    mandate: Mandate,
+    ledger: SpendLedger,
+    stoploss_state: StopLossStatus,
+    treasury_snapshot: TreasurySnapshot | None,
+    at: datetime,
+) -> MandateDecision:
+    """Rejeu d'une clé déjà enregistrée : décision d'origine **réévaluée** contre l'état courant.
+
+    Une approbation (autonome ou humaine) n'est rejouée telle quelle que si elle est encore payable :
+    non exécutée, de moins d'une heure (:meth:`SpendLedger.can_execute`), sans gel ni réserve franchie,
+    mandat toujours actif, photos fraîches. Sinon : ``REJECTED`` (``REPLAY_NOT_PAYABLE`` + motifs),
+    ``replayed=True`` ; jamais ``APPROVED`` pendant un gel.
+    """
+    original = existing.decision
+    payable = original.outcome is MandateOutcome.APPROVED_WITHIN_MANDATE or existing.status is SpendStatus.HUMAN_APPROVED
+    if not payable:
+        return original.replace(replayed=True)
+    v = _Verdict()
+    cat = request.category
+    max_age = timedelta(minutes=mandate.snapshot_max_age_minutes)
+    if existing.status is SpendStatus.EXECUTED:
+        v.add(SpendReason.ALREADY_EXECUTED)
+    elif existing.status not in _UNEXECUTED:
+        v.add(SpendReason.REPLAY_NOT_PAYABLE, f"Demande au statut {existing.status.value} : aucun paiement.")
+    else:
+        if not ledger.can_execute(request.idempotency_key, now=at):
+            v.add(
+                SpendReason.REPLAY_NOT_PAYABLE,
+                "Approbation de plus d'une heure (délai d'exécution) : resoumettre avec une nouvelle clé.",
+            )
+        if _stale(stoploss_state.photo_as_of, at, max_age):
+            v.add(SpendReason.STALE_STOPLOSS_STATUS)
+        if stoploss_state.global_frozen:
+            v.add(SpendReason.STOPLOSS_GLOBAL_FREEZE)
+        if cat in CASH_FREEZE_CATEGORIES and stoploss_state.purchases_and_ads_frozen:
+            v.add(SpendReason.STOPLOSS_CASH_FREEZE)
+        if cat in _STOCK_LIKE and request.extension and request.extension in stoploss_state.no_reorder_extensions:
+            v.add(SpendReason.STOPLOSS_EXTENSION)
+        if cat in _STOCK_LIKE and request.product_key and request.product_key in stoploss_state.blocked_products:
+            v.add(SpendReason.STOPLOSS_PRODUCT)
+        if cat is SpendCategory.ADVERTISING and (
+            stoploss_state.ads_globally_cut or (request.campaign_id and request.campaign_id in stoploss_state.cut_campaigns)
+        ):
+            v.add(SpendReason.STOPLOSS_ADS)
+        if treasury_snapshot is None:
+            v.add(SpendReason.TREASURY_UNAVAILABLE)
+        else:
+            if _stale(treasury_snapshot.as_of, at, max_age):
+                v.add(SpendReason.STALE_TREASURY_SNAPSHOT)
+            if cat in CASH_FREEZE_CATEGORIES and treasury_snapshot.cash_available_chf < mandate.cash_reserve_chf:
+                v.add(SpendReason.CASH_BELOW_RESERVE)
+        if existing.autonomous:
+            for reason in mandate.inactive_reasons(at):
+                v.add(reason)
+            limit = mandate.category(cat)
+            if limit is not None and stoploss_state.autonomy_level < limit.min_autonomy_level:
+                v.add(SpendReason.AUTONOMY_LEVEL_TOO_LOW)
+        if v.reasons and SpendReason.REPLAY_NOT_PAYABLE not in v.reasons:
+            v.add(SpendReason.REPLAY_NOT_PAYABLE)
+    if not v.reasons:
+        return original.replace(replayed=True)
+    return original.replace(
+        outcome=MandateOutcome.REJECTED,
+        reasons=_sort_reasons(v.reasons),
+        messages=tuple(v.messages),
+        transfer_draft=None,
+        replayed=True,
+    )
+
+
+def _proposal_problem(
+    request: SpendRequest,
+    amount_chf: Decimal,
+    proposals: EngineProposalBook | None,
+    ledger: SpendLedger,
+    at: datetime,
+) -> str | None:
+    """Motif détaillé si l'achat de stock n'est pas adossé à une proposition enregistrée du moteur."""
+    ref = request.justification_ref
+    if ref is None:
+        return SPEND_REASON_LABELS_FR[SpendReason.NO_ENGINE_PROPOSAL]
+    proposal = proposals.get(ref) if proposals is not None else None
+    if proposal is None:
+        return f"Proposition {ref[:16]} inconnue du moteur (POST /stock/reorder-proposal) : achat non adossé."
+    age = at - proposal.generated_at
+    if age > PROPOSAL_MAX_AGE or -age > _FUTURE_SKEW:
+        return f"Proposition {ref[:16]} du {proposal.generated_at.isoformat()} périmée (> 24 h) : en recalculer une."
+    line = next(
+        (
+            ln
+            for ln in proposal.lines
+            if ln.product_key == request.product_key and (request.extension is None or ln.extension == request.extension)
+        ),
+        None,
+    )
+    if line is None:
+        return f"Référence {request.product_key} absente de la proposition {ref[:16]} : achat non adossé."
+    consumed = ledger.committed_against_proposal(ref, line.product_key)
+    if consumed + amount_chf > line.line_cost_chf:
+        return (
+            f"Proposition {ref[:16]} / {line.product_key} : {_fmt(consumed)} déjà engagés + {_fmt(amount_chf)} "
+            f"> ligne proposée {_fmt(line.line_cost_chf)}."
+        )
+    return None
+
+
 def check(
     request: SpendRequest,
     mandate: Mandate,
     ledger: SpendLedger,
     stoploss_state: StopLossStatus,
-    treasury_snapshot: TreasurySnapshot,
+    treasury_snapshot: TreasurySnapshot | None,
     *,
     now: datetime | None = None,
+    fx_rates: FxRateBook | None = None,
+    proposals: EngineProposalBook | None = None,
+    unverified: Sequence[str] = (),
 ) -> MandateDecision:
     """Contrôle une demande de dépense contre le mandat, le registre, le stop-loss et la trésorerie.
 
-    Idempotent : une clé déjà enregistrée renvoie la décision d'origine (``replayed=True``) si la
-    demande est identique, ``REJECTED`` / ``IDEMPOTENCY_CONFLICT`` sinon. ``now`` = date de la
-    demande par défaut. Ne modifie pas le registre : appeler ensuite :meth:`SpendLedger.record`.
+    * ``treasury_snapshot`` : trésorerie **des registres du moteur** (:func:`treasury_from_registers`),
+      jamais celle de la demande ; ``None`` => ``TREASURY_UNAVAILABLE`` (validation humaine).
+    * ``fx_rates`` : registre des taux de référence ; devise ≠ CHF sans taux de référence frais =>
+      ``FX_RATE_UNVERIFIED`` ; taux déclaré à plus de 1 % => ``FX_RATE_MISMATCH`` ; le montant CHF est
+      calculé au **taux de référence**.
+    * ``proposals`` : propositions de réassort enregistrées (achats de stock adossés).
+    * ``unverified`` : entrées décisives non vérifiables (ex. photo déposée par le jeton demandeur)
+      => ``TREASURY_UNVERIFIED``.
+
+    Idempotent : une clé déjà enregistrée renvoie la décision d'origine **réévaluée** (``replayed=True``,
+    voir :func:`_replay`) si la demande est identique, ``REJECTED`` / ``IDEMPOTENCY_CONFLICT`` sinon.
+    ``now`` = date de la demande par défaut. Ne modifie pas le registre : appeler ensuite
+    :meth:`SpendLedger.record`.
     """
     at = now if now is not None else request.requested_at
     _require_aware(at, "now")
     request_hash = request.request_hash
     existing = ledger.get(request.idempotency_key)
-    amount_chf = request.amount_chf
     if existing is not None:
         if existing.request_hash == request_hash:
-            return existing.decision.replace(replayed=True)
+            return _replay(existing, request, mandate, ledger, stoploss_state, treasury_snapshot, at)
         return MandateDecision(
             outcome=MandateOutcome.REJECTED,
             reasons=(SpendReason.IDEMPOTENCY_CONFLICT.value,),
             messages=(SPEND_REASON_LABELS_FR[SpendReason.IDEMPOTENCY_CONFLICT],),
-            amount_chf=amount_chf,
+            amount_chf=request.amount_chf,
             payment_cost_chf=ZERO,
-            effective_cost_chf=amount_chf,
+            effective_cost_chf=request.amount_chf,
             mandate_version=mandate.mandate_version,
             mandate_fingerprint=mandate.fingerprint,
             request_hash=request_hash,
@@ -971,6 +1472,38 @@ def check(
     v = _Verdict()
     cat = request.category
     max_age = timedelta(minutes=mandate.snapshot_max_age_minutes)
+    ctx: dict[str, Any] = {"autonomy_level": stoploss_state.autonomy_level}
+
+    # -- taux de change : jamais celui de l'agent (BP §4 « l'IA ne choisit pas un taux »)
+    rate = request.fx_rate_to_chf if request.fx_rate_to_chf is not None else Decimal(1)
+    if request.currency != "CHF":
+        reference = fx_rates.reference(request.currency, at) if fx_rates is not None else None
+        if reference is None:
+            last = fx_rates.latest(request.currency) if fx_rates is not None else None
+            why = (
+                f"dernier taux {request.currency} du {last.rate_date.isoformat()} périmé (> 1 jour ouvré)"
+                if last is not None
+                else f"aucun taux {request.currency} au registre"
+            )
+            v.add(
+                SpendReason.FX_RATE_UNVERIFIED,
+                f"Taux déclaré {rate} ({request.fx_source}) non contrôlé : {why}. Validation humaine.",
+            )
+        else:
+            deviation = abs(rate - reference.rate_to_chf) / reference.rate_to_chf
+            if deviation > FX_MAX_DEVIATION:
+                v.add(
+                    SpendReason.FX_RATE_MISMATCH,
+                    f"Taux déclaré {rate} ≠ référence {reference.rate_to_chf} ({reference.source}, "
+                    f"{reference.rate_date.isoformat()}) : écart {_q2(deviation * 100)} % > 1 %.",
+                )
+            rate = reference.rate_to_chf
+            ctx.update(
+                fx_reference_rate=reference.rate_to_chf,
+                fx_reference_source=reference.source,
+                fx_reference_date=reference.rate_date,
+            )
+    amount_chf = _q2(request.amount * rate)
 
     # -- coût effectif (PayPal : frais + change ajoutés au montant)
     cost = ZERO
@@ -987,18 +1520,32 @@ def check(
             )
     effective = amount_chf + cost
 
+    # -- identité du produit : un « accessoire » portant une extension est un produit d'extension
+    stock_identity = cat is SpendCategory.STOCK or (cat is SpendCategory.ACCESSORIES and request.extension is not None)
+    if cat is SpendCategory.ACCESSORIES and request.extension is not None:
+        v.add(
+            SpendReason.CATEGORY_IDENTITY_MISMATCH,
+            f"Accessoire déclaré avec l'extension {request.extension} : contrôlé comme du stock scellé.",
+        )
+
     # -- 1. interdits en dur (indépendants du mandat)
     if cat in FORBIDDEN_CATEGORIES or cat in mandate.extra_forbidden_categories:
         v.add(SpendReason.FORBIDDEN_CATEGORY)
-    if cat in _LANGUAGE_CHECKED and request.product_language is not None and request.product_language != "FR":
-        v.add(SpendReason.NON_FR_PRODUCT, f"Langue {request.product_language} : seuls les produits FR sont achetés.")
+    lang = request.product_language
+    # « NA » (sans texte) n'est admis que pour un accessoire sans extension ; jamais pour du scellé ni un échantillon.
+    allowed_lang = ("FR", _NO_LANGUAGE) if cat is SpendCategory.ACCESSORIES and not stock_identity else ("FR",)
+    if (cat in _LANGUAGE_CHECKED or stock_identity) and lang is not None and lang not in allowed_lang:
+        v.add(SpendReason.NON_FR_PRODUCT, f"Langue {lang} : seuls les produits FR sont achetés.")
     if request.payment_method not in _ALLOWED_METHODS:
         v.add(SpendReason.PAYMENT_METHOD_FORBIDDEN)
-    treasury_stale = _stale(treasury_snapshot.as_of, at, max_age)
-    if treasury_stale:
-        v.add(SpendReason.STALE_TREASURY_SNAPSHOT)
-    if _stale(stoploss_state.as_of, at, max_age):
-        v.add(SpendReason.STALE_STOPLOSS_STATUS)
+    for label in unverified:
+        v.add(SpendReason.TREASURY_UNVERIFIED, f"{label} : déposée par le jeton qui demande la dépense, non vérifiable.")
+    if _stale(stoploss_state.photo_as_of, at, max_age):
+        v.add(
+            SpendReason.STALE_STOPLOSS_STATUS,
+            f"Photo stop-loss du {stoploss_state.photo_as_of.isoformat()} : plus de "
+            f"{mandate.snapshot_max_age_minutes} min, à recalculer.",
+        )
     if stoploss_state.global_frozen:
         v.add(SpendReason.STOPLOSS_GLOBAL_FREEZE)
     if cat in CASH_FREEZE_CATEGORIES and stoploss_state.purchases_and_ads_frozen:
@@ -1012,28 +1559,31 @@ def check(
     ):
         v.add(SpendReason.STOPLOSS_ADS)
 
-    unsettled = ledger.unsettled_commitments(since=treasury_snapshot.as_of)
-    cash_before = treasury_snapshot.cash_available_chf - unsettled
     reserve = mandate.cash_reserve_chf
-    if treasury_snapshot.cash_available_chf < reserve and cat in CASH_FREEZE_CATEGORIES:
-        v.add(
-            SpendReason.CASH_BELOW_RESERVE,
-            f"Cash disponible {_fmt(treasury_snapshot.cash_available_chf)} < réserve {_fmt(reserve)}.",
-        )
-    elif cash_before - effective < reserve:
-        v.add(
-            SpendReason.CASH_RESERVE_WOULD_BE_BREACHED,
-            f"Cash après dépense {_fmt(cash_before - effective)} < réserve {_fmt(reserve)}.",
-        )
-
-    ctx: dict[str, Any] = {
-        "cash_available_before_chf": cash_before,
-        "stoploss_cash_ok": (
+    ctx["stoploss_global_ok"] = not stoploss_state.global_frozen
+    if treasury_snapshot is None:
+        v.add(SpendReason.TREASURY_UNAVAILABLE)
+        ctx["stoploss_cash_ok"] = False
+        ctx["cash_available_before_chf"] = ZERO
+    else:
+        if _stale(treasury_snapshot.as_of, at, max_age):
+            v.add(SpendReason.STALE_TREASURY_SNAPSHOT)
+        unsettled = ledger.unsettled_commitments(since=treasury_snapshot.as_of)
+        cash_before = treasury_snapshot.cash_available_chf - unsettled
+        if treasury_snapshot.cash_available_chf < reserve and cat in CASH_FREEZE_CATEGORIES:
+            v.add(
+                SpendReason.CASH_BELOW_RESERVE,
+                f"Cash disponible {_fmt(treasury_snapshot.cash_available_chf)} < réserve {_fmt(reserve)}.",
+            )
+        elif cash_before - effective < reserve:
+            v.add(
+                SpendReason.CASH_RESERVE_WOULD_BE_BREACHED,
+                f"Cash après dépense {_fmt(cash_before - effective)} < réserve {_fmt(reserve)}.",
+            )
+        ctx["cash_available_before_chf"] = cash_before
+        ctx["stoploss_cash_ok"] = (
             not stoploss_state.purchases_and_ads_frozen and treasury_snapshot.cash_available_chf >= reserve
-        ),
-        "stoploss_global_ok": not stoploss_state.global_frozen,
-        "autonomy_level": stoploss_state.autonomy_level,
-    }
+        )
     supplier = mandate.supplier(request.supplier_id)
 
     # -- 2. mandat inactif : aucune approbation autonome
@@ -1042,6 +1592,11 @@ def check(
         detail = None
         if reason is SpendReason.MANDATE_INCOMPLETE:
             detail = "Mandat incomplet : " + ", ".join(mandate.missing_fields())
+        elif reason is SpendReason.MANDATE_NOT_SIGNED and mandate.vault_missing:
+            detail = (
+                "Mandat non signé : empreinte du coffre (POKESHOP_MANDATE_FINGERPRINT) absente ; une empreinte "
+                "recopiée dans le YAML ne vaut pas signature."
+            )
         v.add(reason, detail)
 
     # -- 3. règles du mandat actif
@@ -1107,11 +1662,20 @@ def check(
                 f"Mois : {_fmt(month_total)} + {_fmt(effective)} > plafond {_fmt(mandate.per_month_chf)}.",
             )
         if request.payment_method is PaymentMethod.PAYPAL:
-            paypal_pending = ledger.unsettled_commitments(since=treasury_snapshot.as_of, method=PaymentMethod.PAYPAL)
-            if treasury_snapshot.paypal_balance_chf is None:
+            balance = treasury_snapshot.paypal_balance_chf if treasury_snapshot is not None else None
+            balance_at = None
+            if treasury_snapshot is not None:
+                balance_at = treasury_snapshot.paypal_balance_as_of or treasury_snapshot.as_of
+            if balance is None or balance_at is None:
                 v.add(SpendReason.PAYPAL_BALANCE_INSUFFICIENT, "Solde PayPal inconnu : à relever avant paiement.")
+            elif _stale(balance_at, at, max_age):
+                v.add(
+                    SpendReason.PAYPAL_BALANCE_INSUFFICIENT,
+                    f"Solde PayPal relevé le {balance_at.isoformat()} : périmé, à relever avant paiement.",
+                )
             else:
-                available = treasury_snapshot.paypal_balance_chf - paypal_pending
+                paypal_pending = ledger.unsettled_commitments(since=balance_at, method=PaymentMethod.PAYPAL)
+                available = balance - paypal_pending
                 ctx["paypal_available_before_chf"] = available
                 if available < effective:
                     v.add(
@@ -1123,19 +1687,21 @@ def check(
     if cat in _STOCK_LIKE:
         if request.product_key is None:
             v.add(SpendReason.PRODUCT_UNKNOWN)
-        if request.justification_ref is None:
-            v.add(SpendReason.NO_ENGINE_PROPOSAL)
-    if cat is SpendCategory.STOCK:
-        if request.product_language is None:
+        problem = _proposal_problem(request, amount_chf, proposals, ledger, at)
+        if problem is not None:
+            v.add(SpendReason.NO_ENGINE_PROPOSAL, problem)
+    if stock_identity:
+        if lang is None or lang == _NO_LANGUAGE:
             v.add(SpendReason.LANGUAGE_UNKNOWN)
         if request.extension is None:
             v.add(SpendReason.EXTENSION_UNKNOWN)
-        elif mandate.stock_budget_chf is not None:
+    if cat in _STOCK_LIKE and request.extension is not None and mandate.stock_budget_chf is not None:
+        cap = mandate.extension_max_share * mandate.stock_budget_chf
+        ctx["extension_cap_chf"] = _q2(cap)
+        if treasury_snapshot is not None:
             pending_ext = ledger.unsettled_commitments(since=treasury_snapshot.as_of, extension=request.extension)
             exposure = treasury_snapshot.extension_exposure_chf.get(request.extension, ZERO) + pending_ext
-            cap = mandate.extension_max_share * mandate.stock_budget_chf
             ctx["extension_exposure_before_chf"] = exposure
-            ctx["extension_cap_chf"] = _q2(cap)
             if exposure + effective > cap:
                 v.add(
                     SpendReason.ABOVE_EXTENSION_CAP,
@@ -1144,8 +1710,7 @@ def check(
                 )
 
     outcome = v.outcome
-    order = list(SpendReason)
-    reasons = tuple(r.value for r in sorted(v.reasons, key=lambda r: (-REASON_OUTCOME[r].severity, order.index(r))))
+    reasons = _sort_reasons(v.reasons)
     draft = None
     if request.payment_method is PaymentMethod.BANK_TRANSFER and outcome is MandateOutcome.NEEDS_HUMAN_APPROVAL:
         draft = TransferDraft(
@@ -1211,7 +1776,9 @@ class SpendEntry(FrozenModel):
     executed_amount_chf: Decimal | None = None
     payment_ref: str | None = None
     reconciled_at: datetime | None = None
-    reconciliation: Literal["OK", "AMOUNT_MISMATCH"] | None = None
+    reconciliation: Literal["OK", "AMOUNT_MISMATCH", "AMOUNT_ABOVE_APPROVAL"] | None = None
+    execution_alert: str | None = None
+    """Montant exécuté au-delà de l'approuvé (tolérance 2 % + 1 CHF) : alerte, rapprochement en écart."""
     note: str = ""
 
     @property
@@ -1264,7 +1831,9 @@ class StatementLine(FrozenModel):
 class ReconciliationLine(FrozenModel):
     """Résultat de rapprochement d'une ligne."""
 
-    status: Literal["OK", "AMOUNT_MISMATCH", "UNKNOWN_DEBIT", "MISSING_ON_STATEMENT", "PENDING"]
+    status: Literal[
+        "OK", "AMOUNT_MISMATCH", "AMOUNT_ABOVE_APPROVAL", "UNKNOWN_DEBIT", "MISSING_ON_STATEMENT", "PENDING"
+    ]
     idempotency_key: str | None = None
     transaction_id: str | None = None
     ledger_amount_chf: Decimal | None = None
@@ -1281,7 +1850,7 @@ class ReconciliationReport(FrozenModel):
     @property
     def alerts(self) -> tuple[ReconciliationLine, ...]:
         """Écarts à traiter (montant, débit inconnu, paiement absent du relevé)."""
-        alert_statuses = ("AMOUNT_MISMATCH", "UNKNOWN_DEBIT", "MISSING_ON_STATEMENT")
+        alert_statuses = ("AMOUNT_MISMATCH", "AMOUNT_ABOVE_APPROVAL", "UNKNOWN_DEBIT", "MISSING_ON_STATEMENT")
         return tuple(ln for ln in self.lines if ln.status in alert_statuses)
 
     @property
@@ -1290,13 +1859,52 @@ class ReconciliationReport(FrozenModel):
         return not self.alerts
 
 
-class SpendLedger:
-    """Registre append-only des demandes de dépense, idempotent et rapprochable (thread-safe)."""
+def _execution_limit(entry: SpendEntry) -> Decimal:
+    """Montant maximal exécutable sans alerte : coût approuvé × (1 + 2 %) + 1 CHF."""
+    return _q2(entry.decision.effective_cost_chf * (1 + EXECUTION_TOLERANCE_PCT)) + EXECUTION_TOLERANCE_CHF
 
-    def __init__(self) -> None:
+
+class SpendLedger:
+    """Registre append-only des demandes de dépense, idempotent et rapprochable (thread-safe).
+
+    ``store`` (journal d'état ``mandate_ledger``) reçoit **avant application** chaque événement
+    avec l'état de la demande qui en résulte : enveloppes cumulées, plafonds mensuels,
+    anti-fractionnement et clés d'idempotence survivent au redémarrage (:meth:`restore`).
+    Une écriture refusée par le stockage lève :class:`LedgerPersistenceError` et ne change rien.
+    """
+
+    STREAM = "mandate_ledger"
+
+    def __init__(self, *, store: StateJournal | None = None) -> None:
         self._lock = threading.RLock()
         self._entries: dict[str, SpendEntry] = {}
         self._events: list[LedgerEvent] = []
+        self._store = store
+
+    @classmethod
+    def restore(cls, store: StateJournal) -> SpendLedger:
+        """Rejoue le journal d'état ; :class:`LedgerPersistenceError` s'il est illisible ou incohérent."""
+        try:
+            records = store.load()
+        except StateStoreError as exc:
+            raise LedgerPersistenceError(str(exc)) from exc
+        ledger = cls()
+        for n, record in enumerate(records, start=1):
+            try:
+                event = LedgerEvent.model_validate(record["event"])
+                raw_entry = record.get("entry")
+                entry = None if raw_entry is None else SpendEntry.model_validate(raw_entry)
+            except (KeyError, TypeError, AttributeError, ValidationError) as exc:
+                raise LedgerPersistenceError(f"registre du mandat : enregistrement {n} illisible") from exc
+            if event.seq != len(ledger._events) + 1:
+                raise LedgerPersistenceError(f"registre du mandat : séquence rompue à l'enregistrement {n}")
+            if entry is not None:
+                if entry.idempotency_key != event.idempotency_key or entry.request_hash != entry.request.request_hash:
+                    raise LedgerPersistenceError(f"registre du mandat : enregistrement {n} incohérent")
+                ledger._entries[entry.idempotency_key] = entry
+            ledger._events.append(event)
+        ledger._store = store
+        return ledger
 
     # -- lecture ------------------------------------------------------------------
     def get(self, idempotency_key: str) -> SpendEntry | None:
@@ -1361,10 +1969,21 @@ class SpendLedger:
                 if method is not None and e.request.payment_method is not method:
                     continue
                 if extension is not None and (
-                    e.request.category is not SpendCategory.STOCK or e.request.extension != extension
+                    e.request.category not in _STOCK_LIKE or e.request.extension != extension
                 ):
                     continue
                 total += e.committed_amount_chf
+        return total
+
+    def committed_against_proposal(self, ref: str, product_key: str) -> Decimal:
+        """Montants (hors frais) déjà engagés ou en attente humaine sur une ligne de proposition du moteur."""
+        total = ZERO
+        with self._lock:
+            for e in self._entries.values():
+                if e.status not in _COMMITTED and e.status is not SpendStatus.PENDING_HUMAN:
+                    continue
+                if e.request.justification_ref == ref and e.request.product_key == product_key:
+                    total += e.decision.amount_chf
         return total
 
     def can_execute(self, idempotency_key: str, *, now: datetime, max_age: timedelta = timedelta(hours=1)) -> bool:
@@ -1377,10 +1996,26 @@ class SpendLedger:
         return timedelta(0) <= now - reference <= max_age
 
     # -- écriture -----------------------------------------------------------------
-    def _log(self, at: datetime, key: str, kind: Any, actor: str, detail: str = "") -> None:
-        self._events.append(
-            LedgerEvent(seq=len(self._events) + 1, at=at, idempotency_key=key, kind=kind, actor=actor, detail=detail)
+    def _log(
+        self, at: datetime, key: str, kind: Any, actor: str, detail: str = "", *, entry: SpendEntry | None = None
+    ) -> None:
+        """Enregistre l'événement (et l'état de la demande) dans le journal d'état **puis** l'applique."""
+        event = LedgerEvent(
+            seq=len(self._events) + 1, at=at, idempotency_key=key, kind=kind, actor=actor, detail=detail
         )
+        if self._store is not None:
+            try:
+                self._store.append(
+                    {
+                        "event": event.model_dump(mode="json"),
+                        "entry": None if entry is None else entry.model_dump(mode="json"),
+                    }
+                )
+            except StateStoreError as exc:
+                raise LedgerPersistenceError(f"registre du mandat : {kind} non enregistré ({exc})") from exc
+        if entry is not None:
+            self._entries[entry.idempotency_key] = entry
+        self._events.append(event)
 
     def _require(self, key: str) -> SpendEntry:
         entry = self._entries.get(key)
@@ -1415,20 +2050,15 @@ class SpendLedger:
                 status=status,
                 recorded_at=decision.decided_at,
             )
-            self._entries[request.idempotency_key] = entry
             self._log(
                 decision.decided_at,
                 request.idempotency_key,
                 "RECORDED",
                 actor,
                 f"{decision.outcome.value} {','.join(decision.reasons)}",
+                entry=entry,
             )
             return entry
-
-    def _update(self, entry: SpendEntry, **changes: Any) -> SpendEntry:
-        updated = entry.replace(**changes)
-        self._entries[entry.idempotency_key] = updated
-        return updated
 
     def approve_by_human(
         self, idempotency_key: str, *, approver: str, at: datetime, note: str = "", ttl: timedelta = HUMAN_APPROVAL_TTL
@@ -1442,13 +2072,15 @@ class SpendLedger:
             if entry.status is not SpendStatus.PENDING_HUMAN:
                 raise MandateError(f"{idempotency_key} : statut {entry.status.value}, validation impossible")
             if at - entry.decision.decided_at > ttl:
-                self._update(entry, status=SpendStatus.EXPIRED)
-                self._log(at, idempotency_key, "EXPIRED", approver, "validation hors délai : resoumettre")
+                expired = entry.replace(status=SpendStatus.EXPIRED)
+                self._log(
+                    at, idempotency_key, "EXPIRED", approver, "validation hors délai : resoumettre", entry=expired
+                )
                 raise MandateError(f"{idempotency_key} : demande expirée, la resoumettre avec des données fraîches")
-            updated = self._update(
-                entry, status=SpendStatus.HUMAN_APPROVED, human_actor=approver, human_decided_at=at, note=note
+            updated = entry.replace(
+                status=SpendStatus.HUMAN_APPROVED, human_actor=approver, human_decided_at=at, note=note
             )
-            self._log(at, idempotency_key, "HUMAN_APPROVED", approver, note)
+            self._log(at, idempotency_key, "HUMAN_APPROVED", approver, note, entry=updated)
             return updated
 
     def refuse_by_human(self, idempotency_key: str, *, approver: str, at: datetime, note: str = "") -> SpendEntry:
@@ -1458,10 +2090,10 @@ class SpendLedger:
             entry = self._require(idempotency_key)
             if entry.status is not SpendStatus.PENDING_HUMAN:
                 raise MandateError(f"{idempotency_key} : statut {entry.status.value}, refus impossible")
-            updated = self._update(
-                entry, status=SpendStatus.HUMAN_REFUSED, human_actor=approver, human_decided_at=at, note=note
+            updated = entry.replace(
+                status=SpendStatus.HUMAN_REFUSED, human_actor=approver, human_decided_at=at, note=note
             )
-            self._log(at, idempotency_key, "HUMAN_REFUSED", approver, note)
+            self._log(at, idempotency_key, "HUMAN_REFUSED", approver, note, entry=updated)
             return updated
 
     def mark_executed(
@@ -1485,11 +2117,25 @@ class SpendLedger:
                 raise IdempotencyConflictError(f"{idempotency_key} déjà exécuté ({entry.payment_ref})")
             if entry.status not in _UNEXECUTED:
                 raise MandateError(f"{idempotency_key} : statut {entry.status.value}, paiement interdit")
-            delta = amount - entry.decision.effective_cost_chf
-            updated = self._update(
-                entry, status=SpendStatus.EXECUTED, executed_at=at, executed_amount_chf=amount, payment_ref=payment_ref
+            approved = entry.decision.effective_cost_chf
+            delta = amount - approved
+            limit = _q2(approved * (1 + EXECUTION_TOLERANCE_PCT)) + EXECUTION_TOLERANCE_CHF
+            alert = (
+                f"montant exécuté {amount} CHF > coût approuvé {approved} CHF (tolérance {limit} CHF)"
+                if amount > limit
+                else None
             )
-            self._log(at, idempotency_key, "EXECUTED", actor, f"{payment_ref} {amount} CHF (écart estimation {delta})")
+            updated = entry.replace(
+                status=SpendStatus.EXECUTED,
+                executed_at=at,
+                executed_amount_chf=amount,
+                payment_ref=payment_ref,
+                execution_alert=alert,
+            )
+            detail = f"{payment_ref} {amount} CHF (écart estimation {delta})"
+            self._log(at, idempotency_key, "EXECUTED", actor, detail, entry=updated)
+            if alert is not None:  # le fait est enregistré ; l'écart déclenche une alerte (fiche E3)
+                self._log(at, idempotency_key, "RECONCILIATION_ALERT", actor, alert)
             return updated
 
     def cancel(self, idempotency_key: str, *, at: datetime, reason: str, actor: str) -> SpendEntry:
@@ -1501,8 +2147,8 @@ class SpendLedger:
             entry = self._require(idempotency_key)
             if entry.status not in (*_UNEXECUTED, SpendStatus.PENDING_HUMAN):
                 raise MandateError(f"{idempotency_key} : statut {entry.status.value}, annulation impossible")
-            updated = self._update(entry, status=SpendStatus.CANCELLED, note=reason)
-            self._log(at, idempotency_key, "CANCELLED", actor, reason)
+            updated = entry.replace(status=SpendStatus.CANCELLED, note=reason)
+            self._log(at, idempotency_key, "CANCELLED", actor, reason, entry=updated)
             return updated
 
     def reconcile(
@@ -1529,7 +2175,8 @@ class SpendLedger:
             matched_keys: set[str] = set()
             for ln in statement:
                 entry = by_ref.get(ln.transaction_id) or next(
-                    (e for e in self._entries.values() if e.idempotency_key in ln.reference and e.payment_ref), None
+                    (e for e in list(self._entries.values()) if e.idempotency_key in ln.reference and e.payment_ref),
+                    None,
                 )
                 if entry is None:
                     lines.append(
@@ -1547,8 +2194,18 @@ class SpendLedger:
                     continue
                 assert entry.executed_amount_chf is not None
                 ok = abs(entry.executed_amount_chf - ln.amount_chf) <= amount_tolerance_chf
-                status: Literal["OK", "AMOUNT_MISMATCH"] = "OK" if ok else "AMOUNT_MISMATCH"
-                self._update(entry, reconciled_at=at, reconciliation=status)
+                status: Literal["OK", "AMOUNT_MISMATCH", "AMOUNT_ABOVE_APPROVAL"] = "OK" if ok else "AMOUNT_MISMATCH"
+                if entry.execution_alert is not None or ln.amount_chf > _execution_limit(entry):
+                    status, ok = "AMOUNT_ABOVE_APPROVAL", False
+                reconciled = entry.replace(reconciled_at=at, reconciliation=status)
+                self._log(
+                    at,
+                    entry.idempotency_key,
+                    "RECONCILED" if ok else "RECONCILIATION_ALERT",
+                    "rapprochement",
+                    f"{ln.transaction_id} {status}",
+                    entry=reconciled,
+                )
                 lines.append(
                     ReconciliationLine(
                         status=status,
@@ -1556,28 +2213,29 @@ class SpendLedger:
                         transaction_id=ln.transaction_id,
                         ledger_amount_chf=entry.executed_amount_chf,
                         statement_amount_chf=ln.amount_chf,
+                        detail=entry.execution_alert or "",
                     )
                 )
-                self._log(
-                    at,
-                    entry.idempotency_key,
-                    "RECONCILED" if ok else "RECONCILIATION_ALERT",
-                    "rapprochement",
-                    f"{ln.transaction_id} {status}",
-                )
-            for e in self._entries.values():
+            for e in list(self._entries.values()):
                 done = e.reconciled_at is not None or e.idempotency_key in matched_keys
                 if e.status is not SpendStatus.EXECUTED or done:
                     continue
                 assert e.executed_at is not None
                 late = at - e.executed_at > timedelta(days=grace_days)
+                pending_status: Literal["MISSING_ON_STATEMENT", "PENDING", "AMOUNT_ABOVE_APPROVAL"] = (
+                    "MISSING_ON_STATEMENT" if late else "AMOUNT_ABOVE_APPROVAL" if e.execution_alert else "PENDING"
+                )
                 lines.append(
                     ReconciliationLine(
-                        status="MISSING_ON_STATEMENT" if late else "PENDING",
+                        status=pending_status,
                         idempotency_key=e.idempotency_key,
                         transaction_id=e.payment_ref,
                         ledger_amount_chf=e.executed_amount_chf,
-                        detail="paiement exécuté absent du relevé" if late else "dans le délai de comptabilisation",
+                        detail=(
+                            "paiement exécuté absent du relevé"
+                            if late
+                            else e.execution_alert or "dans le délai de comptabilisation"
+                        ),
                     )
                 )
                 if late:
@@ -1613,9 +2271,11 @@ class SpendLedger:
                 "categorie_mandat": r.category.value,
                 "montant_origine": str(r.amount),
                 "devise_origine": r.currency,
-                "taux_chf": s(r.fx_rate_to_chf or Decimal(1)),
-                "source_taux": r.fx_source or ("CHF" if r.currency == "CHF" else ""),
-                "date_taux": s(r.fx_date),
+                "taux_chf": s(d.context.fx_reference_rate or r.fx_rate_to_chf or Decimal(1)),
+                "source_taux": d.context.fx_reference_source
+                or (r.fx_source if r.currency != "CHF" else "CHF")
+                or "",
+                "date_taux": s(d.context.fx_reference_date or r.fx_date),
                 "montant_chf": s(d.amount_chf),
                 "plafond_transaction_chf": s(d.context.per_transaction_cap_chf),
                 "reste_categorie_avant_chf": s(d.context.category_remaining_before_chf),
@@ -1654,11 +2314,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"ERREUR : {exc}", file=sys.stderr)
         return 2
     now = datetime.now(UTC)
+    vault = (os.environ.get(MANDATE_FINGERPRINT_ENV_VAR) or "").strip().lower() or None
+    if vault is not None and _SHA256_RE.match(vault):
+        mandate = mandate.replace(expected_fingerprint=vault)
     print(f"mandat      : {target}")
     print(f"version     : {mandate.mandate_version}")
     print(f"empreinte   : {mandate.fingerprint}")
     missing = mandate.missing_fields()
     print(f"à remplir   : {', '.join(missing) if missing else 'rien'}")
+    if mandate.expected_fingerprint is None:
+        print(f"coffre      : empreinte absente ({MANDATE_FINGERPRINT_ENV_VAR}) — c'est son report par vous qui vaut signature")
+    else:
+        same = mandate.expected_fingerprint == mandate.fingerprint
+        print(f"coffre      : {'conforme' if same else 'DIFFÉRENTE du fichier (mandat inactif)'}")
     reasons = mandate.inactive_reasons(now)
     print(f"état        : {'ACTIF' if not reasons else 'INACTIF (' + ', '.join(r.value for r in reasons) + ')'}")
     return 0

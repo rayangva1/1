@@ -12,7 +12,7 @@
 | Déclencheur | {{référence : brief NN §9, ligne n — ou BRIEF_COMMUN §7}} |
 | Gel appliqué | {{non / oui : quoi, par qui, à quelle heure}} |
 | Statut | {{OUVERTE / TRIÉE / EN DÉCISION / DÉCIDÉE / CLOSE / EXPIRÉE}} |
-| Échéance de décision | {{AAAA-MM-JJ HH:MM}} (48 h ; 24 h pour un gate ou un achat ; immédiat pour E3) |
+| Échéance de décision | {{AAAA-MM-JJ HH:MM}} (24 h pour un gate ou toute dépense hors mandat ; 48 h sinon ; immédiat pour E3) |
 
 ## Faits
 

@@ -22,8 +22,8 @@
    python -m pytest -q docs/08-agents/outils
    ```
 3. **Mandat** : signer `docs/00-pilotage/DELEGATION_AUTONOMIE.md` (intervention B01) et noter le niveau d'autonomie 1 (BL-006). Sans mandat signé, les agents préparent mais n'envoient ni ne dépensent rien.
-4. **Secrets** : créer le coffre (B03). Les valeurs des variables listées dans `docs/08-agents/BRIEF_COMMUN.md` §10 restent dans le coffre ou dans un fichier `.env` local, **jamais** dans le dépôt (le `.gitignore` exclut déjà `.env` et `secrets/`).
-5. **Permissions** : garder le mode de permission par défaut (Claude Code demande avant d'exécuter une commande ou d'écrire). Ne pas utiliser le contournement des permissions pour la flotte.
+4. **Secrets** : créer le coffre (B03). Les valeurs des variables listées dans `docs/08-agents/BRIEF_COMMUN.md` §10 restent dans le coffre ou dans un fichier d'environnement **hors de l'arborescence où travaillent les agents** (par exemple `/etc/pokeshop/api.env`), **jamais** dans le dépôt (le `.gitignore` exclut déjà `.env` et `secrets/`). Les sessions Claude Code de la flotte ne reçoivent aucun secret dans leur environnement : chaque agent ne connaît que la **référence** de son propre jeton nommé (B22).
+5. **Permissions** : garder le mode de permission par défaut (Claude Code demande avant d'exécuter une commande ou d'écrire). Ne pas utiliser le contournement des permissions pour la flotte. Le fichier `.claude/settings.json` du projet ne contient **que des règles `deny`** : lecture de `.env`, `secrets/`, clés, coffre local (`/etc/pokeshop/`), environnement des processus (`env`, `printenv`, `/proc/*/environ`, `docker compose config`, `docker inspect`). C'est un filet de sécurité : un motif Bash se contourne (un script Python peut lire un fichier), d'où la règle première, ne jamais placer un secret là où un agent travaille. N'y ajoutez jamais de règle `allow` (le vérificateur `verifier_agents.py` la refuse).
 6. **Connecteurs** : aucun n'est actif au 4.10.2026. Les activer un par un (§8).
 
 ## 3. Lancer un agent
@@ -120,7 +120,7 @@ Résultat avec valorisation du temps, seuil TVA (BP §10 : examen anticipé si l
    - `EXC-20261012-01 : REFUSÉ — motif : …`
    - `EXC-20261012-01 : REPORTÉ au 2026-10-19 — il me manque : …`
 3. Le chef de projet consigne la décision dans la fiche (qui, quand, quoi, conditions) et relance l'agent concerné.
-4. Sans réponse dans le délai (48 h ; 24 h pour un gate ou un achat) : **statu quo sûr**, rien n'est engagé, la proposition expire.
+4. Sans réponse dans le délai (24 h pour toute dépense hors mandat, que le workflow 08 fait expirer, et pour un gate ; 48 h pour les autres décisions) : **statu quo sûr**, rien n'est engagé, la proposition expire.
 
 Une décision donnée dans une fiche ne modifie **pas** le mandat. Pour changer durablement un plafond ou une règle, voir §8.
 
@@ -138,18 +138,20 @@ Une décision donnée dans une fiche ne modifie **pas** le mandat. Pour changer 
 **Réarmer le stop-loss global** (checklist) :
 
 - [ ] Lire l'avis de gel de `qa-conformite` (cause, périmètre, heure).
-- [ ] Lire le dossier de `finance-pricing` : perte cumulée, cash disponible, engagements en cours, scénarios.
+- [ ] Lire le dossier de `finance-pricing` : perte de valeur nette, cash disponible, engagements en cours, scénarios.
 - [ ] Décider : réarmer avec ajustement (lequel), suspendre, ou arrêter (dossier d'arrêt : stock restant, abonnements, information des inscrits).
 - [ ] Écrire la décision dans la fiche ; préciser le nouveau capital de référence si vous apportez des fonds.
-- [ ] Après réarmement, la flotte **reste au niveau 1** ; chaque niveau supérieur se réactive par une nouvelle décision, sur certificat de recette.
+- [ ] Depuis votre terminal (jamais via un agent ni un chat) : lire `rearm_reference` dans `GET /stoploss/status`, puis `POST /stoploss/rearm` avec votre jeton (`X-Pokeshop-Owner-Token`) et le corps `{"reason": "…", "rebase": true, "reference_chf": "<rearm_reference.net_worth_chf>", "photo_sha256": "<rearm_reference.photo_sha256>"}` : vous **attestez** la valeur nette (écart > 1 CHF ou photo remplacée : refus 409). Procédure complète : `docs/00-pilotage/STOP_LOSS.md` §5.
+- [ ] Si le service est gelé au démarrage (`RESTORE_FAILED` : journal d'état illisible ; `CONFIG_UNSIGNED` : seuils ou règles modifiés sans signature) : aucun réarmement n'est possible ; réparer ou restaurer le stockage, ou signer la configuration, puis redémarrer (`docs/00-pilotage/INTERVENTIONS_HUMAINES.md`, C24).
+- [ ] Après réarmement, la flotte **reste au niveau 1** ; chaque niveau supérieur se réactive par une nouvelle décision, sur certificat de recette (`POST /autonomy` avec votre jeton).
 
 ## 8. Changer le cadre
 
 | Changement | Où | Qui prépare | Qui décide |
 |---|---|---|---|
-| Plafond, bénéficiaire, fournisseur autorisé, interdit | `docs/00-pilotage/DELEGATION_AUTONOMIE.md` (nouvelle version signée) | `chef-de-projet` | Vous |
-| Niveau d'autonomie | Fiche + table `autonomy_levels` | `chef-de-projet`, certificat `qa-conformite` | Vous |
-| Règle de prix | Nouveau fichier `pricing_rules.vN.yaml` dans `config/` | `finance-pricing` | Vous |
+| Plafond, bénéficiaire, fournisseur autorisé, interdit | `docs/00-pilotage/DELEGATION_AUTONOMIE.md` et `config/mandate.v1.yaml` (nouvelle version, **empreinte reportée par vous au coffre**) | `chef-de-projet` | Vous |
+| Niveau d'autonomie | Hausse : `POST /autonomy` avec votre jeton (la baisse est un acte protecteur, permis aux agents) | `chef-de-projet`, certificat `qa-conformite` | Vous |
+| Règle de prix, seuil de stop-loss | Nouveau fichier dans `config/`, puis **nouvelle empreinte au coffre** (`POKESHOP_RULES_FINGERPRINT`, `POKESHOP_STOPLOSS_FINGERPRINT`) ; sans signature, les valeurs les plus strictes s'appliquent | `finance-pricing` | Vous |
 | Modèle d'email | `docs/08-agents/modeles/MODELES_EMAILS_AGENTS.md` | `chef-de-projet` | Vous |
 | Outils d'un agent | Champ `tools` du fichier de l'agent dans `.claude/agents/` | `site-integrations` | Vous |
 
@@ -181,5 +183,5 @@ Ouvrir un compte, signer, payer hors mandat, faire un KYC, choisir le statut TVA
 
 - [ ] Choisir l'heure de la revue quotidienne et le jour de la revue hebdomadaire (lundi proposé).
 - [ ] Confirmer les durées marquées **(hypothèse)** après deux semaines d'usage réel (mesure BL-171).
-- [ ] Décider si certaines commandes en lecture seule (par exemple `python -m pytest`) sont autorisées sans demande de permission dans les paramètres du projet.
+- [ ] Décider si certaines commandes en lecture seule (par exemple `python -m pytest`) sont autorisées sans demande de permission pour une routine planifiée : à passer au lancement (`claude -p --allowedTools "Bash(python -m pytest:*)" …`), jamais dans `.claude/settings.json` (règles `deny` seulement).
 - [ ] Désigner une personne de remplacement pour les décisions E2 et les colis pendant vos absences.

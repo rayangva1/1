@@ -89,6 +89,11 @@ def _source() -> str:
         (lambda t: t.replace('id="titre-promesse"', 'id="titre-principal"'), "identifiant en double"),
         (lambda t: t.replace('name="prenom"', 'name="telephone"'), "inscription.schema.json"),
         (lambda t: t.replace('<div class="lp-piege" aria-hidden="true">', '<div aria-hidden="true">'), "champ piège"),
+        # Affirmations inexactes (revue CON-02, CON-03, CON-15, CON-07)
+        (lambda t: t.replace("Aucun prix n'est encore fixé.", "Une personne vous répond."), "service client"),
+        (lambda t: t.replace("Aucun prix n'est encore fixé.", "Le contenu de chaque boîte est vérifié."), "sur-promesse"),
+        (lambda t: t.replace("Aucun prix n'est encore fixé.", "Vos données servent uniquement à ces envois."), "exclusivité"),
+        (lambda t: t.replace("Aucun prix n'est encore fixé.", "Limite de 2 par commande."), "par commande"),
     ],
 )
 def test_controles_detectent_les_defauts(tmp_path: Path, modification, attendu: str) -> None:  # type: ignore[no-untyped-def]
@@ -186,6 +191,7 @@ def _champs_fictifs(nom: str = publication.NOM_DE_TRAVAIL) -> dict[str, rc.Field
         "EMAIL_DONNEES": "donnees@exemple.invalid",
         "MOIS_OUVERTURE": "novembre 2026",
         "URL_COOKIES": URL_FICTIVE + "cookies",
+        "ST_POLICES": "Google Fonts (Google)",
     }
     sortie = {}
     for cle, f in champs.items():
@@ -238,7 +244,9 @@ def test_publication_complete_avec_champs_fictifs(tmp_path: Path) -> None:
 
 def test_publication_sans_google_fonts(tmp_path: Path) -> None:
     sortie = tmp_path / "pub"
-    publication.construire("publication", sortie, champs=_champs_fictifs(), sans_google_fonts=True)
+    champs = _champs_fictifs()
+    champs["ST_POLICES"] = dataclasses.replace(champs["ST_POLICES"], value="aucun : polices du système")
+    publication.construire("publication", sortie, champs=champs, sans_google_fonts=True)
     for page in sortie.glob("*.html"):
         assert "fonts.googleapis.com" not in page.read_text(encoding="utf-8")
     assert "fonts.g" not in (sortie / "_headers").read_text(encoding="utf-8")
@@ -262,8 +270,86 @@ def test_pages_secondaires_reprennent_le_texte_legal() -> None:
     pages = publication.pages_secondaires()
     assert set(pages) == {"merci.html", "inscription-confirmee.html", "desinscription.html", "confidentialite.html"}
     conf = pages["confidentialite.html"]
-    assert "Déclaration de confidentialité</h1>" in conf and "<table>" in conf and "Partie interne" not in conf
-    assert "Notes pour le juriste" not in conf
+    assert "Déclaration de confidentialité — inscription aux alertes</h1>" in conf and "<table>" in conf
+    assert "Partie interne" not in conf and "Notes pour le juriste" not in conf
+    assert publication.CONFIDENTIALITE_MD.name == "CONFIDENTIALITE_LANDING.md"
+
+
+# ----------------------------------------------------------------------------- publication à J10 (revue CON-06)
+CHAMPS_APRES_J10 = {
+    "ST_PAIEMENT", "ST_PAIEMENT_PAYS", "PSP_NOM", "ST_TRANSPORT", "ST_TRANSPORT_PAYS", "ST_BOUTIQUE", "ST_BOUTIQUE_PAYS",
+    "URL_COOKIES", "DATE_VERSION", "ST_AUDIENCE", "ST_AUDIENCE_PAYS", "DUREE_CONSERVATION_COMPTE",
+}
+
+
+def test_landing_publiable_a_j10_sans_champ_de_la_boutique() -> None:
+    """La landing n'exige aucun champ connu seulement après Shopify, le PSP, le transporteur ou la relecture J28."""
+    exiges = {n for n, _, _ in publication.etat()}
+    assert exiges <= set(publication.CHAMPS_LANDING), exiges - set(publication.CHAMPS_LANDING)
+    assert not exiges & CHAMPS_APRES_J10, exiges & CHAMPS_APRES_J10
+    assert {n for n, (nature, _) in publication.CHAMPS_LANDING.items() if nature == publication.PROVISOIRE} == {
+        "URL_LANDING", "MOIS_OUVERTURE", "DATE_VERSION_LANDING"
+    }
+
+
+def test_publication_refuse_un_champ_hors_de_la_liste_fermee(tmp_path: Path) -> None:
+    source = tmp_path / "lp"
+    shutil.copytree(LANDING, source)
+    index = source / "index.html"
+    index.write_text(index.read_text(encoding="utf-8").replace("Aucun prix n'est encore fixé.", "Paiement : {{ST_PAIEMENT}}."), encoding="utf-8")
+    with pytest.raises(publication.PublicationError) as exc:
+        publication.construire("publication", tmp_path / "pub", champs=_champs_fictifs(), source=source)
+    assert any("hors de la liste" in e and "ST_PAIEMENT" in e for e in exc.value.erreurs)
+
+
+@pytest.mark.parametrize(("polices", "sans_google"), [("aucun : polices du système", False), ("Google Fonts (Google)", True)])
+def test_publication_refuse_une_notice_incoherente_avec_les_polices(tmp_path: Path, polices: str, sans_google: bool) -> None:
+    champs = _champs_fictifs()
+    champs["ST_POLICES"] = dataclasses.replace(champs["ST_POLICES"], value=polices)
+    with pytest.raises(publication.PublicationError) as exc:
+        publication.construire("publication", tmp_path / "pub", champs=champs, sans_google_fonts=sans_google)
+    assert any("ST_POLICES" in e for e in exc.value.erreurs)
+
+
+# ----------------------------------------------------------------------------- notice complète (revue CON-03)
+def test_notice_declare_chaque_champ_du_formulaire() -> None:
+    assert vs.verifier_notice_formulaire(LANDING) == []
+    texte = vs._texte_visible((LANDING / "confidentialite.html").read_text(encoding="utf-8")).lower()
+    for terme in ("prénom", "budget", "pour qui", "canton", "utm", "agrégée", "aucun cookie"):
+        assert terme in texte, terme
+
+
+def test_notice_incomplete_ou_champ_non_declare_detectes(tmp_path: Path) -> None:
+    dossier = tmp_path / "lp"
+    shutil.copytree(LANDING, dossier)
+    notice = dossier / "confidentialite.html"
+    notice.write_text(notice.read_text(encoding="utf-8").replace("canton", "région").replace("Canton", "Région"), encoding="utf-8")
+    index = dossier / "index.html"
+    index.write_text(index.read_text(encoding="utf-8").replace('name="prenom"', 'name="telephone"'), encoding="utf-8")
+    erreurs = " ".join(vs.verifier_notice_formulaire(dossier))
+    assert "« canton » collecté mais absent de la notice" in erreurs
+    assert "« telephone » collecté sans entrée dans CHAMPS_NOTICE" in erreurs
+
+
+def test_landing_sans_affirmation_inexacte() -> None:
+    for page in LANDING.glob("*.html"):
+        visible = vs._texte_visible(page.read_text(encoding="utf-8"))
+        for motif, libelle in vs.AFFIRMATIONS_INEXACTES:
+            assert not motif.search(visible), (page.name, libelle)
+
+
+# ----------------------------------------------------------------------------- nom de travail (revue COH-16)
+def test_nom_de_travail_absent_des_modeles_shopify(tmp_path: Path) -> None:
+    assert vs.verifier_nom_de_travail() == []
+    dossier = tmp_path / "shopify"
+    dossier.mkdir()
+    (dossier / "MODELE.md").write_text(
+        f"> Nom de travail : « {publication.NOM_DE_TRAVAIL} » (note d'en-tête admise)\n\n| Titre SEO | x · {publication.NOM_DE_TRAVAIL} |\n",
+        encoding="utf-8",
+    )
+    (dossier / "x.liquid").write_text(f"{{% comment %}}{publication.NOM_DE_TRAVAIL}{{% endcomment %}}<p>{publication.NOM_DE_TRAVAIL}</p>", encoding="utf-8")
+    erreurs = vs.verifier_nom_de_travail(dossier)
+    assert len(erreurs) == 2 and "MODELE.md:3" in erreurs[0] and "x.liquid" in erreurs[1]
 
 
 def test_champ_defini_deux_fois_refuse(tmp_path: Path) -> None:
@@ -297,6 +383,17 @@ def test_controle_liquid_detecte_les_defauts(tmp_path: Path) -> None:
     erreurs = " ".join(vs.verifier_liquid(dossier))
     for attendu in ("blocs non fermés", "terme interne", "prix en dur", "snippet absent", "libellé « Rupture – alerte »"):
         assert attendu in erreurs, attendu
+
+
+def test_limite_par_commande_refusee_dans_les_snippets(tmp_path: Path) -> None:
+    """CGV ch. 4.4 : limite par référence et par foyer, toutes commandes confondues (revue CON-07)."""
+    dossier = tmp_path / "snippets"
+    shutil.copytree(vs.SNIPPETS, dossier)
+    p = dossier / "da-delai-sortie.liquid"
+    texte = p.read_text(encoding="utf-8")
+    assert "{{ qmax }} par foyer" in texte
+    p.write_text(texte.replace("{{ qmax }} par foyer (toutes commandes confondues)", "{{ qmax }} par commande"), encoding="utf-8")
+    assert any("par commande" in e for e in vs.verifier_liquid(dossier))
 
 
 # ----------------------------------------------------------------------------- JavaScript (Node, si disponible)

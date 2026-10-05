@@ -3,11 +3,16 @@
 Cycle fournisseur → site (:meth:`SyncService.run_supplier_cycle`), **en simulation par défaut** :
 
 1. récupérer le flux autorisé et dater la source (:func:`pokeshop.importers.run_import`) ;
-2. valider devise, TVA, unité, langue et quantité (quarantaine de l'import) ;
+2. valider devise, TVA, unité, langue et quantité, **comparé au dernier import** du fournisseur
+   (référence persistée :class:`ImportBaselineStore` : ×10, import incomplet, devise, HT/TTC ;
+   première écriture réelle d'un fournisseur refusée sans import précédent) ;
 3. rapprocher la référence exacte (:func:`pokeshop.catalog.match_offer_to_product`) ;
 4. évaluer l'offre et le coût rendu (frais connus seulement : rien n'est inventé) ;
 5. calculer le prix et tester les seuils (:func:`pokeshop.pricing.evaluate_offer`) ;
-6. générer ou actualiser la fiche (:func:`pokeshop.publish.build_publication`) ;
+6. générer ou actualiser la fiche (:func:`pokeshop.publish.build_publication`) : statut public
+   **recalculé** depuis le registre du stock local et l'allocation ferme, approbations de prix de
+   la propriétaire lues dans le registre du moteur (jamais sous le plancher dur sans C18),
+   noms des fournisseurs ajoutés aux termes interdits dans la charge publique ;
 7. publier uniquement si les données, le stock et la gouvernance le permettent
    (:class:`pokeshop.autonomy.GovernanceGate` puis ``productSet``) ;
 8. vérifier l'état réel sur le site et journaliser la décision.
@@ -25,6 +30,7 @@ par le stop-loss produit ou en quarantaine : 0 publié (vente bloquée, aucun fa
 
 from __future__ import annotations
 
+import re
 import threading
 import uuid
 from collections.abc import Callable, Collection, Mapping, Sequence
@@ -37,7 +43,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from .audit import ActorKind, AuditLog
+from .audit import ActorKind, AuditLog, StateJournal, StateStoreError
 from .autonomy import GateDecision, GovernanceGate, WriteAction
 from .catalog import (
     CatalogIndex,
@@ -49,7 +55,16 @@ from .catalog import (
 )
 from .costs import PriceHistory, ReplacementCostBook
 from .errors import PokeshopError, PricingError
-from .importers import ImportBaseline, ImportResult, ImportStatus, MappingError, SupplierMapping, run_import
+from .importers import (
+    ImportBaseline,
+    ImportResult,
+    ImportStatus,
+    MappingError,
+    SupplierMapping,
+    load_mapping,
+    next_baseline,
+    run_import,
+)
 from .incidents import IncidentCode, IncidentManager, IncidentScope, Severity, codes_for_reasons
 from .models import FrozenModel, PriceDecision, PriceEventKind, Reason, ReplacementCost, StockLevel, SupplierOffer
 from .pricing import evaluate_offer
@@ -59,10 +74,15 @@ from .publish import (
     PriceValidation,
     PublicationPlan,
     SensitiveFieldError,
+    StockStatus,
+    _fold,
+    assert_protective_payload,
     build_publication,
     sensitive_violations,
+    stock_status_for,
 )
 from .rules import RuleSet
+from .stock import StockRegistry, availability_promise
 from .shopify_client import (
     InventoryChange,
     RemoteInventoryLevel,
@@ -86,6 +106,9 @@ __all__ = [
     "StockTarget",
     "StockPushLine",
     "StockSyncReport",
+    "ImportBaselineStore",
+    "BaselinePersistenceError",
+    "supplier_terms",
     "price_reference_24h",
     "stock_target",
     "consecutive_clean_runs",
@@ -161,6 +184,8 @@ class SyncContext:
     """Frais par ``supplier_id``."""
     market_refs: Mapping[str, Decimal] = field(default_factory=dict)
     price_validations: Mapping[str, PriceValidation] = field(default_factory=dict)
+    """Approbations de prix de la propriétaire **lues dans le registre du moteur**
+    (:class:`pokeshop.publish.PriceApprovalBook`), jamais reçues dans un corps de requête."""
     sensitive_terms: Collection[str] = ()
 
 
@@ -309,6 +334,94 @@ class StockSyncReport(FrozenModel):
         return not self.critical_errors
 
 
+# ---------------------------------------------------------------- références d'import
+
+
+class BaselinePersistenceError(SyncError, StateStoreError):
+    """Référence « dernier import » non enregistrée ou non relue : contrôles vs dernier import impossibles."""
+
+
+class ImportBaselineStore:
+    """Référence « dernier import » par fournisseur (journal d'état ``import_baselines``).
+
+    Elle porte les prix unitaires, le nombre de lignes et le sha256 du dernier import ACCEPTED ou
+    PARTIAL ; :func:`pokeshop.importers.run_import` la compare au nouvel import (prix ×10 ou ÷10,
+    devise ou HT/TTC changés, import incomplet, contenu identique non daté). Écriture d'abord,
+    application ensuite ; un import rejeté ne la modifie jamais.
+    """
+
+    STREAM = "import_baselines"
+
+    def __init__(self, *, store: StateJournal | None = None) -> None:
+        self._lock = threading.RLock()
+        self._items: dict[str, ImportBaseline] = {}
+        self._store = store
+
+    @classmethod
+    def restore(cls, store: StateJournal) -> ImportBaselineStore:
+        """Relit les références (:class:`BaselinePersistenceError` si illisible)."""
+        book = cls()
+        try:
+            records = store.load()
+        except StateStoreError as exc:
+            raise BaselinePersistenceError(f"références d'import : {exc}") from exc
+        for n, record in enumerate(records, start=1):
+            try:
+                item = ImportBaseline.model_validate(record["baseline"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise BaselinePersistenceError(f"références d'import : enregistrement {n} illisible") from exc
+            book._items[item.supplier_id] = item
+        book._store = store
+        return book
+
+    def get(self, supplier_id: str) -> ImportBaseline | None:
+        """Référence du fournisseur (None = jamais importé)."""
+        with self._lock:
+            return self._items.get(supplier_id)
+
+    def suppliers(self) -> tuple[str, ...]:
+        """Fournisseurs ayant une référence."""
+        with self._lock:
+            return tuple(sorted(self._items))
+
+    def update(self, result: ImportResult) -> ImportBaseline | None:
+        """Applique un import (inchangée s'il est rejeté) ; persistée avant d'être retenue."""
+        with self._lock:
+            current = self._items.get(result.supplier_id)
+            updated = next_baseline(current, result)
+            if updated is None or updated == current:
+                return current
+            if self._store is not None:
+                try:
+                    self._store.append({"baseline": updated.model_dump(mode="json")})
+                except StateStoreError as exc:
+                    raise BaselinePersistenceError(f"référence d'import non enregistrée ({exc})") from exc
+            self._items[result.supplier_id] = updated
+            return updated
+
+
+_GENERIC_SUPPLIER_WORDS = frozenset(
+    {"suisse", "schweiz", "svizzera", "swiss", "france", "europe", "sarl", "gmbh", "distribution", "fictif",
+     "grossiste", "generic", "generique", "modele", "trading", "games", "store", "shop", "boutique", "essai"}
+)
+
+
+def supplier_terms(supplier_id: str, supplier_name: str = "") -> set[str]:
+    """Termes internes d'un fournisseur (identifiant, nom, segments ≥ 4 caractères non génériques).
+
+    Ajoutés aux termes refusés dans toute charge publique (SEC-08) : un texte public ne cite jamais
+    un fournisseur (ex. « acheté chez Asmodee »).
+    """
+    terms = {supplier_id}
+    name = re.sub(r"\(.*?\)", " ", supplier_name).strip()
+    if len(name) >= 3:
+        terms.add(name)
+    for segment in re.split(r"[\W_]+", f"{supplier_id} {name}"):
+        if len(segment) >= 4 and _fold(segment) not in _GENERIC_SUPPLIER_WORDS:
+            terms.add(segment)
+    return terms
+
+
 # ------------------------------------------------------------------------- utilitaires
 
 
@@ -408,8 +521,14 @@ class SyncService:
         clock: Callable[[], datetime] | None = None,
         actor: str = "agent-07-integrations",
         test_store: bool = False,
+        stock: StockRegistry | None = None,
+        baselines: ImportBaselineStore | None = None,
     ) -> None:
         self.client = client
+        self.stock = stock
+        """Registre du stock local (statut public recalculé) ; None = stock inconnu, donc ``rupture``."""
+        self.baselines = baselines if baselines is not None else ImportBaselineStore()
+        """Références « dernier import » (persistées par l'API) : contrôles ×10, incomplet, devise, HT/TTC."""
         self.test_store = test_store
         """Boutique de développement (recette) : données FICTIVES admises en écriture réelle."""
         self.gate = gate
@@ -442,7 +561,12 @@ class SyncService:
         source_ts: datetime | None = None,
         run_id: str | None = None,
     ) -> SyncReport:
-        """Exécute les 8 étapes BP §12 ; ``dry_run=True`` par défaut (aucune écriture externe)."""
+        """Exécute les 8 étapes BP §12 ; ``dry_run=True`` par défaut (aucune écriture externe).
+
+        ``baseline`` absent : référence « dernier import » du registre :attr:`baselines`, mise à jour
+        après chaque import ACCEPTED ou PARTIAL. Écriture réelle sans référence (premier import d'un
+        fournisseur) : :class:`SyncError` (simulation obligatoire d'abord, fermé par défaut).
+        """
         at = now or self._clock()
         if at.tzinfo is None or at.utcoffset() is None:
             raise SyncError("now doit porter un fuseau horaire")
@@ -455,6 +579,13 @@ class SyncService:
         supplier_id = mapping.supplier_id if isinstance(mapping, SupplierMapping) else str(mapping)
         if isinstance(mapping, Path) or (isinstance(mapping, str) and mapping.endswith((".yaml", ".yml"))):
             supplier_id = Path(str(mapping)).stem
+        if baseline is None:
+            baseline = self.baselines.get(supplier_id)
+            if baseline is None and not dry_run:
+                raise SyncError(
+                    f"{supplier_id} : aucune référence « dernier import » — premier import en simulation obligatoire "
+                    "(contrôles ×10, import incomplet, devise et HT/TTC impossibles sans elle)"
+                )
 
         def finish(result: ImportResult | None) -> SyncReport:
             done = [s.step for s in steps]
@@ -523,6 +654,7 @@ class SyncService:
             )
             return finish(None)
         supplier_id = result.supplier_id
+        self.baselines.update(result)  # inchangée si l'import est rejeté
         steps.append(
             StepResult(
                 step=SyncStep.FETCH,
@@ -576,6 +708,11 @@ class SyncService:
             )
 
         terms = set(ctx.sensitive_terms) | {supplier_id}
+        try:
+            mapping_obj = mapping if isinstance(mapping, SupplierMapping) else load_mapping(mapping)
+            terms |= supplier_terms(mapping_obj.supplier_id, mapping_obj.supplier_name)
+        except MappingError:  # pragma: no cover - déjà chargé par run_import
+            pass
         for product in ctx.catalog_products:
             for link in product.supplier_links:
                 terms.update({link.supplier_id, link.supplier_sku})
@@ -749,11 +886,14 @@ class SyncService:
                 max_daily_change=params.max_daily_price_change,
                 reference_price_24h=reference,
                 price_validation=ctx.price_validations.get(pid),
+                params=params,
+                now=at,
                 stoploss_blocked=pid in blocked_products,
                 quarantined=self.incidents.is_quarantined(pid),
                 sensitive_terms=sorted(terms),
                 table=ctx.table,
                 real_shop=production,
+                stock_status=self.stock_status(listing, [o for o, _ in matched.get(pid, ())], at, ctx),
             )
             listing_counts[plan.outcome.value] = listing_counts.get(plan.outcome.value, 0) + 1
             if plan.violations:
@@ -780,12 +920,16 @@ class SyncService:
                 )
                 if gate.allowed:
                     try:
+                        protective = plan.outcome is PlanOutcome.UNPUBLISH
+                        if protective:
+                            assert_protective_payload(plan.product_input or {})
                         resp = self.client.product_set(
                             plan.product_input or {},
                             identifier=plan.identifier,
                             idempotency_key=derive_idempotency_key("productSet", plan.identifier, plan.product_input),
                             dry_run=dry_run,
                             autonomy_level=gate.current_level,
+                            protective=protective,
                         )
                     except SensitiveFieldError as exc:
                         refused += 1
@@ -838,7 +982,9 @@ class SyncService:
                         else:
                             written_flag = not resp.dry_run
                             written += 1 if written_flag else 0
-                            verified = self._verify(plan, pid, decision, at, dry_run, critical, item_incidents, rid)
+                            # Client en simulation (POKESHOP_DRY_RUN=true) : rien n'a été écrit, vérification simulée.
+                            simulated = dry_run or resp.dry_run
+                            verified = self._verify(plan, pid, decision, at, simulated, critical, item_incidents, rid)
                             if verified:
                                 verify_ok += 1
                             else:
@@ -897,6 +1043,22 @@ class SyncService:
         )
         return finish(result)
 
+    def stock_status(
+        self, listing: CatalogListing, offers: Sequence[SupplierOffer], at: datetime, ctx: SyncContext
+    ) -> StockStatus:
+        """Statut public recalculé (E2E-12) : stock local vendable du registre, allocation ferme fraîche.
+
+        Jamais le statut déclaré par l'appelant : sans registre, le stock local est inconnu (``rupture``).
+        """
+        sellable = self.stock.sellable(listing.public_sku) if self.stock is not None else 0
+        firm = 0
+        if listing.public_sku.endswith("-PRECO") and offers:
+            promise = availability_promise(
+                local_sellable=0, offers=offers, now=at, preorders_enabled=True, max_age=ctx.rules.stock.max_age
+            )
+            firm = promise.firm_allocation
+        return stock_status_for(listing, local_sellable=sellable, firm_allocation=firm)
+
     def _verify(
         self,
         plan: PublicationPlan,
@@ -908,9 +1070,25 @@ class SyncService:
         incidents: list[str],
         rid: str,
     ) -> bool:
-        """Étape 8 : état réel (lecture Shopify) ou cohérence de la charge simulée ; prix journalisé."""
+        """Étape 8 : état réel (lecture Shopify) ou cohérence de la charge simulée ; prix journalisé.
+
+        Dépublication protectrice (charge ``{"status": "DRAFT"}``) : seul le statut est vérifié.
+        """
         problems: list[str] = []
-        if plan.product_input is None or plan.price_chf is None:
+        if plan.outcome is PlanOutcome.UNPUBLISH:
+            if plan.product_input != {"status": "DRAFT"}:
+                problems.append("dépublication : charge autre que le statut")
+            elif not dry_run:
+                try:
+                    remote = self.client.product_by_id((plan.identifier or {}).get("id", ""))
+                except ShopifyError as exc:
+                    remote = None
+                    problems.append(f"lecture de vérification impossible : {exc}")
+                if remote is None and not problems:
+                    problems.append("fiche introuvable après dépublication")
+                elif remote is not None and remote.status != "DRAFT":
+                    problems.append(f"statut boutique {remote.status} ≠ DRAFT")
+        elif plan.product_input is None or plan.price_chf is None:
             problems.append("charge absente")
         else:
             problems.extend(sensitive_violations(plan.product_input))
@@ -951,8 +1129,9 @@ class SyncService:
                     at,
                     self.actor,
                     validated=plan.price_source == "HUMAN_VALIDATED",
-                    decision=decision if plan.price_source == "ENGINE" else None,
-                    note=f"sync {rid}",
+                    decision=decision,
+                    note=f"sync {rid}"
+                    + (f" ; approbation {plan.price_approval_id}" if plan.price_approval_id else ""),
                 )
             except PricingError as exc:
                 critical.append(f"{pid} : prix publié hors décision du moteur ({exc})")
@@ -968,6 +1147,9 @@ class SyncService:
                 "run_id": rid,
                 "outcome": plan.outcome.value,
                 "price_chf": plan.price_chf,
+                "price_source": plan.price_source,
+                "price_approval_id": plan.price_approval_id,
+                "stock_status": plan.stock_status,
                 "rules_version": plan.rules_version,
                 "inputs_hash": plan.inputs_hash,
             },

@@ -54,7 +54,7 @@ Au moment de la commande, précommandes comprises.
 Vérifiez vos courriers indésirables. S'il n'y est pas une heure après votre commande, écrivez-nous à {{EMAIL_SUPPORT}}.
 
 **Puis-je modifier ou annuler ma commande ?**
-Tant qu'elle n'est pas préparée, oui : écrivez-nous au plus vite avec votre numéro de commande. Une fois expédiée, la politique de retour s'applique.
+Tant qu'elle n'est pas préparée, oui, gratuitement : écrivez-nous au plus vite avec votre numéro de commande ; nous remboursons intégralement dans un délai de {{DELAI_REMBOURSEMENT}} (CGV ch. 4.7). Une fois préparée ou expédiée, la politique de retour s'applique. Pour une précommande, voir la rubrique Précommandes.
 
 **Pourquoi limitez-vous les quantités ?**
 Pour que le plus grand nombre de collectionneurs puisse acheter les nouveautés. La limite est de {{LIMITE_PAR_CLIENT}} pour les nouveautés et les produits marqués « quantité limitée ». La quantité autorisée figure sur chaque fiche.
@@ -119,7 +119,7 @@ Chaque email contient un lien de désinscription en un clic. Elle s'applique san
 Nous les utilisons pour traiter vos commandes, vous livrer et vous répondre, et pour vous envoyer les alertes que vous avez demandées. Nous ne les vendons pas. Tout est expliqué dans notre déclaration de confidentialité : {{URL_CONFIDENTIALITE}}.
 
 **Utilisez-vous l'intelligence artificielle pour répondre aux messages ?**
-Oui, des outils automatisés nous aident à trier les messages et à préparer les réponses. Vous pouvez toujours demander qu'une personne réexamine une décision qui vous concerne.
+Oui. Les réponses aux questions courantes sont préparées et envoyées par des outils automatisés, à partir de modèles que nous avons validés. Une personne traite les cas particuliers, et vous pouvez à tout moment demander qu'une personne reprenne votre demande ou réexamine une décision qui vous concerne.
 
 ### Nous contacter
 
@@ -129,8 +129,8 @@ Par email à {{EMAIL_SUPPORT}}, avec votre numéro de commande si vous en avez u
 
 ## Notes internes (ne pas publier)
 
-- La réponse « Puis-je modifier ou annuler ma commande ? » suit la SOP SAV, cas SAV-15.
-- La réponse sur l'IA suit `docs/04-legal/CONFIDENTIALITE.md` ch. 6 ; à retirer si la propriétaire n'autorise pas le traitement des messages par un fournisseur d'IA.
+- La réponse « Puis-je modifier ou annuler ma commande ? » suit les CGV ch. 4.7 et la SOP SAV, cas SAV-15.
+- La réponse sur l'IA suit `docs/04-legal/CONFIDENTIALITE.md` ch. 6 et la SOP SAV (principe « une personne sur demande ») ; à retirer si la propriétaire n'autorise pas le traitement des messages par un fournisseur d'IA. Ne jamais écrire qu'« une personne vous répond » : les réponses courantes partent sans relecture humaine.
 - Toute nouvelle question récurrente du service client (plus de 3 fois par mois) est proposée ici par l'agent 11, puis validée.
 
 ## Validation humaine requise

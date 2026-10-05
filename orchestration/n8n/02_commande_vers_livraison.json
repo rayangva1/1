@@ -59,9 +59,9 @@
               "type": "boolean"
             },
             {
-              "id": "ba145593-513c-530b-9b49-5d803cf5be0b",
+              "id": "0b63d8c2-76d9-5214-9a55-264658a8b89b",
               "name": "workflow",
-              "value": "02-commande-livraison",
+              "value": "commande-livraison",
               "type": "string"
             },
             {
@@ -332,9 +332,9 @@
               "type": "boolean"
             },
             {
-              "id": "ba145593-513c-530b-9b49-5d803cf5be0b",
+              "id": "0b63d8c2-76d9-5214-9a55-264658a8b89b",
               "name": "workflow",
-              "value": "02-commande-livraison",
+              "value": "commande-livraison",
               "type": "string"
             },
             {
@@ -475,9 +475,9 @@
               "type": "boolean"
             },
             {
-              "id": "ba145593-513c-530b-9b49-5d803cf5be0b",
+              "id": "0b63d8c2-76d9-5214-9a55-264658a8b89b",
               "name": "workflow",
-              "value": "02-commande-livraison",
+              "value": "commande-livraison",
               "type": "string"
             },
             {

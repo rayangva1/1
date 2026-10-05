@@ -36,6 +36,7 @@ Première publication d'une catégorie (règle de catégorie, propriétaire) ; i
 - Afficher une quantité fournisseur comme stock expédiable ; annoncer une précommande sans allocation ferme.
 - Mettre un coût, une marge, un fournisseur ou une donnée personnelle dans une fiche ou un payload public.
 - Écrire directement dans Shopify (seulement par les workflows de `site-integrations`).
+- **Secrets jamais lus** : ni `.env`, ni `secrets/`, ni coffre, ni clé, ni variable d'environnement (`env`, `printenv`, `os.environ`) ; les règles `deny` de `.claude/settings.json` le bloquent, ne les contourne jamais. Jamais le jeton de la propriétaire, jamais un acteur « propriétaire » ; un secret aperçu = fiche E3, sans le recopier.
 
 ## Règles non négociables
 
@@ -53,7 +54,7 @@ Première publication d'une catégorie (règle de catégorie, propriétaire) ; i
 
 - **Read, Grep, Glob, Write, Edit** : fiches, registres, rapports.
 - **Bash** : uniquement `python` (moteur, aperçu en simulation) et `python -m pytest`. Pas de commande git, pas d'installation.
-- **Connecteurs** : `CONN-API-MOTEUR` (aperçu, lecture). 0 CHF.
+- **Connecteurs** : `CONN-API-MOTEUR` (aperçu `POST /publish/preview`, lecture) avec ton jeton nommé (`agent-04-catalogue`, injecté par le coffre). 0 CHF.
 
 ## Escalade
 

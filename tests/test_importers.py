@@ -987,6 +987,67 @@ class TestImportRules:
         old_fetch = run_import(mapping, csv_bytes([row()]), now=NOW, fetched_at=NOW - timedelta(hours=30))
         assert old_fetch.status is ImportStatus.QUARANTINED
 
+    def test_undated_file_reimported_unchanged_becomes_stale(self) -> None:
+        """MOT-15 : un fichier non daté ré-importé à l'identique garde l'âge de sa première capture."""
+        mapping = mini_mapping(columns={"source_ts": ["absente"]})
+        content = csv_bytes([row()])
+        first = run_import(mapping, content, now=NOW)
+        assert first.status is ImportStatus.ACCEPTED
+        assert first.offers[0].source_ts_assumed and first.offers[0].source_ts == NOW
+        base = next_baseline(None, first)
+        assert base is not None and base.content_first_seen_at == NOW
+        same_day = run_import(mapping, content, now=NOW + timedelta(hours=10), baseline=base)
+        assert same_day.status is ImportStatus.ACCEPTED and same_day.offers[0].source_ts == NOW
+        base = next_baseline(base, same_day)
+        assert base is not None and base.content_first_seen_at == NOW  # même contenu : âge conservé
+        later = run_import(mapping, content, now=NOW + timedelta(days=2), baseline=base)
+        assert later.status is ImportStatus.QUARANTINED
+        assert later.anomalies_with(QuarantineReason.STALE_SNAPSHOT)
+        assert later.anomalies_with(AnomalyCode.SAME_CONTENT_AS_PREVIOUS)
+        changed = run_import(mapping, csv_bytes([row(prix="11.00")]), now=NOW + timedelta(days=2), baseline=base)
+        assert changed.status is ImportStatus.ACCEPTED  # contenu nouveau : nouvelle première capture
+
+    def test_caller_declared_timestamp_can_only_age_an_undated_source(self) -> None:
+        """MOT-15 : un horodatage déclaré par l'appelant ne rajeunit jamais une source non datée."""
+        mapping = mini_mapping(columns={"source_ts": ["absente"]})
+        content = csv_bytes([row()])
+        base = next_baseline(None, run_import(mapping, content, now=NOW))
+        declared_fresh = run_import(mapping, content, now=NOW + timedelta(days=2), baseline=base,
+                                    source_ts=NOW + timedelta(days=2))
+        assert declared_fresh.status is ImportStatus.QUARANTINED
+        assert declared_fresh.anomalies_with(QuarantineReason.STALE_SNAPSHOT)
+        dated = run_rows([row()])  # date du fournisseur dans le fichier : pas d'horodatage supposé
+        assert not dated.offers[0].source_ts_assumed and not dated.anomalies_with(AnomalyCode.SOURCE_TS_ASSUMED)
+
+    def test_assumed_timestamp_offers_are_not_restock_eligible(self) -> None:
+        from pokeshop.pricing import evaluate_offer
+        from pokeshop.rules import load_rules
+        from pokeshop.stock import availability_promise
+
+        mapping = mini_mapping(columns={"source_ts": ["absente"]})
+        offer = run_import(mapping, csv_bytes([row(allocation="12")]), now=NOW).offers[0]
+        assert offer.source_ts_assumed
+        decision = evaluate_offer(offer, load_rules().pricing, now=NOW, fx_rate_to_chf=Decimal("0.94"),
+                                  fx_source="FICTIF", fx_date=NOW.date(), inbound_freight_alloc=Decimal("0"),
+                                  customs_and_fees=Decimal("0"), import_vat=Decimal("0"))
+        assert decision.restock_eligible is False
+        promise = availability_promise(local_sellable=0, offers=[offer], now=NOW, preorders_enabled=True)
+        assert promise.firm_allocation == 0 and "SOURCE_TS_ASSUMED" in promise.reasons
+
+    def test_accessory_row_keeps_foreign_language_and_booster_bundle_is_ambiguous(self) -> None:
+        """MOT-14 : « Classeur + 2 boosters » JP n'est pas un accessoire « sans langue »."""
+        rows = [
+            row(sku="FICTIF-T-ACC", ean=g(910), format="Classeur 9 cases", langue="Japonais", extension="",
+                contenu="1 classeur"),
+            row(sku="FICTIF-T-MIX", ean=g(911), format="Classeur + 2 boosters", langue="Japonais",
+                contenu="2 boosters"),
+        ]
+        result = run_rows(rows)
+        offers = result.offers_by_sku
+        assert offers["FICTIF-T-ACC"].language == "JP" and offers["FICTIF-T-ACC"].format == "BINDER"
+        mixed = offers.get("FICTIF-T-MIX")
+        assert mixed is None or (mixed.format is None and mixed.language == "JP")
+
     def test_snapshot_ts_from_newest_row(self) -> None:
         rows = [row(), row(sku="FICTIF-T-2", ean=g(902), maj="2026-10-04T07:00:00+02:00")]
         assert run_rows(rows).effective_source_ts == datetime.fromisoformat("2026-10-04T07:00:00+02:00")

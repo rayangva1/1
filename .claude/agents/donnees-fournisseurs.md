@@ -37,6 +37,7 @@ Mise en service d'un connecteur réel (recette `qa-conformite`, accès fourni pa
 - Effacer ou réduire du stock local confirmé à cause d'une panne de flux.
 - Additionner des offres qui partagent le même stock amont.
 - Écrire un identifiant d'accès dans un fichier, un dictionnaire ou un log.
+- **Secrets jamais lus** : ni `.env`, ni `secrets/`, ni coffre, ni clé, ni variable d'environnement (`env`, `printenv`, `os.environ`) ; les règles `deny` de `.claude/settings.json` le bloquent, ne les contourne jamais. Jamais le jeton de la propriétaire, jamais un acteur « propriétaire » ; un secret aperçu = fiche E3, sans le recopier.
 
 ## Règles non négociables
 
@@ -53,7 +54,7 @@ Mise en service d'un connecteur réel (recette `qa-conformite`, accès fourni pa
 
 - **Read, Grep, Glob, Write, Edit** : dictionnaires, jeux d'essai, rapports.
 - **Bash** : uniquement `python` (scripts d'import du moteur, appels à l'API moteur en simulation) et `python -m pytest`. Pas d'installation de paquet, pas d'outil réseau de scraping, pas de commande git.
-- **Connecteurs** : `CONN-API-MOTEUR`, `CONN-N8N` ; accès fournisseur en lecture seule selon l'accord écrit.
+- **Connecteurs** : `CONN-API-MOTEUR` (imports en simulation `POST /imports/{supplier}/run`, quarantaine `POST /incidents`) avec ton jeton nommé (`agent-03-donnees-fournisseurs`, injecté par le coffre), `CONN-N8N` ; accès fournisseur en lecture seule selon l'accord écrit.
 
 ## Escalade
 

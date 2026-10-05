@@ -18,15 +18,18 @@ La propriétaire intervient seulement pour :
 | Type | Exemples | Fréquence |
 |---|---|---|
 | A. Physique | réception du stock, contrôle d'authenticité, colis, photos et vidéos réelles | récurrent après ouverture |
-| B. Légal et identité | KYC, ouverture de comptes, signatures, statut TVA | une seule fois |
-| C. Hors mandat | dépense au-delà des plafonds, **réarmement du stop-loss global** | ponctuel |
+| B. Légal et identité | KYC, ouverture de comptes, signatures, statut TVA, jetons et empreintes au coffre, hébergement | une seule fois |
+| C. Hors mandat | dépense au-delà des plafonds, signature des seuils, point zéro, **réarmement du stop-loss global** | ponctuel |
 
-👉 La checklist ordonnée : `docs/00-pilotage/INTERVENTIONS_HUMAINES.md`.
+👉 La checklist ordonnée et exhaustive (chaque acte relié à sa tâche du backlog et à son échéance) : `docs/00-pilotage/INTERVENTIONS_HUMAINES.md`.
 👉 Le mandat à remplir et signer : `docs/00-pilotage/DELEGATION_AUTONOMIE.md` + `config/mandate.v1.yaml`.
 
 ## Garde-fous (non négociables)
 
-- **Stop-loss sur 6 niveaux** : produit, extension, pub, cash, global (−20 % du capital, réarmé par la propriétaire uniquement), temps. Voir `docs/00-pilotage/STOP_LOSS.md`.
+- **Stop-loss sur 6 niveaux** : produit, extension, pub, cash, global (perte de valeur nette ≥ 20 % du capital engagé de référence, soit 840 CHF avec le point zéro recommandé ; réarmé par la propriétaire uniquement, avec son jeton), temps. Voir `docs/00-pilotage/STOP_LOSS.md`.
+- **Fermé par défaut** : donnée illisible, périmée ou invérifiable ⇒ refus ou validation humaine, jamais une approbation. Aucun chiffre décisif (trésorerie, solde, taux, plafond, seuil) n'est déclaré par l'agent qui en profite : le moteur le lit dans ses registres, et l'acteur est déduit de son jeton nommé.
+- **Signé par la propriétaire, au coffre** : mandat, seuils du stop-loss et règles de prix ne valent que par l'empreinte qu'elle reporte au coffre ; un fichier modifié sans signature ne peut que durcir les seuils.
+- **Secrets hors de portée de la flotte** : `.claude/settings.json` ne contient que des règles `deny` (`.env`, `secrets/`, coffre local, environnement des processus) ; les secrets vivent hors de l'arborescence des agents.
 - **Simulation par défaut** : client Shopify en `dry_run`, workflows n8n inactifs, écritures externes désactivées.
 - **Niveaux d'autonomie 1 à 4** (BP §13) : chaque écriture exige le niveau requis ; un incident critique fait redescendre d'un niveau.
 - **Aucun coût interne public** : liste blanche des champs publiés, vue SQL `public_catalog` sans coûts, tests de fuite.
@@ -44,7 +47,7 @@ La propriétaire intervient seulement pour :
 | `orchestration/n8n/` | 8 workflows n8n importables : fournisseur → site, commande → livraison, facture → marge réelle, incident, rapport quotidien, marketing, surveillance stop-loss, contrôle des dépenses |
 | `dashboard/` | Tableau de bord interne (contient coûts et marges : **ne jamais publier**) |
 | `site/` | Landing d'ouverture avec alertes, structure Shopify, snippets Liquid, modèle de fiche produit |
-| `docs/00-pilotage` | Plan 90 jours, backlog importable dans Notion, gates go/no-go, interventions humaines, risques, écarts du BP, mandat, stop-loss |
+| `docs/00-pilotage` | Plan 90 jours, backlog importable dans Notion, gates go/no-go, interventions humaines, risques, écarts du BP consolidés, mandat, stop-loss |
 | `docs/01-marche` | Grille concurrence, guide d'entretiens, questionnaire, protocole landing, assortiment pilote |
 | `docs/02-sourcing` | Dossier B2B, emails fournisseurs prêts + relances, panier pilote, comparateur d'offres `.xlsx`, tracker contacts, due diligence |
 | `docs/03-finance` | Modèle financier `.xlsx` (formules vivantes), trésorerie 13 semaines, vérification chiffre par chiffre du BP |
@@ -52,7 +55,8 @@ La propriétaire intervient seulement pour :
 | `docs/05-da` | Naming, 2 directions visuelles, logos SVG originaux, charte HTML, composants, templates sociaux, packaging |
 | `docs/06-contenu` | Ton, 15 sujets, calendrier 90 jours, scripts vidéo, emails, test pub, brief créateurs, SEO |
 | `docs/07-ops` | SOP réception, colis, SAV, incidents, routines, recette avant ouverture, FAQ |
-| `docs/08-agents` + `.claude/agents/` | Les 12 agents du BP §11, utilisables directement comme sous-agents Claude Code |
+| `docs/08-agents` + `.claude/agents/` | Les 12 agents du BP §11, utilisables directement comme sous-agents Claude Code (un jeton nommé par agent pour l'API du moteur) |
+| `.claude/settings.json` | Permissions du projet : uniquement des règles `deny` qui rendent les secrets illisibles par la flotte |
 
 ## Démarrage rapide
 
@@ -63,15 +67,29 @@ uvicorn pokeshop.api:create_app --factory --app-dir engine --port 8000   # API d
 python dashboard/build.py               # régénère dashboard/out/index.html (données FICTIVES)
 ```
 
+- API sans base : les états de sécurité (gel du stop-loss, registre du mandat, incidents, étoile polaire, catalogue de synchronisation…) sont persistés par défaut dans `~/.local/state/pokeshop` (`POKESHOP_STATE_DIR`) ; sans `POKESHOP_API_TOKEN_SHA256`, les routes internes répondent 503.
+- Tableau de bord réel (coûts et marges) : `python dashboard/build.py --api http://127.0.0.1:8000 --out ~/pokeshop/tableau.html` ; une sortie dans le dépôt est refusée.
 - Landing : ouvrir `site/landing/index.html` (le formulaire reste désactivé tant que l'URL n8n n'est pas configurée).
 - Charte : ouvrir `docs/05-da/CHARTE.html`.
-- Plateforme complète (Postgres + n8n + API) : `docker compose up` après avoir copié `.env.example` en `.env`. Voir `orchestration/README.md` pour l'ordre d'activation.
+- Plateforme complète (Postgres + n8n + API), commandes exécutables telles quelles :
+
+```bash
+cp .env.example .env
+# Remplir depuis le coffre : POSTGRES_PASSWORD, POKESHOP_DB_PASSWORD, N8N_ENCRYPTION_KEY,
+# POKESHOP_API_TOKEN_SHA256, POKESHOP_OWNER_TOKEN_SHA256 (empreintes sha256, jamais les jetons).
+docker compose config --quiet           # échoue en nommant la variable manquante ; rien n'est lancé
+docker compose up -d db db-migrate db-backup api n8n
+docker compose logs db-backup           # « restauration vérifiée » : sauvegarde quotidienne ET restauration testée
+```
+
+  Chaque conteneur ne reçoit que ses variables (en-tête de `docker-compose.yml`). Ordre d'activation des workflows : `orchestration/README.md` ; sauvegardes : `db/README.md`.
 
 ## Décisions qui t'attendent
 
 1. **Nom et direction visuelle** : A « Quai » ou B « Pochette » (`docs/05-da/`), une seule validation.
-2. **Mandat** : montants, fournisseurs autorisés, signature (`docs/00-pilotage/DELEGATION_AUTONOMIE.md`).
-3. **Écarts bloquants du BP** : `docs/00-pilotage/ECARTS_BP.md` (ex. distributeur suisse Carletto AG absent du BP).
-4. **Statut exploitant et TVA** avec la fiduciaire : le moteur a deux profils, il ne choisit pas.
+2. **Mandat** : montants, fournisseurs autorisés, signature **et empreinte au coffre** (`docs/00-pilotage/DELEGATION_AUTONOMIE.md`) ; puis tes jetons (le tien, un par agent) et la signature des seuils.
+3. **Point zéro du stop-loss global** à J3 avec le budget : sans lui, le gel tombe avant la première vente (`docs/00-pilotage/STOP_LOSS.md` §5).
+4. **Écarts bloquants du BP** : `docs/00-pilotage/ECARTS_BP.md` (ex. distributeur suisse Carletto AG absent du BP).
+5. **Statut exploitant et TVA** avec la fiduciaire : le moteur a deux profils, il ne choisit pas.
 
 Spécification technique commune : `docs/SPEC.md`.

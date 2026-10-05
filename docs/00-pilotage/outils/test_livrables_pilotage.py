@@ -294,3 +294,132 @@ def test_cross_refs_detect_unknown_backlog_id(tmp_path, monkeypatch):
     monkeypatch.setattr(v, "OWNED_MD", {"PILOTAGE": ("NOTE.md",), "MARCHE": (), "SOURCING": ()})
     errors = v.check_cross_refs()
     assert any("BL-998" in e for e in errors)
+
+
+# ---------------------------------------------------------------- interventions, plan, gates, écarts (revue 5.10.2026)
+def test_real_backlog_dates_aligned():
+    """COH-19 et COH-04 : échéances alignées entre backlog, interventions et plan."""
+    _, rows = v.read_csv(v.PILOTAGE / "BACKLOG.csv")
+    due = {r["ID"]: r["Échéance"] for r in rows}
+    assert due["BL-016"] == "J1"
+    assert due["BL-132"] == "J45"
+    assert due["BL-141"] == "J62"
+    assert v.j_values(due["BL-136"]) == {60, 64}
+
+
+def test_interventions_name_every_owner_act():
+    """COH-06 : la checklist maîtresse couvre jetons, point zéro, signatures, renouvellement, hébergement."""
+    text = (v.PILOTAGE / "INTERVENTIONS_HUMAINES.md").read_text(encoding="utf-8")
+    for term in (
+        "jeton",
+        "point zéro",
+        "Renouveler",
+        "Héberger",
+        "Search Console",
+        "Recruter",
+        "temps passé",
+        "Signer",
+    ):
+        assert term in text, term
+    days, links = v.interventions_tables(text)
+    assert set(links) == set(days), "chaque fiche détaillée a une date dans la checklist, et inversement"
+
+
+def _copy(tmp_path: Path, name: str, text: str) -> Path:
+    path = tmp_path / name
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_interventions_backlog_detects_missing_owner_task(tmp_path):
+    src = (v.PILOTAGE / "INTERVENTIONS_HUMAINES.md").read_text(encoding="utf-8")
+    bad = _copy(tmp_path, "I.md", src.replace("| BL-171 |", "| — |"))
+    assert any("BL-171 absente" in e for e in v.check_interventions_backlog(bad))
+
+
+def test_interventions_without_backlog_column_fails(tmp_path):
+    """L'ancienne checklist (sans colonne Backlog, sans jetons ni point zéro) échoue."""
+    src = (v.PILOTAGE / "INTERVENTIONS_HUMAINES.md").read_text(encoding="utf-8")
+    stripped = "\n".join(
+        line.rsplit("|", 2)[0] + "|"
+        if line.startswith(("| A", "| B", "| C")) and "BL-" in line.rsplit("|", 2)[1]
+        else line
+        for line in src.splitlines()
+    )
+    bad = _copy(tmp_path, "I.md", stripped)
+    errors = v.check_interventions_backlog(bad)
+    assert any("BL-176 absente" in e for e in errors)
+    assert any("BL-148 absente" in e for e in errors)
+
+
+def test_interventions_backlog_detects_misaligned_deadline(tmp_path):
+    def mutate(rows):
+        for r in rows:
+            if r["ID"] == "BL-016":
+                r["Échéance"] = "J2"
+        return rows
+
+    backlog = _rewrite_csv(v.PILOTAGE / "BACKLOG.csv", tmp_path / "BACKLOG.csv", mutate)
+    errors = v.check_interventions_backlog(backlog=backlog)
+    assert any("C01 à J[1] mais BL-016 échoit à J2" in e for e in errors)
+
+
+def test_plan_owner_dates_detect_task_placed_late(tmp_path):
+    src = (v.PILOTAGE / "PLAN_90_JOURS.md").read_text(encoding="utf-8")
+    bad = src.replace(" · choisir l'entité exploitante avec la fiduciaire (BL-007)", "").replace(
+        "· IDE (BL-011)", "· entité et IDE (BL-007, BL-011)"
+    )
+    assert bad != src
+    errors = v.check_plan_owner_dates(_copy(tmp_path, "P.md", bad))
+    assert any("BL-007 placé à J[10] mais échoit à J7" in e for e in errors)
+
+
+def test_gate_dates_detect_g5_at_j60_only(tmp_path):
+    """COH-04 : G5 daté J60 seul alors que l'option A (recommandée) le place à J64."""
+    src = (v.PILOTAGE / "GATES_GO_NO_GO.md").read_text(encoding="utf-8")
+    bad = src.replace("| G5 | J60 (3.12) option B ; J64 (7.12) option A, recommandée |", "| G5 | J60 (3.12) |")
+    assert bad != src
+    errors = v.check_gate_dates(gates=_copy(tmp_path, "G.md", bad))
+    assert any("dates de G5 divergentes" in e for e in errors)
+    assert v.check_gate_dates() == []
+
+
+def test_ecarts_detect_incomplete_rows(tmp_path):
+    lines = [
+        "| EC-F-99 | §10 | Constat | Mineur |",
+        "| EC-X-01 | §1 | Constat | Mineur | Traitement | Décision |",
+        "| EC-01 | §2 | Doublon | Mineur | Traitement | Décision |",
+        "| EC-M-77 | §5 | Constat | Grave | Traitement | — |",
+    ]
+    src = (v.PILOTAGE / "ECARTS_BP.md").read_text(encoding="utf-8")
+    bad = _copy(
+        tmp_path,
+        "E.md",
+        src.replace("## 15. Journal des décisions", "\n".join(lines) + "\n\n## 15. Journal des décisions"),
+    )
+    errors = " | ".join(v.check_ecarts(bad))
+    assert "EC-F-99 : 4 colonnes" in errors
+    assert "'EC-X-01' hors convention" in errors
+    assert "en double EC-01" in errors
+    assert "EC-M-77 : gravité 'Grave'" in errors
+    assert "EC-M-77 : décision attendue vide" in errors
+
+
+def test_ecarts_cover_every_build_domain():
+    text = (v.PILOTAGE / "ECARTS_BP.md").read_text(encoding="utf-8")
+    for prefix in ("EC-F-", "EC-M-", "EC-D-", "EC-G-", "EC-L-", "EC-DA-", "EC-S-", "EC-I-", "EC-O-", "EC-A-"):
+        assert f"| {prefix}01 |" in text, prefix
+    assert "| EC-23 |" in text and "externalisé" in text  # CON-11
+
+
+def test_no_stale_expected_detected(tmp_path):
+    good = _copy(tmp_path, "ok.md", "| A02 | x | (attendu : `docs/inexistant/`) |\n")
+    assert v.check_no_stale_expected(good) == []
+    bad = _copy(
+        tmp_path,
+        "bad.md",
+        "| A02 | SOP colis (attendu : `docs/07-ops/`, agent ops) |\n| A05 | SOP réception (attendu) |\n",
+    )
+    errors = " | ".join(v.check_no_stale_expected(bad))
+    assert "`docs/07-ops/` est livré" in errors
+    assert "sans chemin exact" in errors

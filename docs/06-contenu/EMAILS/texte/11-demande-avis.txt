@@ -8,7 +8,7 @@ Votre commande {{ $json.numero_commande }} a été livrée il y a quelques jours
 
 Donner mon avis : {{ $json.url_avis }}
 
-Un problème avec votre commande ? Ne passez pas par l'avis : répondez à cet email, une personne vous répond.
+Un problème avec votre commande ? Ne passez pas par l'avis : répondez simplement à cet email. Nous vous répondons, et une personne reprend votre demande si vous le souhaitez.
 
 --
 {{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}

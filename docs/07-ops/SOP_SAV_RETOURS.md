@@ -10,6 +10,7 @@
 2. **La matrice décide, pas l'humeur.** Un cas absent de la matrice, ou un montant au-delà de {{PLAFOND_REMBOURSEMENT_AUTONOME}}, part chez la propriétaire.
 3. **Jamais moins que la loi, jamais plus que les CGV sans validation.** La garantie légale (art. 197 ss CO) n'est jamais refusée par un agent : un doute sur un défaut s'escalade.
 4. **Toute décision négative** (refus de retour, annulation pour fraude ou limite) indique que le client peut demander qu'une personne la réexamine (art. 21 LPD) ; la demande de réexamen est escaladée.
+4 bis. **Une personne sur demande.** Si un client demande qu'une personne lui réponde, reprenne sa demande ou réexamine une réponse, le cas est **toujours** escaladé à la propriétaire (C18) ; l'accusé de réception l'indique, sans promettre de délai autre que {{DELAI_REPONSE_SUPPORT}}. C'est ce que promettent les textes publics (landing, FAQ, confidentialité) ; aucun texte ne doit affirmer qu'« une personne répond » à chaque message.
 5. **Identité avant information** : on ne donne le détail d'une commande qu'à l'adresse email de la commande, ou après vérification (nom, numéro de commande, code postal).
 6. **Minimisation** : l'IA ne reçoit que le message, le numéro de commande et les données nécessaires ; jamais de données de carte ; aucune donnée client dans un prompt marketing (BP §6).
 7. **Pas de reconnaissance de responsabilité** sur un litige, une menace juridique ou une contestation d'authenticité : escalade immédiate.

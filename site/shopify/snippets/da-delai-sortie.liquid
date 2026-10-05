@@ -2,7 +2,8 @@
   Bloc « délai et date de sortie » d'une fiche (BP §7 : délai réaliste, date de sortie confirmée ou statut incertain,
   conditions des commandes mixtes et précommandes ; quantité autorisée).
   Paramètre : product (obligatoire). Réglages du thème utilisés : delai_expedition_local, url_page_precommandes.
-  Aucune quantité en stock n'est affichée ; seule la quantité maximale par commande l'est.
+  Aucune quantité en stock n'est affichée ; seule la quantité maximale par foyer l'est (CGV ch. 4.4 : limite par
+  référence et par foyer, toutes commandes confondues ; valeur = LIMITE_PAR_CLIENT validé).
 {%- endcomment -%}
 {%- liquid
   assign statut = product.metafields.boutique.statut_stock.value | default: 'inconnu'
@@ -41,7 +42,7 @@
     {%- endif -%}
     {%- if qmax and qmax != '' -%}
       <dt>Quantité maximale</dt>
-      <dd>{{ qmax }} par commande</dd>
+      <dd>{{ qmax }} par foyer (toutes commandes confondues)</dd>
     {%- endif -%}
     <dt>Livraison</dt>
     <dd>En Suisse uniquement.</dd>

@@ -8,6 +8,7 @@ Lancer : ``python -m pytest -q docs/08-agents/outils``.
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 from pathlib import Path
@@ -34,6 +35,8 @@ def make_root(tmp_path: Path) -> Path:
             (root / "docs" / entry.name).symlink_to(entry)
     shutil.copytree(REPO / v.DOCS_DIR, root / v.DOCS_DIR)
     shutil.copytree(REPO / v.AGENTS_DIR, root / v.AGENTS_DIR)
+    if (REPO / v.SETTINGS_FILE).is_file():
+        shutil.copy2(REPO / v.SETTINGS_FILE, root / v.SETTINGS_FILE)
     return root
 
 
@@ -417,7 +420,8 @@ def test_empty_repo_map_detected(root):
     assert v.check_repo_paths(root) == ["CARTE_REPO.md : carte absente ou vide"]
 
 
-def test_stale_expected_reported(root, capsys):
+def test_stale_expected_is_an_error(root, capsys):
+    """COH-12 : un fichier livré encore marqué « attendu » fait échouer le vérificateur (ce n'est plus une info)."""
     carte = root / v.DOCS_DIR / "CARTE_REPO.md"
     edit(
         carte,
@@ -425,8 +429,13 @@ def test_stale_expected_reported(root, capsys):
         "| `docs/08-agents/RUNBOOK.md` | Utilisation quotidienne | flotte-agents | propriétaire, 01 | attendu |",
     )
     assert "docs/08-agents/RUNBOOK.md" in v.stale_expected(root)
-    assert v.main(root) == 0
-    assert "désormais présent" in capsys.readouterr().out
+    assert any("RUNBOOK.md » est présent mais marqué « attendu »" in e for e in v.check_repo_map_current(root))
+    assert v.main(root) == 1
+    assert "marqué « attendu »" in capsys.readouterr().out
+
+
+def test_real_repo_map_has_no_stale_entry():
+    assert v.stale_expected() == []
 
 
 def test_cited_paths_skip_patterns_and_commands(tmp_path):
@@ -555,3 +564,126 @@ def test_main_reports_errors(root, capsys):
     assert v.main(root) == 1
     out = capsys.readouterr().out
     assert "ERREUR" in out and "erreur(s)" in out
+
+
+# ------------------------------------------------------------------------------------------- 12. permissions (SEC-13)
+def _settings(root: Path) -> dict:
+    return json.loads((root / v.SETTINGS_FILE).read_text(encoding="utf-8"))
+
+
+def _write_settings(root: Path, data: dict) -> None:
+    (root / v.SETTINGS_FILE).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def test_real_settings_contain_only_deny_rules():
+    data = json.loads((REPO / v.SETTINGS_FILE).read_text(encoding="utf-8"))
+    assert set(data) == {"permissions"}
+    assert set(data["permissions"]) == {"deny"}
+    assert set(v.REQUIRED_DENY) <= set(data["permissions"]["deny"])
+
+
+def test_settings_missing_detected(root):
+    (root / v.SETTINGS_FILE).unlink()
+    assert any("fichier manquant" in e for e in v.check_secret_permissions(root))
+
+
+def test_settings_invalid_json_detected(root):
+    (root / v.SETTINGS_FILE).write_text("{ deny: [", encoding="utf-8")
+    assert any("JSON illisible" in e for e in v.check_secret_permissions(root))
+
+
+def test_settings_allow_rule_rejected(root):
+    data = _settings(root)
+    data["permissions"]["allow"] = ["Bash(python:*)"]
+    data["env"] = {"X": "1"}
+    _write_settings(root, data)
+    errors = v.check_secret_permissions(root)
+    assert any("permissions.allow interdit" in e for e in errors)
+    assert any("clé « env » non admise" in e for e in errors)
+
+
+def test_settings_required_deny_missing(root):
+    data = _settings(root)
+    data["permissions"]["deny"].remove("Read(./.env)")
+    data["permissions"]["deny"].remove("Bash(printenv:*)")
+    _write_settings(root, data)
+    errors = v.check_secret_permissions(root)
+    assert any("minimale absente « Read(./.env) »" in e for e in errors)
+    assert any("minimale absente « Bash(printenv:*) »" in e for e in errors)
+
+
+def test_settings_malformed_duplicate_and_overbroad_rules(root):
+    data = _settings(root)
+    data["permissions"]["deny"] += ["Read .env", "Bash(env)", "Read(./.env.*)", 3]
+    _write_settings(root, data)
+    errors = v.check_secret_permissions(root)
+    assert any("mal formée « Read .env »" in e for e in errors)
+    assert any("mal formée « 3 »" in e for e in errors)
+    assert any("en double « Bash(env) »" in e for e in errors)
+    assert any("bloque .env.example" in e for e in errors)
+
+
+def test_agent_without_secret_rule_detected(root):
+    path = v.agent_file("sourcing", root)
+    path.write_text(path.read_text(encoding="utf-8").replace(v.SECRET_RULE, "Discrétion"), encoding="utf-8")
+    assert any("sourcing.md : règle clé absente « Secrets jamais lus »" in e for e in v.check_agent_prompts(root))
+
+
+# --------------------------------------------------------------------------------------- 13. QA lecture seule (COH-08)
+def test_qa_generator_without_control_tool_detected(root):
+    path = root / v.DOCS_DIR / "12_qa-conformite.md"
+    edit(
+        path,
+        "## 4. Format de sortie",
+        "| `docs/03-finance/generer_classeurs.py` | Exécution |\n\n## 4. Format de sortie",
+    )
+    assert any("12_qa-conformite.md" in e and "générateur cité" in e for e in v.check_qa_read_only(root))
+
+
+def test_qa_control_tool_missing_detected(root):
+    (root / v.QA_CONTROL_TOOL).unlink()
+    assert any("outil de contrôle des générateurs manquant" in e for e in v.check_qa_read_only(root))
+
+
+def test_qa_has_no_write_tool_and_no_generator_default_output():
+    tools = {v.tool_name(t) for t in v.split_tools(v.load_frontmatter(v.agent_file("qa-conformite"))[0]["tools"])}
+    assert not tools & {"Write", "Edit"}
+    for rel in v.QA_FILES:
+        text = (REPO / rel).read_text(encoding="utf-8")
+        assert "controle_generateurs.py" in text
+
+
+# ------------------------------------------------------------------------------------------- 14. consignes périmées
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("contrôle global par `pokeshop.forecast.north_star(...).frozen`.", "contrôle global obsolète"),
+        ("Étoile polaire : seuil de gel global {{−1 600 CHF}} → OK", "seuil du gel global obsolète"),
+        ("| Demande hors plafond | E2 | propriétaire | 48 h (24 h achat de stock) |", "24 h"),
+        ("Lancer les générateurs en mode contrôle.", "pas de mode contrôle"),
+        ("Calcul : `engine/pokeshop/stoploss.py` (attendu, agent gouvernance).", "livré mais dit « attendu »"),
+        ("API (`engine/pokeshop/api.py`, attendu).", "livré mais dit « attendu »"),
+        ("| `engine/pokeshop/stoploss.py` | Utilisation dès sa livraison |", "plus de contrôle provisoire"),
+    ],
+)
+def test_stale_guidance_detected(root, line, expected):
+    path = root / v.DOCS_DIR / "RUNBOOK.md"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "## Validation humaine requise", f"{line}\n\n## Validation humaine requise"
+        ),
+        encoding="utf-8",
+    )
+    assert any(expected in e for e in v.check_stale_guidance(root))
+
+
+def test_attendu_for_missing_path_is_not_stale(root):
+    path = root / v.DOCS_DIR / "RUNBOOK.md"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "## Validation humaine requise",
+            "Voir `engine/pokeshop/inexistant.py` (attendu).\n\n## Validation humaine requise",
+        ),
+        encoding="utf-8",
+    )
+    assert v.check_stale_guidance(root) == []

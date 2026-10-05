@@ -19,6 +19,7 @@ import yaml
 from pokeshop.mandate import (
     CASH_FREEZE_CATEGORIES,
     DEFAULT_MANDATE_PATH,
+    EngineProposalBook,
     FORBIDDEN_CATEGORIES,
     MANDATE_ENV_VAR,
     MANDATE_FINGERPRINT_ENV_VAR,
@@ -46,6 +47,7 @@ from pokeshop.mandate import (
     paypal_cost,
     validate_mandate_data,
 )
+from pokeshop.models import ReorderLine, ReorderProposal
 from pokeshop.stoploss import StopLossStatus, load_stoploss_config
 from pokeshop.treasury import CASH_STOPLOSS_RESERVE
 from pydantic import ValidationError
@@ -90,7 +92,7 @@ SUPPLIERS = [
     },
 ]
 ENVELOPES = {
-    "STOCK": "3000",
+    "STOCK": "2700",  # COH-03 : STOCK + ACCESSORIES = budget stock (3 000, BP §3)
     "ACCESSORIES": "300",
     "SAMPLES": "100",
     "SITE_TOOLS": "1500",
@@ -127,7 +129,10 @@ def signed_data(mutate: Callable[[dict], None] | None = None, *, sign: bool = Tr
 
 
 def signed(mutate: Callable[[dict], None] | None = None, **kw) -> Mandate:
-    return parse_mandate(signed_data(mutate), **kw)
+    """Mandat signé ET dont l'empreinte est au coffre (sauf ``expected_fingerprint`` explicite)."""
+    data = signed_data(mutate)
+    kw.setdefault("expected_fingerprint", data["approval"]["fingerprint_sha256"])
+    return parse_mandate(data, **kw)
 
 
 def no_fees(d: dict) -> None:
@@ -176,6 +181,24 @@ def status(**kw) -> StopLossStatus:
     return StopLossStatus(**base)
 
 
+def proposal(ref: str = "reorder:FICTIF0001", *, line_cost: str = "5000", generated_at: datetime | None = None,
+             product_key: str = "FICTIF_DISPLAY_A", extension: str = "FICTIF_EXT_A") -> ReorderProposal:
+    line = ReorderLine(product_key=product_key, extension=extension, supplier_id="fictif_grossiste_a",
+                       supplier_sku="FICTIF-A-001", qty=10, unit_cost_chf=D(line_cost) / 10, line_cost_chf=D(line_cost),
+                       reorder_point=D("2"), position=0)
+    return ReorderProposal(lines=(line,), skipped=(), total_cost_chf=D(line_cost), budget_available_chf=D("6000"),
+                           budget_remaining_chf=D("1000"), extension_exposure_after={extension: D(line_cost)},
+                           rules_version="v1-2026-10-04", inputs_hash=ref,
+                           generated_at=generated_at or NOW - timedelta(hours=1))  # fmt: skip
+
+
+def proposals(*items: ReorderProposal) -> EngineProposalBook:
+    book = EngineProposalBook()
+    for item in items or (proposal(),):
+        book.register(item, recorded_by="moteur")
+    return book
+
+
 def treasury(**kw) -> TreasurySnapshot:
     base = dict(as_of=NOW, cash_available_chf=D("6000"), paypal_balance_chf=D("2000"),
                 extension_exposure_chf={"FICTIF_EXT_A": D("0")})  # fmt: skip
@@ -184,6 +207,8 @@ def treasury(**kw) -> TreasurySnapshot:
 
 
 def decide(request: SpendRequest, mandate: Mandate | None = None, ledger: SpendLedger | None = None, **kw):
+    if "proposals" not in kw:  # proposition du moteur enregistrée 30 min avant la demande
+        kw["proposals"] = proposals(proposal(generated_at=request.requested_at - timedelta(minutes=30)))
     return check(
         request,
         mandate or signed(no_fees),
@@ -733,12 +758,12 @@ def test_reconciliation_matches_flags_and_is_idempotent() -> None:
     for key in ("FICTIF-R-1", "FICTIF-R-2", "FICTIF-R-3", "FICTIF-R-4"):
         approve_and_record(ledger, req(idempotency_key=key, category=SpendCategory.SHIPPING))
     assert all(e.status is SpendStatus.APPROVED for e in ledger.entries())
-    ledger.mark_executed("FICTIF-R-1", at=NOW, amount_chf=D("103.95"), payment_ref="TX-1")
-    ledger.mark_executed("FICTIF-R-2", at=NOW, amount_chf=D("103.95"), payment_ref="TX-2")
-    ledger.mark_executed("FICTIF-R-3", at=NOW, amount_chf=D("103.95"), payment_ref="TX-3")
-    ledger.mark_executed("FICTIF-R-4", at=NOW - timedelta(days=5), amount_chf=D("103.95"), payment_ref="TX-4")
+    ledger.mark_executed("FICTIF-R-1", at=NOW, amount_chf=D("100.00"), payment_ref="TX-1")
+    ledger.mark_executed("FICTIF-R-2", at=NOW, amount_chf=D("100.00"), payment_ref="TX-2")
+    ledger.mark_executed("FICTIF-R-3", at=NOW, amount_chf=D("100.00"), payment_ref="TX-3")
+    ledger.mark_executed("FICTIF-R-4", at=NOW - timedelta(days=5), amount_chf=D("100.00"), payment_ref="TX-4")
     report = ledger.reconcile(
-        statement(("TX-1", "103.95", ""), ("TX-X", "104.95", "lot FICTIF-R-2"), ("TX-9", "49.00", "inconnu")),
+        statement(("TX-1", "100.00", ""), ("TX-X", "101.00", "lot FICTIF-R-2"), ("TX-9", "49.00", "inconnu")),
         at=NOW + timedelta(days=1),
     )
     by_status = {ln.status: ln for ln in report.lines}
@@ -748,9 +773,9 @@ def test_reconciliation_matches_flags_and_is_idempotent() -> None:
     assert by_status["PENDING"].idempotency_key == "FICTIF-R-3"
     assert by_status["MISSING_ON_STATEMENT"].idempotency_key == "FICTIF-R-4"
     assert not report.ok and len(report.alerts) == 3
-    again = ledger.reconcile(statement(("TX-1", "103.95", "")), at=NOW + timedelta(days=1))
+    again = ledger.reconcile(statement(("TX-1", "100.00", "")), at=NOW + timedelta(days=1))
     assert [ln.status for ln in again.lines].count("OK") == 0
-    tolerant = ledger.reconcile(statement(("TX-3", "103.99", "")), at=NOW + timedelta(days=1))
+    tolerant = ledger.reconcile(statement(("TX-3", "100.04", "")), at=NOW + timedelta(days=1))
     assert tolerant.lines[0].status == "OK"  # écart 0,04 ≤ tolérance 0,05
     with pytest.raises(MandateError, match="double"):
         ledger.reconcile(statement(("A", "1", ""), ("A", "1", "")), at=NOW)
@@ -859,7 +884,8 @@ def test_yaml_timestamp_signature_accepted(tmp_path: Path) -> None:
         approved_at=datetime(2026, 10, 10, 9, tzinfo=UTC)))  # fmt: skip
     path = tmp_path / "m.yaml"
     path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
-    assert load_mandate(path).is_active(NOW)
+    assert not load_mandate(path).is_active(NOW)  # empreinte du coffre absente : jamais actif (MOT-05)
+    assert load_mandate(path, expected_fingerprint=data["approval"]["fingerprint_sha256"]).is_active(NOW)
 
 
 # ------------------------------------------------------------------------- document lisible

@@ -12,7 +12,10 @@ Conventions :
   Chaque montant est une écriture datée, idempotente (``entry_id``), en CHF au centime.
 * **Coût historique uniquement** : le poste ``HISTORICAL_COST`` n'est alimenté que par le
   journal de :class:`pokeshop.costs.HistoricalCostLedger` (sorties au CMP, retours, casse,
-  écarts de facture sur unités vendues). Le coût de remplacement n'entre jamais ici ; le coût
+  écarts de facture sur unités vendues), **côté moteur** (:meth:`NorthStarLedger.sync_cost_ledger`,
+  :class:`CostRegister`). L'étiquette de source n'est pas déclarable : :meth:`NorthStarLedger.record`
+  et :meth:`NorthStarLedger.add_entries` (écritures externes, API) refusent tout ``HISTORICAL_COST``
+  et toute source ``HistoricalCostLedger``. Le coût de remplacement n'entre jamais ici ; le coût
   porté par un panier (``BasketResult.product_cost``) est ignoré.
 * Montants **nets de TVA récupérable** : HT en méthode effective ; TTC si l'entité n'est pas
   assujettie (TVA non récupérable = coût), comme le moteur de prix.
@@ -31,12 +34,15 @@ from collections.abc import Iterable, Sequence
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationError, field_validator
 
+from .audit import StateJournal, StateStoreError
 from .costs import CostEntry, HistoricalCostLedger
+from .errors import CostError
+from .models import CostLot
 from .errors import PokeshopError
 from .forecast import NorthStarWeek
 from .models import BasketResult, FrozenModel
@@ -44,7 +50,10 @@ from .pricing import allocate_amount, as_decimal
 
 __all__ = [
     "COST_LEDGER_SOURCE",
+    "CostRegister",
+    "CostMovement",
     "NorthStarError",
+    "NorthStarPersistenceError",
     "Post",
     "POST_LABELS_FR",
     "ContributionEntry",
@@ -64,6 +73,10 @@ CENT = Decimal("0.01")
 
 class NorthStarError(PokeshopError, ValueError):
     """Écriture invalide (montant hors centime, doublon contradictoire, poste interdit)."""
+
+
+class NorthStarPersistenceError(NorthStarError, StateStoreError):
+    """Journal de l'étoile polaire non enregistré ou non relu : écriture refusée (fermé par défaut)."""
 
 
 class Post(str, Enum):
@@ -266,20 +279,55 @@ class NorthStarReport(FrozenModel):
 
 
 class NorthStarLedger:
-    """Journal des écritures de contribution réalisée (append-only, idempotent, thread-safe)."""
+    """Journal des écritures de contribution réalisée (append-only, idempotent, thread-safe).
 
-    def __init__(self, *, timezone: str = "Europe/Zurich") -> None:
+    ``store`` (journal d'état ``northstar``) reçoit chaque lot de nouvelles écritures **avant**
+    qu'elles ne comptent : la contribution nette cumulée survit au redémarrage (:meth:`restore`).
+    """
+
+    STREAM = "northstar"
+
+    def __init__(self, *, timezone: str = "Europe/Zurich", store: StateJournal | None = None) -> None:
         self._tz = ZoneInfo(timezone)
         self._lock = threading.RLock()
         self._entries: dict[str, ContributionEntry] = {}
+        self._store = store
 
     @classmethod
     def from_entries(cls, entries: Iterable[ContributionEntry], *, timezone: str = "Europe/Zurich") -> NorthStarLedger:
-        """Restaure un journal persistant (mêmes contrôles qu'à l'écriture)."""
+        """Restaure un journal persistant (écritures déjà acceptées, coût historique interne compris)."""
         ledger = cls(timezone=timezone)
         for e in entries:
-            ledger.record(e)
+            ledger._add([e], internal=True)
         return ledger
+
+    @classmethod
+    def restore(cls, store: StateJournal, *, timezone: str = "Europe/Zurich") -> NorthStarLedger:
+        """Relit le journal d'état ; :class:`NorthStarPersistenceError` s'il est illisible ou contradictoire."""
+        try:
+            records = store.load()
+        except StateStoreError as exc:
+            raise NorthStarPersistenceError(str(exc)) from exc
+        entries: list[ContributionEntry] = []
+        for n, record in enumerate(records, start=1):
+            try:
+                entries.extend(ContributionEntry.model_validate(item) for item in record["entries"])
+            except (KeyError, TypeError, ValidationError) as exc:
+                raise NorthStarPersistenceError(f"étoile polaire : enregistrement {n} illisible") from exc
+        try:
+            ledger = cls.from_entries(entries, timezone=timezone)
+        except NorthStarError as exc:
+            raise NorthStarPersistenceError(f"étoile polaire : journal incohérent ({exc})") from exc
+        ledger._store = store
+        return ledger
+
+    def _persist(self, entries: Sequence[ContributionEntry]) -> None:
+        if self._store is None or not entries:
+            return
+        try:
+            self._store.append({"entries": [e.model_dump(mode="json") for e in entries]})
+        except StateStoreError as exc:
+            raise NorthStarPersistenceError(f"étoile polaire : écriture non enregistrée ({exc})") from exc
 
     # -- lecture ------------------------------------------------------------------
     def entries(self) -> tuple[ContributionEntry, ...]:
@@ -303,28 +351,46 @@ class NorthStarLedger:
             )
 
     # -- écriture -----------------------------------------------------------------
-    def record(self, entry: ContributionEntry) -> bool:
-        """Ajoute une écriture ; ``False`` si déjà présente à l'identique ; erreur si contradictoire."""
-        if entry.post is Post.HISTORICAL_COST and entry.source != COST_LEDGER_SOURCE:
-            raise NorthStarError("coût historique : HistoricalCostLedger uniquement (jamais le coût de remplacement)")
-        with self._lock:
-            existing = self._entries.get(entry.entry_id)
-            if existing is not None:
-                if existing == entry:
-                    return False
-                raise NorthStarError(f"écriture {entry.entry_id} déjà enregistrée avec un autre contenu")
-            self._entries[entry.entry_id] = entry
-            return True
+    @staticmethod
+    def _check_external(entry: ContributionEntry) -> None:
+        """Écriture externe : le coût historique et son étiquette de source sont réservés au moteur."""
+        if entry.post is Post.HISTORICAL_COST or entry.source == COST_LEDGER_SOURCE:
+            raise NorthStarError(
+                "coût historique : alimenté uniquement par le registre de coûts historiques interne du moteur "
+                "(HistoricalCostLedger, POST /costs/movements), jamais par une écriture déclarée"
+            )
 
-    def _add(self, entries: Sequence[ContributionEntry]) -> tuple[ContributionEntry, ...]:
+    def record(self, entry: ContributionEntry) -> bool:
+        """Ajoute une écriture externe ; ``False`` si déjà présente à l'identique ; erreur si contradictoire."""
+        return bool(self.add_entries([entry]))
+
+    def add_entries(self, entries: Sequence[ContributionEntry]) -> tuple[ContributionEntry, ...]:
+        """Lot d'écritures externes, **atomique** (tout est contrôlé avant le moindre enregistrement).
+
+        Renvoie les écritures nouvelles (les doublons identiques sont ignorés, idempotence par ``entry_id``).
+        """
+        for e in entries:
+            self._check_external(e)
+        return self._add(entries)
+
+    def _add(self, entries: Sequence[ContributionEntry], *, internal: bool = False) -> tuple[ContributionEntry, ...]:
         with self._lock:
+            fresh: dict[str, ContributionEntry] = {}
             for e in entries:  # contrôle complet avant toute écriture (atomicité)
-                existing = self._entries.get(e.entry_id)
+                if e.post is Post.HISTORICAL_COST and e.source != COST_LEDGER_SOURCE:
+                    raise NorthStarError(
+                        "coût historique : HistoricalCostLedger uniquement (jamais le coût de remplacement)"
+                    )
+                if not internal:
+                    self._check_external(e)
+                existing = self._entries.get(e.entry_id) or fresh.get(e.entry_id)
                 if existing is not None and existing != e:
                     raise NorthStarError(f"écriture {e.entry_id} déjà enregistrée avec un autre contenu")
-            for e in entries:
-                self.record(e)
-        return tuple(entries)
+                if existing is None:
+                    fresh[e.entry_id] = e
+            self._persist(list(fresh.values()))  # un seul enregistrement pour le lot (tout ou rien)
+            self._entries.update(fresh)
+        return tuple(fresh.values())
 
     def record_order(
         self,
@@ -354,7 +420,8 @@ class NorthStarLedger:
             for post, amount in items
             if amount != 0 or post is Post.NET_SALES
         ]  # fmt: skip
-        return self._add(entries)
+        self._add(entries)
+        return tuple(entries)
 
     def record_basket(self, order_id: str, at: datetime, basket: BasketResult) -> tuple[ContributionEntry, ...]:
         """Commande à partir d'un :class:`~pokeshop.models.BasketResult` du moteur de prix.
@@ -402,7 +469,8 @@ class NorthStarLedger:
                     ref=refund_id, source="remboursement", order_id=order_id,
                 )
             )  # fmt: skip
-        return self._add(entries)
+        self._add(entries)
+        return tuple(entries)
 
     def record_expense(
         self, expense_id: str, at: datetime, post: Post, amount: Decimal | int | str, *, ref: str = ""
@@ -441,7 +509,7 @@ class NorthStarLedger:
             ref=f"{entry.kind} {entry.ref}".strip(),
             source=COST_LEDGER_SOURCE,
         )
-        self._add([converted])
+        self._add([converted], internal=True)
         return converted
 
     def sync_cost_ledger(self, ledger: HistoricalCostLedger) -> int:
@@ -478,7 +546,8 @@ class NorthStarLedger:
             )
             for monday, amount in segments.items()
         ]
-        return self._add(entries)
+        self._add(entries)
+        return tuple(entries)
 
     # -- rapport ------------------------------------------------------------------
     def weekly_report(self, start: date | None = None, end: date | None = None) -> NorthStarReport:
@@ -530,3 +599,152 @@ class NorthStarLedger:
         return NorthStarReport(
             opening_cumulative=opening_cumulative, rows=tuple(rows), total=PostBreakdown.of(selected)
         )
+
+
+# ------------------------------------------------------------- registre de coûts interne
+
+
+class CostMovement(FrozenModel):
+    """Mouvement du registre de coûts historiques (réception, vente, retour, casse, facture).
+
+    Aucun coût n'est déclaré pour une sortie : vente et casse sortent au CMP calculé par
+    :class:`pokeshop.costs.HistoricalCostLedger` ; un retour reprend le coût **de la vente d'origine**
+    (``sale_ref``), jamais un coût fourni par l'appelant.
+    """
+
+    kind: Literal["RECEIPT", "ISSUE", "RETURN", "WRITE_OFF", "INVOICE_ADJUSTMENT"]
+    product_key: str = Field(min_length=1)
+    at: datetime
+    ref: str = Field(min_length=1)
+    """RECEIPT : identifiant du lot ; ISSUE : commande ; RETURN : retour ; WRITE_OFF : constat ; facture."""
+    qty: int | None = Field(default=None, ge=1)
+    unit_cost: Decimal | None = Field(default=None, gt=0)
+    """RECEIPT : coût rendu unitaire du lot ; INVOICE_ADJUSTMENT : coût unitaire facturé."""
+    lot_id: str | None = None
+    """INVOICE_ADJUSTMENT : lot rapproché."""
+    sale_ref: str | None = None
+    """RETURN : référence de la sortie (ISSUE) d'origine."""
+    recorded_by: str = Field(default="moteur", min_length=2)
+
+    @field_validator("at")
+    @classmethod
+    def _tz(cls, v: datetime) -> datetime:
+        if v.tzinfo is None or v.utcoffset() is None:
+            raise ValueError("at doit porter un fuseau horaire")
+        return v
+
+
+class CostRegister:
+    """Registre **interne** des coûts historiques (journal d'état ``cost_ledger``) qui alimente l'étoile polaire.
+
+    Chaque mouvement est rejoué à blanc (contrôle), écrit dans le journal, appliqué, puis le journal
+    du :class:`HistoricalCostLedger` est synchronisé dans :class:`NorthStarLedger`
+    (:meth:`NorthStarLedger.sync_cost_ledger`) : c'est la **seule** voie du poste coût historique.
+    """
+
+    STREAM = "cost_ledger"
+
+    def __init__(self, northstar: NorthStarLedger | None = None, *, store: StateJournal | None = None) -> None:
+        self._lock = threading.RLock()
+        self._movements: list[CostMovement] = []
+        self._ledgers: dict[str, HistoricalCostLedger] = {}
+        self._returned: dict[tuple[str, str], int] = {}
+        self._northstar = northstar
+        self._store = store
+
+    @classmethod
+    def restore(cls, store: StateJournal, northstar: NorthStarLedger | None = None) -> CostRegister:
+        """Relit et rejoue le journal ; :class:`NorthStarPersistenceError` s'il est illisible ou incohérent."""
+        try:
+            records = store.load()
+        except StateStoreError as exc:
+            raise NorthStarPersistenceError(str(exc)) from exc
+        register = cls(northstar)
+        for n, record in enumerate(records, start=1):
+            try:
+                movement = CostMovement.model_validate(record["movement"])
+                register._apply(register._ledgers, register._returned, movement)
+            except (KeyError, TypeError, ValidationError, CostError, NorthStarError) as exc:
+                raise NorthStarPersistenceError(f"registre de coûts : enregistrement {n} illisible ({exc})") from exc
+            register._movements.append(movement)
+        register._store = store
+        return register
+
+    @staticmethod
+    def _apply(
+        ledgers: dict[str, HistoricalCostLedger], returned: dict[tuple[str, str], int], movement: CostMovement
+    ) -> None:
+        ledger = ledgers.get(movement.product_key)
+        if ledger is None:
+            ledger = ledgers[movement.product_key] = HistoricalCostLedger(movement.product_key)
+        kind = movement.kind
+        if kind == "RECEIPT":
+            if movement.qty is None or movement.unit_cost is None:
+                raise NorthStarError("réception : qty et unit_cost obligatoires")
+            ledger.receive(
+                CostLot(
+                    lot_id=movement.ref,
+                    product_key=movement.product_key,
+                    received_at=movement.at,
+                    qty=movement.qty,
+                    unit_cost=movement.unit_cost,
+                )
+            )
+        elif kind in ("ISSUE", "WRITE_OFF"):
+            if movement.qty is None or movement.unit_cost is not None:
+                raise NorthStarError("sortie : qty obligatoire, coût calculé par le moteur (CMP)")
+            (ledger.issue if kind == "ISSUE" else ledger.write_off)(movement.qty, movement.ref, movement.at)
+        elif kind == "RETURN":
+            if movement.qty is None or movement.sale_ref is None or movement.unit_cost is not None:
+                raise NorthStarError("retour : qty et sale_ref obligatoires, coût repris de la vente d'origine")
+            issues = [e for e in ledger.journal() if e.kind == "ISSUE" and e.ref == movement.sale_ref]
+            if not issues:
+                raise NorthStarError(f"retour : vente {movement.sale_ref} inconnue du registre de coûts")
+            sold = sum(e.qty for e in issues)
+            key = (movement.product_key, movement.sale_ref)
+            already = returned.get(key, 0)
+            if already + movement.qty > sold:
+                raise NorthStarError(f"retour : {already + movement.qty} unités > {sold} vendues sur {movement.sale_ref}")
+            unit = sum((e.cogs for e in issues), ZERO) / Decimal(sold)
+            ledger.return_units(movement.qty, unit, movement.ref, movement.at)
+            returned[key] = already + movement.qty
+        else:  # INVOICE_ADJUSTMENT
+            if movement.lot_id is None or movement.unit_cost is None:
+                raise NorthStarError("facture : lot_id et unit_cost obligatoires")
+            ledger.apply_invoice(movement.lot_id, movement.unit_cost, movement.ref, movement.at)
+
+    def apply(self, movement: CostMovement) -> int:
+        """Contrôle, enregistre puis applique un mouvement ; renvoie le nombre d'écritures ajoutées à l'étoile polaire."""
+        with self._lock:
+            trial: dict[str, HistoricalCostLedger] = {}
+            trial_returned: dict[tuple[str, str], int] = {}
+            for m in self._movements:
+                if m.product_key == movement.product_key:
+                    self._apply(trial, trial_returned, m)
+            self._apply(trial, trial_returned, movement)  # contrôle à blanc : erreur => rien n'est écrit
+            if self._store is not None:
+                try:
+                    self._store.append({"movement": movement.model_dump(mode="json")})
+                except StateStoreError as exc:
+                    raise NorthStarPersistenceError(f"registre de coûts : mouvement non enregistré ({exc})") from exc
+            self._ledgers[movement.product_key] = trial[movement.product_key]
+            self._returned.update(trial_returned)
+            self._movements.append(movement)
+            return self.sync(movement.product_key)
+
+    def sync(self, product_key: str | None = None) -> int:
+        """Synchronise le coût des ventes dans l'étoile polaire (idempotent) ; renvoie les nouvelles écritures."""
+        if self._northstar is None:
+            return 0
+        keys = [product_key] if product_key is not None else sorted(self._ledgers)
+        return sum(self._northstar.sync_cost_ledger(self._ledgers[k]) for k in keys if k in self._ledgers)
+
+    def ledger(self, product_key: str) -> HistoricalCostLedger | None:
+        """Coût historique d'une référence (lecture)."""
+        with self._lock:
+            return self._ledgers.get(product_key)
+
+    def movements(self) -> tuple[CostMovement, ...]:
+        """Mouvements dans l'ordre d'enregistrement."""
+        with self._lock:
+            return tuple(self._movements)

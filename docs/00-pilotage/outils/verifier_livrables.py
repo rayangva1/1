@@ -4,7 +4,10 @@ Contrôles : schéma et intégrité du backlog (dépendances existantes, sans cy
 contacts (aucun contact marqué établi), grille concurrence (aucun prix sans lecture datée),
 panier pilote (15-25 références, 8-12 en stock), enveloppes d'assortiment (plafond 25 % par
 extension), emails fournisseurs (liste BP §2 complète, relances J+5 et J+12), gates G0-G7,
-références croisées BL-nnn, et section finale « Validation humaine requise » de chaque document.
+références croisées BL-nnn, interventions humaines exhaustives et alignées sur le backlog et le plan
+(toute tâche de la propriétaire citée, même échéance), une même date par gate partout, registre des
+écarts complet (ID par domaine, gravité, traitement, décision), aucun livrable livré annoncé
+« attendu », et section finale « Validation humaine requise » de chaque document.
 
 Usage ::
 
@@ -451,6 +454,213 @@ def check_interventions(path: Path = PILOTAGE / "INTERVENTIONS_HUMAINES.md") -> 
     return errors
 
 
+J_RE = re.compile(r"\bJ(\d+)\b")
+GATE_HEADING_RE = re.compile(r"^### (G\d) — (.+)$", re.M)
+OWNER_ROLE_PREFIX = "Propriétaire"
+ECART_ID_RE = re.compile(r"^EC-(?:\d{2}|(?:F|M|G|L|DA|D|S|I|O|A)-\d{2})$")
+ECART_GRAVITIES = ("Bloquant", "Important", "Mineur")
+PUBLICITE_TEST = REPO / "docs" / "06-contenu" / "PUBLICITE_TEST.md"
+
+
+def cells(line: str) -> list[str]:
+    """Cellules d'une ligne de tableau Markdown."""
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def j_values(text: str) -> set[int]:
+    """Jours « Jn » cités dans un texte (``J_V1 + 60`` n'en contient aucun)."""
+    return {int(n) for n in J_RE.findall(text)}
+
+
+def j_range(text: str) -> set[int]:
+    """Jours couverts par une cellule « J7 », « J6-J7 », « J7-J14 », « J57-63 » ou « J60 / J64 »."""
+    match = re.fullmatch(r"J(\d+)\s*-\s*J?(\d+)", text.strip())
+    if match:
+        return set(range(int(match.group(1)), int(match.group(2)) + 1))
+    return j_values(text)
+
+
+def _owner_rows(rows: list[dict[str, str]]) -> dict[str, dict[str, str]]:
+    return {r["ID"]: r for r in rows if r["Agent/rôle"].startswith(OWNER_ROLE_PREFIX)}
+
+
+def interventions_tables(text: str) -> tuple[dict[str, set[int]], dict[str, list[str]]]:
+    """(jours de la checklist par ID, tâches BL de la colonne « Backlog » par ID) d'INTERVENTIONS_HUMAINES.md."""
+    chrono = text.split("## 1.", 1)[-1].split("## 2.", 1)[0]
+    details = text.split("## 2.", 1)[-1]
+    days: dict[str, set[int]] = {}
+    for line in chrono.splitlines():
+        if not line.startswith("| ☐ |"):
+            continue
+        row = cells(line)
+        for ident in re.findall(r"\b([ABC]\d{2})\b", row[2]):
+            days.setdefault(ident, set()).update(j_range(row[1]))
+    links: dict[str, list[str]] = {}
+    for line in details.splitlines():
+        match = re.match(r"^\| ([ABC]\d{2}) \|", line)
+        if match:
+            links[match.group(1)] = BL_RE.findall(cells(line)[-1])
+    return days, links
+
+
+def check_interventions_backlog(
+    interventions: Path = PILOTAGE / "INTERVENTIONS_HUMAINES.md", backlog: Path = PILOTAGE / "BACKLOG.csv"
+) -> list[str]:
+    """Checklist exhaustive et alignée (COH-06, COH-19).
+
+    Toute tâche du backlog dont le rôle commence par « Propriétaire » est citée dans la colonne « Backlog » d'une
+    fiche ; l'échéance de chaque tâche citée (jours « Jn ») tombe dans un des jours de la checklist de sa fiche.
+    """
+    errors: list[str] = []
+    _, rows = read_csv(backlog)
+    by_id = {r["ID"]: r for r in rows}
+    days, links = interventions_tables(interventions.read_text(encoding="utf-8"))
+    cited = {bl for bls in links.values() for bl in bls}
+    for rid in sorted(set(_owner_rows(rows)) - cited):
+        errors.append(f"INTERVENTIONS : tâche de la propriétaire {rid} absente (« {by_id[rid]['Titre']} »)")
+    for ident, bls in sorted(links.items()):
+        for bl in bls:
+            if bl not in by_id:
+                continue  # signalé par check_cross_refs
+            due = j_values(by_id[bl]["Échéance"])
+            planned = days.get(ident, set())
+            if due and planned and not due & planned:
+                errors.append(
+                    f"INTERVENTIONS : {ident} à J{sorted(planned)} mais {bl} échoit à {by_id[bl]['Échéance']}"
+                )
+    return errors
+
+
+def check_plan_owner_dates(
+    plan: Path = PILOTAGE / "PLAN_90_JOURS.md", backlog: Path = PILOTAGE / "BACKLOG.csv"
+) -> list[str]:
+    """Une tâche de la propriétaire citée au plan l'est au moins une fois à son échéance (COH-19)."""
+    _, rows = read_csv(backlog)
+    owner = _owner_rows(rows)
+    text = plan.read_text(encoding="utf-8")
+    placed: dict[str, set[int]] = {}
+    day_part = text.split("## 3.", 1)[-1].split("## 4.", 1)[0]
+    for line in day_part.splitlines():
+        match = re.match(r"^\| (J\d+(?:-J\d+)?) \|", line)
+        if match:
+            for bl in BL_RE.findall(cells(line)[2]):
+                placed.setdefault(bl, set()).update(j_range(match.group(1)))
+    week_part = text.split("## 4.", 1)[-1].split("## 5.", 1)[0]
+    for line in week_part.splitlines():
+        if not re.match(r"^\| S\d+ \|", line):
+            continue
+        row = cells(line)
+        for col in (row[3], row[5]):
+            for group in re.findall(r"\(([\d, ]+)\)", col):
+                for number in re.findall(r"\d{3}", group):
+                    placed.setdefault(f"BL-{number}", set()).update(j_range(row[2]))
+    errors = []
+    for bl, planned in sorted(placed.items()):
+        if bl in owner:
+            due = j_values(owner[bl]["Échéance"])
+            if due and not due & planned:
+                errors.append(f"PLAN : {bl} placé à J{sorted(planned)} mais échoit à {owner[bl]['Échéance']}")
+    return errors
+
+
+def check_gate_dates(
+    gates: Path = PILOTAGE / "GATES_GO_NO_GO.md",
+    backlog: Path = PILOTAGE / "BACKLOG.csv",
+    interventions: Path = PILOTAGE / "INTERVENTIONS_HUMAINES.md",
+    publicite: Path = PUBLICITE_TEST,
+) -> list[str]:
+    """Une même date par gate partout : titre et synthèse des gates, tâches « Gate Gx », checklist (COH-04).
+
+    Pour G5, la date de décision du plan de test publicitaire (« Décision G5 ») doit aussi concorder.
+    """
+    text = gates.read_text(encoding="utf-8")
+    sources: dict[str, dict[str, set[int]]] = {}
+
+    def add(gate: str, where: str, values: set[int]) -> None:
+        if values:
+            sources.setdefault(gate, {})[where] = values
+
+    for gate, rest in GATE_HEADING_RE.findall(text):
+        add(gate, "titre GATES", j_values(rest.split(" : ", 1)[0]))
+    synthesis = text.split("## 3.", 1)[-1].split("## 4.", 1)[0]
+    for line in synthesis.splitlines():
+        match = re.match(r"^\| (G\d) \|", line)
+        if match:
+            add(match.group(1), "synthèse GATES", j_values(cells(line)[1]))
+    _, rows = read_csv(backlog)
+    for r in rows:
+        match = re.match(r"Gate (G\d)\b", r["Titre"])
+        if match:
+            add(match.group(1), r["ID"], j_values(r["Échéance"]))
+    chrono = interventions.read_text(encoding="utf-8").split("## 1.", 1)[-1].split("## 2.", 1)[0]
+    for line in chrono.splitlines():
+        match = re.search(r"Gate (G\d)\b", line)
+        if match and line.startswith("| ☐ |"):
+            add(match.group(1), "INTERVENTIONS", j_range(cells(line)[1]))
+    if publicite.is_file():
+        for line in publicite.read_text(encoding="utf-8").splitlines():
+            if line.startswith("| Décision G5 |"):
+                add("G5", publicite.name, j_values(cells(line)[1]))
+    errors = []
+    for gate, found in sorted(sources.items()):
+        distinct = {frozenset(v) for v in found.values()}
+        if len(distinct) > 1:
+            detail = " ; ".join(f"{where} J{sorted(v)}" for where, v in found.items())
+            errors.append(f"GATES : dates de {gate} divergentes ({detail})")
+    return errors
+
+
+def check_ecarts(path: Path = PILOTAGE / "ECARTS_BP.md") -> list[str]:
+    """Registre des écarts : une ligne complète par écart (ID par domaine unique, gravité, traitement, décision)."""
+    errors: list[str] = []
+    seen: set[str] = set()
+    count = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("| EC-"):
+            continue
+        count += 1
+        row = cells(line)
+        ident = row[0]
+        if not ECART_ID_RE.fullmatch(ident):
+            errors.append(f"ECARTS : identifiant {ident!r} hors convention (EC-NN ou EC-<domaine>-NN)")
+        if ident in seen:
+            errors.append(f"ECARTS : identifiant en double {ident}")
+        seen.add(ident)
+        if len(row) != 6:
+            errors.append(
+                f"ECARTS {ident} : {len(row)} colonnes (attendu : ID, § BP, constat, gravité, traitement, décision)"
+            )
+            continue
+        gravity = row[3].replace("*", "").strip()
+        if not gravity.startswith(ECART_GRAVITIES):
+            errors.append(f"ECARTS {ident} : gravité {row[3]!r} (Bloquant, Important ou Mineur)")
+        for label, value in (
+            ("§ BP", row[1]),
+            ("constat", row[2]),
+            ("traitement provisoire", row[4]),
+            ("décision attendue", row[5]),
+        ):
+            if value in ("", "—", "-"):
+                errors.append(f"ECARTS {ident} : {label} vide")
+    if count == 0:
+        errors.append("ECARTS : aucun écart enregistré")
+    return errors
+
+
+def check_no_stale_expected(path: Path = PILOTAGE / "INTERVENTIONS_HUMAINES.md") -> list[str]:
+    """Aucun livrable annoncé « attendu » alors qu'il est livré (COH-12)."""
+    errors = []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        for chunk in re.findall(r"(?i)\(attendu[^)]*\)|attendu\s*:\s*`[^`]+`", line):
+            paths = re.findall(r"`([^`]+)`", chunk)
+            if not paths:
+                errors.append(f"{path.name}:{number} : « {chunk} » sans chemin exact")
+            for cited in paths:
+                if (REPO / cited).exists():
+                    errors.append(f"{path.name}:{number} : `{cited}` est livré mais annoncé « attendu »")
+    return errors
+
+
 def owned_markdown() -> list[Path]:
     """Documents Markdown du périmètre présents sur disque (liste explicite ``OWNED_MD``)."""
     folders = {"PILOTAGE": PILOTAGE, "MARCHE": MARCHE, "SOURCING": SOURCING}
@@ -484,6 +694,11 @@ ALL_CHECKS = (
     check_gates,
     check_plan,
     check_interventions,
+    check_interventions_backlog,
+    check_plan_owner_dates,
+    check_gate_dates,
+    check_ecarts,
+    check_no_stale_expected,
     check_validation_sections,
 )
 

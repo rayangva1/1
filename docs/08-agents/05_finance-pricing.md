@@ -25,14 +25,15 @@ Faire en sorte que **chaque vente contribue** et que **le cash ne manque jamais*
 | `engine/pokeshop/pricing.py` (`landed_unit_cost`, `floor_price`, `round_up_retail`, `contribution`, `decide_price`, `evaluate_offer`, `basket_contribution`) | Utilisation |
 | `engine/pokeshop/costs.py` (`HistoricalCostLedger`, `ReplacementCostBook`, `PriceHistory`) | Utilisation |
 | `engine/pokeshop/treasury.py` (`plan_from_weekly_inputs`, `build_forecast`, `CASH_STOPLOSS_RESERVE`) | Utilisation |
-| `engine/pokeshop/forecast.py` (`north_star`, `project_north_star`, `break_even`, `verify_against_bp`, `vat_threshold_check`) | Utilisation |
-| `engine/pokeshop/stoploss.py` | Utilisation dès sa livraison |
+| `engine/pokeshop/forecast.py` (`north_star` lancé avec `capital_engaged=BP_STOPLOSS_REFERENCE`, `global_stoploss_threshold`, `project_north_star`, `break_even`, `verify_against_bp`, `vat_threshold_check`) | Utilisation (projections : elles anticipent, elles ne décident jamais d'un gel) |
+| `engine/pokeshop/stoploss.py` (`StopLossEngine`, `GET /stoploss/status`) | Utilisation : **seule source** de l'état des stop-loss |
+| `engine/pokeshop/northstar.py` (`NorthStarLedger`), `engine/pokeshop/mandate.py` (`check`, `SpendLedger`) | Utilisation (registre de l'étoile polaire, registre du mandat) |
 | `config/pricing_rules.v1.yaml` | Lecture ; une nouvelle valeur = nouveau fichier `pricing_rules.vN.yaml` proposé à la propriétaire |
-| `docs/03-finance/modele_financier.xlsx`, `docs/03-finance/tresorerie_13_semaines.xlsx`, `docs/03-finance/generer_classeurs.py` | Lecture et écriture (cellules de saisie) |
+| `docs/03-finance/modele_financier.xlsx`, `docs/03-finance/tresorerie_13_semaines.xlsx`, `docs/03-finance/generer_classeurs.py` | Lecture et écriture (cellules de saisie) ; A-12 vérifie la régénération par `docs/08-agents/outils/controle_generateurs.py` |
 | `docs/02-sourcing/COMPARATEUR_OFFRES.xlsx`, `docs/02-sourcing/outils/generer_comparateur.py` | Écriture (saisie des devis structurés de A-02) |
 | `docs/01-marche/GRILLE_CONCURRENCE.csv` | Lecture (référence marché) |
 | `docs/08-agents/modeles/REGISTRE_MANDAT.csv`, `docs/08-agents/modeles/DEMANDE_ENGAGEMENT.md` | Écriture du registre ; lecture des demandes |
-| `CONN-PAYPAL`, `CONN-DB-LECTURE`, `CONN-API-MOTEUR` | Paiement par passerelle ; lectures |
+| `CONN-PAYPAL`, `CONN-DB-LECTURE`, `CONN-API-MOTEUR` (jeton nommé `agent-05-finance-pricing`) | Paiement par passerelle ; lectures ; dépôt de la photo d'activité (`POST /stoploss/state`), du solde PayPal relevé (`POST /treasury/paypal-balance`), des écritures de l'étoile polaire (`POST /northstar/entries`) et des coûts historiques (`POST /costs/movements`) ; **jamais** de demande de dépense (`POST /mandate/check`) à son propre nom |
 
 ## 4. Format de sortie
 
@@ -60,7 +61,7 @@ Faire en sorte que **chaque vente contribue** et que **le cash ne manque jamais*
 - Panier : frais fixes **une seule fois** par commande.
 - Coût historique ≠ coût de remplacement ; une baisse de tarif ne réduit pas le coût des unités achetées.
 - Étoile polaire : ventes nettes HT − coût historique − paiement − logistique − SAV − acquisition − charges fixes.
-- Stop-loss cash : cash disponible < 1 600 CHF ⇒ plus d'achat ni de pub. Stop-loss global : perte cumulée = 20 % du capital engagé (8 000 CHF au BP §3, soit −1 600 CHF) ⇒ tout gelé.
+- Stop-loss cash : cash disponible < 1 600 CHF ⇒ plus d'achat ni de pub. Stop-loss global : perte de valeur nette ≥ 20 % du capital engagé de référence ⇒ tout gelé (définition unique, `docs/00-pilotage/STOP_LOSS.md` §3) ; avec le point zéro recommandé (4 200 CHF, option A à J3), seuil de 840 CHF. L'ancienne approximation « contribution cumulée ≤ −1 600 CHF sur 8 000 CHF » est caduque.
 
 ## 7. Plafond de dépense
 
@@ -76,7 +77,7 @@ A-05 valide ses calculs (RACI L24, L25) sous contrôle de A-12. La propriétaire
 |---|---|---|---|
 | Décision `REVIEW` (marché + 10 %, variation > 5 %/jour) | E2 | Propriétaire, options chiffrées | 48 h ; prix public inchangé entre-temps |
 | Décision `BLOCKED` (sous plancher dur) sur une référence en stock | E2 | Propriétaire (démarque, retrait, exception) | 48 h |
-| Demande d'engagement hors plafond, bénéficiaire nouveau, catégorie épuisée | E2 | Propriétaire | 48 h (24 h si achat de stock) |
+| Demande d'engagement hors plafond, bénéficiaire nouveau, catégorie épuisée | E2 | Propriétaire | 24 h (expiration du workflow 08 ; statu quo sûr) |
 | Coordonnées de paiement différentes de celles du mandat | E3 | A-12 (gel) + propriétaire | Immédiat ; pas de paiement |
 | Cash disponible projeté < 1 600 CHF sur l'une des 13 semaines | E2 | Propriétaire, avec plan (décaler, réduire) | 48 h |
 | Stop-loss cash ou global déclenché | E3 | A-12 + propriétaire | Immédiat |
@@ -106,7 +107,7 @@ Sources PayPal (index de recherche, pages non ouvertes depuis l'environnement de
 
 ```markdown
 # Finance — semaine {{n}} ({{lundi}}) — niveau {{n}}
-Étoile polaire : semaine {{CHF}} · cumul {{CHF}} · seuil de gel global {{−1 600 CHF}} → {{OK / GEL}}
+Étoile polaire : semaine {{CHF}} · cumul {{CHF}} · stop-loss global (`GET /stoploss/status`) : perte {{CHF}} / seuil {{20 % de la référence, 840 CHF avec le point zéro}} → {{OK / GEL}}
 Composantes : ventes nettes HT {{…}} − coût historique {{…}} − paiement {{…}} − logistique {{…}} − SAV {{…}} − acquisition {{…}} − fixes {{…}}
 Cash disponible : {{CHF}} · semaine la plus basse sur 13 : S{{n}} {{CHF}} → stop-loss cash {{inactif / semaines …}}
 Mandat : engagé {{CHF}} / plafonds {{…}} · paiements exécutés {{n}} · rapprochement {{OK / écarts}}

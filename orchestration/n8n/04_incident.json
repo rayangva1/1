@@ -56,9 +56,9 @@
               "type": "boolean"
             },
             {
-              "id": "b8381019-a43b-55a8-b448-2797136b7f8c",
+              "id": "430278ee-039c-5f64-bc7a-c34ab384f4ef",
               "name": "workflow",
-              "value": "04-incident",
+              "value": "incident",
               "type": "string"
             },
             {
@@ -385,9 +385,9 @@
               "type": "boolean"
             },
             {
-              "id": "b8381019-a43b-55a8-b448-2797136b7f8c",
+              "id": "430278ee-039c-5f64-bc7a-c34ab384f4ef",
               "name": "workflow",
-              "value": "04-incident",
+              "value": "incident",
               "type": "string"
             },
             {
@@ -824,9 +824,9 @@
               "type": "boolean"
             },
             {
-              "id": "b8381019-a43b-55a8-b448-2797136b7f8c",
+              "id": "430278ee-039c-5f64-bc7a-c34ab384f4ef",
               "name": "workflow",
-              "value": "04-incident",
+              "value": "incident",
               "type": "string"
             },
             {
@@ -862,7 +862,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ cause: 'Exécution ' + ($('Échec d’exécution d’un workflow').first().json.execution.id || '?') + ' en échec au nœud ' + ($('Échec d’exécution d’un workflow').first().json.execution.lastNodeExecuted || '?') + ' : ' + (($('Échec d’exécution d’un workflow').first().json.execution.error || {}).message || 'erreur inconnue'), kind: 'WORKFLOW_EN_ECHEC', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: ($('Échec d’exécution d’un workflow').first().json.workflow || {}).name || 'inconnu', proposed_action: 'Corriger puis relancer depuis la file de reprise avec les mêmes clés d’idempotence ; vérifier l’état réel sur le site.', actor: 'n8n:04-incident', simulation: $('Paramètres — erreurs').first().json.simulation, details: { execution_url: $('Échec d’exécution d’un workflow').first().json.execution.url || null } }) }}"
+        "jsonBody": "={{ JSON.stringify({ cause: 'Exécution ' + ($('Échec d’exécution d’un workflow').first().json.execution.id || '?') + ' en échec au nœud ' + ($('Échec d’exécution d’un workflow').first().json.execution.lastNodeExecuted || '?') + ' : ' + (($('Échec d’exécution d’un workflow').first().json.execution.error || {}).message || 'erreur inconnue'), kind: 'WORKFLOW_EN_ECHEC', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: ({\"pkshp01FournSite\": \"fournisseur-site\", \"pkshp02CmdLivrai\": \"commande-livraison\", \"pkshp03FactMarge\": \"facture-marge\", \"pkshp04Incidents\": \"incident\", \"pkshp05DigestJou\": \"digest\", \"pkshp06Marketing\": \"marketing\", \"pkshp07StopLossW\": \"stoploss-watch\", \"pkshp08MandatDep\": \"mandat-depenses\"})[($('Échec d’exécution d’un workflow').first().json.workflow || {}).id] || ({\"Pokeshop 01 — Fournisseur vers site (simulation)\": \"fournisseur-site\", \"Pokeshop 02 — Commande vers livraison\": \"commande-livraison\", \"Pokeshop 03 — Facture vers marge réelle\": \"facture-marge\", \"Pokeshop 04 — Incidents et erreurs\": \"incident\", \"Pokeshop 05 — Digest quotidien\": \"digest\", \"Pokeshop 06 — Automatisations marketing\": \"marketing\", \"Pokeshop 07 — Surveillance du stop-loss\": \"stoploss-watch\", \"Pokeshop 08 — Mandat de dépense\": \"mandat-depenses\"})[($('Échec d’exécution d’un workflow').first().json.workflow || {}).name] || ($('Échec d’exécution d’un workflow').first().json.workflow || {}).name || 'inconnu', proposed_action: 'Corriger puis relancer depuis la file de reprise avec les mêmes clés d’idempotence ; vérifier l’état réel sur le site.', actor: 'n8n:04-incident', simulation: $('Paramètres — erreurs').first().json.simulation, details: { execution_url: $('Échec d’exécution d’un workflow').first().json.execution.url || null } }) }}"
       },
       "id": "bea03842-2943-52f6-9d5b-83aaacab1f19",
       "name": "Ouvrir un incident d’exécution",

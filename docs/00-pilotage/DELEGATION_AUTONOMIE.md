@@ -14,12 +14,14 @@
   3. les validations au-delà du mandat et le **réarmement du stop-loss global**.
 - **Trois verrous** pour toute action : **niveau d'autonomie** (BP §13) + **mandat signé** + **aucun stop-loss actif**.
 - **Tant que ce mandat n'est pas rempli et signé, les agents ne dépensent rien seuls** : toute demande part en validation humaine (code `MANDATE_NOT_SIGNED` / `MANDATE_INCOMPLETE`), et les interdits restent refusés.
+- **Signé = empreinte reportée par vous dans le coffre** (`POKESHOP_MANDATE_FINGERPRINT`, §10). Une empreinte recopiée dans le YAML ne suffit jamais : n'importe quel agent sait la calculer. Sans l'empreinte du coffre, le mandat reste inactif (`MANDATE_NOT_SIGNED`).
+- **Aucun chiffre décisif n'est fourni par l'agent qui demande** : trésorerie, solde PayPal, exposition par extension, taux de change, proposition de réassort et plafonds viennent des **registres du moteur** (§4). Faute de registre, la demande part en validation humaine.
 
 ## 2. Les trois issues d'une demande de dépense
 
 | Issue (code) | Signification | Ce qui se passe | Délai |
 |---|---|---|---|
-| `APPROVED_WITHIN_MANDATE` | Toutes les règles du §4 sont respectées | L'agent 05 paie par la passerelle PayPal ; l'entrée est journalisée | Paiement dans l'heure (`can_execute`), sinon nouvelle demande |
+| `APPROVED_WITHIN_MANDATE` | Toutes les règles du §4 sont respectées | L'agent 05 paie par la passerelle PayPal ; l'entrée est journalisée | Paiement dans l'heure (`can_execute`), sinon nouvelle demande (un rejeu tardif est refusé, §6) |
 | `NEEDS_HUMAN_APPROVAL` | Au-delà du mandat, ou virement bancaire | Fiche E2 avec le dossier chiffré ; virement **préparé**, validé par vous | **24 h** ; sans réponse, la demande **expire** (statu quo sûr) |
 | `REJECTED` | Interdit (§5), stop-loss actif, donnée périmée, clé déjà utilisée | Rien n'est payé ; motif journalisé | — |
 
@@ -47,12 +49,15 @@ Chaque décision porte des **motifs à codes stables** (liste complète : `SPEND
 | Niveau d'autonomie minimal par catégorie | `categories.<CAT>.min_autonomy_level` | Stock : 4 ; pub : 3 ; étiquettes : 2 ; autres : 1 | Validation humaine (`AUTONOMY_LEVEL_TOO_LOW`) |
 | Plafond par extension : stock au coût + engagé + demande ≤ 25 % du budget stock | `limits.extension_max_share`, `limits.stock_budget_chf` | 25 % de 3 000 CHF = 750 CHF | Validation humaine (exception C18) |
 | Réserve de trésorerie **jamais dépensée par un agent** | `limits.cash_reserve_chf` | 1 600 CHF (BP §3) | Cash déjà sous la réserve : stock et pub **refusés** ; dépense qui l'entamerait : validation humaine |
-| Solde PayPal dédié suffisant | (photo de trésorerie) | Le solde chargé | Validation humaine (rechargement par vous) |
+| Solde PayPal dédié suffisant | (relevé du connecteur, `POST /treasury/paypal-balance`, moins de 60 minutes ; perdu au redémarrage) | Le solde chargé | Inconnu, périmé ou insuffisant : validation humaine (rechargement par vous) |
 | Plafond jour publicité | `limits.ads_daily_cap_chf` | 33 CHF (≈ 500 CHF / 15 jours, BP §9) | Stop-loss pub : campagnes coupées jusqu'au lendemain |
 | Quota d'envois de la boîte dédiée | `limits.email_daily_send_quota` | 20 envois / jour | Envois suivants mis en attente |
-| Fraîcheur des photos trésorerie et stop-loss | `limits.snapshot_max_age_minutes` | 60 minutes | Demande refusée, à recalculer |
-| Achat de stock adossé au moteur (aucun achat spéculatif) | — | Référence d'une proposition `propose_reorder` | Validation humaine (`NO_ENGINE_PROPOSAL`) |
-| Identité du produit connue (référence, extension, langue FR) | — | — | Inconnue : validation humaine ; non FR : **refus** |
+| Fraîcheur des photos trésorerie et stop-loss (date de la **photo**, pas de l'évaluation) | `limits.snapshot_max_age_minutes` | 60 minutes | Demande refusée, à recalculer |
+| Trésorerie lue dans les **registres du moteur** : cash et exposition par extension de la dernière photo stop-loss acceptée, solde PayPal relevé par un connecteur (`POST /treasury/paypal-balance`) ; une trésorerie jointe à la demande est **ignorée** | — | — | Aucune photo : validation humaine (`TREASURY_UNAVAILABLE`) |
+| Photo ou solde déposés par un **autre** jeton nommé que celui qui demande (`POKESHOP_AGENT_TOKENS_SHA256`) | — | Un jeton par agent ou workflow | Même jeton, ou jeton commun : validation humaine (`TREASURY_UNVERIFIED`) |
+| Taux de change de **référence** (registre des taux, saisi par vous ou source officielle datée, `POST /fx/rates`) ; le montant CHF est calculé à ce taux | — | Taux du jour ou du jour ouvré précédent | Aucun taux frais : validation humaine (`FX_RATE_UNVERIFIED`) ; taux déclaré à plus de 1 % : **refus** (`FX_RATE_MISMATCH`) |
+| Achat de stock adossé à une proposition **enregistrée** du moteur (`POST /stock/reorder-proposal`, `justification_ref` = son `inputs_hash`, moins de 24 h, référence présente, montant ≤ ligne proposée moins ce qui est déjà engagé) | — | Aucune chaîne libre | Validation humaine (`NO_ENGINE_PROPOSAL`) |
+| Identité du produit connue (référence, extension, langue FR) ; un « accessoire » portant une extension est contrôlé comme du stock scellé (langue FR, plafond par extension) | — | Accessoire sans texte : langue `NA` admise | Inconnue ou catégorie incohérente : validation humaine (`CATEGORY_IDENTITY_MISMATCH`) ; non FR : **refus** |
 
 Les dépenses validées par vous comptent dans les **enveloppes** (c'est votre budget) mais pas dans le **plafond mensuel autonome** (c'est la latitude des agents).
 
@@ -67,20 +72,23 @@ Les dépenses validées par vous comptent dans les **enveloppes** (c'est votre b
 | Payer autrement que par PayPal dédié ou virement préparé (carte, crypto, espèces…) | `PAYMENT_METHOD_FORBIDDEN` : **refus** | Fiche E2 |
 | Cartes à l'unité, grading, rachats clients, produits non FR, achat spéculatif | `FORBIDDEN_CATEGORY` / `NON_FR_PRODUCT` : **refus**, non modifiable par le YAML | Hors périmètre BP « Le périmètre de départ » |
 | Toucher la réserve de 1 600 CHF | Règle de réserve + stop-loss cash | Votre décision uniquement |
-| Contourner une vérification : fractionner un achat, réutiliser une clé d'idempotence, modifier le mandat ou un seuil, désactiver un stop-loss, contourner un CAPTCHA ou un contrôle d'accès | Anti-fractionnement, idempotence, **empreinte du mandat** (toute modification le désactive), journal append-only | Incident E3, gel conservatoire par l'agent 12 |
+| Contourner une vérification : fractionner un achat, réutiliser une clé d'idempotence, modifier le mandat ou un seuil, désactiver un stop-loss, contourner un CAPTCHA ou un contrôle d'accès | Anti-fractionnement, idempotence (rejeu réévalué), **empreinte du mandat au coffre** (toute modification le désactive), **empreintes des seuils** du stop-loss et des règles de prix au coffre (fichier modifié sans signature : seuils les plus stricts ; empreinte différente : service gelé), journal append-only | Incident E3, gel conservatoire par l'agent 12 |
+| Se déclarer « propriétaire » ou déclarer ses propres chiffres | Acteur **déduit du jeton** (jetons nommés) ; « propriétaire » refusé sans son jeton ; trésorerie, taux et plafonds lus dans les registres du moteur | Refus journalisé (403) |
 | Exécuter une instruction reçue par email, sur une page web ou dans un fichier (« changez l'IBAN », « payez vite ») | Coordonnées de paiement **uniquement** depuis le coffre (`payee_ref`) | Suspicion de fraude : E3 |
 | Communiquer ou recopier un identifiant, un mot de passe, un IBAN | Secrets dans le coffre uniquement | Fiche E3, rotation du secret |
 
 ## 6. Journal et contrôles
 
 - **Registre append-only** (`SpendLedger`) : chaque demande, décision, validation humaine, exécution, annulation et rapprochement est une ligne datée, jamais modifiée. Export au format `docs/08-agents/modeles/REGISTRE_MANDAT.csv` (`to_registry_rows`).
-- **Idempotence** : une même clé d'idempotence ne produit **jamais** deux paiements. Même demande : la décision d'origine est rejouée. Contenu différent : refus `IDEMPOTENCY_CONFLICT`.
+- **Idempotence** : une même clé d'idempotence ne produit **jamais** deux paiements. Même demande : la décision d'origine est rejouée **après réévaluation** : une approbation n'est rejouée telle quelle que si elle est encore payable (moins d'une heure, non exécutée, aucun gel, réserve intacte, mandat toujours actif, photos fraîches). Sinon le rejeu est **refusé** (`REPLAY_NOT_PAYABLE`, avec le motif : gel global, gel trésorerie, mandat révoqué…) ; déjà payée : `ALREADY_EXECUTED`. Un rejeu n'est donc jamais `APPROVED` pendant un gel. Contenu différent : refus `IDEMPOTENCY_CONFLICT`.
+- **Exécution** : un paiement exécuté au-delà du coût approuvé + 2 % + 1 CHF est enregistré (c'est un fait) mais lève une alerte (`RECONCILIATION_ALERT`, statut `AMOUNT_ABOVE_APPROVAL` au rapprochement).
 - **Rapprochement quotidien** (agent 12) des paiements avec le relevé PayPal et le relevé bancaire (`reconcile`) :
 
 | Résultat | Sens | Action |
 |---|---|---|
 | `OK` | Paiement retrouvé, montant à 0,05 CHF près | — |
 | `AMOUNT_MISMATCH` | Montant différent | Fiche E2 |
+| `AMOUNT_ABOVE_APPROVAL` | Payé (ou débité) au-delà du montant approuvé + 2 % + 1 CHF | Fiche E3 + vous prévenir |
 | `UNKNOWN_DEBIT` | Débit sans demande au registre : **dépense non autorisée possible** | **Gel global manuel immédiat** + fiche E3 + vous prévenir |
 | `MISSING_ON_STATEMENT` | Paiement annoncé, absent du relevé après 3 jours | Fiche E2 |
 
@@ -91,7 +99,10 @@ Les dépenses validées par vous comptent dans les **enveloppes** (c'est votre b
 | Mots de passe et 2FA de la boîte dédiée, de PayPal, de la banque | Coffre de secrets (B03) et votre téléphone | **Vous** | Le second facteur reste sur votre appareil ; les agents passent par les connecteurs, jamais par votre session |
 | Identifiants API PayPal | Credentials n8n, alimentés par le coffre | Passerelle n8n | Jamais dans le chat, le dépôt, un prompt ou un rapport |
 | Coordonnées des bénéficiaires (IBAN, adresse PayPal) | Coffre, référencées par `payee_ref` | Vous (saisie), passerelle (lecture) | Jamais tirées d'un email ; tout changement reçu = fraude présumée |
-| Empreinte du mandat signé | `approval.fingerprint_sha256` **et** variable `POKESHOP_MANDATE_FINGERPRINT` du coffre | Vous | Seconde barrière : un YAML modifié dans le dépôt ne correspond plus à l'empreinte du coffre, le mandat devient inactif |
+| Empreinte du mandat signé | Variable `POKESHOP_MANDATE_FINGERPRINT` du coffre (**obligatoire**) et `approval.fingerprint_sha256` du YAML | Vous | C'est le report au coffre qui vaut signature : sans lui le mandat est inactif ; un YAML modifié ne correspond plus à l'empreinte du coffre, le mandat devient inactif |
+| Empreintes des seuils (stop-loss, règles de prix) | `POKESHOP_STOPLOSS_FINGERPRINT`, `POKESHOP_RULES_FINGERPRINT` (coffre) | Vous | Absentes : chaque seuil vaut le plus strict entre le fichier et la référence du code ; différentes du fichier : service gelé jusqu'à nouvelle signature |
+| Jetons des agents | Un jeton **nommé** par agent ou workflow, empreintes dans `POKESHOP_AGENT_TOKENS_SHA256` (coffre) | Vous (génération), chaque agent (son jeton) | L'acteur journalisé est déduit du jeton ; le jeton commun n'est pas attribuable et ne permet aucune dépense autonome |
+| Taux de change de référence | Registre des taux (`POST /fx/rates`, votre jeton) | Vous | Source officielle datée (ex. cours de la BNS) ; valable le jour même et le jour ouvré suivant |
 | Jeton de réarmement du stop-loss global | Votre gestionnaire de mots de passe ; seule son empreinte `POKESHOP_OWNER_TOKEN_SHA256` est dans le coffre | **Vous seule** | Ne jamais le coller dans le chat d'un agent |
 
 **Compte PayPal dédié = plafond physique naturel.** Il est séparé de vos comptes personnels et n'est approvisionné **que** du budget délégué, par virement depuis le compte professionnel. Ce que les agents peuvent perdre au pire, c'est le solde chargé. À faire à l'ouverture (B05) :
@@ -101,7 +112,7 @@ Les dépenses validées par vous comptent dans les **enveloppes** (c'est votre b
 - [ ] Activer, si l'offre PayPal le permet, des **limites de paiement côté compte** : c'est une deuxième barrière, indépendante du logiciel. Fonctionnalité **à vérifier** avec PayPal.
 - [ ] Activer la 2FA sur votre appareil.
 
-**Révocation de la dépense en une action.** Révoquer l'application API PayPal utilisée par n8n (tableau de bord développeur PayPal) : tout paiement s'arrête aussitôt, quel que soit l'état du logiciel. Ensuite, à votre rythme : renseigner `approval.revoked_at` dans le mandat (les agents passent en validation humaine pour tout), geler le stop-loss global et changer le mot de passe de la boîte dédiée si besoin.
+**Révocation de la dépense en une action.** Révoquer l'application API PayPal utilisée par n8n (tableau de bord développeur PayPal) : tout paiement s'arrête aussitôt, quel que soit l'état du logiciel. Ensuite, à votre rythme : **vider `POKESHOP_MANDATE_FINGERPRINT` dans le coffre** (le mandat devient inactif au redémarrage), ou révoquer par `POST /mandate/revoke` (acte protecteur, tout jeton) ou par `approval.revoked_at` dans le mandat. Une révocation est inscrite dans un **registre en ajout seul** (journal d'état `mandate_revocations`) : effacer ensuite `revoked_at` du YAML ne réactive jamais le mandat révoqué ; seule une nouvelle signature (nouvelle empreinte) le remplace. Puis geler le stop-loss global et changer le mot de passe de la boîte dédiée si besoin.
 
 ## 8. PayPal ou virement : recommandation franche
 
@@ -130,25 +141,32 @@ Remplir les valeurs (ou les dicter à l'agent 01, qui les reporte dans `config/m
 | Fin de validité | `valid_until` | Fin du pilote (J90) | ________ |
 | Plafond par transaction | `limits.per_transaction_chf` | 500 CHF | ________ |
 | Plafond mensuel autonome | `limits.per_month_chf` | 3 000 CHF | ________ |
-| Budget stock de référence (base des 25 %) | `limits.stock_budget_chf` | 3 000 CHF | ________ |
+| Budget stock de référence (base des 25 %, accessoires compris) | `limits.stock_budget_chf` | 3 000 CHF (= `stock.stock_budget_chf` des règles de prix : une valeur différente gèle le service tant que les deux ne sont pas alignées et signées) | ________ |
 | Plafond jour publicité | `limits.ads_daily_cap_chf` | 33 CHF | ________ |
 | Quota d'envois de la boîte dédiée | `limits.email_daily_send_quota` | 20 / jour | ________ |
 | Part maximale par extension | `limits.extension_max_share` | 25 % (= stop-loss) | 25 % (fixe) |
 | Réserve de trésorerie | `limits.cash_reserve_chf` | 1 600 CHF (= stop-loss) | 1 600 CHF (fixe) |
 
-**Catégories déléguées** (supprimer une ligne = ne pas déléguer)
+**Catégories déléguées** (supprimer une ligne = ne pas déléguer). Les accessoires font partie du budget stock (BP §1 : 10 % du stock) : le moteur refuse un mandat où `STOCK` + `ACCESSORIES` dépasse `limits.stock_budget_chf`.
 
 | Catégorie | Clé | Enveloppe proposée (BP §3) | Niveau min. | Votre enveloppe |
 |---|---|---:|---:|---|
-| Stock scellé FR | `STOCK` | 3 000 CHF | 4 | ________ |
-| Accessoires | `ACCESSORIES` | 300 CHF (10 % du stock, BP §1) | 4 | ________ |
-| Échantillons payants | `SAMPLES` | 100 CHF | 1 | ________ |
+| Stock scellé FR (90 % du budget stock) | `STOCK` | 2 700 CHF | 4 | ________ |
+| Accessoires (10 % du budget stock, BP §1) | `ACCESSORIES` | 300 CHF (stock + accessoires = 3 000 CHF) | 4 | ________ |
 | Site et outils | `SITE_TOOLS` | 1 500 CHF (180 CHF/mois) | 1 | ________ |
 | DA et contenus | `DA_CONTENT` | 400 CHF | 1 | ________ |
 | Emballages et matériel | `PACKAGING` | 300 CHF | 1 | ________ |
-| Étiquettes et port des commandes payées | `SHIPPING` | 600 CHF | 2 | ________ |
 | Test publicitaire | `ADVERTISING` | 500 CHF | 3 | ________ |
-| Fiduciaire, juriste, assurances, contrats | `ADMIN` | **Non délégable** | — | — |
+| Fiduciaire, juriste, assurances, contrats | `ADMIN` | **Non délégable** (700 CHF au BP §3) | — | — |
+
+Total délégable au BP §3 : 2 700 + 300 + 1 500 + 400 + 300 + 500 = **5 700 CHF** ; avec l'administration (700) et la réserve (1 600), 8 000 CHF.
+
+**Hors BP §3** (pas de ligne au budget initial : à financer explicitement, sinon supprimer la ligne du YAML)
+
+| Catégorie | Clé | Proposé | Niveau min. | Financement | Votre enveloppe |
+|---|---|---:|---:|---|---|
+| Échantillons payants | `SAMPLES` | 100 CHF | 1 | Pris sur l'enveloppe stock (réduire `STOCK` d'autant) ou décision de votre part | ________ |
+| Étiquettes et port des commandes payées | `SHIPPING` | 600 CHF | 2 | Couvert par le port facturé aux clients (dépense adossée à des commandes payées) | ________ |
 
 **Bénéficiaires autorisés** : **aucun** tant que vous ne les avez pas validés (C08, checklist `docs/02-sourcing/CHECKLIST_DUE_DILIGENCE_FOURNISSEUR.md`). Modèle de ligne (exemple FICTIF) :
 
@@ -176,16 +194,23 @@ Remplir les valeurs (ou les dicter à l'agent 01, qui les reporte dans `config/m
    cd engine && python -m pokeshop.mandate fingerprint ../config/mandate.v1.yaml
    ```
    La ligne « à remplir » doit afficher `rien`.
-3. Recopier l'empreinte dans `approval.fingerprint_sha256` **et** dans le coffre (`POKESHOP_MANDATE_FINGERPRINT`). C'est ce second report, fait par vous seule, qui vaut signature.
-4. Relancer la commande : l'état doit être `ACTIF`.
+3. Recopier l'empreinte dans `approval.fingerprint_sha256` **et** dans le coffre (`POKESHOP_MANDATE_FINGERPRINT`). C'est ce second report, fait par vous seule, qui vaut signature : **sans lui, le mandat reste inactif** même si le YAML porte une empreinte correcte (un agent sait la calculer, pas écrire dans le coffre).
+4. Relancer la commande avec la variable du coffre chargée : la ligne « coffre » doit afficher `conforme` et l'état `ACTIF`.
+5. Signer de la même façon les **seuils** : `python -m pokeshop.stoploss fingerprint ../config/stoploss.v1.yaml` → `POKESHOP_STOPLOSS_FINGERPRINT` ; `python -m pokeshop.stoploss rules-fingerprint ../config/pricing_rules.v1.yaml` → `POKESHOP_RULES_FINGERPRINT`. Sans ces empreintes, le moteur applique, seuil par seuil, la valeur la plus stricte entre le fichier et sa référence (BP) ; avec une empreinte différente du fichier, le service démarre gelé.
+6. Générer un jeton par agent ou workflow qui dépose des chiffres ou demande des dépenses, et reporter leurs empreintes dans `POKESHOP_AGENT_TOKENS_SHA256` (`nom:empreinte,…`).
 
 **Modifier** : toute modification (plafond, bénéficiaire, date, signataire) change l'empreinte, donc **désactive le mandat** jusqu'à ce que vous recalculiez l'empreinte et la reportiez dans le coffre. Changer `mandate_version` à chaque modification de valeur.
 
-**Révoquer** : voir §7 (une action : révoquer l'application API PayPal).
+**Révoquer** : voir §7 (une action : révoquer l'application API PayPal ; puis vider l'empreinte du coffre ou `POST /mandate/revoke`, révocation définitive pour cette empreinte).
+
+**Saisir un taux de change** (achat en devise) : `POST /fx/rates` avec votre jeton (`X-Pokeshop-Owner-Token`), corps `{"currency": "EUR", "rate_to_chf": "0.9375", "rate_date": "AAAA-MM-JJ", "source": "BNS, cours du jour"}`. Valable le jour même et le jour ouvré suivant ; sans taux frais, toute demande en devise attend votre validation.
 
 ## Validation humaine requise
 
-- [ ] Fixer et signer les plafonds du §9 (B01) ; à défaut, les agents restent à 0 CHF de dépense autonome.
+- [ ] Fixer et signer les plafonds du §9 (B01) **et reporter l'empreinte dans le coffre** ; à défaut, les agents restent à 0 CHF de dépense autonome.
+- [ ] Signer les seuils du stop-loss et les règles de prix (empreintes au coffre, §10 étapes 5) ou accepter que les valeurs les plus strictes s'appliquent.
+- [ ] Générer un jeton nommé par agent ou workflow (§10 étape 6) : sans eux, aucune dépense n'est approuvée seule.
+- [ ] Confirmer la ventilation du budget stock (stock 2 700 + accessoires 300 = 3 000 CHF) et décider du financement de `SAMPLES` et `SHIPPING` (hors BP §3).
 - [ ] Valider la liste des bénéficiaires (C08), un par un, avec la checklist de due diligence.
 - [ ] Ouvrir le compte PayPal dédié (B05) et appliquer la checklist du §7 (aucune source de secours, limites côté compte si disponibles, 2FA).
 - [ ] Générer votre jeton de réarmement et placer son empreinte dans le coffre (`docs/00-pilotage/STOP_LOSS.md` §5).

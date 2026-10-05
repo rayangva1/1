@@ -526,7 +526,7 @@ def story(da: str) -> str:
     corps += titre(da, M, 1318, ["Display {{EXTENSION}}"] if da == "a" else ["display {{extension}}"], 54)
     corps += prix(da, M, 1394, 56)
     corps += ligne_texte(da, M, 1446, "Expédition depuis la Suisse sous {{DELAI_EXPEDITION}}", 28, muted=False)
-    corps += ligne_texte(da, M, 1488, "Limite : {{LIMITE_PAR_COMMANDE}} par commande · {{MENTION_TVA}}", 28)
+    corps += ligne_texte(da, M, 1488, "Limite : {{LIMITE_PAR_CLIENT}} · {{MENTION_TVA}}", 28)
     rx = 6 if da == "a" else 40
     corps += (
         f'  <g id="ZONE_STICKER_LIEN">\n    <rect x="{num(W / 2 - 260)}" y="1510" width="520" height="62" rx="{rx}" fill="none" '

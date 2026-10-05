@@ -154,6 +154,7 @@ class Reason(str, Enum):
     ROUNDING_RECHECK_FAILED = "ROUNDING_RECHECK_FAILED"
     DISCOUNT_CAPPED = "DISCOUNT_CAPPED"
     SHIPPING_COST_ASSUMED = "SHIPPING_COST_ASSUMED"
+    SHIPPING_COST_UNKNOWN = "SHIPPING_COST_UNKNOWN"
     NON_POSITIVE_NET_REVENUE = "NON_POSITIVE_NET_REVENUE"
 
 
@@ -173,11 +174,15 @@ REASON_LABELS_FR: dict[Reason, str] = {
     Reason.BELOW_HARD_FLOOR: "Contribution sous le plancher dur (12 %) : bloqué.",
     Reason.BELOW_ORDER_FLOOR_CHF: "Contribution de la commande < 8 CHF : bloqué.",
     Reason.ORDER_FLOOR_CHF_BINDING: "Le plancher de 8 CHF par commande relève le prix recommandé.",
-    Reason.SMALL_PRODUCT_ADDON: "Petit produit : frais par commande exclus, vente seule contrôlée au panier.",
+    Reason.SMALL_PRODUCT_ADDON: (
+        "Petit produit : frais par commande exclus ; panier de petits produits seuls bloqué sous le "
+        "minimum de commande imposé par la boutique."
+    ),
     Reason.STALE_OFFER: "Offre fournisseur périmée (> 24 h) : inéligible au réassort.",
     Reason.ROUNDING_RECHECK_FAILED: "Revérification de marge après arrondi en échec.",
     Reason.DISCOUNT_CAPPED: "Remise supérieure au montant des produits : plafonnée.",
     Reason.SHIPPING_COST_ASSUMED: "Coût logistique réel non fourni : hypothèse BP (L) utilisée.",
+    Reason.SHIPPING_COST_UNKNOWN: "Port offert sans coût logistique réel : promotion à valider (revue humaine).",
     Reason.NON_POSITIVE_NET_REVENUE: "Chiffre d'affaires net ≤ 0 : commande bloquée.",
 }
 
@@ -334,6 +339,19 @@ class PricingParams(FrozenModel):
     price_anomaly_factor: Decimal = Field(default=Decimal("10"), gt=1)
     small_product_max_cost: Decimal | None = Field(default=None, ge=0)
     """Seuil de coût rendu sous lequel un produit est « petit » (None = règle désactivée)."""
+    small_product_min_order_ttc: Decimal | None = Field(default=None, gt=0)
+    """Minimum de commande (TTC, marchandises après remises) **imposé par la boutique** à un panier
+    composé uniquement de petits produits (validation de panier Shopify, étiquette ``petit-produit``).
+
+    None (défaut) = aucun blocage au panier : la règle petits produits est **inactive** (fermé par
+    défaut, chaque article porte les frais par commande). Une valeur inférieure au minimum calculé
+    (:func:`pokeshop.pricing.small_product_min_order_required`) laisse aussi la règle inactive.
+    """
+    small_product_max_shipping_ttc: Decimal | None = Field(default=None, ge=0)
+    """Port maximal facturé (TTC) à un panier de petits produits seuls (0 = port offert, couvert par L).
+
+    Requis pour activer la règle : il entre dans le minimum de commande calculé. None = règle inactive.
+    """
     rounding_tiers: tuple[RoundingTier, ...] = DEFAULT_ROUNDING_TIERS
 
     @model_validator(mode="before")
@@ -633,8 +651,8 @@ class BasketResult(FrozenModel):
 
     @property
     def is_allowed(self) -> bool:
-        """Vrai si le panier/la promotion peut être accepté."""
-        return self.status is not DecisionStatus.BLOCKED
+        """Vrai seulement si OK : BLOCKED est refusé, REVIEW (port offert sans coût réel) attend une personne."""
+        return self.status is DecisionStatus.OK
 
 
 # ---------------------------------------------------------------- cost allocation
@@ -697,6 +715,9 @@ class SupplierOffer(FrozenModel):
     raw_ref: str = Field(min_length=1)
     vat_country: str | None = None
     stock_pool_id: str | None = None
+    source_ts_assumed: bool = False
+    """Vrai si la source n'est pas datée par le fournisseur (horodatage supposé : première capture de ce
+    contenu, date du fichier) : aucun réassort ni promesse de disponibilité fondés sur cette offre."""
 
     @field_validator("gtin", "extension", "format", "content", "incoterm", "stock_pool_id")
     @classmethod

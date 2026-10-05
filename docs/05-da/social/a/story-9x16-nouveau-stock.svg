@@ -22,7 +22,7 @@
   <text x="72" y="1318" font-family="'Archivo', 'Arial Narrow', Arial, sans-serif" font-size="54" font-weight="800" fill="#111111" letter-spacing="0.54">DISPLAY {{EXTENSION}}</text>
   <text x="72" y="1394" font-family="'IBM Plex Mono', 'Courier New', monospace" font-size="56" font-weight="600" fill="#111111" id="PRIX">CHF {{PRIX_VALIDE}}</text>
   <text x="72" y="1446" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="400" fill="#111111">Expédition depuis la Suisse sous {{DELAI_EXPEDITION}}</text>
-  <text x="72" y="1488" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="400" fill="#55534E">Limite : {{LIMITE_PAR_COMMANDE}} par commande · {{MENTION_TVA}}</text>
+  <text x="72" y="1488" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="400" fill="#55534E">Limite : {{LIMITE_PAR_CLIENT}} · {{MENTION_TVA}}</text>
   <g id="ZONE_STICKER_LIEN">
     <rect x="280" y="1510" width="520" height="62" rx="6" fill="none" stroke="#8A867E" stroke-width="3" stroke-dasharray="10 8"/>
     <text x="540" y="1550" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="24" font-weight="400" fill="#55534E" text-anchor="middle">Zone sticker lien (ajouté dans l'app)</text>

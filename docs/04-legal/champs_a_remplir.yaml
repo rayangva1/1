@@ -118,6 +118,11 @@ champs:
     statut: a_remplir
     decideur: "Propriétaire, après relecture du juriste (C11)"
     source: "BL-096"
+  DATE_VERSION_LANDING:
+    description: "Date d'entrée en vigueur de la notice de confidentialité de la landing (CONFIDENTIALITE_LANDING.md), jj.mm.aaaa. Valeur provisoire : la notice est remplacée par la déclaration complète (DATE_VERSION) à l'ouverture"
+    statut: a_remplir
+    decideur: "Propriétaire, après relecture express du juriste (avant le GO C07)"
+    source: "BL-032 (publication de la landing à J10) ; BL-033"
   HEBERGEUR:
     description: "Hébergeur du site et de la boutique (raison sociale et pays, selon le contrat accepté)"
     statut: a_remplir
@@ -243,6 +248,12 @@ champs:
     statut: a_valider
     decideur: "Propriétaire + juriste"
     source: "LPD art. 6 al. 4"
+  DUREE_CONSERVATION_PANIER:
+    description: "Conservation des paniers non finalisés (email saisi en caisse, articles, consentement marketing coché) ; à aligner sur la durée réelle de conservation des paniers abandonnés dans la boutique en ligne"
+    valeur_proposee: "30 jours après l'abandon du panier"
+    statut: a_valider
+    decideur: "Propriétaire + juriste"
+    source: "LPD art. 6 al. 4 ; email 13 (docs/06-contenu/EMAILS) ; note C4"
   DUREE_CONSERVATION_PHOTOS_COLIS:
     description: "Conservation des photos de contenu prises avant fermeture du colis (preuve SAV, sans étiquette visible)"
     valeur_proposee: "90 jours après expédition"
@@ -327,6 +338,26 @@ champs:
     source: "docs/01-marche/PROTOCOLE_LANDING_TEST.md §5"
   ST_AUDIENCE_PAYS:
     description: "Pays de traitement et garantie de l'outil d'audience"
+    statut: a_remplir
+    decideur: "Agent 12 QA ; juriste"
+    source: "LPD art. 16-17"
+  ST_HEBERGEMENT_LANDING:
+    description: "Hébergeur de la landing publiée avant la boutique (par exemple l'hébergeur choisi en site/landing/README.md §3), selon le contrat accepté"
+    statut: a_remplir
+    decideur: "Propriétaire (B04/B08) ; agent 07 Site"
+    source: "site/landing/README.md §3 ; CONFIDENTIALITE_LANDING.md"
+  ST_HEBERGEMENT_LANDING_PAYS:
+    description: "Pays de traitement et garantie de l'hébergeur de la landing"
+    statut: a_remplir
+    decideur: "Agent 12 QA ; juriste"
+    source: "LPD art. 16-17"
+  ST_POLICES:
+    description: "Fournisseur des polices chargées par la landing : « Google Fonts (Google) » si la page charge Google Fonts, sinon « aucun : polices du système » (publication avec --sans-google-fonts). publication.py refuse une valeur incohérente avec le choix fait"
+    statut: a_remplir
+    decideur: "Propriétaire (choix site/landing/README.md, Validation humaine)"
+    source: "site/landing/README.md §3.1 ; CONFIDENTIALITE_LANDING.md N2"
+  ST_POLICES_PAYS:
+    description: "Pays de traitement et garantie du fournisseur des polices (« sans objet » si aucun)"
     statut: a_remplir
     decideur: "Agent 12 QA ; juriste"
     source: "LPD art. 16-17"

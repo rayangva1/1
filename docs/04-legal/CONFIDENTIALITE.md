@@ -26,7 +26,9 @@ Cette déclaration explique quelles données personnelles nous traitons lorsque 
 | Livraison | Nom, adresse, numéro de suivi, téléphone si requis par le transporteur | Acheminer le colis et suivre la livraison | Durée de la commande et de la garantie |
 | Compte client (facultatif) | Identifiants, historique de commandes, adresses enregistrées | Faciliter vos prochaines commandes | Jusqu'à suppression à votre demande, ou {{DUREE_CONSERVATION_COMPTE}} |
 | Alertes de stock et email récapitulatif | Email, préférences (formats, extensions), date et preuve du consentement, ouvertures et clics | Vous prévenir des produits et réassorts que vous avez choisis ; au maximum un email récapitulatif par semaine | {{DUREE_CONSERVATION_ALERTES}} |
-| Service client | Vos messages, nos réponses, numéro de commande, photos que vous nous envoyez | Répondre, traiter un retour, une réclamation ou une garantie | {{DUREE_CONSERVATION_SAV}} |
+| Réponses facultatives et origine de l'inscription | Prénom, formats, budget habituel par achat, pour qui vous achetez, canton ; source, support et campagne du lien suivi (paramètres « utm ») | Vous saluer et cibler vos alertes ; de façon agrégée (jamais personne par personne), étudier la demande pour choisir notre assortiment, nos contenus, nos canaux et les régions où faire connaître la boutique | {{DUREE_CONSERVATION_ALERTES}} |
+| Panier non finalisé | Email saisi en caisse, articles du panier, acceptation de nos emails cochée en caisse | Vous envoyer **un seul** rappel, uniquement si vous avez accepté nos emails lors du passage en caisse | {{DUREE_CONSERVATION_PANIER}} |
+| Service client | Vos messages, nos réponses, numéro de commande, photos que vous nous envoyez | Répondre, traiter un retour, une réclamation ou une garantie ; les réponses courantes sont préparées et envoyées par des outils automatisés (ch. 6) | {{DUREE_CONSERVATION_SAV}} |
 | Prévention de la fraude et des abus | Données de la commande, adresse IP et signaux de risque fournis par la boutique et le prestataire de paiement | Protéger nos clients et nous-mêmes ; faire respecter les limites de quantité | Durée de la commande et des éventuelles contestations |
 | Navigation sur le site | Données techniques (adresse IP, navigateur, pages vues) et cookies, selon vos choix | Faire fonctionner le site, le sécuriser et, avec votre accord, mesurer son audience | Voir la page Cookies ({{URL_COOKIES}}) |
 
@@ -36,6 +38,7 @@ Nous ne vendons pas vos données. Nous ne traitons pas de données sensibles au 
 
 - Nous vous envoyons des alertes de stock et un email récapitulatif **uniquement** si vous l'avez demandé (case non pré-cochée et confirmation par email).
 - Si vous êtes déjà client, nous pouvons vous écrire sur des produits semblables à ceux que vous avez achetés, si vous ne vous y êtes pas opposé lors de la commande. Chaque email permet de refuser les suivants.
+- Lors du passage en caisse, une case non pré-cochée vous permet d'accepter nos emails. Si vous l'avez cochée et ne terminez pas votre commande, nous vous envoyons **un seul** rappel de votre panier ; sans cette case cochée, aucun rappel.
 - Chaque email contient un lien de désinscription gratuit, en un clic. La désinscription est appliquée à tous nos outils sans délai.
 - Nous n'envoyons pas de SMS publicitaires.
 - Les emails liés à une commande (confirmation, expédition, remboursement) ne sont pas publicitaires et vous sont toujours envoyés.
@@ -51,7 +54,7 @@ Nous confions certains traitements à des prestataires qui agissent pour notre c
 | Livraison | {{ST_TRANSPORT}} | {{ST_TRANSPORT_PAYS}} |
 | Envoi des alertes et de l'email récapitulatif | {{ST_EMAILING}} | {{ST_EMAILING_PAYS}} |
 | Messagerie du service client | {{ST_MESSAGERIE}} | {{ST_MESSAGERIE_PAYS}} |
-| Outils d'intelligence artificielle pour trier les messages et préparer les réponses du service client | {{ST_IA}} | {{ST_IA_PAYS}} |
+| Outils d'intelligence artificielle pour trier les messages, préparer et envoyer les réponses courantes du service client | {{ST_IA}} | {{ST_IA_PAYS}} |
 | Hébergement de nos outils internes de gestion du stock et des commandes | {{ST_BASE}} | {{ST_BASE_PAYS}} |
 | Mesure d'audience | {{ST_AUDIENCE}} | {{ST_AUDIENCE_PAYS}} |
 
@@ -63,7 +66,7 @@ Certains prestataires peuvent traiter des données hors de Suisse. Nous ne le fa
 
 ### 6. Décisions automatisées et intelligence artificielle
 
-- Certaines tâches sont automatisées : calcul du stock disponible, envoi des emails de commande, tri et préparation des réponses du service client.
+- Certaines tâches sont automatisées : calcul du stock disponible, envoi des emails de commande, tri des messages du service client, préparation et envoi des réponses courantes à partir de modèles que nous avons validés. Une personne traite les cas particuliers, et vous pouvez à tout moment demander qu'une personne reprenne votre demande.
 - Nous ne fondons aucune décision qui vous concerne de manière importante (par exemple le refus d'un retour ou l'annulation d'une commande pour suspicion de fraude) **exclusivement** sur un traitement automatisé sans vous en informer. Vous pouvez toujours demander qu'une personne réexamine une décision et donner votre point de vue (art. 21 LPD).
 - Nous ne transmettons à nos outils d'intelligence artificielle que les informations nécessaires pour répondre à votre demande et nous n'autorisons pas leur fournisseur à utiliser vos données pour entraîner ses modèles.
 
@@ -115,7 +118,8 @@ Nous pouvons adapter cette déclaration. La version en vigueur est publiée sur 
 |---|---|---|---|---|---|---|---|
 | Commandes et livraisons | Clients | Identité, contact, adresse, commande, paiement (statut) | Contrat | Boutique, PSP, transporteur, fiduciaire | Voir champs `ST_*_PAYS` | 10 ans (pièces comptables) | Accès par rôle, 2FA |
 | Service client | Clients, prospects | Messages, photos, n° de commande | Réponse, garantie, retours | Messagerie, IA | Voir champs | {{DUREE_CONSERVATION_SAV}} | Minimisation des données envoyées à l'IA |
-| Alertes et récapitulatif | Inscrits | Email, préférences, preuve de consentement | Marketing avec consentement | Emailing | Voir champs | {{DUREE_CONSERVATION_ALERTES}} | Double opt-in, liste de désinscription conservée |
+| Alertes et récapitulatif | Inscrits | Email, préférences, réponses facultatives (prénom, budget, pour qui, canton), origine (utm), preuve de consentement | Marketing avec consentement ; étude agrégée de la demande | Emailing, n8n | Voir champs | {{DUREE_CONSERVATION_ALERTES}} | Double opt-in, liste de désinscription conservée, analyses uniquement agrégées |
+| Paniers non finalisés | Visiteurs ayant commencé une commande | Email, articles, consentement coché en caisse | Un seul rappel, avec consentement | Boutique, emailing | Voir champs | {{DUREE_CONSERVATION_PANIER}} | Aucun rappel sans consentement coché ; un seul envoi |
 | Prévention de la fraude | Clients | Commande, IP, signaux de risque | Intérêt prépondérant | Boutique, PSP | Voir champs | Durée des contestations | Revue humaine avant annulation |
 | Preuves de préparation | Aucune personne visible | Photos du contenu des colis, sans étiquette | Preuve SAV | Interne | Suisse | {{DUREE_CONSERVATION_PHOTOS_COLIS}} | Pas d'adresse sur la photo |
 
@@ -133,3 +137,5 @@ Nous pouvons adapter cette déclaration. La version en vigueur est publiée sur 
 - [ ] Agent 12 QA puis juriste : remplir les prestataires, pays et garanties à partir des contrats réellement acceptés ; aucun pays ne doit être supposé.
 - [ ] Propriétaire : accepter (ou non) le traitement des messages du service client par un fournisseur d'IA, après lecture de son contrat (C5).
 - [ ] Propriétaire : désigner qui répond aux demandes d'accès (par défaut : l'agent SAV prépare, la propriétaire valide l'envoi).
+- [ ] Propriétaire + juriste : valider la durée de conservation des paniers non finalisés (`DUREE_CONSERVATION_PANIER`), alignée sur la conservation réelle des paniers abandonnés de la boutique.
+- [ ] Rappel : avant l'ouverture, la landing publie sa propre notice limitée (`CONFIDENTIALITE_LANDING.md`) ; cette déclaration complète la remplace à l'ouverture.

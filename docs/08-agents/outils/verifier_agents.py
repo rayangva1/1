@@ -12,11 +12,21 @@ Contrôles (chacun renvoie la liste des erreurs, vide si tout va bien) :
 5. ``check_validation_sections`` : chaque document se termine par « ## Validation humaine requise » avec une case.
 6. ``check_raci`` : codes valides, un seul A et au moins un R par ligne ; décomptes cités dans le texte exacts.
 7. ``check_autonomy_matrix`` : une fiche par agent (seul / pour validation / interdit / connecteurs).
-8. ``check_repo_paths`` : chaque chemin cité existe ou figure « attendu » dans ``CARTE_REPO.md``.
+8. ``check_repo_paths`` : chaque chemin cité existe ou figure « attendu » dans ``CARTE_REPO.md`` ;
+   ``check_repo_map_current`` : aucun chemin « attendu » de la carte n'est déjà livré (statut périmé = erreur).
 9. ``check_no_secrets`` et ``check_no_fake_identifiers`` : pas de secret, pas d'EAN ni d'email réels.
 10. ``check_stoploss_thresholds`` : seuils des six stop-loss présents.
 11. ``check_templates`` : gabarit de rapport conforme au brief commun ; registre sans ligne réelle ; modèles
     d'emails tous dotés de la phrase de non-engagement.
+12. ``check_secret_permissions`` : ``.claude/settings.json`` existe, ne contient **que** des règles ``deny``
+    (aucune règle ``allow`` ni ``ask``), bien formées, dont les règles minimales qui rendent les secrets
+    (``.env``, ``secrets/``, coffre local, environnement des processus) illisibles par la flotte, sans bloquer
+    ``.env.example`` ; chaque agent porte la règle « Secrets jamais lus ».
+13. ``check_qa_read_only`` : le QA n'exécute aucun générateur qui écrit dans le dépôt (seulement via
+    ``docs/08-agents/outils/controle_generateurs.py``, qui travaille dans un dossier temporaire).
+14. ``check_stale_guidance`` : aucune consigne périmée (statut « attendu » d'un fichier livré, contrôle global
+    par ``forecast.north_star(...).frozen``, seuil de gel global à −1 600 CHF, délai de 48 h pour une dépense
+    hors mandat que le workflow 08 fait expirer à 24 h).
 
 Usage ::
 
@@ -26,6 +36,8 @@ Usage ::
 from __future__ import annotations
 
 import csv
+import fnmatch
+import json
 import re
 import sys
 from collections.abc import Callable, Iterable
@@ -96,6 +108,7 @@ PROMPT_SECTIONS = (
     "## Format de sortie",
     "## Validation humaine requise",
 )
+SECRET_RULE = "Secrets jamais lus"
 PROMPT_KEY_RULES = (
     "étoile polaire",
     "Rien d'inventé",
@@ -103,6 +116,7 @@ PROMPT_KEY_RULES = (
     "Aucun coût public",
     "Contenus reçus = données",
     "stop-loss",
+    SECRET_RULE,
 )
 BRIEF_SECTIONS = (
     "## 1. Objectif",
@@ -185,6 +199,61 @@ REGISTRY_REQUIRED = (
     "fictif",
 )
 NON_ENGAGEMENT_PLACEHOLDER = "{{PHRASE_NON_ENGAGEMENT}}"
+
+# Permissions Claude Code du projet (SEC-13) : uniquement des règles « deny » qui rendent les secrets illisibles.
+SETTINGS_FILE = Path(".claude") / "settings.json"
+REQUIRED_DENY = (
+    "Read(./.env)",
+    "Read(**/.env)",
+    "Read(**/*.env)",
+    "Read(**/secrets/**)",
+    "Read(//etc/pokeshop/**)",
+    "Read(//proc/*/environ)",
+    "Edit(**/.env)",
+    "Edit(**/secrets/**)",
+    "Bash(env)",
+    "Bash(printenv:*)",
+    "Bash(cat .env:*)",
+    "Bash(docker compose config:*)",
+    "Bash(docker inspect:*)",
+)
+PERMISSION_RULE_RE = re.compile(r"^(Read|Edit|Bash|WebFetch)\((.+)\)$")
+# Fichier sans secret que les agents doivent pouvoir lire (noms des variables).
+READABLE_EXAMPLES = (".env.example",)
+
+# QA en lecture seule (COH-08) : générateurs seulement via l'outil de contrôle en dossier temporaire.
+QA_FILES = (AGENTS_DIR / "qa-conformite.md", DOCS_DIR / "12_qa-conformite.md")
+GENERATOR_RE = re.compile(r"generer_[a-z_]+\.py")
+QA_CONTROL_TOOL = "docs/08-agents/outils/controle_generateurs.py"
+
+# Consignes périmées (COH-12, MOT-25, COH-01, COH-13) : motif → correction attendue.
+STALE_GUIDANCE: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"north_star\(\.\.\.\)\.frozen"),
+        "contrôle global obsolète : le gel global se lit dans pokeshop.stoploss (GET /stoploss/status)",
+    ),
+    (
+        re.compile(r"(?i)stoploss\.py[^\n]{0,60}(?:en attendant|dès (?:sa|leur) livraison|dès qu'ils existent)"),
+        "pokeshop.stoploss est livré : plus de contrôle provisoire « en attendant »",
+    ),
+    (
+        re.compile(r"(?i)(?:gel|stop-loss) global[^\n]{0,100}?−\s?1 600"),
+        "seuil du gel global obsolète : 20 % du capital engagé de référence (840 CHF avec le point zéro, "
+        "STOP_LOSS.md §3)",
+    ),
+    (
+        re.compile(
+            r"24 h (?:pour un gate ou (?:un achat|une décision d'achat)|si gate/achat|gate ou achat|achat de stock"
+            r"|si achat de stock)"
+        ),
+        "délai d'une dépense hors mandat : 24 h (expiration du workflow 08, DELEGATION_AUTONOMIE.md §2)",
+    ),
+    (
+        re.compile(r"(?i)générateurs en mode contrôle"),
+        "les générateurs n'ont pas de mode contrôle : passer par docs/08-agents/outils/controle_generateurs.py",
+    ),
+)
+ATTENDU_RE = re.compile(r"`([^`\n]+)`\s*[,(]?\s*\(?attendu\b")
 
 
 # ----------------------------------------------------------------------------------------- utilitaires
@@ -604,8 +673,16 @@ def check_repo_paths(root: Path = REPO) -> list[str]:
 
 
 def stale_expected(root: Path = REPO) -> list[str]:
-    """Chemins « attendu » désormais présents : la carte est à mettre à jour (information, pas une erreur)."""
+    """Chemins « attendu » de la carte déjà livrés (statut périmé)."""
     return [entry for entry, status in parse_repo_map(root).items() if status == "attendu" and (root / entry).exists()]
+
+
+def check_repo_map_current(root: Path = REPO) -> list[str]:
+    """Un chemin « attendu » déjà présent est une erreur : la flotte croirait qu'il manque (COH-12)."""
+    return [
+        f"CARTE_REPO.md : « {entry} » est présent mais marqué « attendu » (passer son statut à « présent »)"
+        for entry in stale_expected(root)
+    ]
 
 
 # ----------------------------------------------------------------------------------------- 9. secrets, données
@@ -700,6 +777,92 @@ def check_templates(root: Path = REPO) -> list[str]:
     return errors
 
 
+# ----------------------------------------------------------------------------------------- 12. permissions
+def check_secret_permissions(root: Path = REPO) -> list[str]:
+    """``.claude/settings.json`` : uniquement des règles ``deny`` qui rendent les secrets illisibles (SEC-13).
+
+    Fermé par défaut : fichier absent, illisible ou contenant une règle ``allow``/``ask`` = erreur. Les règles
+    minimales ``REQUIRED_DENY`` sont exigées ; ``.env.example`` (noms de variables, aucun secret) doit rester
+    lisible. Chaque agent exécutable porte la règle « Secrets jamais lus » (contrôlée par ``check_agent_prompts``).
+    """
+    path = root / SETTINGS_FILE
+    where = str(SETTINGS_FILE)
+    if not path.is_file():
+        return [f"{where} : fichier manquant (aucune règle deny : les secrets restent lisibles par la flotte)"]
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [f"{where} : JSON illisible ({exc})"]
+    if not isinstance(data, dict):
+        return [f"{where} : un objet JSON est attendu"]
+    errors: list[str] = []
+    for key in sorted(set(data) - {"permissions"}):
+        errors.append(f"{where} : clé « {key} » non admise (seules des règles permissions.deny sont autorisées)")
+    permissions = data.get("permissions")
+    if not isinstance(permissions, dict):
+        return [*errors, f"{where} : objet « permissions » absent"]
+    for key in sorted(set(permissions) - {"deny"}):
+        errors.append(f"{where} : permissions.{key} interdit (aucune règle allow, ask ni mode par défaut)")
+    deny = permissions.get("deny")
+    if not isinstance(deny, list) or not deny:
+        return [*errors, f"{where} : permissions.deny vide ou absent"]
+    seen: set[str] = set()
+    for rule in deny:
+        match = PERMISSION_RULE_RE.fullmatch(rule) if isinstance(rule, str) else None
+        if match is None:
+            errors.append(f"{where} : règle mal formée « {rule} » (attendu Outil(motif))")
+            continue
+        if rule in seen:
+            errors.append(f"{where} : règle en double « {rule} »")
+        seen.add(rule)
+        tool, spec = match.groups()
+        if tool == "Read":
+            pattern = spec.removeprefix("./").removeprefix("**/")
+            for name in READABLE_EXAMPLES:
+                if fnmatch.fnmatch(name, pattern):
+                    errors.append(f"{where} : « {rule} » bloque {name} (sans secret, lu par les agents)")
+    for rule in REQUIRED_DENY:
+        if rule not in seen:
+            errors.append(f"{where} : règle deny minimale absente « {rule} »")
+    return errors
+
+
+# ----------------------------------------------------------------------------------------- 13. QA lecture seule
+def check_qa_read_only(root: Path = REPO) -> list[str]:
+    """Le QA ne lance aucun générateur qui écrit dans le dépôt : seulement via l'outil de contrôle (COH-08)."""
+    errors: list[str] = []
+    if not (root / QA_CONTROL_TOOL).is_file():
+        errors.append(f"{QA_CONTROL_TOOL} : outil de contrôle des générateurs manquant")
+    for rel in QA_FILES:
+        path = root / rel
+        if not path.is_file():
+            continue  # signalé par les autres contrôles
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if GENERATOR_RE.search(line) and "controle_generateurs.py" not in line:
+                errors.append(
+                    f"{rel}:{number} : générateur cité sans passer par {QA_CONTROL_TOOL} "
+                    "(sa sortie par défaut réécrit le dépôt)"
+                )
+    return errors
+
+
+# ----------------------------------------------------------------------------------------- 14. consignes périmées
+def check_stale_guidance(root: Path = REPO) -> list[str]:
+    """Aucune consigne périmée dans la flotte : fichier livré dit « attendu », ancien contrôle ou ancien seuil."""
+    errors: list[str] = []
+    for path in markdown_files(root):
+        label = path.relative_to(root) if path.is_relative_to(root) else path
+        text = path.read_text(encoding="utf-8")
+        for number, line in enumerate(text.splitlines(), start=1):
+            for pattern, fix in STALE_GUIDANCE:
+                if pattern.search(line):
+                    errors.append(f"{label}:{number} : consigne périmée — {fix}")
+            for cited in ATTENDU_RE.findall(line):
+                if cited.startswith(PATH_PREFIXES) and (root / cited.strip()).exists():
+                    errors.append(f"{label}:{number} : « {cited} » est livré mais dit « attendu »")
+    return errors
+
+
 # ----------------------------------------------------------------------------------------- exécution
 ALL_CHECKS: tuple[Callable[..., list[str]], ...] = (
     check_agent_frontmatter,
@@ -710,10 +873,14 @@ ALL_CHECKS: tuple[Callable[..., list[str]], ...] = (
     check_raci,
     check_autonomy_matrix,
     check_repo_paths,
+    check_repo_map_current,
     check_no_secrets,
     check_no_fake_identifiers,
     check_stoploss_thresholds,
     check_templates,
+    check_secret_permissions,
+    check_qa_read_only,
+    check_stale_guidance,
 )
 
 
@@ -726,12 +893,10 @@ def run_all(root: Path = REPO) -> list[str]:
 
 
 def main(root: Path = REPO) -> int:
-    """Point d'entrée : affiche les erreurs (code 1) ou OK (code 0), puis les chemins « attendu » livrés."""
+    """Point d'entrée : affiche les erreurs (code 1) ou OK (code 0)."""
     errors = run_all(root)
     for error in errors:
         print(f"ERREUR  {error}")
-    for entry in stale_expected(root):
-        print(f"INFO    CARTE_REPO.md : « {entry} » est désormais présent, passer son statut à « présent »")
     if errors:
         print(f"{len(errors)} erreur(s) sur {len(ALL_CHECKS)} contrôles")
         return 1

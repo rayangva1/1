@@ -8,6 +8,9 @@
 #                  (filtres Liquid autorisés pour Shopify : [[total_price | money]])
 #   {{CHAMP}}      champ fixe du registre docs/04-legal/champs_a_remplir.yaml (ou URL_LOGO_PNG), rempli à l'intégration
 #   **gras**  et  [texte](url)
+# motif_pied (obligatoire pour la catégorie marketing) : motif d'envoi affiché dans le pied, conforme au segment :
+#   alertes = inscrit aux alertes (lien de préférences) ; client = client avec consentement ou non opposé (C2) ;
+#   checkout = consentement coché lors du passage en caisse (C4).
 # Règles : aucune donnée interne (coût, marge, fournisseur, allocation chiffrée) ; aucun prix sauf prix public
 # relu au moment de l'envoi ; aucune fausse urgence ; produits « stock local » ou « précommande » seulement.
 # Tous les exemples sont FICTIFS.
@@ -40,6 +43,7 @@ emails:
     nom: "Bienvenue et préférences"
     canal: n8n
     categorie: marketing
+    motif_pied: alertes
     declencheur: "Clic sur le lien de confirmation"
     segment: "La personne qui vient de confirmer"
     base: "Consentement confirmé (double opt-in)"
@@ -70,6 +74,7 @@ emails:
     nom: "Ouverture douce (BL-118)"
     canal: n8n
     categorie: marketing
+    motif_pied: alertes
     declencheur: "GO de l'ouverture douce (C14) : fiches publiées, stock local réel"
     segment: "Tous les inscrits confirmés"
     base: "Consentement confirmé (alerte d'ouverture)"
@@ -88,7 +93,7 @@ emails:
       - p: "[[salutation]]"
       - p: "Les produits sont arrivés à Genève et ont été contrôlés. Voici ce qui est en stock local aujourd'hui :"
       - lignes_produits: {variable: lignes_produits_html}
-      - p: "Une limite par commande s'applique à certains produits ; elle figure sur chaque fiche. La disponibilité affichée sur le site au moment de votre commande fait foi."
+      - p: "Une limite par foyer, toutes commandes confondues, s'applique à certains produits ; elle figure sur chaque fiche. La disponibilité affichée sur le site au moment de votre commande fait foi."
       - bouton: {texte: "Voir le stock local", url: "[[url_stock_local]]"}
       - encadre:
           - "Livraison en Suisse uniquement · expédition sous {{DELAI_EXPEDITION}} · frais affichés avant le paiement."
@@ -97,6 +102,7 @@ emails:
     nom: "Alerte : nouveau stock local"
     canal: n8n
     categorie: marketing
+    motif_pied: alertes
     declencheur: "Entrée en stock local réelle (réception contrôlée, fiche publiée) d'un produit suivi"
     segment: "Inscrits confirmés : alerte sur ce produit, ou préférences correspondant au format"
     base: "Consentement confirmé (alertes de stock choisies)"
@@ -108,7 +114,7 @@ emails:
       - [raison_alerte, "« Vous avez demandé une alerte pour ce produit. » ou « Ce produit correspond aux formats que vous suivez. »", "Vous avez demandé une alerte pour ce produit."]
       - [produit_titre, "Titre exact de la fiche (format + extension + langue)", "Display 36 boosters — Extension Exemple — FR (FICTIF)"]
       - [produit_prix, "Prix public relu sur la fiche au moment de l'envoi (CHF, 2 décimales)", "209.90 (FICTIF)"]
-      - [produit_limite, "« Limite : 2 par commande » ou vide", "Limite : 2 par commande"]
+      - [produit_limite, "« Limite : » suivi de la valeur validée de LIMITE_PAR_CLIENT (registre légal), ou vide", "Limite : 2 exemplaires par référence et par foyer"]
       - [produit_url, "URL de la fiche", "https://exemple.invalid/products/display-extension-exemple-fr"]
       - [url_preferences, "Page de préférences", "https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF"]
       - [url_desinscription, "Désinscription en un clic", "https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF"]
@@ -125,6 +131,7 @@ emails:
     nom: "Récapitulatif hebdomadaire"
     canal: n8n
     categorie: marketing
+    motif_pied: alertes
     declencheur: "Jeudi (calendrier), seulement s'il y a un contenu utile ; sinon pas d'envoi"
     segment: "Inscrits confirmés ayant choisi le récapitulatif"
     base: "Consentement confirmé (récapitulatif au plus hebdomadaire)"
@@ -311,12 +318,13 @@ emails:
       - p: "[[salutation]]"
       - p: "Votre commande [[numero_commande]] a été livrée il y a quelques jours. Votre avis nous aide à corriger ce qui ne va pas et aide d'autres personnes à choisir."
       - bouton: {texte: "Donner mon avis", url: "[[url_avis]]"}
-      - p: "Un problème avec votre commande ? Ne passez pas par l'avis : répondez à cet email, une personne vous répond."
+      - p: "Un problème avec votre commande ? Ne passez pas par l'avis : répondez simplement à cet email. Nous vous répondons, et une personne reprend votre demande si vous le souhaitez."
 
   - id: "12-reachat"
     nom: "Réachat : suggestion sur extension ou format déjà acheté"
     canal: n8n
     categorie: marketing
+    motif_pied: client
     declencheur: "Produit de la même extension ou du même format entré en stock local"
     segment: "Clients ayant acheté cette extension ou ce format, avec consentement marketing, sans désinscription"
     base: "Consentement marketing (ou client non opposé : note C2 du juriste)"
@@ -328,11 +336,9 @@ emails:
       - [raison_recommandation, "Phrase factuelle sur le lien avec l'achat précédent", "Vous avez acheté un produit de l'extension Exemple ; ce coffret de la même extension est en stock local."]
       - [produit_titre, "Titre exact de la fiche", "ETB — Extension Exemple — FR (FICTIF)"]
       - [produit_prix, "Prix public relu au moment de l'envoi", "69.90 (FICTIF)"]
-      - [produit_limite, "Limite par commande ou vide", ""]
+      - [produit_limite, "« Limite : » suivi de la valeur validée de LIMITE_PAR_CLIENT (registre légal), ou vide", ""]
       - [produit_url, "URL de la fiche", "https://exemple.invalid/products/etb-extension-exemple-fr"]
-      - [url_preferences, "Page de préférences", "https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF"]
       - [url_desinscription, "Désinscription en un clic", "https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF"]
-      - [date_consentement, "Date du consentement", "14.10.2026"]
     blocs:
       - titre: "Une suite à votre collection ?"
       - p: "[[salutation]]"
@@ -345,6 +351,7 @@ emails:
     nom: "Panier abandonné (seulement avec consentement marketing)"
     canal: n8n
     categorie: marketing
+    motif_pied: checkout
     declencheur: "Paiement non terminé depuis 4 h (hypothèse) ; articles encore disponibles"
     segment: "Uniquement les personnes ayant coché le consentement marketing au checkout (note C4 du juriste)"
     base: "Consentement marketing explicite ; sinon AUCUN envoi"
@@ -356,9 +363,8 @@ emails:
       - [lignes_produits_html, "Articles encore disponibles (stock local ou précommande), prix relus", "(voir l'aperçu)"]
       - [note_ruptures, "« Un article de votre panier n'est plus disponible. » ou vide", ""]
       - [url_panier, "Lien de reprise du panier", "https://exemple.invalid/panier-fictif"]
-      - [url_preferences, "Page de préférences", "https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF"]
       - [url_desinscription, "Désinscription en un clic", "https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF"]
-      - [date_consentement, "Date du consentement", "14.10.2026"]
+      - [date_consentement, "Date du consentement marketing coché au checkout", "14.10.2026"]
     blocs:
       - titre: "Votre panier est enregistré"
       - p: "[[salutation]]"

@@ -95,8 +95,9 @@ Même mécanique : 2 400 / 13,33 = 180,05 ⇒ 181 ; 2 400 / 13,33395 = 179,99 �
 ### 4.4 Règle d'arrondi du prix public : 208,79 → 209,90
 
 - Le BP passe de 208,79 à **209,90**. La SPEC (`round_up_retail`, « prochain X,90 ») donnerait **208,90**.
-- 209,90 correspond à la règle « terminaison 9,90, pas de 10 CHF ». Le classeur (`Prix plancher`, lignes 19 à 22) rend le pas et la terminaison paramétrables et affiche les deux lectures.
+- 209,90 correspond à la règle « terminaison 9,90, pas de 10 CHF ». Le classeur (`Prix plancher`, lignes 19 à 22) rend le pas et la terminaison paramétrables et affiche les deux lectures du BP.
 - Avec un pas de 10 CHF, un petit produit dont le plancher serait 5,40 CHF (illustration, pas un prix) s'afficherait à 9,90 CHF (+83 %). Il faut une **règle par tranche de prix**.
+- **Règle appliquée par le moteur** : la grille par tranches `rounding_tiers` de `config/pricing_rules.v1.yaml` (< 10 CHF → X,50/X,90 ; 10 à 99,99 → X,90 ; ≥ 100 → X4,90/X9,90), qui reproduit 208,79 → 209,90. Le classeur la reproduit en `Prix plancher` ligne 26 (formule construite depuis le fichier de règles), et c'est ce prix qu'utilise la colonne « Prix public arrondi » du contrôle de contribution. Les lectures du BP (lignes 19 à 22) diffèrent du moteur hors du cas du BP (coût 50 CHF : 89,90 contre 83,90).
 - 209,90 donne 20,41 % de contribution (cible atteinte). 208,90 donne 20,04 %, ce qui atteint aussi la cible.
 
 ### 4.5 Marge d'arrondi du prix plancher
@@ -181,7 +182,7 @@ Le stop-loss global n'a de sens que sur la contribution nette (exploitation). Ca
 ## Validation humaine requise
 
 - [ ] Valider la convention de seuil (31 et 181 commandes, méthode BP prudente) et corriger 17 577 → 17 576 dans le BP.
-- [ ] Trancher la règle d'arrondi du prix public : terminaison 9,90 au pas de 10 CHF (BP) ou « prochain X,90 » (SPEC), et définir des tranches de prix pour les petits produits.
+- [ ] Valider la grille d'arrondi par tranches appliquée par le moteur (`rounding_tiers` de `config/pricing_rules.v1.yaml` : X,50/X,90 sous 10 CHF, X,90 de 10 à 99,99, X4,90/X9,90 dès 100 CHF), ou la modifier dans le fichier de règles (nouvelle signature) ; le classeur suit à la régénération.
 - [ ] Arbitrer l'écart §5/§10 : la cible de 20 % s'entend-elle après acquisition, comme dans la formule du §4 ? Si oui, revoir les 22 % avant acquisition du §10.
 - [ ] Confirmer la définition du stop-loss global : perte cumulée = contribution nette cumulée (hors dépenses de lancement) et capital engagé = 8 000 CHF (seuil 1 600 CHF).
 - [ ] Harmoniser le stop-loss pub avec le plancher produit (couper dès que la contribution après CAC passe sous 8 CHF, soit CAC > 11,33 au panier du BP).

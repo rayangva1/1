@@ -29,10 +29,15 @@
 | Champ | Type | Obligatoire | Remarque |
 |---|---|---|---|
 | Email | email | Oui | Double opt-in : rien n'est envoyé avant la confirmation |
-| « Ce qui m'intéresse » | cases à cocher | Non | Displays · ETB · Bundles et tripacks · Coffrets cadeaux · Accessoires · Nouveautés |
-| Pour qui | choix | Non | Moi (collection) · Moi (jeu) · Cadeau ou enfant |
-| Canton | liste | Non | Pour H3 ; « Hors de Suisse » affiche « livraison en Suisse uniquement » |
-| Consentement | case **non pré-cochée** | Oui | « J'accepte de recevoir l'alerte d'ouverture et les alertes de stock que j'ai choisies. Désinscription en un clic. » + lien vers la notice |
+| Prénom | texte | Non | Salutation des emails |
+| « Ce qui m'intéresse » | cases à cocher | Non | Displays · ETB · Bundles et tripacks · Coffrets cadeaux · Accessoires · Nouveautés ; ciblage des alertes et H2 (agrégé) |
+| Budget habituel par achat | choix | Non | Tranches de CHF (préférence déclarée, pas un prix) ; H2 (agrégé) |
+| Pour qui | choix | Non | Moi (collection) · Moi (jeu) · Cadeau ou enfant ; H2 (agrégé) |
+| Canton | liste | Non | Pour H3 (agrégé) ; « Hors de Suisse » affiche « livraison en Suisse uniquement » |
+| Origine (utm_source, utm_medium, utm_campaign) | champs cachés | — | Pour H4 (agrégé) ; lus dans le lien suivi |
+| Consentement | case **non pré-cochée** | Oui | Texte exact : celui de `site/landing/index.html` (version `alertes-v1-2026-10-04`) + lien vers la notice |
+
+**Chaque champ et chaque usage (y compris les usages agrégés H2 à H4) figure dans la notice de la landing** (`docs/04-legal/CONFIDENTIALITE_LANDING.md`) et dans l'aide sous la case de consentement : aucun texte ne dit que les données servent « uniquement » aux envois. Un champ ajouté au formulaire sans être déclaré dans la notice fait échouer `site/outils/verifier_site.py`.
 
 Email de confirmation (double opt-in) : objet « Confirmez votre alerte {{NOM_BOUTIQUE}} » ; un seul bouton « Confirmer » ; rappel de ce qui sera envoyé ; lien de désinscription.
 
@@ -99,7 +104,8 @@ Un signal ROUGE ne bloque pas un gate à lui seul. Il est porté au dossier G3 (
 
 - [ ] Aucun prix, stock, compteur ni bouton d'achat ou de précommande.
 - [ ] Aucun logo ni personnage Pokémon ; mention d'indépendance présente.
-- [ ] Identité, adresse et email de contact de l'exploitant visibles ; notice de confidentialité en lien.
+- [ ] Identité, adresse et email de contact de l'exploitant visibles ; notice de confidentialité de la landing (`CONFIDENTIALITE_LANDING.md`) en lien, relue par le juriste (relecture express) et datée (`DATE_VERSION_LANDING`).
+- [ ] `python site/outils/publication.py etat` : les champs de la liste fermée sont tous `valide` (aucun ne dépend de la boutique, du paiement, du transporteur ni de la relecture complète J28).
 - [ ] Case de consentement non pré-cochée ; double opt-in testé ; désinscription testée en un clic.
 - [ ] Aucune donnée interne dans le code source (coûts, fournisseurs, notes).
 - [ ] Mesure d'audience conforme (consentement si cookies).

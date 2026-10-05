@@ -51,6 +51,7 @@ __all__ = [
     "is_fictitious_gtin",
     "fictitious_gtin13",
     "normalize_language",
+    "accessory_language",
     "normalize_format",
     "is_accessory",
     "expected_language_for",
@@ -230,6 +231,15 @@ _UPPER_CODE_MAP = {
 }
 
 
+def accessory_language(lang: Language) -> Language:
+    """Langue d'un accessoire : ``NA`` si absente, inconnue, ``NA`` ou ``FR`` ; une autre langue est conservée.
+
+    Un libellé d'accessoire n'efface jamais une langue étrangère déclarée (« Japonais ») : elle
+    reste visible et bloque la publication (langue attendue ``NA``, règle FR uniquement).
+    """
+    return Language.NA if lang in (Language.UNKNOWN, Language.NA, Language.FR) else lang
+
+
 def normalize_language(raw: str | None) -> Language:
     """Langue normalisée depuis un libellé libre (``"Français"``, ``"VF"``, ``"JAP"``, ``"ENG"``…).
 
@@ -388,7 +398,9 @@ def normalize_format(raw: str | None) -> ProductFormat:
     Les motifs les plus longs sont consommés d'abord. Un format de produit de cartes
     l'emporte sur une mention d'accessoire (« ETB … + sleeves » = ETB) ou de booster
     (« Display 36 boosters » = DISPLAY). Deux formats de cartes distincts, un « blister »
-    ou un « pack » sans précision -> ``UNKNOWN`` (jamais deviné).
+    ou un « pack » sans précision -> ``UNKNOWN`` (jamais deviné). Un accessoire **accompagné de
+    boosters** (« Classeur + 2 boosters ») contient des cartes : ``UNKNOWN`` (jamais un accessoire
+    « sans langue », qui échapperait à la règle FR uniquement).
     """
     if raw is None:
         return ProductFormat.UNKNOWN
@@ -407,6 +419,8 @@ def normalize_format(raw: str | None) -> ProductFormat:
     if cards:
         return cards.pop() if len(cards) == 1 else ProductFormat.UNKNOWN
     accessories = found[_TIER_ACCESSORY]
+    if accessories and found[_TIER_BOOSTER]:
+        return ProductFormat.UNKNOWN  # accessoire + boosters : cartes incluses, format ambigu
     if len(accessories) > 1:
         accessories.discard(ProductFormat.ACCESSORY)
     if accessories:
@@ -805,7 +819,9 @@ def normalize_identity(
         issues.append(IdentityIssue.CASE_LEVEL_GTIN)
     lang = normalize_language(language)
     if accessory:
-        lang = Language.NA  # accessoire : langue sans objet, clé identique chez tous les fournisseurs
+        # Accessoire : langue sans objet (clé identique chez tous les fournisseurs), SAUF langue de cartes
+        # fournie autre que FR : conservée, elle bloque la publication (règle FR uniquement).
+        lang = accessory_language(lang)
     elif lang is Language.NA:
         issues.append(IdentityIssue.LANGUAGE_NOT_APPLICABLE)
         lang = Language.UNKNOWN

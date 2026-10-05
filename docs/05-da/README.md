@@ -24,7 +24,7 @@ Tous les exemples de produits, prix et dates sont **FICTIFS** (marqués comme te
 
 ## 2. Règles non négociables pour tous les agents qui utilisent ces fichiers
 
-1. **Aucune donnée interne** dans un visuel, un email ou une page publique : uniquement titre, format, langue, état, prix public validé, statut de stock, délai, limite par commande, photo autorisée (SPEC §0.2). `verifier_da.py` bloque les termes internes dans `components/`, `social/`, `packaging/`, `logo/`.
+1. **Aucune donnée interne** dans un visuel, un email ou une page publique : uniquement titre, format, langue, état, prix public validé, statut de stock, délai, limite par foyer, photo autorisée (SPEC §0.2). `verifier_da.py` bloque les termes internes dans `components/`, `social/`, `packaging/`, `logo/`.
 2. **Prix** : celui validé par le moteur au moment de publier (BP §8). Une promo repasse par le moteur ; si le stop-loss produit ou pub bloque, le visuel n'est pas publié.
 3. **Stock** : « Stock local » seulement pour du stock vendable réel ; « Précommande » seulement avec allocation ferme (SPEC §0.3).
 4. **Photos réelles** uniquement ; jamais d'emballage généré (BP §7).
@@ -64,11 +64,13 @@ python -m pytest docs/05-da/tests -q           # tests
 
 Les HTML (`CHARTE.html`, `components/*.html`), les SVG et `tokens.css` sont **générés** : modifier la source (`tokens.json`, `tools/*.py`, `components/components.css`) puis régénérer, jamais le fichier produit. Pour changer une couleur : modifier `tokens/tokens.json`, relancer le générateur (les tableaux de contrastes de `DIRECTION_*.md` sont réécrits), puis le vérificateur. Une couleur sous le seuil WCAG fait échouer les tests.
 
-`verifier_da.py` contrôle : XML bien formé de chaque SVG (viewBox, dimensions, titre) ; logos sans texte ni police ni « Poké » ; dimensions des gabarits sociaux ; packaging en mm avec calque de découpe ; contrastes ≥ seuils (2 directions × 2 modes) ; exactitude des ratios publiés ou cités ; synchronisation des fichiers générés ; ressources HTML relatives existantes et externes limitées à Google Fonts ; aucun terme interne ni EAN dans les fichiers publics ; section finale « Validation humaine requise » dans chaque document.
+`verifier_da.py` contrôle : XML bien formé de chaque SVG (viewBox, dimensions, titre) ; logos sans texte ni police ni « Poké » ; dimensions des gabarits sociaux ; packaging en mm avec calque de découpe ; contrastes ≥ seuils (2 directions × 2 modes) ; exactitude des ratios publiés ou cités ; synchronisation des fichiers générés ; ressources HTML relatives existantes et externes limitées à Google Fonts ; aucun terme interne ni EAN dans les fichiers publics ; champs `{{…}}` des fichiers publics déclarés (registre légal, landing ou `VARIABLES_DA`) et aucune limite « par commande » ; section finale « Validation humaine requise » dans chaque document.
 
 ## 5. Champs à remplacer (placeholders)
 
-`{{NOM_BOUTIQUE}}`, `{{SITE}}`, `{{EXTENSION}}`, `{{PRIX_VALIDE}}`, `{{MENTION_TVA}}`, `{{DELAI_EXPEDITION}}`, `{{LIMITE_PAR_COMMANDE}}`, `{{DATE_SORTIE}}`, `{{CONTENU_VALIDE}}`, `{{SKU}}`, `{{EAN_SI_EXISTANT}}`, `{{EMAIL_SUPPORT}}`, `{{URL_RETOURS}}`, `{{URL_CGV}}`, `{{DELAI_SIGNALEMENT}}`, `{{RAISON_SOCIALE}}`, `{{ADRESSE}}`, `{{NUMERO_IDE}}`, `{{N_COMMANDE}}`. La mention TVA dépend du statut fiscal (décision fiduciaire) : ne rien afficher tant qu'il n'est pas tranché.
+`{{NOM_BOUTIQUE}}`, `{{SITE}}`, `{{EXTENSION}}`, `{{PRIX_VALIDE}}`, `{{MENTION_TVA}}`, `{{DELAI_EXPEDITION}}`, `{{LIMITE_PAR_CLIENT}}` (limite par référence et par foyer, CGV ch. 4.4 : jamais « par commande »), `{{DATE_SORTIE}}`, `{{CONTENU_VALIDE}}`, `{{SKU}}`, `{{EAN_SI_EXISTANT}}`, `{{EMAIL_SUPPORT}}`, `{{URL_RETOURS}}`, `{{URL_CGV}}`, `{{DELAI_SIGNALEMENT}}`, `{{RAISON_SOCIALE}}`, `{{ADRESSE}}`, `{{NUMERO_IDE}}`, `{{N_COMMANDE}}`. La mention TVA dépend du statut fiscal (décision fiduciaire) : ne rien afficher tant qu'il n'est pas tranché.
+
+Règle « une valeur, un endroit » : tout champ `{{MAJUSCULES}}` d'un fichier public est soit un champ du registre légal (`docs/04-legal/champs_a_remplir.yaml`) ou de la landing (`site/config/publication_landing.yaml`), soit une variable propre à un produit, une commande ou une collection de la liste fermée `VARIABLES_DA` de `tools/verifier_da.py` (jamais une règle : limite, délai, TVA). `verifier_da.py` refuse tout autre champ et toute limite exprimée « par commande ».
 
 ## Validation humaine requise
 

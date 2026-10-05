@@ -1,6 +1,6 @@
 Objet : Cette semaine chez {{NOM_BOUTIQUE}} : {{ $json.titre_semaine }}
 
-{{ $JSON.TITRE_SEMAINE }}
+{{ $json.titre_semaine }}
 
 {{ $json.salutation }}
 

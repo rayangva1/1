@@ -83,7 +83,7 @@ Une référence n'est achetée que si **tous** les critères sont remplis. Sinon
 |---|---|---|
 | 1 | Langue FR, extension, format et contenu confirmés **par écrit** par le fournisseur ; EAN connu | BP §6, §7 ; SPEC §2.4 |
 | 2 | Coût rendu calculé sans champ inconnu (frais, taxes, conditionnement) | BP §5 ; SPEC §0.5 |
-| 3 | Prix plancher (m = 20 %) ≤ référence marché × 1,10, **ou** validation explicite de la propriétaire (statut « À REVOIR ») | BP §1, §5 |
+| 3 | Prix plancher (m = 20 %) ≤ référence marché × 1,10, **ou** validation explicite de la propriétaire (statut « À REVOIR »). Référence marché = médiane d'au moins 3 relevés comparables de moins de 7 jours dans `GRILLE_CONCURRENCE.csv` ; chaque référence STOCK y figure (y compris accessoires et références « selon offre »), et le relevé est **fait avant l'achat**. Sans relevé, la référence n'est pas achetée sans cette validation explicite | BP §1, §5 ; `PROTOCOLE_CONCURRENCE.md` §3 |
 | 4 | Au prix public prévu : contribution ≥ 12 % du CA net **et** ≥ 8 CHF par commande | BP §5 (plancher dur = stop-loss produit) |
 | 5 | Disponibilité ou allocation confirmée par écrit, avec délai | BP §5 |
 | 6 | Enveloppe de la case et plafond de l'extension respectés | BP §1 |

@@ -63,7 +63,7 @@ La propriétaire valide le thème, le checkout et la landing (RACI L35, L39). A-
 | Déclencheur | Niveau | Destinataire | Délai |
 |---|---|---|---|
 | Mise en production d'un composant ou d'un workflow | E2 | Propriétaire, avec certificat de recette A-12 | 48 h |
-| App ou abonnement payant nécessaire | E2 | Propriétaire (au nom de l'entité) ou A-05 (dans le mandat) | 48 h |
+| App ou abonnement payant nécessaire | E2 | Propriétaire (au nom de l'entité) ou A-05 (dans le mandat) | 24 h (expiration du workflow 08 ; statu quo sûr) |
 | Écriture réelle requise alors que le niveau ne l'autorise pas | E2 | Propriétaire (activation de niveau) | 48 h |
 | API Shopify refusée, erreur de concurrence répétée, file de reprise bloquée | E1 | A-01 + A-12 (suspension du workflow) | Immédiat |
 | Secret trouvé dans le code, un export n8n ou un log | E3 | A-12 + propriétaire (rotation) | Immédiat |
@@ -73,10 +73,10 @@ La propriétaire valide le thème, le checkout et la landing (RACI L35, L39). A-
 
 | Outil | Usage | Restriction |
 |---|---|---|
-| Claude Code : Read, Grep, Glob, Write, Edit, Bash | Code, tests, exports n8n | Jamais de secret dans un fichier ; `.env` et `secrets/` ignorés par git |
-| `CONN-SHOPIFY` | Admin GraphQL. Portées minimales prévues : `write_products` (inclut la lecture), `write_inventory`, `read_orders` (60 derniers jours ; `read_all_orders` est une portée protégée) | Écriture réelle au niveau 2 et plus ; jeton `SHOPIFY_ADMIN_TOKEN` fourni par le coffre |
-| `CONN-N8N` | Workflows et passerelles | Credentials dans n8n, jamais dans les exports |
-| `CONN-API-MOTEUR` | Exploitation | — |
+| Claude Code : Read, Grep, Glob, Write, Edit, Bash | Code, tests, exports n8n | Jamais de secret dans un fichier ; `.env` et `secrets/` ignorés par git et illisibles par la flotte (règles `deny` de `.claude/settings.json`) ; le fichier d'environnement de production vit hors de l'arborescence des agents |
+| `CONN-SHOPIFY` | Admin GraphQL. Portées minimales prévues : `write_products` (inclut la lecture), `write_inventory`, `read_orders` (60 derniers jours ; `read_all_orders` est une portée protégée) | Écriture réelle au niveau 2 et plus ; jeton `POKESHOP_SHOPIFY_ADMIN_TOKEN` fourni par le coffre au conteneur de l'API, jamais à un agent |
+| `CONN-N8N` | Workflows et passerelles | Credentials dans n8n, jamais dans les exports ; **un jeton nommé par workflow** (`n8n-NN-<workflow>`, empreintes dans `POKESHOP_AGENT_TOKENS_SHA256`) : la photo stop-loss (workflow 07) et les demandes de dépense (workflow 08) ne partagent jamais le même jeton ; aucun acte réservé à la propriétaire n'est branché dans un workflow |
+| `CONN-API-MOTEUR` | Exploitation, avec le jeton nommé `agent-07-site-integrations` | Acteur déduit du jeton ; jamais de jeton de la propriétaire |
 
 Sources Shopify (index de recherche, consultées le 4.10.2026) : https://shopify.dev/docs/api/admin-rest/usage/access-scopes ; https://shopify.dev/docs/apps/build/authentication-authorization/manage-access-scopes ; BP [S8], [S9].
 

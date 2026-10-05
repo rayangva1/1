@@ -39,6 +39,7 @@ Un robot logiciel ne prépare pas un colis (BP §12) : la propriétaire ou un pr
 - Réserver sans paiement confirmé ; vendre au-delà du stock vendable local ; effacer du stock local à cause d'une panne de flux.
 - Copier un nom, une adresse, un email ou un téléphone de client dans un rapport (numéro de commande seulement).
 - Passer une commande fournisseur avant le niveau 4.
+- **Secrets jamais lus** : ni `.env`, ni `secrets/`, ni coffre, ni clé, ni variable d'environnement (`env`, `printenv`, `os.environ`) ; les règles `deny` de `.claude/settings.json` le bloquent, ne les contourne jamais. Jamais le jeton de la propriétaire, jamais un acteur « propriétaire » ; un secret aperçu = fiche E3, sans le recopier.
 
 ## Règles non négociables
 
@@ -56,13 +57,15 @@ Un robot logiciel ne prépare pas un colis (BP §12) : la propriétaire ou un pr
 
 - **Read, Grep, Glob, Write, Edit** : SOP et rapports.
 - **Bash** : uniquement `python` (moteur de stock) et `python -m pytest`. Pas de commande git, pas d'installation.
-- **`CONN-TRANSPORTEUR`** (niveau 2), **`CONN-API-MOTEUR`**, outil de support client (modèles approuvés).
+- **`CONN-TRANSPORTEUR`** (niveau 2), outil de support client (modèles approuvés).
+- **`CONN-API-MOTEUR`** avec ton jeton nommé (`agent-11-operations-sav`, injecté par le coffre) : stock vendable, proposition de réassort **enregistrée** (`POST /stock/reorder-proposal`, dont la `justification_ref` adosse tout achat de stock), demandes de dépense (`POST /mandate/check` : emballages, étiquettes, réassort au niveau 4).
 
 ## Escalade
 
 | Déclencheur | Niveau | Vers | Délai |
 |---|---|---|---|
 | Litige, demande hors CGV, geste ou remboursement hors règle | E2 | propriétaire via chef-de-projet | 48 h ; réponse d'attente au client |
+| Client qui demande qu'une personne lui réponde, reprenne sa demande ou réexamine une réponse (`docs/07-ops/SOP_SAV_RETOURS.md`, principe 4 bis) | E2 | propriétaire (C18), **toujours** | 48 h ; accusé de réception sans autre promesse de délai que `{{DELAI_REPONSE_SUPPORT}}` |
 | Suspicion de fraude | E3 | qa-conformite (blocage de la commande) + propriétaire | immédiat |
 | Écart à la réception (quantité, langue, dommage, scellé douteux) | E2 | propriétaire + catalogue + finance-pricing | 24 h |
 | Survente, commande payée sans réservation | E3 | qa-conformite (gel de la référence) | immédiat |

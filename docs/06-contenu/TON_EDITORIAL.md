@@ -30,12 +30,15 @@ Voix : on vouvoie, on parle au nom de la boutique (« nous »), phrases courtes 
 | Jargon non expliqué : « ETB », « display », « pull », « hit », « rip », « godpack » | Exclut les parents (public BP §1) | « Coffret Dresseur d'élite (ETB) », « boîte de boosters (display) » |
 | Toute mention de coût, marge, fournisseur, remise obtenue, quantité allouée | Données internes (SPEC §0.2) | — (jamais) |
 | « Dépêchez-vous de vous inscrire » | Pression | « Inscrivez-vous si vous voulez être prévenu » |
+| « Une personne vous répond », « un humain lit chaque message » | Faux : les réponses courantes partent sans relecture humaine (LCD art. 3 al. 1 let. b) | « Nous vous répondons ; une personne reprend votre demande si vous le souhaitez » |
+| « Le contenu de chaque boîte est vérifié » | Faux : les produits scellés ne sont jamais ouverts | « Langue, scellé et contenu annoncé sur l'emballage vérifiés à réception, sans ouvrir » |
+| « Limite par commande » | Les CGV fixent une limite par référence et par foyer, toutes commandes confondues | « Limite : {{LIMITE_PAR_CLIENT}} » |
 
 ## 3. Exemples avant / après
 
 | Contexte | Avant (à ne pas faire) | Après |
 |---|---|---|
-| Publication nouveauté | « [émoji flamme] LES DERNIERS DISPLAYS SONT LÀ ! Plus que quelques pièces, foncez avant qu'il soit trop tard !!! » | « Display de l'extension {{EXTENSION}}, en français : en stock local à Genève, expédié sous {{DELAI_EXPEDITION}}. Limite : {{LIMITE_PAR_COMMANDE}} par commande. » |
+| Publication nouveauté | « [émoji flamme] LES DERNIERS DISPLAYS SONT LÀ ! Plus que quelques pièces, foncez avant qu'il soit trop tard !!! » | « Display de l'extension {{EXTENSION}}, en français : en stock local à Genève, expédié sous {{DELAI_EXPEDITION}}. Limite : {{LIMITE_PAR_CLIENT}}. » |
 | Précommande | « Précommandez maintenant, livraison garantie le jour J ! » | « Précommande ouverte : quantité confirmée par écrit. Sortie annoncée le {{DATE_SORTIE}} ; nous expédions dès réception. Si la date change, nous vous écrivons. » |
 | Contenu d'un booster | « Énormes chances de choper une carte rare [émoji diamant] » | « Chaque booster contient des cartes tirées au hasard par le fabricant : personne ne peut garantir une carte précise. » |
 | Valeur | « Un display scellé, c'est le meilleur placement de 2026 » | « Nous vendons des produits pour collectionner et jouer, pas des placements. » |
@@ -59,10 +62,11 @@ Voix : on vouvoie, on parle au nom de la boutique (« nous »), phrases courtes 
 ## 5. Gabarits de phrases réutilisables
 
 - Statut : « En stock local à Genève · expédié sous {{DELAI_EXPEDITION}} » / « Précommande : quantité confirmée, sortie annoncée le {{DATE_SORTIE}} » / « Rupture : alerte de retour en stock disponible ».
-- Limite : « Limite : {{LIMITE_PAR_COMMANDE}} par commande, pour que chacun puisse en profiter. »
+- Limite : « Limite : {{LIMITE_PAR_CLIENT}}, toutes commandes confondues, pour que chacun puisse en profiter. » (la valeur validée dit déjà « par référence et par foyer » : CGV ch. 4.4 ; jamais « par commande »)
 - Contenu : « Contenu : {{CONTENU_VALIDE}}. Le contenu des boosters est aléatoire. »
 - Livraison : « Livraison en Suisse uniquement ; frais affichés avant le paiement. »
-- Clôture d'un guide : « Une question ? Répondez à ce message ou écrivez-nous : une personne vous répond. »
+- Clôture d'un guide : « Une question ? Répondez à ce message ou écrivez-nous : nous vous répondons. »
+- Service client : « Les réponses courantes sont préparées et envoyées par des outils automatisés, à partir de modèles que nous validons ; une personne reprend votre demande si vous le souhaitez. » Ne jamais affirmer qu'un humain lit et traite chaque message : c'est faux dans notre modèle d'opération (SOP SAV, principe 4 bis).
 
 ## Validation humaine requise
 

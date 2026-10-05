@@ -62,6 +62,8 @@ Version en vigueur depuis le ⟦À REMPLIR : DATE_VERSION⟧.
 
 4.6 La création d'un compte client est facultative.
 
+4.7 **Annulation de votre part avant préparation.** Tant que votre commande d'articles en stock local n'est pas préparée, vous pouvez l'annuler gratuitement en nous écrivant à ⟦À REMPLIR : EMAIL_SUPPORT⟧ avec votre numéro de commande ; nous vous confirmons l'annulation et remboursons intégralement les montants payés dans un délai de 10 jours ⟦à valider⟧. Une fois la commande préparée ou expédiée, la politique de retour volontaire (ch. 10) s'applique. Les précommandes suivent le ch. 7.
+
 ### 5. Paiement
 
 5.1 Moyens de paiement acceptés : carte de paiement et TWINT ⟦à valider⟧. Les paiements sont traités par notre prestataire de paiement (⟦À REMPLIR : PSP_NOM⟧). Nous n'avons pas accès aux données complètes de votre carte et ne les conservons pas.

@@ -377,14 +377,25 @@ class BaselinePrice(FrozenModel):
     unit_price: Decimal = Field(gt=0)
 
 
+def _first_seen(snapshot: SnapshotMeta) -> datetime:
+    """Première preuve de l'existence du contenu : l'heure de sa capture."""
+    return snapshot.fetched_at
+
+
 class ImportBaseline(FrozenModel):
-    """Référence de comparaison : dernier import accepté (prix, nombre de lignes, sha256)."""
+    """Référence de comparaison : dernier import accepté (prix, nombre de lignes, sha256).
+
+    Persistée par fournisseur par le service (:class:`pokeshop.sync.ImportBaselineStore`) : l'API et la
+    synchronisation l'appliquent à chaque import (SPEC §2.5).
+    """
 
     supplier_id: str
     rows_read: int = Field(ge=0)
     checksum_sha256: str
     taken_at: datetime
     prices: dict[str, BaselinePrice] = Field(default_factory=dict)
+    content_first_seen_at: datetime | None = None
+    """Première capture de ce contenu (sha256) : un fichier non daté ré-importé à l'identique garde cet âge."""
 
     @staticmethod
     def _prices(offers: tuple[SupplierOffer, ...]) -> dict[str, BaselinePrice]:
@@ -411,6 +422,7 @@ class ImportBaseline(FrozenModel):
             checksum_sha256=result.snapshot.checksum_sha256,
             taken_at=result.snapshot.fetched_at,
             prices=cls._prices(result.offers),
+            content_first_seen_at=_first_seen(result.snapshot),
         )
 
     def updated_with(self, result: ImportResult) -> ImportBaseline:
@@ -421,12 +433,15 @@ class ImportBaseline(FrozenModel):
             return self
         prices = dict(self.prices)
         prices.update(self._prices(result.offers))
+        same = result.snapshot.checksum_sha256 == self.checksum_sha256
+        first_seen = (self.content_first_seen_at or self.taken_at) if same else _first_seen(result.snapshot)
         return ImportBaseline(
             supplier_id=self.supplier_id,
             rows_read=result.rows_read,
             checksum_sha256=result.snapshot.checksum_sha256,
             taken_at=result.snapshot.fetched_at,
             prices=prices,
+            content_first_seen_at=first_seen,
         )
 
 

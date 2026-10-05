@@ -25,7 +25,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta
-from decimal import ROUND_FLOOR, ROUND_HALF_EVEN, ROUND_HALF_UP, Context, Decimal, localcontext
+from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_EVEN, ROUND_HALF_UP, Context, Decimal, localcontext
 from typing import Literal, ParamSpec, TypeVar
 
 from .errors import IncompleteDataError, PricingError
@@ -71,6 +71,9 @@ __all__ = [
     "contribution",
     "is_price_anomaly",
     "floor_violations",
+    "price_floor_violations",
+    "small_product_min_order_required",
+    "small_product_rule_active",
     "decide_price",
     "offer_unknown_fields",
     "landed_input_from_offer",
@@ -480,6 +483,10 @@ def floor_violations(
     Utilisé par :func:`decide_price` (prix candidat/promo), :func:`basket_contribution`
     (panier) et le stop-loss « produit » (gouvernance). ``small_product=True`` : le plancher
     en CHF n'est pas contrôlé à l'unité (il l'est sur le panier). Liste vide = conforme.
+
+    ``contribution_pct`` doit être le **ratio exact** (contribution / CA net, non arrondi) : le
+    moteur passe toujours ce ratio (:func:`_floor_check`), un pourcentage arrondi à 0,01 % ferait
+    passer 11,9965 % pour 12,00 %.
     """
     chf = as_decimal(contribution_chf, "contribution_chf")
     pct = as_decimal(contribution_pct, "contribution_pct")
@@ -491,14 +498,84 @@ def floor_violations(
     return out
 
 
-def _floor_violations(chf: Decimal, pct: Decimal, params: PricingParams, small: bool) -> list[Reason]:
-    return floor_violations(chf, pct, params, small_product=small)
+def _exact_ratio(chf: Decimal, net: Decimal) -> Decimal:
+    """Contribution / CA net **sans arrondi** (−1 si le CA net est nul ou négatif)."""
+    if net <= 0:
+        return Decimal("-1")
+    with localcontext(_CTX):
+        return chf / net
+
+
+def price_floor_violations(
+    price: Decimal, cost: Decimal, params: PricingParams, *, small_product: bool = False
+) -> list[Reason]:
+    """Planchers durs d'une vente unitaire à ``price`` (montants affichés, ratio **exact**).
+
+    Sert au prix candidat/promo (:func:`decide_price`) et au prix approuvé par une personne
+    (:func:`pokeshop.publish.build_publication`) : aucune approbation ne passe sous 12 % / 8 CHF
+    sans exception écrite C18.
+    """
+    b = contribution_breakdown(price, cost, params, per_order_costs=not small_product)
+    ratio = _exact_ratio(b.contribution_chf, b.net_revenue)
+    return floor_violations(b.contribution_chf, ratio, params, small_product=small_product)
+
+
+def _floor_check(price: Decimal, cost: Decimal, params: PricingParams, small: bool) -> list[Reason]:
+    return price_floor_violations(price, cost, params, small_product=small)
+
+
+@_deterministic
+def small_product_min_order_required(params: PricingParams) -> Decimal | None:
+    """Minimum de commande (TTC, marchandises après remises) d'un panier de **petits produits seuls**.
+
+    Chaque petit produit est prixé à la marge cible ``m`` hors frais par commande ``K = b + L + R + A`` ;
+    le panier doit couvrir ``K`` et les frais de paiement sur le port facturé ``S·r``, **et** respecter
+    les planchers durs ``F`` (8 CHF) et ``h`` (12 % du CA net, port HT compris) :
+    ``m·N − K − S·r ≥ F`` et ``m·N − K − S·r ≥ h·(N + S/(1 + t))`` (N = CA net des marchandises), soit
+    ``N ≥ max((F + K + S·r)/m, (K + S·r + h·S/(1 + t))/(m − h))`` puis ×(1 + t), **+ 1 CHF** de marge
+    pour les arrondis au centime, arrondi au franc supérieur. ``S`` =
+    ``small_product_max_shipping_ttc`` (0 si absent). Hypothèses : port facturé = port réel ;
+    une promotion repasse par :func:`basket_contribution`. None si ``m ≤ h`` (aucun minimum ne suffit).
+    """
+    m, h, t, r = params.target_margin, params.hard_floor_margin, params.vat_rate_sales, params.payment_pct
+    if m <= h:
+        return None
+    k = params.per_order_costs
+    ship = params.small_product_max_shipping_ttc or ZERO
+    fees = k + ship * r
+    net = max((params.hard_floor_chf_per_order + fees) / m, (fees + h * ship / (ONE + t)) / (m - h))
+    return (net * (ONE + t) + ONE).quantize(ONE, rounding=ROUND_CEILING).quantize(CENT)
+
+
+def small_product_rule_active(params: PricingParams) -> bool:
+    """Règle petits produits applicable : seuil, port maximal facturé et minimum de commande **suffisant**.
+
+    Fermé par défaut : sans ``small_product_min_order_ttc`` (aucun blocage de panier imposé par la
+    boutique) ni ``small_product_max_shipping_ttc``, ou avec un minimum inférieur à
+    :func:`small_product_min_order_required`, chaque article porte les frais par commande et respecte
+    seul le plancher de 8 CHF.
+    """
+    if (
+        params.small_product_max_cost is None
+        or params.small_product_min_order_ttc is None
+        or params.small_product_max_shipping_ttc is None
+    ):
+        return False
+    required = small_product_min_order_required(params)
+    return required is not None and params.small_product_min_order_ttc >= required
 
 
 def _is_small(cost: Decimal, params: PricingParams, small_product: bool | None) -> bool:
-    if small_product is not None:
-        return small_product
-    return params.small_product_max_cost is not None and cost <= params.small_product_max_cost
+    """Petit produit seulement si la règle est active et le coût sous le seuil.
+
+    ``small_product`` ne peut que **restreindre** (False force le prix avec frais par commande) :
+    True ne fait jamais passer pour « petit » un article au-dessus du seuil ni n'active une règle
+    inactive (valeur décisive jamais déclarée par l'appelant).
+    """
+    if small_product is False or not small_product_rule_active(params):
+        return False
+    assert params.small_product_max_cost is not None
+    return cost <= params.small_product_max_cost
 
 
 @_deterministic
@@ -518,12 +595,13 @@ def decide_price(
 
     1. C ≤ 0 -> BLOCKED ; C ≥ ×10 / ≤ ÷10 de ``previous_cost`` -> BLOCKED (anomalie).
     2. Prix rentable = max(plancher cible m, plancher 8 CHF par commande unitaire) ;
-       petit produit (``small_product`` ou C ≤ ``small_product_max_cost``) : frais par
-       commande exclus et plancher CHF reporté au panier.
+       petit produit (C ≤ ``small_product_max_cost`` **et** règle active, voir
+       :func:`small_product_rule_active`) : frais par commande exclus, plancher CHF reporté au
+       panier (minimum de commande imposé par la boutique). Règle inactive : frais inclus.
     3. Arrondi retail vers le haut puis **revérification** (exacte et affichée) ; si échec,
        point de grille suivant.
-    4. ``candidate_price`` (prix manuel/promo) : < plancher dur 12 % ou < 8 CHF -> BLOCKED ;
-       < cible -> REVIEW.
+    4. ``candidate_price`` (prix manuel/promo) : < plancher dur 12 % (ratio exact) ou < 8 CHF
+       -> BLOCKED ; < cible -> REVIEW.
     5. Prix rentable > ``market_ref`` × (1 + 10 %) -> REVIEW (le prix n'est pas baissé).
     6. Variation vs ``current_public`` (prix public d'il y a 24 h) > 5 % -> REVIEW ; ×10 -> BLOCKED.
     7. ``unknown_fields`` non vide -> DRAFT (aucun prix public nouveau).
@@ -588,6 +666,15 @@ def decide_price(
     small = _is_small(cost, params, small_product)
     if small:
         v.add(Reason.SMALL_PRODUCT_ADDON)
+    elif (
+        small_product is not False
+        and params.small_product_max_cost is not None
+        and cost <= params.small_product_max_cost
+    ):
+        v.notes.append(
+            "Règle petits produits inactive (aucun minimum de commande suffisant imposé par la boutique) : "
+            "frais par commande inclus dans le prix unitaire."
+        )
     try:
         floor_exact = floor_price_exact(cost, params, per_order_costs=not small)
         profitable = floor_exact
@@ -611,7 +698,7 @@ def decide_price(
     evaluated = candidate if candidate is not None else recommended
     chf, pct = contribution(evaluated, cost, params, per_order_costs=not small)
     if candidate is not None:
-        violations = _floor_violations(chf, pct, params, small)
+        violations = _floor_check(evaluated, cost, params, small)
         for reason in violations:
             v.add(
                 reason, DecisionStatus.BLOCKED, note=f"Prix candidat {q2(candidate)} : contribution {chf} CHF ({pct})."
@@ -644,8 +731,7 @@ def decide_price(
                         f" > plafond {params.max_daily_price_change}."
                     ),
                 )
-            cur_chf, cur_pct = contribution(current, cost, params, per_order_costs=not small)
-            if _floor_violations(cur_chf, cur_pct, params, small):
+            if _floor_check(current, cost, params, small):
                 v.add(Reason.CURRENT_PRICE_BELOW_HARD_FLOOR, DecisionStatus.REVIEW)
 
     return PriceDecision(
@@ -766,8 +852,8 @@ def evaluate_offer(
     valent 0 par défaut ; sinon ils doivent être fournis (TVA import non requise en
     EFFECTIVE car récupérable). Transport amont : toujours requis (0 explicite si franco).
     Langue différente de ``expected_language`` -> BLOCKED ; prix 0 -> BLOCKED ; champ
-    inconnu -> DRAFT (le coût partiel est alors indicatif) ; offre > ``max_age`` ->
-    ``restock_eligible=False``.
+    inconnu -> DRAFT (le coût partiel est alors indicatif) ; offre > ``max_age`` ou source non datée
+    (``source_ts_assumed``) -> ``restock_eligible=False``.
     """
     unknown = offer_unknown_fields(offer)
     domestic = offer.ship_from_country == "CH"
@@ -786,6 +872,8 @@ def evaluate_offer(
         unknown.append("fx_rate")
     stale = is_stale(offer.source_ts, now, max_age)
     extra = _Verdict()
+    if offer.source_ts_assumed:
+        extra.notes.append("Source non datée par le fournisseur : inéligible au réassort (horodatage supposé).")
     expected = expected_language.strip().upper()
     if not expected:
         raise PricingError("expected_language vide")
@@ -853,7 +941,7 @@ def evaluate_offer(
             reasons=tuple(v.reasons),
             rules_version=params.rules_version,
             inputs_hash=inputs_hash,
-            restock_eligible=not stale,
+            restock_eligible=not stale and not offer.source_ts_assumed,
             notes=tuple(v.notes),
         )
     decision = decide_price(
@@ -876,6 +964,7 @@ def evaluate_offer(
         reasons=reasons,
         notes=decision.notes + tuple(extra.notes),
         inputs_hash=inputs_hash,
+        restock_eligible=decision.restock_eligible and not offer.source_ts_assumed,
     )
 
 
@@ -898,9 +987,11 @@ def basket_contribution(
       appliqué aux produits, plafonné à leur montant ; même moteur pour toutes les promos.
     * ``shipping_cost_actual`` : coût logistique réel de la commande (préparation + port, HT si
       EFFECTIVE). Absent : hypothèse BP §10 « port facturé = port réel » => L + port facturé HT,
-      motif SHIPPING_COST_ASSUMED. Pour un port gratuit, fournir le coût réel.
-    * Statut : BLOCKED si contribution < 12 % du CA net, < 8 CHF, ou CA net ≤ 0 ; sinon OK
-      (motif informatif BELOW_TARGET_MARGIN sous 20 %).
+      motif SHIPPING_COST_ASSUMED. **Port offert** (``shipping_charged`` = 0) sans coût réel :
+      l'hypothèse supposerait un port réel nul => motif SHIPPING_COST_UNKNOWN, statut REVIEW
+      (promotion non acceptée automatiquement).
+    * Statut : BLOCKED si contribution < 12 % du CA net (ratio exact), < 8 CHF, ou CA net ≤ 0 ;
+      REVIEW si port offert sans coût réel ; sinon OK (motif informatif BELOW_TARGET_MARGIN sous 20 %).
     """
     if not lines:
         raise PricingError("panier vide")
@@ -938,6 +1029,12 @@ def basket_contribution(
     if actual is None:
         logistics = params.logistics_cost + ship_net
         v.add(Reason.SHIPPING_COST_ASSUMED)
+        if ship == 0:
+            v.add(
+                Reason.SHIPPING_COST_UNKNOWN,
+                DecisionStatus.REVIEW,
+                note="Port offert : fournir le coût logistique réel (shipping_cost_actual).",
+            )
     else:
         logistics = actual
     net_q = q2(net)
@@ -952,10 +1049,10 @@ def basket_contribution(
     if net_q <= 0:
         v.add(Reason.NON_POSITIVE_NET_REVENUE, DecisionStatus.BLOCKED)
     else:
-        assert pct is not None
-        for reason in _floor_violations(contrib, pct, params, small=False):
+        ratio = _exact_ratio(contrib, net_q)
+        for reason in floor_violations(contrib, ratio, params, small_product=False):
             v.add(reason, DecisionStatus.BLOCKED)
-        if pct >= params.hard_floor_margin and pct < params.target_margin:
+        if ratio >= params.hard_floor_margin and ratio < params.target_margin:
             v.add(Reason.BELOW_TARGET_MARGIN)
 
     disc_lines = allocate_amount(disc, line_goods)

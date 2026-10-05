@@ -251,6 +251,13 @@ class TestPagesEtDocs:
     def test_docs_validation_humaine(self) -> None:
         assert verifier_da.verifier_docs() == []
 
+    def test_champs_declares_et_limite_par_foyer(self) -> None:
+        """Revue CON-07 : aucun champ hors registre (ex. LIMITE_PAR_COMMANDE) ni limite « par commande »."""
+        assert verifier_da.verifier_champs() == []
+        for da in ("a", "b"):
+            story = (DA / "social" / da / "story-9x16-nouveau-stock.svg").read_text(encoding="utf-8")
+            assert "{{LIMITE_PAR_CLIENT}}" in story and "par commande" not in story
+
     def test_contrastes_publies_exacts(self) -> None:
         assert verifier_da.verifier_docs_contrastes(DA, verifier_da.charger_tokens()) == []
 
@@ -302,6 +309,17 @@ class TestVerificateurNegatif:
         erreurs = verifier_da.verifier_html(tmp_path)
         assert any("non autorisée" in e for e in erreurs)
         assert any("introuvable" in e for e in erreurs)
+
+    def test_champ_hors_registre_et_limite_par_commande_detectes(self, tmp_path: Path) -> None:
+        (tmp_path / "social" / "a").mkdir(parents=True)
+        (tmp_path / "social" / "a" / "x.svg").write_text(
+            "<svg><text>Limite : {{LIMITE_PAR_COMMANDE}} par commande · {{MENTION_TVA}} · {{EXTENSION}}</text></svg>",
+            encoding="utf-8",
+        )
+        erreurs = verifier_da.verifier_champs(tmp_path)
+        assert any("{{LIMITE_PAR_COMMANDE}}" in e for e in erreurs)
+        assert any("par commande" in e and "foyer" in e for e in erreurs)
+        assert not any("MENTION_TVA" in e or "EXTENSION" in e for e in erreurs)
 
     def test_doc_sans_validation(self, tmp_path: Path) -> None:
         (tmp_path / "x.md").write_text("# Titre\n\n## Validation humaine requise\n\n## Annexe\n", encoding="utf-8")

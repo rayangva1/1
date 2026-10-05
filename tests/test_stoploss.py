@@ -521,8 +521,16 @@ def test_capital_is_contributions_minus_withdrawals() -> None:
     assert not of_level(run(capital_movements=moves, net_worth=worth("7200.01")), StopLossLevel.GLOBAL)
 
 
-def test_no_capital_engaged_no_global_trigger() -> None:
-    assert of_level(run(capital_movements=(), net_worth=worth("-50")), StopLossLevel.GLOBAL) == []
+def test_no_capital_engaged_is_not_evaluable_fail_closed() -> None:
+    """MOT-12 / SEC-06 : une photo sans apport (ou retraits ≥ apports) ne désactive plus le gel global."""
+    with pytest.raises(StopLossError, match="aucun apport"):
+        run(capital_movements=(), net_worth=worth("-50"))
+    with pytest.raises(StopLossError, match="aucun apport"):
+        run(capital_movements=(), net_worth=worth("100"))
+    withdrawn = (*capital("8000"), CapitalMovement(movement_id="FICTIF_RETRAIT", at=NOW - timedelta(days=1),
+                                                   kind="WITHDRAWAL", amount=D("8000")))  # fmt: skip
+    with pytest.raises(StopLossError, match="≤ 0"):
+        run(capital_movements=withdrawn, net_worth=worth("0"), cash_available_chf=D("1600"))
 
 
 def test_effective_capital_after_rebase() -> None:
@@ -582,13 +590,14 @@ def test_owner_hash_read_from_environment(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv(OWNER_TOKEN_SHA256_ENV_VAR, OWNER_HASH.upper())
     eng = StopLossEngine(CONFIG)
     eng.freeze("A-12", "test", NOW)
-    eng.rearm(OWNER_TOKEN, "test env", now=NOW, state=state())
+    eng.rearm(OWNER_TOKEN, "test env", now=NOW, state=state(), attested_reference_chf=D("8000"))
     assert not eng.frozen
 
 
 def test_rearm_by_owner_is_logged_and_rebases_capital() -> None:
     eng = frozen_engine()
-    entry = eng.rearm(OWNER_TOKEN, "plan d'ajustement validé", now=NOW, state=state(net_worth=worth("6000")))
+    entry = eng.rearm(OWNER_TOKEN, "plan d'ajustement validé", now=NOW, state=state(net_worth=worth("6000")),
+                      attested_reference_chf=D("6000"))
     assert entry.event == "REARM" and "plan d'ajustement validé" in entry.detail and "6 000,00 CHF" in entry.detail
     assert not eng.frozen and eng.latch.baseline is not None
     assert eng.latch.baseline.net_value_chf == D("6000") and eng.latch.baseline.capital_total_chf == D("8000")
@@ -637,7 +646,7 @@ def test_manual_freeze_by_agent_needs_owner_to_rearm() -> None:
     assert [e.event for e in eng.journal].count("MANUAL_FREEZE") == 2
     with pytest.raises(StopLossError):
         eng.freeze("", "x", NOW)
-    eng.rearm(OWNER_TOKEN, "fausse alerte vérifiée", now=NOW, state=state())
+    eng.rearm(OWNER_TOKEN, "fausse alerte vérifiée", now=NOW, state=state(), attested_reference_chf=D("8000"))
     assert not eng.frozen
 
 
@@ -898,7 +907,7 @@ def test_stop_loss_doc_examples_are_engine_results() -> None:
     assert "Valeur nette = 4 000 + 1 960 + 250 − 270 = 5 940 ; perte = 2 060" in text
     eng = engine()
     eng.evaluate(state(net_worth=snap), NOW)
-    eng.rearm(OWNER_TOKEN, "exemple du document", now=NOW, state=state(net_worth=snap))
+    eng.rearm(OWNER_TOKEN, "exemple du document", now=NOW, state=state(net_worth=snap), attested_reference_chf=D("5940"))
     assert not of_level(eng.evaluate(state(net_worth=worth("4752.01")), NOW), StopLossLevel.GLOBAL)
     (again,) = of_level(eng.evaluate(state(net_worth=worth("4752")), NOW), StopLossLevel.GLOBAL)
     assert again.threshold == D("1188.00")

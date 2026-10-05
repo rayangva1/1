@@ -16,8 +16,10 @@ Dossier de la flotte de 12 agents du BP §11, adaptée au modèle d'opération d
 | `docs/08-agents/01_chef-de-projet.md` … `docs/08-agents/12_qa-conformite.md` | 12 briefs de mission (9 rubriques du BP + outils, routines, modèle de rapport) |
 | `docs/08-agents/modeles/` | Gabarits : rapport, fiche d'exception, plan de dispatch, demande d'engagement, modèles d'emails, registre du mandat |
 | `docs/08-agents/rapports/`, `docs/08-agents/exceptions/` | Sorties des agents en exploitation (vides au 4.10.2026) |
-| `docs/08-agents/outils/verifier_agents.py` | Vérificateur (frontmatter YAML, outils minimaux, sections, RACI, chemins, secrets) |
+| `docs/08-agents/outils/verifier_agents.py` | Vérificateur (frontmatter YAML, outils minimaux, sections, RACI, chemins, secrets, permissions, consignes périmées) |
+| `docs/08-agents/outils/controle_generateurs.py` | Contrôle en lecture seule des classeurs générés (générateurs exécutés en dossier temporaire, comparaison au dépôt) |
 | `.claude/agents/` | Les 12 agents exécutables par Claude Code |
+| `.claude/settings.json` | Permissions du projet : **uniquement des règles `deny`** qui rendent les secrets illisibles par la flotte (`.env`, `secrets/`, coffre local, environnement des processus) |
 
 ## Les 12 agents
 
@@ -36,16 +38,19 @@ Dossier de la flotte de 12 agents du BP §11, adaptée au modèle d'opération d
 | 11 | `operations-sav` | `docs/08-agents/11_operations-sav.md` | Read, Grep, Glob, Write, Edit, Bash |
 | 12 | `qa-conformite` | `docs/08-agents/12_qa-conformite.md` | Read, Grep, Glob, Bash |
 
-Choix de moindre privilège : seul le chef de projet délègue ; sourcing, SEO et communication n'ont pas de Bash ; le QA n'a ni Write ni Edit (il ne peut pas « réparer » un test pour le faire passer). Aucun connecteur externe n'est branché : ils s'ajoutent un par un après recette (`docs/08-agents/RUNBOOK.md` §8).
+Choix de moindre privilège : seul le chef de projet délègue ; sourcing, SEO et communication n'ont pas de Bash ; le QA n'a ni Write ni Edit. **Limite honnête** : Bash peut techniquement écrire un fichier ; pour le QA (et pour la consigne « Bash : uniquement python » des autres agents), l'interdiction repose sur la consigne de l'agent, contrôlée par le vérificateur (`check_qa_read_only` : générateurs seulement via `docs/08-agents/outils/controle_generateurs.py`), et sur la relecture des rapports. Les permissions du projet (`.claude/settings.json`) ne contiennent que des règles `deny` sur les secrets : aucune règle `allow` n'élargit ce que la flotte peut faire. Chaque agent qui appelle l'API du moteur a **son propre jeton nommé** (acteur déduit du jeton) et ne détient jamais le jeton de la propriétaire (`docs/08-agents/BRIEF_COMMUN.md` §10). Aucun connecteur externe n'est branché : ils s'ajoutent un par un après recette (`docs/08-agents/RUNBOOK.md` §8).
 
 ## Vérifier
 
 ```bash
 python docs/08-agents/outils/verifier_agents.py      # contrôles de cohérence (code de sortie 1 si erreur)
-python -m pytest -q docs/08-agents/outils            # tests du vérificateur
+python docs/08-agents/outils/controle_generateurs.py # classeurs du dépôt = régénération en dossier temporaire
+python -m pytest -q docs/08-agents/outils            # tests du vérificateur et de l'outil de contrôle
 ```
 
 ## Validation humaine requise
 
 - [ ] Relire le brief commun, la matrice d'autonomie et le RACI, puis les 12 agents exécutables, avant la première utilisation.
-- [ ] Signer le mandat (`docs/00-pilotage/DELEGATION_AUTONOMIE.md`) : sans lui, la flotte reste en préparation, à 0 CHF.
+- [ ] Signer le mandat (`docs/00-pilotage/DELEGATION_AUTONOMIE.md`) **et reporter son empreinte au coffre** : sans elle, la flotte reste en préparation, à 0 CHF.
+- [ ] Générer un jeton nommé par agent et par workflow (`docs/00-pilotage/INTERVENTIONS_HUMAINES.md`, B22) et garder le jeton de la propriétaire hors de portée de la flotte (B21).
+- [ ] Garder `.claude/settings.json` en règles `deny` seulement ; ne jamais y ajouter de règle `allow` (le vérificateur la refuse).

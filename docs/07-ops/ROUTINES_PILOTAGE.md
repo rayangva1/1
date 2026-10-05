@@ -105,7 +105,7 @@ DIGEST {{NOM_BOUTIQUE}} — jj.mm.aaaa
 | Dépenses outils | Abonnements réels contre l'enveloppe de 180 CHF par mois (BP §3) | 01 | Résilier un outil inutile |
 | Inventaire physique | Comptage complet, écarts expliqués (A08, BL-167) | Propriétaire, 11 | — |
 | Niveau d'autonomie | Incidents du mois ; proposition de passage au niveau supérieur ou maintien | 01, 12 | Activer ou non |
-| Données personnelles | Purges selon les durées de conservation (`docs/04-legal/CONFIDENTIALITE.md`) ; liste des demandes LPD du mois | 12 | — |
+| Données personnelles | Purges selon les durées de conservation (`docs/04-legal/CONFIDENTIALITE.md` ; avant l'ouverture, `docs/04-legal/CONFIDENTIALITE_LANDING.md`), y compris les paniers non finalisés (`DUREE_CONSERVATION_PANIER`) ; liste des demandes LPD du mois | 12 | — |
 | Sauvegarde | Test de restauration (BP §6), au moins une fois par trimestre | 07, 12 | — |
 
 ## 6. Dictionnaire des indicateurs (spécification du tableau de bord)

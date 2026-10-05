@@ -11,6 +11,10 @@ Contrôles :
 7. HTML : ressources relatives existantes ; ressources externes limitées à Google Fonts.
 8. Fichiers publics : aucun terme de donnée interne (coût, marge, fournisseur…), aucun EAN.
 9. Chaque document .md se termine par « Validation humaine requise ».
+10. Champs ``{{MAJUSCULES}}`` des fichiers publics : déclarés dans le registre légal
+    (docs/04-legal/champs_a_remplir.yaml), dans les champs de la landing (site/config/publication_landing.yaml)
+    ou dans la liste fermée VARIABLES_DA (valeurs propres à un produit ou à une commande, jamais une règle) ;
+    une limite « par commande » (les CGV fixent une limite par foyer) est refusée.
 
 Usage : python docs/05-da/tools/verifier_da.py   (code de sortie 1 si erreur)
 """
@@ -37,6 +41,25 @@ TERMES_INTERNES = re.compile(
     re.IGNORECASE,
 )
 EAN_RE = re.compile(r"(?<!\d)\d{13}(?!\d)")
+REPO = RACINE.parents[1]
+REGISTRES_CHAMPS = (
+    REPO / "docs" / "04-legal" / "champs_a_remplir.yaml",
+    REPO / "site" / "config" / "publication_landing.yaml",
+)
+CHAMP_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]*)\}\}")
+#: Variables des gabarits DA qui ne sont pas des champs du registre : valeurs d'un produit (catalogue validé),
+#: d'une commande (Shopify), d'une collection ou paramètre du thème. Une règle (limite, délai, TVA…) n'y entre
+#: jamais : elle vient du registre légal, une valeur à un seul endroit.
+VARIABLES_DA = frozenset({
+    "CHAMPS",  # mention générique dans les notes des gabarits
+    "EXTENSION", "PRIX_VALIDE", "DATE_SORTIE", "DATE_SORTIE_CONFIRMEE", "CONTENU_VALIDE", "SKU", "EAN_SI_EXISTANT",
+    "N_REFERENCES", "N_JOURS_NOUVEAUTE",
+    "N_COMMANDE", "NUMERO_COMMANDE", "DATE_COMMANDE", "PRENOM", "ADRESSE_LIVRAISON", "MOYEN_PAIEMENT", "TOTAL_PAYE",
+    "URL_SUIVI_COMMANDE", "URL_LOGO_PNG",
+})
+LIMITE_PAR_COMMANDE_RE = re.compile(
+    r"(?:\blimite\b[^.\n<]{0,40}?|\bmax(?:imum\b|\.|\b))[\s\u00a0\u202f]*par[\s\u00a0\u202f]+commande\b", re.IGNORECASE
+)
 DIMENSIONS_SOCIAL = {"1x1": (1080, 1080), "4x5": (1080, 1350), "9x16": (1080, 1920)}
 
 
@@ -301,6 +324,32 @@ def fichiers_publics(racine: Path = RACINE) -> list[Path]:
     return sorted(set(out))
 
 
+def champs_declares(registres: tuple[Path, ...] = REGISTRES_CHAMPS) -> set[str]:
+    """Noms des champs déclarés dans les registres (légal et landing)."""
+    import yaml
+
+    noms: set[str] = set()
+    for chemin in registres:
+        donnees = yaml.safe_load(chemin.read_text(encoding="utf-8")) or {}
+        noms |= set((donnees.get("champs") or {}).keys())
+    return noms
+
+
+def verifier_champs(racine: Path = RACINE, declares: set[str] | None = None) -> list[str]:
+    """Champs des fichiers publics déclarés (registre, landing ou VARIABLES_DA) ; aucune limite « par commande »."""
+    declares = champs_declares() if declares is None else declares
+    erreurs = []
+    for p in fichiers_publics(racine) + ([racine / "CHARTE.html"] if (racine / "CHARTE.html").exists() else []):
+        rel = p.relative_to(racine).as_posix()
+        texte = p.read_text(encoding="utf-8")
+        for nom in sorted(set(CHAMP_RE.findall(texte)) - declares - VARIABLES_DA):
+            erreurs.append(f"{rel} : champ {{{{{nom}}}}} absent du registre légal et des champs de la landing")
+        m = LIMITE_PAR_COMMANDE_RE.search(texte)
+        if m:
+            erreurs.append(f"{rel} : limite exprimée « par commande » (« {m.group(0)} ») : les CGV fixent une limite par foyer")
+    return erreurs
+
+
 def verifier_termes_publics(racine: Path = RACINE) -> list[str]:
     """Aucun terme de donnée interne ni EAN dans les fichiers publics ; exemples marqués FICTIF."""
     erreurs = []
@@ -346,6 +395,7 @@ def tout_verifier(racine: Path = RACINE) -> dict[str, list[str]]:
         "synchro": verifier_synchro(racine),
         "html": verifier_html(racine),
         "termes_publics": verifier_termes_publics(racine),
+        "champs": verifier_champs(racine),
         "docs": verifier_docs(racine),
     }
 

@@ -37,11 +37,23 @@ Mêmes identifiants que l'assortiment (`ASSORTIMENT_PILOTE.md`) et le panier fou
 
 | ref_id | Désignation attendue | Pourquoi dans la grille |
 |---|---|---|
-| REF-01 à REF-05 | Extension spéciale 30ᵉ Anniversaire : ETB, bundle, mini-tin, coffret Nymphali-ex, collection classeur | Produits du moment (septembre-octobre 2026), formats cadeaux |
-| REF-06 à REF-08 | Méga-Évolution – Nuit Noire (juillet 2026) : display, ETB, tripack | Extension récente, normalement disponible |
-| REF-09, REF-10 | Méga-Évolution – Chaos Ascendant (mai 2026) : display, ETB | Extension plus ancienne : mesure de la disponibilité |
-| REF-11, REF-12 | Équilibre Parfait (mars 2026), Héros Transcendants (début 2026) : ETB | Respect du plafond de 25 % par extension (écart EC-14) |
-| REF-13 à REF-15 | Méga-Évolution – Règne Delta (sortie 6.11.2026) : display, ETB, tripack | Mesure des prix de **précommande** chez les concurrents ; nous n'en ferons pas sans allocation ferme |
+**Règle : chacune des 12 références STOCK du panier pilote est dans la grille** (contrôlé par `docs/02-sourcing/outils/test_couverture_marche.py`). Les 3 places restantes vont à des références sans budget utiles à la décision ; les références ALERTE de priorité C (REF-03, REF-05, REF-10) et le tripack Règne Delta (REF-15) n'y sont plus.
+
+| ref_id | Désignation attendue | Pourquoi dans la grille |
+|---|---|---|
+| REF-01, REF-02, REF-04 | Extension spéciale 30ᵉ Anniversaire : ETB, bundle, coffret Nymphali-ex | STOCK : produits du moment (septembre-octobre 2026), formats cadeaux |
+| REF-06 à REF-08 | Méga-Évolution – Nuit Noire (juillet 2026) : display, ETB, tripack | STOCK : extension récente, normalement disponible |
+| REF-09, REF-19 | Méga-Évolution – Chaos Ascendant (mai 2026) : display ; tripack **ou** bundle (selon offre) | STOCK : extension plus ancienne, mesure de la disponibilité |
+| REF-11, REF-20 | Équilibre Parfait : ETB ; coffret ou collection Équilibre Parfait **ou** Héros Transcendants (selon offre) | STOCK : respect du plafond de 25 % par extension (écart EC-14) |
+| REF-16, REF-17 | Accessoires : protège-cartes (paquet), classeur 9 cases | STOCK : 300 CHF du budget, prix très comparés par les clients |
+| REF-12 | Héros Transcendants : ETB | ALERTE : point de prix de l'extension de REF-20 |
+| REF-13, REF-14 | Méga-Évolution – Règne Delta (sortie 6.11.2026) : display, ETB | COND. : mesure des prix de **précommande** chez les concurrents ; nous n'en ferons pas sans allocation ferme |
+
+**Références « selon offre » (REF-19, REF-20)** : tant que l'offre fournisseur ne fixe pas la variante, relever toutes les variantes candidates nommées (tripack et bundle Chaos Ascendant ; coffrets Équilibre Parfait et Héros Transcendants) : la moins chère au prix total livré dans la ligne, les autres en commentaire avec leur URL. Dès que la variante est fixée, **re-relever cette variante avant l'achat**.
+
+**Accessoires (REF-16, REF-17)** : pas d'extension ; « FR » désigne l'emballage ou la notice en français s'il existe et ne rend pas la ligne non comparable. Comparable = même marque, même modèle, même quantité par paquet que l'offre fournisseur retenue.
+
+**Aucun achat sans relevé** : une référence STOCK n'est achetée que si sa référence marché existe (au moins 3 lignes comparables de moins de 7 jours, §5) ; sinon, seulement avec la validation explicite de la propriétaire (critère 3 de `ASSORTIMENT_PILOTE.md` §4).
 
 ## 4. Procédure de relevé (par ligne de la grille)
 
@@ -77,7 +89,7 @@ Pour chaque `ref_id` :
 | Indicateur | Valeur |
 |---|---|
 | Lignes relevées / comparables | … / … |
-| Références avec ≥ 3 offres en stock | … / 15 |
+| Références avec ≥ 3 offres en stock | … / 15 (dont … / 12 références STOCK) |
 | Écart médian entre boutiques spécialisées et généraliste | … % |
 | Seuils de port gratuit observés | … à … CHF |
 | Délais annoncés | … à … jours |

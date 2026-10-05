@@ -20,11 +20,11 @@ Un indicateur « Indisponible » signale une **source non branchée**, jamais un
 |---|---|
 | Régénérer l'exemple de démonstration (données **FICTIVES**) | `python dashboard/build.py` |
 | Vérifier que l'exemple committé est à jour | `python dashboard/build.py --check` |
-| Tableau de bord réel depuis l'API (lecture seule) | `POKESHOP_API_TOKEN=… python dashboard/build.py --api http://127.0.0.1:8000 --out /chemin/local/index.html` |
+| Tableau de bord réel depuis l'API (lecture seule) | `POKESHOP_API_TOKEN=… python dashboard/build.py --api http://127.0.0.1:8000 --out ~/pokeshop/tableau.html` (sans `--out` : `~/.pokeshop/tableau_de_bord.html`) |
 | Une période précise | `--day 2026-11-13`, `--week 2026-11-10` (un jour de la semaine), `--month 2026-11` |
 | JSON brut | `GET /dashboard/daily?day=…`, `GET /dashboard/weekly?week=…`, `GET /dashboard/monthly?month=…` avec l'en-tête `X-Pokeshop-Token` |
 
-Le jeton se lit **uniquement** dans la variable d'environnement `POKESHOP_API_TOKEN` (jamais en argument : il resterait dans l'historique). Le fichier produit depuis l'API contient des coûts réels : le garder hors du dépôt et hors de tout partage.
+Le jeton se lit **uniquement** dans la variable d'environnement `POKESHOP_API_TOKEN` (jamais en argument : il resterait dans l'historique). Le fichier produit depuis l'API contient des coûts réels : `build.py` **refuse** toute sortie située dans le dépôt (code 2, liens symboliques résolus) — y compris l'exemple FICTIF `dashboard/out/index.html` suivi par git —, écrit par défaut hors du dépôt et en mode 600 ; `.gitignore` ignore toute autre page de `dashboard/out/`. Le garder hors de tout partage.
 
 ## 3. Fichiers
 
@@ -38,7 +38,7 @@ Le jeton se lit **uniquement** dans la variable d'environnement `POKESHOP_API_TO
 
 ## 4. Sources aujourd'hui branchées dans l'API
 
-Étoile polaire (journal du moteur), stop-loss (photo d'activité déposée par `POST /stoploss/state`), cash et exposition par extension (même photo), incidents, registre du mandat, niveau d'autonomie, registre de stock local. **À brancher** (agent integrations, base PostgreSQL) : commandes Shopify non expédiées, offres importées, ventes au coût historique, propositions de réassort, écarts de facture, journal SAV, heures, CA de l'entité, dépenses outils.
+Étoile polaire (journal du moteur), stop-loss (photo d'activité **construite par le moteur** à partir de ses registres par `POST /stoploss/state/refresh`, workflow 07 ; ou déposée par `POST /stoploss/state`), cash et exposition par extension (même photo), incidents, registre du mandat, niveau d'autonomie, registre de stock local (alimenté par `POST /stock/receive`, workflow 06). La photo n'existe que si ses sources sont présentes et récentes : apports de capital (`POST /capital/movements`, jeton de la propriétaire), soldes PayPal et banque de moins de 24 h (connecteurs, `/treasury/*-balance`), dettes et créances déclarées (`POST /treasury/balance-items`, jamais supposées nulles), stock au coût historique (`POST /costs/movements`) ; sinon le stop-loss reste « non évaluable » (dépenses refusées) et le bloc 2 l'affiche. **À brancher** (agent integrations, base PostgreSQL) : commandes Shopify non expédiées, offres importées, ventes au coût historique, propositions de réassort, écarts de facture, journal SAV, heures, CA de l'entité, dépenses outils ; calcul des dettes (précommandes encaissées, factures non payées) à partir des commandes et factures.
 
 ## Validation humaine requise
 

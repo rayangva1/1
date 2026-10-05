@@ -137,6 +137,10 @@ class TestShippedFile:
         p = load_rules().pricing
         assert p.rounding_tiers == DEFAULT_ROUNDING_TIERS
         assert p.small_product_max_cost == D("15.00")
+        # Fermé par défaut : aucun minimum de commande imposé par la boutique => règle inactive.
+        assert p.small_product_min_order_ttc is None and p.small_product_max_shipping_ttc is None
+        assert decide_price(D("3.79"), p).small_product is False
+        assert decide_price(D("3.79"), p).recommended_price == D("23.90")
 
     def test_loaded_params_reproduce_bp_reference_cases(self):
         eff = pricing_params(VatMode.EFFECTIVE)
@@ -334,6 +338,17 @@ class TestValidation:
         assert rs.pricing.payment_pct == D("0.025")
         assert rs.pricing.vat_rate_sales == D("0.081")
         assert rs.stock.extension_budget_cap == D("0.1")
+
+    def test_small_product_rule_activated_by_sufficient_shop_minimum(self, data):
+        mutate(data, "pricing.small_product_min_order_ttc", "127.00")
+        mutate(data, "pricing.small_product_max_shipping_ttc", "0")
+        rs = parse_rules(data)
+        assert decide_price(D("3.50"), rs.pricing).small_product is True
+        mutate(data, "pricing.small_product_min_order_ttc", "60")  # minimum insuffisant : inactive
+        assert decide_price(D("3.50"), parse_rules(data).pricing).small_product is False
+        mutate(data, "pricing.small_product_min_order_ttc", "0.50")
+        with pytest.raises(RulesError, match="small_product_min_order_ttc"):
+            parse_rules(data)
 
     def test_small_product_rule_can_be_disabled(self, data):
         mutate(data, "pricing.small_product_max_cost", None)

@@ -10,10 +10,16 @@ Modes (SPEC §0.6 : simulation par défaut) :
 * ``publication`` construit le dossier à déposer (défaut ``site/dist/landing/``). **Refuse**
                   (code 1) tant qu'un champ utilisé n'est pas ``valide``, que le nom n'est pas validé,
                   ou que l'URL du webhook ou de la landing est invalide.
-* ``etat``        liste les champs requis et leur statut.
+* ``etat``        liste les champs requis, leur statut, leur nature (définitif ou provisoire) et le décideur.
 
 Les champs viennent du registre légal (``docs/04-legal/champs_a_remplir.yaml``, source unique de
 l'identité) et de ``site/config/publication_landing.yaml`` (URL, mois d'ouverture, webhook).
+
+La page de confidentialité est générée depuis ``docs/04-legal/CONFIDENTIALITE_LANDING.md`` : une notice limitée
+aux traitements réels de la landing, publiable à J10 (BL-032), et non depuis la déclaration complète de la
+boutique (qui exige le prestataire de paiement, le transporteur, la boutique et la relecture complète, J21-J28).
+Les champs exigés forment une **liste fermée** (``CHAMPS_LANDING``) : une page qui utiliserait un autre champ fait
+échouer la publication tant que la liste n'a pas été revue (fail-closed).
 """
 
 from __future__ import annotations
@@ -40,7 +46,7 @@ from typo import typographier  # noqa: E402
 
 LANDING = REPO / "site" / "landing"
 CONFIG_SITE = REPO / "site" / "config" / "publication_landing.yaml"
-CONFIDENTIALITE_MD = REPO / "docs" / "04-legal" / "CONFIDENTIALITE.md"
+CONFIDENTIALITE_MD = REPO / "docs" / "04-legal" / "CONFIDENTIALITE_LANDING.md"
 DIST = REPO / "site" / "dist"
 NOM_DE_TRAVAIL = "Quai des Cartes"
 APERCU_RE = re.compile(r"[ \t]*<!-- APERCU:DEBUT -->.*?<!-- APERCU:FIN -->[ \t]*\n?", re.DOTALL)
@@ -49,6 +55,39 @@ GOOGLE_FONTS_LIGNES_RE = re.compile(r"[ \t]*<link[^>]+(fonts\.googleapis\.com|fo
 MARQUEUR_RE = re.compile(r"⟦[^⟧]*⟧")
 EXCLUS_COPIE = {"README.md", "inscription.schema.json", "manifeste.json"}
 FONTS_CSP = ("https://fonts.googleapis.com", "https://fonts.gstatic.com")
+
+DEFINITIF = "définitif"
+PROVISOIRE = "provisoire autorisé"
+#: Champs exigés pour publier la landing à J10 (BL-032) : (nature, acte qui fournit la valeur).
+#: « provisoire autorisé » = valeur validée mais appelée à changer (republier après changement) ; jamais un
+#: statut « a_valider » : chaque champ doit être « valide » pour publier. Aucun champ ne dépend de la boutique
+#: Shopify (B15), du paiement (B16), du transporteur (B17) ni de la relecture complète des textes (C11).
+CHAMPS_LANDING: dict[str, tuple[str, str]] = {
+    "NOM_BOUTIQUE": (DEFINITIF, "C06 (J7)"),
+    "RAISON_SOCIALE": (DEFINITIF, "B07 (J7)"),
+    "ADRESSE_POSTALE": (DEFINITIF, "B07 (J7)"),
+    "NOM_RESPONSABLE": (DEFINITIF, "B07 (J7)"),
+    "EMAIL_SUPPORT": (DEFINITIF, "B02 (J1)"),
+    "EMAIL_DONNEES": (DEFINITIF, "B02 (J1)"),
+    "WEBHOOK_INSCRIPTION": (DEFINITIF, "B04 (J3) et workflow n8n testé (J9)"),
+    "DUREE_CONSERVATION_ALERTES": (DEFINITIF, "propriétaire après relecture express (J9)"),
+    "DUREE_CONSERVATION_SAV": (DEFINITIF, "propriétaire après relecture express (J9)"),
+    "ST_HEBERGEMENT_LANDING": (DEFINITIF, "B08 (J8) : compte d'hébergement"),
+    "ST_HEBERGEMENT_LANDING_PAYS": (DEFINITIF, "B08 (J8) : contrat de l'hébergeur"),
+    "ST_POLICES": (DEFINITIF, "choix Google Fonts ou polices du système (J9)"),
+    "ST_POLICES_PAYS": (DEFINITIF, "choix des polices (J9)"),
+    "ST_BASE": (DEFINITIF, "hébergement n8n (J9)"),
+    "ST_BASE_PAYS": (DEFINITIF, "hébergement n8n (J9)"),
+    "ST_EMAILING": (DEFINITIF, "B04 (J3)"),
+    "ST_EMAILING_PAYS": (DEFINITIF, "B04 (J3) : contrat de l'outil d'envoi"),
+    "ST_MESSAGERIE": (DEFINITIF, "B02 (J1)"),
+    "ST_MESSAGERIE_PAYS": (DEFINITIF, "B02 (J1) : contrat de la messagerie"),
+    "ST_IA": (DEFINITIF, "B01 (J1) : mandat"),
+    "ST_IA_PAYS": (DEFINITIF, "B01 (J1) : contrat du fournisseur d'IA"),
+    "URL_LANDING": (PROVISOIRE, "B08 (J8) : adresse de l'hébergeur, puis domaine"),
+    "MOIS_OUVERTURE": (PROVISOIRE, "C07 (J10) : mois visé, jamais une date ferme"),
+    "DATE_VERSION_LANDING": (PROVISOIRE, "relecture express du juriste (J9), remplacée à l'ouverture"),
+}
 
 
 class PublicationError(RuntimeError):
@@ -180,10 +219,13 @@ PAGES_SIMPLES: dict[str, tuple[str, str, str]] = {
       <p><a class="da-btn da-btn--secondary" href="./">Retour à l'accueil</a></p>""",
     ),
     "desinscription.html": (
-        "Désinscription confirmée",
-        "Votre désinscription est enregistrée.",
-        """      <h1 class="da-title">Désinscription enregistrée</h1>
-      <p>Votre désinscription est enregistrée et s'applique à tous nos outils d'envoi. Vous ne recevrez plus d'alerte ni d'email récapitulatif.</p>
+        # Page affichée par le workflow n8n 06 APRÈS les appels de retrait (outil d'emailing, Shopify) et
+        # seulement pour un lien valide : elle confirme la réception, pas un traitement qu'elle ne peut pas voir.
+        "Demande de désinscription reçue",
+        "Votre demande de désinscription est reçue.",
+        """      <h1 class="da-title">Demande de désinscription reçue</h1>
+      <p>Nous avons bien reçu votre demande. Elle a été transmise à chacun de nos outils d'envoi : vous ne devez plus recevoir d'alerte ni d'email récapitulatif.</p>
+      <p>Si un outil n'a pas confirmé le retrait, nous le faisons à la main sans délai. Vous recevez encore une alerte ? Écrivez-nous à <a href="mailto:{{EMAIL_SUPPORT}}">{{EMAIL_SUPPORT}}</a> : nous vous retirons et vous confirmons la désinscription par écrit.</p>
       <p>Nous conservons uniquement votre adresse dans une liste d'exclusion, pour être sûrs de ne plus vous écrire. Les emails liés à une commande (confirmation, expédition) restent envoyés si vous commandez.</p>
       <p>Une erreur ? Vous pouvez vous réinscrire depuis la <a href="./#alertes">page d'accueil</a>.</p>""",
     ),
@@ -191,16 +233,16 @@ PAGES_SIMPLES: dict[str, tuple[str, str, str]] = {
 
 
 def contenu_confidentialite(texte_md: str) -> str:
-    """Bloc public de CONFIDENTIALITE.md converti en HTML (titres ## → h1, ### → h2)."""
+    """Bloc public de CONFIDENTIALITE_LANDING.md converti en HTML (titres ## → h1, ### → h2)."""
     blocs = rc.public_blocks(texte_md)
     if not blocs:
-        raise PublicationError(["CONFIDENTIALITE.md : aucun bloc public"])
+        raise PublicationError(["CONFIDENTIALITE_LANDING.md : aucun bloc public"])
     corps = convertir("\n\n".join(blocs), decalage_titres=1)
     corps = corps.replace("<h1>", '<h1 class="da-title">', 1)
     avis = (
         "      <!-- APERCU:DEBUT -->\n"
-        '      <p class="lp-note lp-a-remplir">Brouillon repris de docs/04-legal/CONFIDENTIALITE.md : '
-        "à faire revoir par un juriste avant publication.</p>\n"
+        '      <p class="lp-note lp-a-remplir">Brouillon repris de docs/04-legal/CONFIDENTIALITE_LANDING.md : '
+        "relecture express du juriste requise avant publication.</p>\n"
         "      <!-- APERCU:FIN -->\n"
     )
     retrait = "\n".join("      " + ligne for ligne in corps.splitlines())
@@ -217,7 +259,7 @@ def pages_secondaires(texte_confidentialite: str | None = None) -> dict[str, str
     pages["confidentialite.html"] = typographier(
         _tete(
             "Déclaration de confidentialité",
-            "Quelles données nous traitons, pourquoi, combien de temps, et vos droits (LPD).",
+            "Inscription aux alertes : quelles données nous traitons, pourquoi, combien de temps, et vos droits (LPD).",
             indexable=True,
         )
         + _corps(contenu_confidentialite(md))
@@ -245,9 +287,41 @@ def _direction_source(racine: Path) -> str:
 
 
 # --------------------------------------------------------------------------- contrôles
-def controles_publication(champs: dict[str, rc.Field]) -> list[str]:
-    """Préconditions de publication indépendantes des pages."""
-    erreurs: list[str] = []
+def controles_polices(champs: dict[str, rc.Field], sans_google_fonts: bool) -> list[str]:
+    """La notice déclare exactement le choix de polices fait à la publication (Google Fonts ou polices du système)."""
+    polices = valeur(champs, "ST_POLICES", True)
+    if not polices:
+        return []  # absence déjà signalée par le contrôle des champs
+    declare_google = "google" in polices.lower()
+    if declare_google and sans_google_fonts:
+        return ["ST_POLICES déclare Google Fonts alors que la page est publiée sans (--sans-google-fonts)"]
+    if not declare_google and not sans_google_fonts:
+        return ["ST_POLICES ne déclare pas Google Fonts alors que la page les charge (publier avec --sans-google-fonts ou corriger la notice)"]
+    return []
+
+
+def champs_utilises(source: Path = LANDING, texte_confidentialite: str | None = None) -> set[str]:
+    """Champs utilisés par les pages de la landing (source), la notice et la configuration."""
+    noms: set[str] = {"NOM_BOUTIQUE", "WEBHOOK_INSCRIPTION", "URL_LANDING", "EMAIL_SUPPORT"}
+    for page in source.glob("*.html"):
+        noms.update(rc.placeholders(page.read_text(encoding="utf-8")))
+    md = texte_confidentialite if texte_confidentialite is not None else CONFIDENTIALITE_MD.read_text(encoding="utf-8")
+    noms.update(rc.placeholders("\n".join(rc.public_blocks(md))))
+    return noms
+
+
+def controles_publication(champs: dict[str, rc.Field], sans_google_fonts: bool = False, source: Path = LANDING) -> list[str]:
+    """Préconditions de publication indépendantes du rendu des pages."""
+    erreurs: list[str] = [
+        f"champ hors de la liste de publication de la landing (CHAMPS_LANDING) : {n} — revoir la liste avant de publier"
+        for n in sorted(champs_utilises(source) - set(CHAMPS_LANDING))
+    ]
+    erreurs += [
+        f"{n} non validé (statut requis : valide ; nature : {CHAMPS_LANDING[n][0]})"
+        for n in sorted(CHAMPS_LANDING)
+        if (champs.get(n) is None or champs[n].status is not rc.Status.VALIDE) and not (champs.get(n) and champs[n].alias_of)
+    ]
+    erreurs += controles_polices(champs, sans_google_fonts)
     nom = champs.get("NOM_BOUTIQUE")
     if nom is None or nom.status is not rc.Status.VALIDE:
         erreurs.append("NOM_BOUTIQUE non validé (décision C06) : le nom de travail ne se publie pas")
@@ -352,7 +426,7 @@ def construire(
         raise ValueError(f"mode inconnu : {mode}")
     publication = mode == "publication"
     champs = champs if champs is not None else charger_champs()
-    erreurs = controles_publication(champs) if publication else []
+    erreurs = controles_publication(champs, sans_google_fonts, source) if publication else []
     pages: dict[str, str] = {}
     for page in sorted(source.glob("*.html")):
         try:
@@ -404,14 +478,10 @@ def construire(
 
 
 def etat(champs: dict[str, rc.Field] | None = None, source: Path = LANDING) -> list[tuple[str, str, str]]:
-    """(champ, statut, décideur) de chaque champ utilisé par les pages et la configuration."""
+    """(champ, statut, décideur) de chaque champ exigé (liste fermée) ou utilisé par les pages et la notice."""
     champs = champs if champs is not None else charger_champs()
-    noms: set[str] = {"NOM_BOUTIQUE", "WEBHOOK_INSCRIPTION", "URL_LANDING", "EMAIL_SUPPORT"}
-    for page in source.glob("*.html"):
-        noms.update(rc.placeholders(page.read_text(encoding="utf-8")))
-    noms.update(rc.placeholders("\n".join(rc.public_blocks(CONFIDENTIALITE_MD.read_text(encoding="utf-8")))))
     lignes = []
-    for nom in sorted(noms):
+    for nom in sorted(champs_utilises(source) | set(CHAMPS_LANDING)):
         f = champs.get(nom)
         lignes.append((nom, f.status.value if f else "INCONNU", f.decideur if f else "—"))
     return lignes
@@ -431,7 +501,8 @@ def main(argv: list[str] | None = None) -> int:
         lignes = etat()
         manquants = [lg for lg in lignes if lg[1] != "valide"]
         for nom, statut, decideur in lignes:
-            print(f"{statut:10} {nom:32} {decideur}")
+            nature = CHAMPS_LANDING.get(nom, ("HORS LISTE", ""))[0]
+            print(f"{statut:10} {nom:30} {nature:20} {decideur}")
         print(f"\n{len(lignes) - len(manquants)}/{len(lignes)} champ(s) validé(s).")
         return 0
     sortie = args.sortie or (DIST / ("landing" if args.mode == "publication" else "apercu"))

@@ -40,6 +40,7 @@ TRIGGER_TYPES = {
     "n8n-nodes-base.errorTrigger",
     "n8n-nodes-base.shopifyTrigger",
 }
+ENGINE_CREDENTIALS = {"Pokeshop API — X-Pokeshop-Token", "Pokeshop API — jeton nommé n8n-07-stoploss"}
 ENGINE_URL_PREFIX = re.compile(r"^=\{\{ \$\('Paramètres[^']*'\)\.first\(\)\.json\.api_base_url \}\}")
 
 
@@ -292,10 +293,13 @@ def test_inbound_webhooks_are_authenticated_except_documented_ones() -> None:
                 unauthenticated.add((name, node["parameters"]["path"]))
             else:
                 assert auth == "headerAuth" and "httpHeaderAuth" in node["credentials"]
-    # Moteur -> n8n (réseau interne, écart signalé) et lien public de désinscription (jeton unique).
+    # Moteur -> n8n (réseau interne, écart signalé) et liens publics des emails (jeton unique, GET).
     assert unauthenticated == {
         ("04_incident.json", "pokeshop-incidents"),
         ("06_marketing_automations.json", "alertes-desinscrire"),
+        ("06_marketing_automations.json", "avis-refus"),
+        ("06_marketing_automations.json", "alertes-preferences"),
+        ("06_marketing_automations.json", "alertes-confirmer"),
     }
 
 
@@ -353,8 +357,9 @@ def test_engine_calls_are_simulated_and_target_existing_routes() -> None:
                 continue
             params = node["parameters"]
             assert params["genericAuthType"] == "httpHeaderAuth"
-            assert node["credentials"]["httpHeaderAuth"]["name"] == "Pokeshop API — X-Pokeshop-Token"
+            assert node["credentials"]["httpHeaderAuth"]["name"] in ENGINE_CREDENTIALS
             body = params.get("jsonBody", "")
+            assert "treasury" not in body, f"{name} : trésorerie jamais déclarée par n8n (registres du moteur)"
             assert not re.search(r"dry_run\s*:\s*false|\"dry_run\"\s*:\s*false", body), f"{name} : dry_run false"
             key = (params["method"], engine_path(node))
             exists = key in routes
@@ -367,6 +372,11 @@ def test_engine_calls_are_simulated_and_target_existing_routes() -> None:
     assert ("POST", "/sync/run") in enabled_paths and ("POST", "/stoploss/freeze") in enabled_paths
     assert ("POST", "/mandate/check") in enabled_paths and ("GET", "/northstar") in enabled_paths
     assert ("GET", "/dashboard/daily") in enabled_paths and ("POST", "/imports/X/run") in enabled_paths
+    # F4 : photo du stop-loss, relevés de trésorerie, réception de stock, historique des cycles, santé.
+    for key in (("POST", "/stoploss/state/refresh"), ("POST", "/treasury/paypal-balance"),
+                ("POST", "/treasury/bank-balance"), ("POST", "/stock/receive"), ("GET", "/sync/history"),
+                ("GET", "/health")):
+        assert key in enabled_paths, key
     sync = next(
         n
         for n in WORKFLOWS["01_fournisseur_vers_site.json"]["nodes"]
@@ -403,7 +413,8 @@ def test_01_supplier_to_site_schedules_and_incident_branch() -> None:
     ]
     assert {"field": "cronExpression", "expression": "5 */6 * * *"} in crons  # prix : toutes les 6 h
     assert {"field": "minutes", "minutesInterval": 45} in crons  # stock amont : 30 à 60 min
-    assert successors(wf, "Import exploitable ?", 0) == ["Cycle fournisseur vers site (dry-run)"]
+    assert successors(wf, "Import exploitable ?", 0) == ["Cycle stock amont ?"]
+    assert successors(wf, "Cycle stock amont ?", 1) == ["Cycle fournisseur vers site (dry-run)"]
     assert successors(wf, "Import exploitable ?", 1) == ["Ouvrir un incident de flux (INC-03)"]
     assert "'INC-03'" in by["Ouvrir un incident de flux (INC-03)"]["parameters"]["jsonBody"]
     assert successors(wf, "Workflow suspendu ?", 0) == ["Workflow suspendu : cycle ignoré"]
@@ -466,6 +477,8 @@ def test_05_digest_puts_north_star_then_stoploss_first() -> None:
         "Étoile polaire (GET /northstar)",
         "État du stop-loss (GET /stoploss/status)",
         "Tableau de bord du jour (GET /dashboard/daily)",
+        "Cycles de synchronisation (GET /sync/history)",
+        "État du moteur (GET /health)",
         "Composer le digest (étoile polaire en premier)",
     ]
     for a, b in zip(order, order[1:], strict=False):
@@ -497,9 +510,11 @@ def test_06_marketing_guards_and_unsubscribe() -> None:
         "amount": 7,
         "unit": "days",
     }
-    assert by["Afficher la page de désinscription"]["parameters"]["respondWith"] == "redirect"
-    unsub = successors(wf, "Normaliser la désinscription")
-    assert unsub == ["Désinscrire dans l’outil d’emailing (désactivé)"]
+    redirect = by["Répondre : demande de désinscription traitée"]["parameters"]
+    assert redirect["respondWith"] == "redirect" and redirect["redirectURL"].endswith("/desinscription.html")
+    assert successors(wf, "Lien de désinscription valide ?", 0) == ["Désinscrire dans l’outil d’emailing (désactivé)"]
+    assert successors(wf, "Lien de désinscription valide ?", 1) == ["Incident : lien de désinscription invalide"]
+    assert successors(wf, "Enregistrer la réception (POST /stock/receive)") == ["Garde : incidents ouverts (alertes stock)"]
     for name in (
         "Envoyer l’email 04 — outil d’emailing (désactivé)",
         "Envoyer l’email 11 — outil d’emailing (désactivé)",
@@ -627,3 +642,288 @@ def test_readme_documents_import_credentials_and_activation_order() -> None:
         assert level in text
     assert "## Validation humaine requise" in text
     assert text.rstrip().splitlines()[-1].startswith("- [ ]")
+
+
+# ================================================================ lot F4 (revue E2E-07 à E2E-20, CON-05)
+
+
+def run_js(tmp_path: Path, code: str, items: list[dict[str, Any]], nodes: dict[str, Any] | None = None,
+           static: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Exécute le code d'un nœud Code comme n8n (``$input``, ``$('nœud')``, données statiques) ; renvoie (sorties, statique)."""
+    assert NODE_BIN is not None
+    harness = f"""
+const NODES = {json.dumps(nodes or {}, ensure_ascii=False)};
+const STATIC = {json.dumps(static or {}, ensure_ascii=False)};
+const ITEMS = {json.dumps([{"json": i} for i in items], ensure_ascii=False)};
+const $input = {{ all: () => ITEMS, first: () => ITEMS[0] }};
+const $ = (name) => {{ if (!(name in NODES)) throw new Error('nœud inconnu ' + name); return {{ first: () => ({{ json: NODES[name] }}) }}; }};
+const $getWorkflowStaticData = () => STATIC;
+const run = new Function('$input', '$', '$getWorkflowStaticData', {json.dumps(code)});
+const out = run($input, $, $getWorkflowStaticData);
+console.log(JSON.stringify({{ out: out.map((o) => o.json), static: STATIC }}));
+"""
+    src = tmp_path / f"h{uuid.uuid4().hex[:8]}.js"
+    src.write_text(harness, encoding="utf-8")
+    result = subprocess.run([NODE_BIN, str(src)], capture_output=True, text=True, check=True)
+    data = json.loads(result.stdout)
+    return data["out"], data["static"]
+
+
+def test_f4_canonical_workflow_keys_everywhere() -> None:
+    """E2E-10 : une seule clé par workflow (Paramètres, gardes, incidents de 04, moteur)."""
+    from pokeshop.api import WORKFLOW_KEYS as ENGINE_KEYS
+    from pokeshop.sync import WORKFLOW_SUPPLIER_TO_SHOP
+
+    assert GEN.WORKFLOW_KEYS == ENGINE_KEYS and GEN.WORKFLOW_KEYS["01"] == WORKFLOW_SUPPLIER_TO_SHOP
+    assert len(set(GEN.WORKFLOW_NAMES.values())) == len(GEN.WORKFLOW_NAMES) == 8
+    for name, wf in WORKFLOWS.items():
+        prefix = name[:2]
+        assert wf["name"] == GEN.WORKFLOW_NAMES[prefix] and wf["id"] == GEN.WORKFLOW_IDS[prefix]
+        for node in wf["nodes"]:
+            if node["name"].startswith("Paramètres"):
+                values = {a["name"]: a["value"] for a in node["parameters"]["assignments"]["assignments"]}
+                assert values["workflow"] == GEN.WORKFLOW_KEYS[prefix], (name, node["name"])
+
+
+@pytest.mark.skipif(NODE_BIN is None, reason="node absent : expression non évaluée")
+def test_f4_execution_failure_suspends_the_failed_workflow_key(tmp_path: Path) -> None:
+    """E2E-10 : l'incident d'échec ouvert par 04 porte la clé canonique => la garde de 08 et le moteur s'arrêtent."""
+    node = nodes(WORKFLOWS["04_incident.json"])["Ouvrir un incident d’exécution"]
+    expr = node["parameters"]["jsonBody"][len("={{ "):-len(" }}")]
+    results = {}
+    for prefix, wf_name in GEN.WORKFLOW_NAMES.items():
+        for err_wf in ({"id": GEN.WORKFLOW_IDS[prefix], "name": "renommé dans n8n"}, {"id": "autreId", "name": wf_name}):
+            nodes_data = {
+                "Échec d’exécution d’un workflow": {"execution": {"id": "42", "lastNodeExecuted": "X", "error": {"message": "t"}},
+                                                     "workflow": err_wf},
+                "Paramètres — erreurs": {"simulation": False},
+            }
+            out, _ = run_js(tmp_path, f"return [{{ json: JSON.parse({expr}) }}];", [{}], nodes_data)
+            results[(prefix, err_wf["id"])] = out[0]["workflow"]
+    for (prefix, _), key in results.items():
+        assert key == GEN.WORKFLOW_KEYS[prefix]
+    # Chaîne complète sur l'API : incident d'échec du workflow 08 (corps exact du nœud 04) => /mandate/check refusé.
+    from fastapi.testclient import TestClient
+    from pokeshop.api import Services, create_app
+    from pokeshop.settings import load_settings, sha256_hex
+
+    token = "FICTIF-jeton-api-0000000000000001"
+    client = TestClient(create_app(services=Services.build(
+        load_settings({"POKESHOP_API_TOKEN_SHA256": sha256_hex(token), "POKESHOP_STATE_DIR": ":memory:"}),
+        clock=lambda: datetime(2026, 10, 4, 12, tzinfo=UTC))))
+    nodes_data = {"Échec d’exécution d’un workflow": {"execution": {"id": "42", "lastNodeExecuted": "Contrôle du mandat",
+                                                                     "error": {"message": "délai"}},
+                                                       "workflow": {"id": GEN.WORKFLOW_IDS["08"], "name": GEN.WORKFLOW_NAMES["08"]}},
+                  "Paramètres — erreurs": {"simulation": False}}
+    out, _ = run_js(tmp_path, f"return [{{ json: JSON.parse({expr}) }}];", [{}], nodes_data)
+    headers = {"X-Pokeshop-Token": token}
+    assert client.post("/incidents", headers=headers, json=out[0]).status_code == 201
+    suspended = client.get("/incidents?open_only=true", headers=headers).json()["suspended"]
+    guard_key = {a["name"]: a["value"] for a in nodes(WORKFLOWS["08_mandat_depenses.json"])["Paramètres"]["parameters"]
+                 ["assignments"]["assignments"]}["workflow"]
+    assert guard_key in suspended
+    spend = {"request": {"amount": "150", "currency": "CHF", "supplier_id": "FICTIF_EMBALLAGES", "category": "PACKAGING",
+                         "payment_method": "PAYPAL", "purpose": "Cartons FICTIFS", "idempotency_key": "FICTIF-PKG-0001",
+                         "requested_by": "agent-11", "requested_at": "2026-10-04T10:00:00+02:00", "amount_source": "devis"},
+             "record": True}
+    assert client.post("/mandate/check", headers=headers, json=spend).status_code == 423
+
+
+@pytest.mark.skipif(NODE_BIN is None, reason="node absent : code non exécuté")
+def test_f4_stoploss_alerts_on_every_change_not_only_first_sight(tmp_path: Path) -> None:
+    """E2E-16 : A -> (rien) -> A est de nouveau signalé ; A -> A ne l'est qu'une fois."""
+    wf = WORKFLOWS["07_stoploss_watch.json"]
+    by = nodes(wf)
+    assert not any(n["type"] == "n8n-nodes-base.removeDuplicates" for n in by.values())
+    on_change = by["Nouvel état ? (une alerte par changement)"]["parameters"]["jsCode"]
+    forget = by["Aucun déclencheur : oublier l’état signalé"]["parameters"]["jsCode"]
+    assert successors(wf, "À signaler ?", 1) == ["Aucun déclencheur : oublier l’état signalé"]
+    state: dict[str, Any] = {}
+    a = {"fingerprint": "|ko:aucune photo d'activité|libre"}
+    out, state = run_js(tmp_path, on_change, [a], static=state)
+    assert len(out) == 1
+    out, state = run_js(tmp_path, on_change, [a], static=state)
+    assert out == []  # même état, pas de nouvelle alerte
+    _, state = run_js(tmp_path, forget, [{"fingerprint": "ok"}], static=state)
+    out, state = run_js(tmp_path, on_change, [a], static=state)
+    assert len(out) == 1, "un état qui réapparaît doit être signalé de nouveau"
+
+
+@pytest.mark.skipif(NODE_BIN is None, reason="node absent : code non exécuté")
+def test_f4_stoploss_photo_is_built_by_the_engine_and_balances_never_invented(tmp_path: Path) -> None:
+    """E2E-08 : 07 construit la photo (jeton nommé) avant de lire l'état ; relevés de trésorerie sans invention."""
+    wf = WORKFLOWS["07_stoploss_watch.json"]
+    by = nodes(wf)
+    refresh = by["Construire la photo (POST /stoploss/state/refresh)"]
+    assert engine_path(refresh) == "/stoploss/state/refresh" and refresh["onError"] == "continueRegularOutput"
+    assert successors(wf, refresh["name"]) == ["État du stop-loss (GET /stoploss/status)"]
+    for node in by.values():
+        if is_engine_call(node):
+            assert node["credentials"]["httpHeaderAuth"]["name"] == "Pokeshop API — jeton nommé n8n-07-stoploss"
+    assert by["Toutes les heures (:05) — relevés de trésorerie (désactivé)"].get("disabled") is True
+    paypal = by["Normaliser le solde PayPal"]["parameters"]["jsCode"]
+    out, _ = run_js(tmp_path, paypal, [{"api_base_url": "x"}])  # lecture non configurée (nœud désactivé)
+    assert out == []
+    response = {"as_of_time": "2026-10-04T09:50:00Z", "balances": [
+        {"currency": "EUR", "available_balance": {"currency_code": "EUR", "value": "10.00"}},
+        {"currency": "CHF", "primary": True, "available_balance": {"currency_code": "CHF", "value": "1500.25"}}]}
+    out, _ = run_js(tmp_path, paypal, [response])
+    assert out == [{"as_of": "2026-10-04T09:50:00Z", "balance_chf": "1500.25",
+                    "source": "API PayPal v1/reporting/balances (compte dédié)"}]
+    out, _ = run_js(tmp_path, paypal, [dict(response, as_of_time=None)])
+    assert out == []  # relevé sans date : rien n'est déposé
+    bank = by["Normaliser le solde bancaire"]["parameters"]["jsCode"]
+    assert run_js(tmp_path, bank, [{"currency": "EUR", "balance_chf": "1", "as_of": "x"}])[0] == []
+    assert run_js(tmp_path, bank, [{"currency": "CHF", "balance_chf": "2000.00", "as_of": "2026-10-04T09:40:00Z"}])[0][0][
+        "balance_chf"] == "2000.00"
+    js = by["Analyser l’état (cause, chiffres, action, réarmement)"]["parameters"]["jsCode"]
+    assert '"reference_chf"' in js and '"photo_sha256"' in js  # réarmement : valeur nette attestée
+
+
+def test_f4_upstream_stock_trigger_never_reprices() -> None:
+    """E2E-20 : le déclencheur 45 min (stock amont) n'atteint jamais /sync/run ; le 6 h, si."""
+    wf = WORKFLOWS["01_fournisseur_vers_site.json"]
+    by = nodes(wf)
+    cond = by["Cycle stock amont ?"]["parameters"]["conditions"]["conditions"][0]
+    assert "json.cycle" in cond["leftValue"] and cond["rightValue"] == "stock_amont"
+    values = {n["name"]: {a["name"]: a["value"] for a in n["parameters"]["assignments"]["assignments"]}
+              for n in by.values() if n["name"].startswith("Cycle :")}
+    assert values == {"Cycle : prix et offres": {"cycle": "prix_offres"}, "Cycle : stock amont": {"cycle": "stock_amont"}}
+
+    def reach(start: str, blocked: tuple[str, int] | None = None) -> set[str]:
+        seen, stack = {start}, [start]
+        while stack:
+            cur = stack.pop()
+            for src, idx, dst in links(wf):
+                if src == cur and (blocked is None or (src, idx) != blocked) and dst not in seen:
+                    seen.add(dst)
+                    stack.append(dst)
+        return seen
+
+    assert "Cycle fournisseur vers site (dry-run)" in reach("Cycle stock amont ?")
+    assert "Cycle fournisseur vers site (dry-run)" not in reach("Cycle stock amont ?", blocked=("Cycle stock amont ?", 1))
+    sync = by["Cycle fournisseur vers site (dry-run)"]["parameters"]["jsonBody"]
+    assert "catalog" not in sync  # catalogue et frais : registres du moteur (POST /catalog/items, /catalog/cost-inputs)
+
+
+def test_f4_every_link_of_the_emails_has_a_webhook() -> None:
+    """E2E-19 : chaque lien /webhook/<chemin> des emails existe dans un export ; l'opposition pose « avis-refus »."""
+    emails = (ROOT / "docs" / "06-contenu" / "EMAILS" / "source" / "emails.yaml").read_text(encoding="utf-8")
+    expected = set(re.findall(r"/webhook/([a-z0-9-]+)", emails))
+    assert {"alertes-desinscrire", "alertes-preferences", "avis-refus", "alertes-confirmer"} <= expected
+    paths = {(n["parameters"]["path"], n["parameters"]["httpMethod"]) for wf in WORKFLOWS.values() for n in wf["nodes"]
+             if n["type"] == "n8n-nodes-base.webhook"}
+    for path in expected:
+        assert (path, "GET") in paths, f"lien des emails sans webhook n8n : {path}"
+    by = nodes(WORKFLOWS["06_marketing_automations.json"])
+    tag = by["Poser l’étiquette avis-refus — Shopify (désactivé)"]["parameters"]["jsonBody"]
+    assert "tagsAdd" in tag and "'avis-refus'" in tag
+    assert "'avis-refus'" in by["Éligible à la demande d’avis ?"]["parameters"]["jsCode"]
+
+
+def _respond_nodes_reachable(wf: dict[str, Any], start: str, without: str | None = None) -> set[str]:
+    by = nodes(wf)
+    seen, stack = {start}, [start]
+    while stack:
+        cur = stack.pop()
+        for nxt in successors(wf, cur):
+            if nxt != without and nxt not in seen:
+                seen.add(nxt)
+                stack.append(nxt)
+    return {n for n in seen if by[n]["type"] == "n8n-nodes-base.respondToWebhook"}
+
+
+@pytest.mark.parametrize(("hook", "bilan", "label"), [
+    ("Lien de désinscription (emails)", "Bilan (désinscription)", "désinscription"),
+    ("Lien de refus d’avis (emails)", "Bilan (refus d’avis)", "refus d’avis"),
+])
+def test_f4_confirmation_page_only_after_the_tools_answered(hook: str, bilan: str, label: str) -> None:
+    """CON-05 : aucune réponse de succès en amont des retraits ; lien invalide => page d'erreur 400 + incident."""
+    wf = WORKFLOWS["06_marketing_automations.json"]
+    by = nodes(wf)
+    hook_node = by[hook]
+    assert hook_node["parameters"]["responseMode"] == "responseNode" and hook_node["parameters"]["httpMethod"] == "GET"
+    reachable = _respond_nodes_reachable(wf, hook)
+    success = {f"Répondre : demande de {label} traitée", f"Répondre : demande de {label} reçue (traitement manuel)"}
+    assert success <= reachable
+    without_bilan = _respond_nodes_reachable(wf, hook, without=bilan)
+    assert without_bilan == {f"Répondre : lien de {label} invalide"}, "succès possible sans bilan des outils"
+    bad = by[f"Répondre : lien de {label} invalide"]["parameters"]
+    assert bad["options"]["responseCode"] == 400 and "pas</strong> enregistrée" in bad["responseBody"]
+    assert successors(wf, f"Incident : lien de {label} invalide", 0) == [f"Répondre : lien de {label} invalide"]
+    assert successors(wf, f"Incident : lien de {label} invalide", 1) == [f"Répondre : lien de {label} invalide"]
+    for node in by.values():  # appels aux outils : un échec suit la sortie d'erreur, il n'en bloque pas un autre
+        if node["name"].startswith(("Désinscrire dans", "Retirer le consentement", "Enregistrer le refus", "Poser l’étiquette")):
+            assert node.get("onError") == "continueErrorOutput" and len(successors(wf, node["name"], 1)) == 1
+
+
+@pytest.mark.skipif(NODE_BIN is None, reason="node absent : code non exécuté")
+def test_f4_unsubscribe_bilan_never_confirms_without_the_tools(tmp_path: Path) -> None:
+    """CON-05 : jeton invalide => non valide ; nœud désactivé ou erreur => non confirmé ; réponses réelles => confirmé."""
+    by = nodes(WORKFLOWS["06_marketing_automations.json"])
+    norm = by["Normaliser le lien de désinscription"]["parameters"]["jsCode"]
+    out, _ = run_js(tmp_path, norm, [{"query": {"jeton": "court"}}])
+    assert out[0]["valide"] is False and out[0]["jeton"] is None
+    out, _ = run_js(tmp_path, norm, [{"query": {"jeton": "A" * 24}}])
+    link = out[0]
+    assert link["valide"] is True and link["etape"] == "normalise"
+    prep_code = by["Préparer l’étape Shopify (désinscription)"]["parameters"]["jsCode"]
+    bilan_code = by["Bilan (désinscription)"]["parameters"]["jsCode"]
+    ctx = {"Normaliser le lien de désinscription": link}
+
+    def run_flow(emailing: dict[str, Any], shopify: dict[str, Any] | None) -> dict[str, Any]:
+        prep, _ = run_js(tmp_path, prep_code, [emailing], ctx)
+        inputs = [shopify if (prep[0]["shopify_applicable"] and shopify is not None) else prep[0]]
+        out, _ = run_js(tmp_path, bilan_code, inputs, {**ctx, "Préparer l’étape Shopify (désinscription)": prep[0]})
+        return out[0]
+
+    disabled = run_flow(link, None)  # outil non branché : la donnée normalisée traverse le nœud désactivé
+    assert disabled["tous_confirmes"] is False and "non branché" in disabled["resume"]
+    failed = run_flow({"error": {"message": "HTTP 500"}}, None)
+    assert failed["tous_confirmes"] is False and "échec" in failed["resume"]
+    no_customer = run_flow({"unsubscribed": True}, None)
+    assert no_customer["tous_confirmes"] is True and "sans objet" in no_customer["resume"]
+    shop_ok = {"data": {"customerEmailMarketingConsentUpdate": {"userErrors": []}}}
+    both = run_flow({"unsubscribed": True, "shopify_customer_id": "123"}, shop_ok)
+    assert both["tous_confirmes"] is True
+    shop_err = {"data": {"customerEmailMarketingConsentUpdate": {"userErrors": [{"message": "x"}]}}}
+    assert run_flow({"unsubscribed": True, "shopify_customer_id": "123"}, shop_err)["tous_confirmes"] is False
+    prep_disabled, _ = run_js(tmp_path, prep_code, [{"unsubscribed": True, "shopify_customer_id": "123"}], ctx)
+    out, _ = run_js(tmp_path, bilan_code, [prep_disabled[0]],
+                    {**ctx, "Préparer l’étape Shopify (désinscription)": prep_disabled[0]})
+    assert out[0]["tous_confirmes"] is False and "Shopify : non branché" in out[0]["resume"]
+
+
+def test_f4_landing_page_says_request_received_not_done() -> None:
+    """CON-05 : la page de retour annonce une demande reçue et le traitement manuel, sans prétendre plus."""
+    page = (ROOT / "site" / "landing" / "desinscription.html").read_text(encoding="utf-8")
+    assert "Demande de désinscription reçue" in page and "à la main" in page
+    assert "Votre désinscription est enregistrée et s'applique à tous nos outils" not in page
+
+
+@pytest.mark.skipif(NODE_BIN is None, reason="node absent : code non exécuté")
+def test_f4_digest_warns_when_real_time_alerts_are_off(tmp_path: Path) -> None:
+    """E2E-13 / E2E-07 : le digest signale des alertes simulées et le compteur de cycles propres."""
+    js = nodes(WORKFLOWS["05_digest_quotidien.json"])["Composer le digest (étoile polaire en premier)"]["parameters"]["jsCode"]
+    ctx = {
+        "Étoile polaire (GET /northstar)": {"cumulative": "0.00", "rows": []},
+        "État du stop-loss (GET /stoploss/status)": {"available": False, "error": "aucune photo", "triggers": []},
+        "Tableau de bord du jour (GET /dashboard/daily)": {"report": {}},
+        "Cycles de synchronisation (GET /sync/history)": {"consecutive_clean_runs": 3, "target": 20, "runs": [
+            {"status": "VIDE", "supplier_id": "fictif_grossiste_a", "offers_costed": 0}]},
+        "État du moteur (GET /health)": {"notifications": {"webhook_configured": True, "webhook_dry_run": True,
+                                                            "real_time_alerts": False}, "persistence": {"unreadable": []}},
+    }
+    out, _ = run_js(tmp_path, js, [{}], ctx)
+    text = out[0]["texte"]
+    assert "ALERTES TEMPS RÉEL INACTIVES (POKESHOP_NOTIFY_DRY_RUN=true)" in text
+    assert "3 cycle(s) propre(s) consécutif(s) sur 20" in text and "dernier cycle VIDE" in text
+    ctx["État du moteur (GET /health)"]["notifications"]["real_time_alerts"] = True
+    assert "ALERTES TEMPS RÉEL INACTIVES" not in run_js(tmp_path, js, [{}], ctx)[0][0]["texte"]
+
+
+def test_f4_mandate_requests_carry_no_treasury() -> None:
+    """MOT-08 / SEC-04 (partie n8n) : 08 n'envoie jamais de trésorerie ; le moteur lit ses registres."""
+    by = nodes(WORKFLOWS["08_mandat_depenses.json"])
+    body = by["Contrôle du mandat (POST /mandate/check)"]["parameters"]["jsonBody"]
+    assert "treasury" not in body and "record: true" in body
