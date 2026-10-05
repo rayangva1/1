@@ -3776,6 +3776,22 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             )
         return None
 
+    def _known_suppliers(product_key: str, entry: CatalogEntry) -> frozenset[str]:
+        """Fournisseurs connus **du moteur** pour une référence (revue R5, R2-NEW-01 c) — jamais déclarés par l'agent 05.
+
+        Liens fournisseur du catalogue (``catalogue``), offres rapprochées et évaluées par le moteur (coûts de
+        remplacement, toute provenance de frais : seul le fournisseur compte ici) et cycles ``/sync/run`` **sur le
+        catalogue du registre** qui ont rapproché la référence (journal persisté ``sync_runs`` : survit au
+        redémarrage). Vide : fournisseur d'une facture invérifiable (fermé par défaut).
+        """
+        known = {link.supplier_id for link in entry.supplier_links}
+        known.update(rc.supplier_id for rc in svc.sync.replacement_costs.history(product_key))
+        known.update(
+            run.supplier_id for run in svc.sync_runs.runs()
+            if run.catalog_source == "registre" and product_key in run.product_ids
+        )  # fmt: skip
+        return frozenset(known)
+
     def _moved_qty(kind: str, stock_ref: str | None, *, sku: str | None = None, product_key: str | None = None,
                    invoice_ref: str | None = None, exclude_ref: str | None = None) -> int:  # fmt: skip
         """Unités déjà portées par les mouvements ``kind`` qui citent ce bon / cette facture (même SKU ou référence)."""
@@ -3805,6 +3821,13 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 return 409, (
                     f"{body.product_key} : clé produit canonique absente du catalogue validé (product_id = "
                     "listing.product_key) — SKU de la réception inconnu"
+                )
+            if not principal.owner and body.stock_ref.startswith("return:"):
+                # Revue R5 (R3-NEW-05) : un retour physique ne se valorise que par RETURN, au coût de la vente d'origine
+                # (sinon la même unité retournée entrerait deux fois au coût : RECEIPT puis RETURN).
+                return 409, (
+                    f"réception {body.stock_ref} : référence « return: » réservée aux retours (RETURN, au coût de la "
+                    "vente d'origine) — jamais une réception au coût d'une facture"
                 )
             sku = entry.listing.public_sku
             receipt = svc.stock.receipt(sku, body.stock_ref)
@@ -3836,12 +3859,21 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 invoice = svc.invoices.get(body.invoice_ref)
                 line = invoice.line_for(body.product_key) if invoice is not None else None
                 if invoice is not None and line is not None:
-                    # Revue R5 (R2-NEW-01 c) : facture d'un fournisseur lié à la référence, quantités rapprochées.
-                    suppliers = {link.supplier_id for link in entry.supplier_links}
-                    if suppliers and invoice.supplier_id not in suppliers:
+                    # Revue R5 (R2-NEW-01 c) : facture d'un fournisseur connu pour la référence (fermé par défaut :
+                    # fournisseur inconnu => 409), quantités rapprochées.
+                    suppliers = _known_suppliers(body.product_key, entry)
+                    if not suppliers:
                         return 409, (
-                            f"facture {body.invoice_ref} du fournisseur {invoice.supplier_id} : {body.product_key} n'est lié "
-                            f"qu'à {', '.join(sorted(suppliers))} au catalogue — la propriétaire rapproche"
+                            f"facture {body.invoice_ref} : aucun fournisseur connu du moteur pour {body.product_key} (lien "
+                            "fournisseur au catalogue, POST /catalog/items par catalogue, ou offre rapprochée par un cycle "
+                            "/sync/run sur le catalogue du registre) — fournisseur de la facture invérifiable : lien à "
+                            "déclarer, ou la propriétaire inscrit le coût"
+                        )
+                    if invoice.supplier_id not in suppliers:
+                        return 409, (
+                            f"facture {body.invoice_ref} du fournisseur {invoice.supplier_id} : {body.product_key} n'est "
+                            f"connu que chez {', '.join(sorted(suppliers))} (catalogue, offres rapprochées) — la "
+                            "propriétaire rapproche"
                         )
                     already = _moved_qty("RECEIPT", None, product_key=body.product_key, invoice_ref=body.invoice_ref,
                                          exclude_ref=body.ref)  # fmt: skip
@@ -3903,6 +3935,29 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                         f"de l'avoir {refund_id} : un remboursement sans retour (geste commercial) ne remet rien en "
                         "stock ; correction : la propriétaire"
                     )
+                if body.product_key in svc.orders.pending_cogs().get(order_id, {}):
+                    # Revue R5 (R4-NEW-01) : la sortie au CMP de la commande attend encore un stock valorisé.
+                    return 409, (
+                        f"commande {order_id} : coût des ventes de {body.product_key} encore en attente (sortie au CMP non "
+                        "dérivée) — inscrire d'abord le coût de réception ; le retour au coût suit"
+                    )
+                # Revue R5 (R3-NEW-05) : un avoir inférieur au coût des unités qu'il dit retournées n'est pas un retour
+                # contre remboursement (geste commercial, décote d'une unité ouverte) : la paire avoir + retour ne
+                # relève jamais l'étoile polaire ni la photo ; sinon la propriétaire décide.
+                cost_back = Decimal("0")
+                for ln in refund.lines:
+                    ledger = svc.costs.ledger(ln.product_key)
+                    issues = [e for e in (ledger.journal() if ledger is not None else ()) if e.kind == "ISSUE"
+                              and e.ref == body.sale_ref]  # fmt: skip
+                    sold_qty = sum(e.qty for e in issues)
+                    if sold_qty > 0:
+                        cost_back += sum((e.cogs for e in issues), Decimal("0")) * ln.qty / sold_qty
+                if refund.net_sales_ht < cost_back.quantize(Decimal("0.01")):
+                    return 403, (
+                        f"avoir {refund_id} : {refund.net_sales_ht} CHF HT < coût des unités retournées "
+                        f"{cost_back.quantize(Decimal('0.01'))} CHF (coût de la vente d'origine) — geste commercial ou "
+                        "décote, pas un retour contre remboursement : la propriétaire inscrit le retour au coût"
+                    )
                 sku = entry.listing.public_sku
                 physical = svc.stock.receipt(sku, body.stock_ref or "")
                 if physical is None:
@@ -3913,7 +3968,8 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 received, receiver = physical
                 if receiver is None or receiver == principal.name:
                     return 403, "retour physique déclaré par le même jeton (ou inconnu) : un autre jeton doit l'avoir déclaré"
-                in_stock = _moved_qty("RETURN", body.stock_ref, sku=sku)
+                # Unités de ce retour physique déjà entrées au coût, par RETURN ou par une RECEIPT de la propriétaire.
+                in_stock = _moved_qty("RETURN", body.stock_ref, sku=sku) + _moved_qty("RECEIPT", body.stock_ref, sku=sku)
                 if in_stock + (body.qty or 0) > received:
                     return 403, (
                         f"retour de {body.qty} unité(s) > {received - in_stock} unité(s) physiquement reçue(s) "
@@ -4020,11 +4076,14 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         historique de la photo du stop-loss) cite la réception physique ``POST /stock/receive`` (même SKU,
         même quantité, déclarée par un **autre** jeton, ``stock_ref``) et la facture (``invoice_ref``) ; un
         **ajustement de facture** cite la facture et, au-delà de 2 % du coût à la réception, attend la
-        propriétaire. Revue R4 : le **coût unitaire** d'une réception est borné par une référence du moteur
-        (ligne de la facture enregistrée, sinon coût rendu de l'offre évaluée) : écart > 2 % (un carton saisi
-        comme unité : × 6 ou × 36) ou aucune référence => propriétaire ; une réception n'est valorisée qu'une
-        fois (clé canonique, même SKU) ; une sortie de vente (ISSUE) est dérivée des commandes enregistrées
-        (rôle : 403) ; un retour cite une commande enregistrée avec avoir. Sinon 409/422/403 (journalisé).
+        propriétaire. Revues R4 et R5 : le **coût unitaire** d'une réception est borné à ± 2 % d'une référence du
+        moteur que son bénéficiaire ne nourrit jamais — ligne de la facture enregistrée (unités reçues au coût ≤
+        quantité facturée : un carton saisi comme unité est refusé, 409 ; fournisseur de la facture connu du moteur
+        pour la référence, sinon 409), sinon coût rendu de l'offre évaluée avec des frais posés par la propriétaire ;
+        au-delà ou sans référence => propriétaire ; une réception physique (SKU à la réception, bon) n'est valorisée
+        qu'une fois ; ``return:`` est réservé aux retours ; une sortie de vente (ISSUE) est dérivée des commandes
+        enregistrées (rôle : 403) ; un retour (RETURN) exige un avoir à lignes couvrant au moins le coût des unités
+        retournées et le retour physique déclaré par un autre jeton. Sinon 409/422/403 (journalisé).
         """
         principal = require_api(request)
         _persistence_guard(CostRegister.STREAM, "registre de coûts historiques")

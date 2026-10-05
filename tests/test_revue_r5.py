@@ -20,8 +20,6 @@ Données, jetons et montants FICTIFS ; bases PostgreSQL : aucune (journaux en fi
 from __future__ import annotations
 
 import json
-import re
-import shutil
 import subprocess
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal as D
@@ -168,6 +166,29 @@ def test_r2new01_registered_invoice_reconciles_quantities_total_and_supplier(tmp
     assert svc.costs.ledger("FICTIF-P1").qty_on_hand == 6
 
 
+def test_r2new01_invoice_supplier_must_be_known_to_the_engine_even_after_a_restart(tmp_path: Path) -> None:
+    """Sans lien fournisseur au catalogue, le contrôle du fournisseur de la facture était sauté (ouvert par défaut)."""
+    client, _, _ = F.boot(tmp_path)
+    catalog(client)  # aucun lien fournisseur, aucune offre rapprochée : fournisseur invérifiable
+    receive(client)
+    invoice = {"invoice_ref": "FICTIF-FACT-1", "supplier_id": "fictif_grossiste_a", "issued_at": (NOW - timedelta(days=1)).isoformat(),
+               "total_chf": "546.36", "lines": [{"product_key": "FICTIF-P1", "qty": 6, "unit_cost_chf": "91.06"}],
+               "source": "facture FICTIVE (formulaire 03)"}  # fmt: skip
+    assert client.post("/costs/invoices", headers=H03, json=invoice).status_code == 201
+    unknown = client.post("/costs/movements", headers=JR.HF, json=receipt("91.06"))
+    assert unknown.status_code == 409 and "aucun fournisseur connu" in body(unknown)["erreur"]
+    # Cycle n8n-01 sur le catalogue du registre : l'offre de fictif_grossiste_a est rapprochée (journal persisté).
+    owner_fees_and_cycle(client)
+    client2, svc2, _ = F.boot(tmp_path)  # redémarrage : coûts de remplacement perdus, journal des cycles relu
+    assert svc2.sync.replacement_costs.history("FICTIF-P1") == ()
+    other = {**invoice, "invoice_ref": "FICTIF-FACT-C", "supplier_id": "fictif_grossiste_c"}
+    assert client2.post("/costs/invoices", headers=H03, json=other).status_code == 201
+    wrong = client2.post("/costs/movements", headers=JR.HF, json=receipt("91.06", invoice_ref="FICTIF-FACT-C"))
+    assert wrong.status_code == 409 and "fictif_grossiste_c" in body(wrong)["erreur"]
+    assert client2.post("/costs/movements", headers=JR.HF, json=receipt("91.06")).status_code == 200
+    assert svc2.costs.ledger("FICTIF-P1").qty_on_hand == 6
+
+
 # ============================================================ R2-NEW-01 (d) : SKU au moment de la réception
 
 
@@ -220,6 +241,74 @@ def test_r3new05_return_needs_refund_lines_and_a_physical_return(tmp_path: Path)
     assert client.post("/costs/movements", headers=JR.HF, json={**one, "ref": "FICTIF-RET-3"}).status_code == 403  # > lignes
     assert svc.costs.ledger("FICTIF-P1").qty_on_hand == 1
     assert svc.costs.movements()[-1].sku == SKU
+
+
+def test_r3new05_refund_below_the_cost_of_returned_units_and_return_receipts_never_inflate_the_stock(tmp_path: Path) -> None:
+    """Avoir de 5 CHF « à lignes » (6 unités) + retour physique : la paire relevait l'étoile polaire de ~600 CHF ;
+    un retour physique cité par une RÉCEPTION au coût entrait deux fois (RECEIPT puis RETURN)."""
+    back = {"kind": "RETURN", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "FICTIF-RET-5", "qty": 6,
+            "sale_ref": "order:1001", "stock_ref": "return:FICTIF-AV-5"}
+    links = [{"supplier_id": "fictif_grossiste_a", "supplier_sku": "FICTIF-SKU-1"}]
+    invoice = {"invoice_ref": "FICTIF-FACT-9", "supplier_id": "fictif_grossiste_a", "issued_at": (NOW - timedelta(days=1)).isoformat(),
+               "total_chf": "607.41", "lines": [{"product_key": "FICTIF-P1", "qty": 6, "unit_cost_chf": "101.23"}],
+               "source": "facture FICTIVE (formulaire 03)"}  # fmt: skip
+
+    def boot(sub: str) -> tuple[Any, Any]:
+        client, svc, _ = F.boot(tmp_path / sub)
+        F.feed_registers(client, svc)  # 6 displays au coût (101.2345)
+        assert client.post("/catalog/items", headers=JR.HCAT, json={"items": [{"product_id": "FICTIF-P1", "listing": F.LISTING,
+                                                                               "supplier_links": links}]}).status_code == 200
+        assert client.post("/costs/invoices", headers=H03, json=invoice).status_code == 201
+        assert client.post("/orders/shipped", headers=JR.HORDERS, json=order("1001", qty=6, sales="855.00")).status_code == 201
+        return client, svc
+
+    # 1. Geste de 5 CHF déclaré « avec 6 unités retournées » par operations-sav, retour physique déclaré : refusé.
+    client, svc = boot("geste")
+    geste = {"refund_id": "FICTIF-AV-5", "at": NOW.isoformat(), "net_sales_ht": "5.00", "lines": [{"public_sku": SKU, "qty": 6}]}
+    assert client.post("/orders/1001/refunds", headers=JR.HOPS, json=geste).status_code == 201
+    receive(client, qty=6, ref="return:FICTIF-AV-5")
+    northstar = body(client.get("/northstar", headers=H))["cumulative"]
+    refused = client.post("/costs/movements", headers=JR.HF, json=back)
+    assert refused.status_code == 403 and "coût des unités retournées" in body(refused)["erreur"]
+    # Le retour physique n'est jamais valorisé comme une réception au coût d'une facture.
+    as_receipt = receipt("101.23", ref="FICTIF-LOT-R", stock_ref="return:FICTIF-AV-5", invoice_ref="FICTIF-FACT-9")
+    reserved = client.post("/costs/movements", headers=JR.HF, json=as_receipt)
+    assert reserved.status_code == 409 and "réservée aux retours" in body(reserved)["erreur"]
+    assert body(client.get("/northstar", headers=H))["cumulative"] == northstar and svc.costs.ledger("FICTIF-P1").qty_on_hand == 0
+    # La propriétaire décide (décote, unité rouverte…) : elle inscrit elle-même le retour au coût.
+    assert client.post("/costs/movements", headers=HO, json={**back, "qty": 1, "ref": "FICTIF-RET-P"}).status_code == 200
+
+    # 2. Retour contre remboursement (avoir ≥ coût) déjà entré au coût par une réception : jamais une 2ᵉ fois.
+    client, svc = boot("double")
+    full = {"refund_id": "FICTIF-AV-6", "at": NOW.isoformat(), "net_sales_ht": "700.00", "lines": [{"public_sku": SKU, "qty": 5}]}
+    assert client.post("/orders/1001/refunds", headers=JR.HOPS, json=full).status_code == 201
+    receive(client, qty=5, ref="return:FICTIF-AV-6")
+    by_owner = receipt("101.23", qty=5, ref="FICTIF-LOT-P", stock_ref="return:FICTIF-AV-6", invoice_ref="FICTIF-FACT-9")
+    assert client.post("/costs/movements", headers=HO, json=by_owner).status_code == 200
+    five = {**back, "qty": 5, "ref": "FICTIF-RET-6", "stock_ref": "return:FICTIF-AV-6"}
+    twice = client.post("/costs/movements", headers=JR.HF, json=five)
+    assert twice.status_code == 403 and "physiquement reçue" in body(twice)["erreur"]
+    assert svc.costs.ledger("FICTIF-P1").qty_on_hand == 5
+
+
+def test_r3new05_return_on_an_order_whose_cost_of_sales_is_pending_waits_for_the_cost(tmp_path: Path) -> None:
+    client, svc, _ = F.boot(tmp_path)
+    F.feed_registers(client, svc)
+    assert client.post("/orders/shipped", headers=JR.HORDERS, json=order("1000", qty=6, sales="855.00")).status_code == 201
+    receive(client, ref="FICTIF-BL-2")  # stock reçu, coût pas encore inscrit
+    assert body(client.post("/orders/shipped", headers=JR.HORDERS, json=order("1001")))["cost_of_sales_pending"] == {"FICTIF-P1": 1}
+    refund = {"refund_id": "FICTIF-AV-1", "at": NOW.isoformat(), "net_sales_ht": "142.50", "lines": [{"public_sku": SKU, "qty": 1}]}
+    assert client.post("/orders/1001/refunds", headers=JR.HOPS, json=refund).status_code == 201
+    receive(client, qty=1, ref="return:FICTIF-AV-1")
+    back = {"kind": "RETURN", "product_key": "FICTIF-P1", "at": NOW.isoformat(), "ref": "FICTIF-RET-1", "qty": 1,
+            "sale_ref": "order:1001", "stock_ref": "return:FICTIF-AV-1"}
+    waiting = client.post("/costs/movements", headers=JR.HF, json=back)
+    assert waiting.status_code == 409 and "en attente" in body(waiting)["erreur"]
+    F.engine_offer(svc, "101.23")
+    late = receipt("101.23", ref="FICTIF-LOT-2", stock_ref="FICTIF-BL-2", invoice_ref="FICTIF-FACT-2")
+    assert client.post("/costs/movements", headers=JR.HF, json=late).status_code == 200
+    assert client.post("/costs/movements", headers=JR.HF, json=back).status_code == 200
+    assert svc.orders.pending_cogs() == {} and svc.costs.ledger("FICTIF-P1").qty_on_hand == 6
 
 
 # ===================================================================== R4-NEW-01 : commande jamais perdue
@@ -344,7 +433,7 @@ def test_r4doc02_import_vat_counts_in_the_receipt_reference_by_the_engine_vat_pr
                "source": "facture FICTIVE (formulaire 03)"}  # fmt: skip
     for profile, accepted, refused in (("EFFECTIVE", "106.67", "115.31"), ("NOT_REGISTERED", "115.31", "106.67")):
         client, _, _ = F.boot(tmp_path / profile, POKESHOP_VAT_PROFILE=profile)
-        catalog(client)
+        catalog(client, links=True)  # fournisseur de la facture connu du moteur (lien déclaré par `catalogue`)
         receive(client)
         assert client.post("/costs/invoices", headers=H03, json=invoice).status_code == 201
         assert client.post("/costs/movements", headers=JR.HF, json=receipt(refused)).status_code == 403, profile

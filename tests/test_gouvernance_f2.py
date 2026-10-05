@@ -814,7 +814,10 @@ def test_f2_registries_survive_restart_in_postgres(pg: dict[str, Any], tmp_path:
     listing = {"product_key": "FICTIF-P1", "public_sku": "DSP-FICTIF_ALPHA-FR", "fictif": True,
                "identity": {"gtin": "2000000001012", "language": "FR", "extension": "FICTIF_ALPHA", "format": "DISPLAY",
                             "content": "36 BOOSTERS", "sealed": True}}
-    assert client.post("/catalog/items", headers=HCAT, json={"items": [{"product_id": "FICTIF-P1", "listing": listing}]}).status_code == 200
+    # Revue R5 (R2-NEW-01 c) : lien fournisseur déclaré par `catalogue` => fournisseur de la facture vérifiable.
+    links = [{"supplier_id": "fictif_grossiste_a", "supplier_sku": "FICTIF-A-001"}]
+    assert client.post("/catalog/items", headers=HCAT, json={"items": [{"product_id": "FICTIF-P1", "listing": listing,
+                                                                        "supplier_links": links}]}).status_code == 200
     approval = {"product_id": "FICTIF-P1", "approved": True, "reason": "fiche FICTIVE relue par la propriétaire"}
     assert client.post("/catalog/approvals", headers=HO, json=approval).status_code == 201
     assert client.post("/stock/receive", headers=HOPS, json={"sku": "DSP-FICTIF_ALPHA-FR", "qty": 1,

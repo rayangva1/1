@@ -19,6 +19,8 @@
 | Global | perte de valeur nette ≥ 20 % du capital engagé de référence (840 CHF avec le point zéro recommandé, C19) ; photo non évaluable = tout refusé | tout gelé, retour au niveau d'autonomie 1, alerte ; réarmement par la propriétaire uniquement, avec son jeton et la valeur nette attestée |
 | Temps | 60 j sans atteindre les seuils de validation | dossier continuer/ajuster/arrêter |
 
+**Revue adverse de sécurité avant chaque niveau d'autonomie.** Le passage aux niveaux **2** (C14, ≈ J38), **3** (C15, avec G4, ≈ J45) et **4** (C17, option, ≈ J85) exige une **revue adverse de sécurité relancée et sans critical/high ouvert** sur la version mise en service (`REVUE_SECURITE.md` §5 ; intervention C31 ; tâches BL-200, BL-201, BL-202), et chaque risque résiduel « à traiter avant » ce niveau (`REVUE_SECURITE.md` §4) corrigé ou accepté par écrit par la propriétaire. Sinon, le gate peut conclure GO mais le niveau **n'est pas relevé** (REPORT du seul passage de niveau, rejoué après correction et nouvelle revue). Toute modification du code ou des workflows entre la revue et la hausse de niveau rend la revue caduque.
+
 **Les quatre issues d'un gate :**
 
 | Issue | Sens | Effet |
@@ -101,6 +103,7 @@ Les six conditions de lancement du BP, rendues mesurables :
 - **GO** : achat jusqu'à 3 000 CHF selon `ASSORTIMENT_PILOTE.md`, avec 750 CHF maximum par extension.
 - **GO sous conditions** : achat réduit à 1 500 CHF maximum, sur les références VERTES uniquement.
 - **REPORT** : si 3.1, 3.4 ou 3.6 est ROUGE.
+- **Niveau 2 après G3** (C14, ≈ J38) : en plus de la recette signée et du point zéro posé, revue adverse de sécurité relancée et sans critical/high ouvert (BL-200, §1).
 - **STOP** proposé si, sur au moins 10 références comparables, le prix rentable dépasse la référence marché de plus de 10 % pour **plus de 50 %** d'entre elles (BP §13 : « le prix rentable dépasse systématiquement le marché »), ou si le flux amont reste non fiabilisable à J45.
 
 ### G4 — J45 : premières commandes livrées, contribution positive → GO du test publicitaire (BP §9 J31-45 ; §13 S5-6)
@@ -112,6 +115,7 @@ Les six conditions de lancement du BP, rendues mesurables :
 | 4.3 | Contribution cumulée des commandes (avant pub, avant charges fixes) | > 0 | — | ≤ 0 |
 | 4.4 | Survente, erreur critique | 0 | — | ≥ 1 |
 | 4.5 | Cash disponible avant le test (réserve + budget pub) | ≥ 1 600 + plafond pub engagé | — | < 1 600 (le stop-loss cash interdit la pub) |
+| 4.6 | Revue adverse de sécurité avant le niveau 3 (BL-201, `REVUE_SECURITE.md` §5) | relancée sur la version mise en service, aucun finding critical/high ouvert, risques résiduels « avant le niveau 3 » traités ou acceptés par écrit | — | non relancée, ou un finding critical/high ouvert : niveau 3 non activé (REPORT du passage de niveau) |
 
 **Décide :** la propriétaire (BL-123), avec activation du niveau 3 (BL-132). Aucune campagne ne démarre avant la recette du connecteur publicitaire (rôle `connecteur-publicite`, BL-198, J49) : la dépense pub n'est jamais déclarée par l'agent 10. **Recommandation saisonnière (EC-10) :** le Black Friday tombe le 27.11.2026 (J54). Démarrer le test **après le 30.11** (option A, recommandée : premier jour complet de données le 30.11, J57) ou dès J46 avec le plafond quotidien divisé par deux jusqu'au 30.11 (option B). Le choix fixe la date de G5.
 
@@ -139,6 +143,7 @@ Ordre de grandeur avec les hypothèses du BP §10 (panier de 95 CHF, contributio
 | 6.4 | Automatisation stable (§13 S7-12) | 0 incident critique sur 14 j | incidents résolus en < 24 h | incident critique ouvert |
 | 6.5 | Deuxième fournisseur actif (§13 S7-12) | import ou commande réalisés | compte ouvert | rien |
 | 6.6 | Étoile polaire : contribution nette des 4 dernières semaines | > 0 | entre −100 et 0 CHF | < −100 CHF **(hypothèse)** |
+| 6.7 | Revue adverse de sécurité avant le niveau 4 (BL-202, seulement si le niveau 4 est envisagé) | relancée, aucun finding critical/high ouvert, risques résiduels « avant le niveau 4 » traités ou acceptés par écrit | niveau 4 non demandé | un finding critical/high ouvert : niveau 4 non activé |
 
 **Décide :** l'agent 01 rédige le bilan (BL-147) ; aucune décision n'est requise, sauf si un critère est ROUGE (escalade).
 
@@ -207,6 +212,7 @@ Rédigée par : Agent 01 · Chiffres : Agent 05 · Tests certifiés : Agent 12
 
 Stop-loss actifs à date : aucun / {{liste}}
 Étoile polaire : cumul {{CHF}} ; 4 dernières semaines {{CHF}}
+Revue adverse de sécurité (si le gate relève un niveau d'autonomie) : round {{n}} du {{date}} ; critical/high ouverts : {{0}} ; risques résiduels acceptés : {{RS-xx}}
 Issue proposée : GO / GO sous conditions / REPORT / STOP
 Conditions, actions et dates (si GO sous conditions ou REPORT) : …
 Décision de la propriétaire (si requise) : … — date, signature
@@ -220,3 +226,4 @@ Décision de la propriétaire (si requise) : … — date, signature
 - [ ] Choisir la règle de démarrage du test publicitaire autour du Black Friday : après le 30.11 (option A, G5 à J64), ou plafond quotidien divisé par deux (option B, G5 à J60).
 - [ ] Confirmer que le GO sous conditions de G3 autorise un achat réduit à 1 500 CHF.
 - [ ] Confirmer avec l'agent gouvernance que les seuils de stop-loss cités ici sont identiques à `STOP_LOSS.md`.
+- [ ] Valider la règle du §1 : aucun niveau d'autonomie 2, 3 ou 4 sans revue adverse de sécurité relancée et sans critical/high ouvert (`REVUE_SECURITE.md` §5) ; critères 4.6 et 6.7.

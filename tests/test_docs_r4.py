@@ -218,10 +218,15 @@ def test_every_activation_document_puts_workflow_07_after_c19() -> None:
     assert items[-1] == "07" and items[0] == "04", items  # 07 en dernier, après C19
     chrono = {ln.split("|")[3].strip(): ln for ln in _text("docs/00-pilotage/INTERVENTIONS_HUMAINES.md").splitlines()
               if ln.startswith("| ☐ |")}  # fmt: skip
-    assert "**sauf 07**" in chrono["B23"] and "puis seulement** activer le workflow 07" in chrono["C19"]
+    # Revue R5 (R4-DOC-04) : plus de « tous sauf 07 » — l'ordre unique du §7 (02 et déclencheurs Shopify de 06 au niveau 2).
+    assert "05, 08, 01 et 03 à J26" in chrono["B23"] and "07 seulement après C19" in chrono["B23"]
+    assert "02 et les déclencheurs Shopify de 06 au niveau 2" in chrono["B23"] and "sauf 07" not in chrono["B23"]
+    assert "puis seulement** activer le workflow 07" in chrono["C19"]
     assert "votre jeton" in chrono["B26"] and "07 restant inactif" in chrono["B26"]
     rows = {r["ID"]: r for r in csv.DictReader(io.StringIO(_text("docs/00-pilotage/BACKLOG.csv")))}
-    assert "tous sauf 07" in rows["BL-178"]["Critère de done"]
+    assert "07 ni activé ni exécuté à la main avant le point zéro (BL-191)" in rows["BL-178"]["Critère de done"]
+    assert "02 et les déclencheurs Shopify de 06 inactifs jusqu'au niveau 2" in rows["BL-178"]["Critère de done"]
+    assert "tous sauf 07" not in rows["BL-178"]["Critère de done"]
     assert "07 restant inactif jusqu'à BL-191" in rows["BL-189"]["Critère de done"]
     assert {"BL-188", "BL-189", "BL-190"} <= {d.strip() for d in rows["BL-191"]["Dépendances"].split(",")}
     assert "**puis** activation du workflow 07" in _text("docs/00-pilotage/PLAN_90_JOURS.md")

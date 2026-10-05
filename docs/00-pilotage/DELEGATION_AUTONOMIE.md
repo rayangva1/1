@@ -204,27 +204,50 @@ Total délégable au BP §3 : 2 700 + 300 + 1 500 + 400 + 300 + 500 = **5 700 CH
 5. Signer de la même façon les **seuils** : `python -m pokeshop.stoploss fingerprint ../config/stoploss.v1.yaml` → `POKESHOP_STOPLOSS_FINGERPRINT` ; `python -m pokeshop.stoploss rules-fingerprint ../config/pricing_rules.v1.yaml` → `POKESHOP_RULES_FINGERPRINT`. Sans ces empreintes, le moteur applique, seuil par seuil, la valeur la plus stricte entre le fichier et sa référence (BP) ; avec une empreinte différente du fichier, le service démarre gelé.
 6. Générer **un jeton par rôle utilisé** de la matrice (`docs/08-agents/MATRICE_API.md`, intervention B22, J2) : les 10 connecteurs n8n et les 7 agents qui ont `CONN-API-MOTEUR` (03, 04, 05, 07, 10, 11, 12). Les agents 01, 02, 06, 08 et 09 n'ont pas d'accès à l'API : aucun jeton tant que leur connecteur n'est pas ouvert ; 01, 02, 06 et 09 demandent leurs dépenses par le workflow 08 (webhook à leur nom, secret de passerelle ci-dessous), l'agent 08 ne dépense pas. Trois temps, toujours dans cet ordre.
 
-   **a. Sur votre ordinateur, à J2 : générer** (dossier privé, rien sur le serveur ni dans le dépôt ; vérifié le 5.10.2026 : 17, 17 et 10 lignes, et l'API lancée avec ces empreintes accepte chaque jeton sous son rôle) :
+   **a. Sur votre ordinateur, à J2 : générer** (dossier privé, rien sur le serveur ni dans le dépôt). **Prérequis** : Linux ou macOS (sous Windows : WSL), avec `bash` et `openssl` (présents sur les deux) ; l'empreinte est calculée par `sha256sum` (Linux) ou, en repli, `shasum -a 256` (macOS), l'effacement par `shred -u` (Linux) ou `rm -P` (macOS). Le bloc s'exécute dans son propre `bash` en `set -euo pipefail` (votre terminal reste ouvert s'il échoue) : un outil absent l'arrête **avant** toute écriture, chaque valeur (jeton, empreinte, secret) doit compter exactement 64 hexadécimaux, et toute erreur efface les fichiers déjà écrits ; il refuse de tourner si les fichiers existent déjà (pas de doublon). Il se termine par le **même contrôle qu'à J8** (17 jetons, 17 empreintes, 10 secrets, aucune valeur vide) et n'affiche « OK » qu'après lui. Vérifié le 5.10.2026 sous Linux et dans un environnement réduit aux outils de macOS (`shasum`, `rm -P`, sans `sha256sum` ni `shred`) : 17, 17 et 10 lignes, et l'API lancée avec ces empreintes accepte chaque jeton sous son rôle ; sans outil d'empreinte, ou avec une valeur vide, rien n'est conservé.
    ```bash
+   bash <<'FIN'
+   set -euo pipefail
+   # Outils : Linux (coreutils) ou macOS (shasum, rm -P) ; un outil absent arrête tout avant la moindre écriture.
+   command -v openssl >/dev/null || { echo "openssl absent : rien n'est généré" >&2; exit 1; }
+   if command -v sha256sum >/dev/null; then empreinte() { sha256sum | cut -d' ' -f1; }
+   elif command -v shasum >/dev/null; then empreinte() { shasum -a 256 | cut -d' ' -f1; }       # macOS
+   else echo "ni sha256sum ni shasum : rien n'est généré" >&2; exit 1; fi
+   if command -v shred >/dev/null; then effacer() { shred -u "$@"; }
+   else effacer() { rm -P "$@"; }                                                               # macOS
+   fi
+   hex64() { [[ "$1" =~ ^[0-9a-f]{64}$ ]] || { echo "valeur vide ou invalide : tout est effacé" >&2; exit 1; }; }
    mkdir -m 700 -p ~/pokeshop-jetons && cd ~/pokeshop-jetons && umask 077
+   fichiers="jetons-roles.txt empreintes-roles.env secrets-passerelles.txt"
+   for f in $fichiers; do test ! -e "$f" || { echo "$f existe déjà : le ranger puis l'effacer (étape b) avant de recommencer" >&2; exit 1; }; done
+   trap 'st=$?; if [ "$st" -ne 0 ]; then for f in $fichiers; do if [ -e "$f" ]; then effacer "$f"; fi; done; fi' EXIT
    for role in n8n-01-sync n8n-02-commandes n8n-03-factures n8n-04-incidents n8n-05-digest n8n-06-marketing \
                n8n-07-stoploss n8n-08-mandat connecteur-tresorerie connecteur-publicite \
                donnees-fournisseurs catalogue finance-pricing site-integrations acquisition operations-sav qa-conformite; do
-     jeton="$(openssl rand -hex 32)"
+     jeton="$(openssl rand -hex 32)"; hex64 "$jeton"
+     hash="$(printf '%s' "$jeton" | empreinte)"; hex64 "$hash"
      var="POKESHOP_ROLE_TOKEN_SHA256_$(printf '%s' "$role" | tr 'a-z-' 'A-Z_')"
      printf '%s\t%s\n' "$role" "$jeton" >> jetons-roles.txt
-     printf '%s=%s\n' "$var" "$(printf '%s' "$jeton" | sha256sum | cut -d' ' -f1)" >> empreintes-roles.env
+     printf '%s=%s\n' "$var" "$hash" >> empreintes-roles.env
    done
    # un secret par credential « Passerelle … » de orchestration/README.md §4, jamais commun à deux agents :
    for passerelle in 03-agent-05-finance-pricing 04-agent-12-qa-conformite 06-agent-11-operations-sav \
                      08-agent-01-chef-de-projet 08-agent-02-sourcing 08-agent-06-direction-artistique \
                      08-agent-07-site-integrations 08-agent-09-communication 08-agent-10-acquisition 08-agent-11-operations-sav; do
-     printf '%s\t%s\n' "$passerelle" "$(openssl rand -hex 32)" >> secrets-passerelles.txt
+     secret="$(openssl rand -hex 32)"; hex64 "$secret"
+     printf '%s\t%s\n' "$passerelle" "$secret" >> secrets-passerelles.txt
    done
-   wc -l jetons-roles.txt empreintes-roles.env secrets-passerelles.txt   # 17, 17 et 10 ; sinon : shred -u *, recommencer
+   # contrôle de J2 = contrôle de J8 : chaque ligne porte une valeur de 64 hexadécimaux, ni vide ni doublée
+   test "$(grep -cE '^[a-z0-9-]+[[:space:]][0-9a-f]{64}$' jetons-roles.txt)" -eq 17
+   test "$(grep -cE '^POKESHOP_ROLE_TOKEN_SHA256_[A-Z0-9_]+=[0-9a-f]{64}$' empreintes-roles.env)" -eq 17
+   test "$(grep -cE '^[0-9]{2}-agent-[0-9]{2}-[a-z-]+[[:space:]][0-9a-f]{64}$' secrets-passerelles.txt)" -eq 10
+   test "$(cat $fichiers | wc -l)" -eq 44
+   echo "OK : 17 jetons, 17 empreintes, 10 secrets de passerelle dans ~/pokeshop-jetons"
+   FIN
    ```
+   Pas de « OK » : rien n'est à ranger ; lire le message (outil absent, fichiers déjà présents, valeur invalide), corriger, relancer le même bloc.
 
-   **b. Ranger, sur votre ordinateur** : recopier chaque ligne de `jetons-roles.txt` (jetons **en clair**) et de `secrets-passerelles.txt` dans le coffre (B03), une entrée par rôle ou par passerelle, ainsi que le fichier `empreintes-roles.env` (empreintes seulement), puis `shred -u jetons-roles.txt secrets-passerelles.txt`. Chaque jeton n'est ensuite remis, depuis le coffre, qu'à **un** destinataire : le credential n8n « Pokeshop API — jeton nommé <rôle> » (`orchestration/README.md` §4, créé par vous : à J8 pour 04 et 06, à J26 pour les autres) ou l'agent de ce rôle (référence `POKESHOP_AGENT_TOKEN_REF`). Chaque secret de passerelle va dans **deux** endroits seulement : la valeur du credential n8n « Passerelle … » correspondant et l'agent nommé (référence au coffre) ; le secret de 06 n'appartient qu'à l'agent 11, si bien qu'aucun autre agent ne déclare une réception au nom d'`operations-sav`.
+   **b. Ranger, sur votre ordinateur** : recopier chaque ligne de `jetons-roles.txt` (jetons **en clair**) et de `secrets-passerelles.txt` dans le coffre (B03), une entrée par rôle ou par passerelle, ainsi que le fichier `empreintes-roles.env` (empreintes seulement), puis effacer les deux fichiers en clair : `cd ~/pokeshop-jetons && shred -u jetons-roles.txt secrets-passerelles.txt` (Linux) ou `cd ~/pokeshop-jetons && rm -P jetons-roles.txt secrets-passerelles.txt` (macOS). Sur un SSD, aucune de ces commandes ne garantit l'effacement physique : gardez `~/pokeshop-jetons` sur un disque chiffré (FileVault sous macOS, LUKS sous Linux) et ne le synchronisez avec aucun service en ligne. Chaque jeton n'est ensuite remis, depuis le coffre, qu'à **un** destinataire : le credential n8n « Pokeshop API — jeton nommé <rôle> » (`orchestration/README.md` §4, créé par vous : à J8 pour 04 et 06, à J26 pour les autres) ou l'agent de ce rôle (référence `POKESHOP_AGENT_TOKEN_REF`). Chaque secret de passerelle va dans **deux** endroits seulement : la valeur du credential n8n « Passerelle … » correspondant et l'agent nommé (référence au coffre) ; le secret de 06 n'appartient qu'à l'agent 11, si bien qu'aucun autre agent ne déclare une réception au nom d'`operations-sav`.
 
    **c. Sur le serveur, à J8 (B27) : transférer, contrôler, ajouter** au fichier de variables créé par `sudo install -D -m 600 -o "$USER" .env.example /etc/pokeshop/api.env` (README « Démarrage ») :
    ```bash
@@ -235,10 +258,10 @@ Total délégable au BP §3 : 2 700 + 300 + 1 500 + 400 + 300 + 500 = **5 700 CH
      && test "$(wc -l < ~/empreintes-roles.env)" -eq 17 \
      && cat ~/empreintes-roles.env >> /etc/pokeshop/api.env && shred -u ~/empreintes-roles.env
    scripts/compose.sh config --quiet   # depuis le dépôt, sur le serveur : aucune variable manquante
-   # sur votre ordinateur, une fois le contrôle passé (la copie du coffre reste) :
-   shred -u ~/pokeshop-jetons/empreintes-roles.env
+   # sur votre ordinateur, une fois le contrôle passé (la copie du coffre reste) ; macOS : rm -P à la place de shred -u :
+   if command -v shred >/dev/null; then shred -u ~/pokeshop-jetons/empreintes-roles.env; else rm -P ~/pokeshop-jetons/empreintes-roles.env; fi
    ```
-   Un contrôle qui échoue n'ajoute rien (fichier tronqué, doublé ou modifié) : recopier le fichier depuis le coffre et recommencer. Les empreintes `POKESHOP_ROLE_TOKEN_SHA256_N8N_07_STOPLOSS`, `…_CONNECTEUR_TRESORERIE` et `…_FINANCE_PRICING` sont **obligatoires** pour lancer la pile. Pile sur votre ordinateur (essai local) : mêmes commandes sans `scp`, avec `~/pokeshop-jetons/empreintes-roles.env` à la place de `~/empreintes-roles.env`. Les secrets de passerelle ne vont **jamais** dans `/etc/pokeshop/api.env` (le moteur ne les connaît pas, n8n les vérifie). Le jeton commun (`POKESHOP_API_TOKEN_SHA256`, facultatif) ne fait que lire et simuler (toute écriture : 403) et ne sert qu'au tableau de bord (`dashboard/build.py`) ; ni lui ni votre jeton ne vont dans n8n ou chez un agent. **Votre jeton suffit seul** pour tous vos actes et vos lectures (en-tête `X-Pokeshop-Owner-Token`, aucun `X-Pokeshop-Token` requis en plus, revue R4).
+   Un contrôle qui échoue n'ajoute rien (fichier tronqué, doublé ou modifié) : recopier le fichier depuis le coffre et recommencer. Les empreintes `POKESHOP_ROLE_TOKEN_SHA256_N8N_07_STOPLOSS`, `…_CONNECTEUR_TRESORERIE` et `…_FINANCE_PRICING` sont **obligatoires** pour lancer la pile. Le serveur est sous Linux (`shred` présent). Pile sur votre ordinateur (essai local) : mêmes commandes sans `scp`, avec `~/pokeshop-jetons/empreintes-roles.env` à la place de `~/empreintes-roles.env` (sous macOS : `rm -P` à la place de `shred -u`). Les secrets de passerelle ne vont **jamais** dans `/etc/pokeshop/api.env` (le moteur ne les connaît pas, n8n les vérifie). Le jeton commun (`POKESHOP_API_TOKEN_SHA256`, facultatif) ne fait que lire et simuler (toute écriture : 403) et ne sert qu'au tableau de bord (`dashboard/build.py`) ; ni lui ni votre jeton ne vont dans n8n ou chez un agent. **Votre jeton suffit seul** pour tous vos actes et vos lectures (en-tête `X-Pokeshop-Owner-Token`, aucun `X-Pokeshop-Token` requis en plus, revue R4).
 7. Enregistrer vos apports (et tout retrait) : `POST /capital/movements` avec votre jeton (`X-Pokeshop-Owner-Token`, seul en-tête nécessaire), corps `{"movement_id": "APPORT-1", "at": "AAAA-MM-JJTHH:MM:SS+01:00", "kind": "CONTRIBUTION", "amount": "8000", "ref": "virement …"}`. Sans apport enregistré, aucune photo du stop-loss n'est acceptée et toute dépense reste refusée. Commande prête, sur le serveur (même fonction `api` que `STOP_LOSS.md` §5 : jeton saisi sans écho, jamais en argument ni dans l'historique) :
    ```bash
    read -rs OWNER_TOKEN

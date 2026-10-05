@@ -135,6 +135,20 @@ def test_backup_then_restore_test_in_a_throwaway_database(server: Server, source
     assert server.own_scratch() == []  # base jetable de CE test supprimée (jamais un comptage global)
 
 
+def test_r4new03_a_parallel_runs_scratch_database_is_never_touched(server: Server, source: str, tmp_path: Path) -> None:
+    """Revue R5 (R4-NEW-03) : la base jetable d'une autre exécution (même motif « pokeshop_verif_… ») survit à la
+    vérification et aux contrôles de CE test ; avant, le test comptait et supprimait tout « pokeshop_verif_% »."""
+    # Base « d'une autre exécution » créée PAR CE TEST (donc supprimée par son fixture, jamais une base d'autrui).
+    foreign = server.create("pokeshop_verif_autre_execution")
+    env = envs(server, source, tmp_path / "s")
+    assert run(BACKUP, "sauvegarde", env=env).returncode == 0
+    checked = run(BACKUP, "verifier", env=env)
+    assert checked.returncode == 0, checked.stderr
+    assert f"base jetable : {server.verif_prefix}" in checked.stderr  # préfixe propre à ce test
+    assert server.own_scratch() == [] and foreign not in server.own_scratch()
+    assert count("postgres", f"SELECT count(*) FROM pg_database WHERE datname = '{foreign}'") == "1"  # intacte
+
+
 def test_altered_or_incomplete_backup_is_rejected(server: Server, source: str, tmp_path: Path) -> None:
     env = envs(server, source, tmp_path / "s")
     dump = Path(run(BACKUP, "sauvegarde", env=env).stdout.strip().splitlines()[-1])
