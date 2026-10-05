@@ -220,6 +220,9 @@ REQUIRED_DENY = (
     "Read(**/secrets/**)",
     "Read(//etc/pokeshop/**)",
     "Read(//proc/*/environ)",
+    # Jetons et secrets en clair générés sur l'ordinateur de la propriétaire (revue R6, R5C-DOC-10).
+    "Read(~/pokeshop-jetons/**)",
+    "Edit(~/pokeshop-jetons/**)",
     "Edit(**/.env)",
     "Edit(**/secrets/**)",
     "Bash(env)",

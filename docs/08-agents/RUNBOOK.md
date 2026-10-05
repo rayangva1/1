@@ -16,6 +16,7 @@
 ## 2. Mise en route (une seule fois)
 
 1. **Prérequis** : Claude Code installé (`claude --version`) ; un terminal ouvert à la racine du dépôt. Les 12 agents de `.claude/agents/` sont découverts automatiquement comme sous-agents du projet.
+   **Machine et compte de la flotte** (revue R6, RS-02, RS-16) : la flotte ne tourne **jamais sous votre compte**. Une règle `deny` ne filtre que les outils de Claude Code : un script lancé par un agent lit tout ce que son compte système peut lire. Cible, **avant le niveau 2** (B28, BL-204) : un compte système dédié par agent qui détient un jeton de l'API (03, 04, 05, 07, 10, 11 et 12, ex. `pokeshop-a05`), son jeton dans un fichier de ce seul compte, et un compte commun sans jeton pour les autres (ex. `pokeshop-agents`) ; aucun de ces comptes n'a `sudo`, n'est membre du groupe `docker` (équivaut à root, donc à la base en superutilisateur) ni ne lit `/etc/pokeshop`, votre coffre, `~/pokeshop-jetons`, les sauvegardes ou votre dossier (`chmod 700`). Un conteneur par agent convient aussi. Contrôle, sous **chaque** compte : `python docs/08-agents/outils/verifier_isolation.py --proprietaire-home <votre dossier>` doit afficher « OK ». Machine retenue : ________ ; comptes : ________ (à remplir à B28). **D'ici là** (niveau 1, simulation) : aucune session d'agent sur votre ordinateur tant que `~/pokeshop-jetons` contient un fichier en clair (J2 : étape b de `DELEGATION_AUTONOMIE.md` §10 dans la foulée), et votre jeton n'est jamais dans un fichier, une variable exportée, un argument de commande ni l'historique (saisi par `read -rs`, effacé par `unset`).
 2. **Vérifier les définitions** :
    ```bash
    python docs/08-agents/outils/verifier_agents.py
@@ -36,6 +37,8 @@
 | Routine non interactive | Mode impression | `claude -p --agent qa-conformite "État des six stop-loss et tests du moteur"` |
 
 En mode impression (`-p`), personne ne peut répondre aux demandes de permission : une commande non pré-autorisée (par exemple `python -m pytest` pour le QA) est refusée. Pour une routine planifiée, pré-autoriser seulement les commandes de lecture nécessaires (voir « Validation humaine requise »).
+
+**Jetons et sessions** (revue R6) : un sous-agent appelé par le chef de projet tourne dans la session du chef de projet, sous son compte, **sans jeton de l'API**. Une tâche qui écrit dans le moteur se fait dans la session de l'agent concerné, lancée sous son compte (ex. `sudo -iu pokeshop-a05 claude --agent finance-pricing`, après B28) : aucune session ne détient deux jetons.
 
 Le chef de projet ne peut déléguer qu'aux 11 agents de la flotte (outil `Agent(...)` restreint). Les autres agents ne délèguent pas. Chaque agent rend un rapport au format standard (`docs/08-agents/modeles/RAPPORT_AGENT.md`) ; le chef de projet les archive dans `docs/08-agents/rapports/`.
 

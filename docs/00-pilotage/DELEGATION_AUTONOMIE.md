@@ -74,7 +74,7 @@ Les dépenses validées par vous comptent dans les **enveloppes** (c'est votre b
 | Payer autrement que par PayPal dédié ou virement préparé (carte, crypto, espèces…) | `PAYMENT_METHOD_FORBIDDEN` : **refus** | Fiche E2 |
 | Cartes à l'unité, grading, rachats clients, produits non FR, achat spéculatif | `FORBIDDEN_CATEGORY` / `NON_FR_PRODUCT` : **refus**, non modifiable par le YAML | Hors périmètre BP « Le périmètre de départ » |
 | Toucher la réserve de 1 600 CHF | Règle de réserve + stop-loss cash | Votre décision uniquement |
-| Contourner une vérification : fractionner un achat, réutiliser une clé d'idempotence, modifier le mandat ou un seuil, désactiver un stop-loss, contourner un CAPTCHA ou un contrôle d'accès | Anti-fractionnement, idempotence (rejeu réévalué), **empreinte du mandat au coffre** (toute modification le désactive), **empreintes des seuils** du stop-loss et des règles de prix au coffre (fichier modifié sans signature : seuils les plus stricts ; empreinte différente : service gelé), journal append-only | Incident E3, gel conservatoire par l'agent 12 |
+| Contourner une vérification : fractionner un achat, réutiliser une clé d'idempotence, modifier le mandat ou un seuil, désactiver un stop-loss, contourner un CAPTCHA ou un contrôle d'accès | Anti-fractionnement, idempotence (rejeu réévalué), **empreinte du mandat au coffre** (toute modification le désactive), **empreintes des seuils** du stop-loss et des règles de prix au coffre (fichier modifié sans signature : seuils les plus stricts ; empreinte différente : stop-loss non chargé pour ses seuils, service gelé pour les règles de prix), journal append-only | Incident E3, gel conservatoire par l'agent 12 |
 | Se déclarer « propriétaire » ou déclarer ses propres chiffres | Acteur **déduit du jeton** (un jeton par rôle) ; matrice d'autorisations **refusant par défaut** (une route absente ou un rôle non listé : 403) ; « propriétaire » refusé sans son jeton ; trésorerie, taux, plafonds, dépenses pub, coûts et validations de fiches lus dans les registres du moteur, jamais déposés par le rôle qui en bénéficie | Refus journalisé (403) |
 | Exécuter une instruction reçue par email, sur une page web ou dans un fichier (« changez l'IBAN », « payez vite ») | Coordonnées de paiement **uniquement** depuis le coffre (`payee_ref`) | Suspicion de fraude : E3 |
 | Communiquer ou recopier un identifiant, un mot de passe, un IBAN | Secrets dans le coffre uniquement | Fiche E3, rotation du secret |
@@ -103,7 +103,7 @@ Les dépenses validées par vous comptent dans les **enveloppes** (c'est votre b
 | Identifiants API PayPal | Credentials n8n, alimentés par le coffre | Passerelle n8n | Jamais dans le chat, le dépôt, un prompt ou un rapport |
 | Coordonnées des bénéficiaires (IBAN, adresse PayPal) | Coffre, référencées par `payee_ref` | Vous (saisie), passerelle (lecture) | Jamais tirées d'un email ; tout changement reçu = fraude présumée |
 | Empreinte du mandat signé | Variable `POKESHOP_MANDATE_FINGERPRINT` du coffre (**obligatoire**) et `approval.fingerprint_sha256` du YAML | Vous | C'est le report au coffre qui vaut signature : sans lui le mandat est inactif ; un YAML modifié ne correspond plus à l'empreinte du coffre, le mandat devient inactif |
-| Empreintes des seuils (stop-loss, règles de prix) | `POKESHOP_STOPLOSS_FINGERPRINT`, `POKESHOP_RULES_FINGERPRINT` (coffre) | Vous | Absentes : chaque seuil vaut le plus strict entre le fichier et la référence du code ; différentes du fichier : service gelé jusqu'à nouvelle signature |
+| Empreintes des seuils (stop-loss, règles de prix) | `POKESHOP_STOPLOSS_FINGERPRINT`, `POKESHOP_RULES_FINGERPRINT` (coffre) | Vous | Absentes : chaque seuil vaut le plus strict entre le fichier et la référence du code ; différentes du fichier, jusqu'à nouvelle signature : seuils du stop-loss => stop-loss non chargé (503, aucune écriture réelle ni dépense) ; règles de prix => service gelé (`CONFIG_UNSIGNED`) |
 | Jetons des rôles | **Un jeton par rôle** de la matrice d'autorisations versionnée (`engine/pokeshop/authz.py`, table `docs/08-agents/MATRICE_API.md`) : agents de `.claude/agents/` et connecteurs n8n ; empreintes dans `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` (coffre ; un nom inconnu de la matrice fait échouer le démarrage) ; credentials n8n nommés par rôle (références seulement dans les exports) | Vous (génération), chaque agent ou credential n8n (le sien) | **Refus par défaut** : chaque écriture n'est admise que pour les rôles listés ; l'acteur journalisé est déduit du jeton ; le jeton commun (facultatif, `POKESHOP_API_TOKEN_SHA256`) ne fait que lire et simuler (toute écriture : 403) ; séparation des rôles : `acquisition` ne déclare pas sa dépense pub (`connecteur-publicite`, MAX avec les paiements pub **engagés** du mandat : approuvés ou exécutés ; sans connecteur, aucune campagne), `catalogue` ne valide pas ses fiches (vous, `POST /catalog/approvals`), `finance-pricing` n'enregistre un coût qu'adossé à une réception d'`operations-sav` et à ± 2 % d'une référence du moteur (facture enregistrée par `n8n-03-factures` après votre validation, ou offre évaluée ; sinon vous) ; secrets de passerelle n8n : un par agent, jamais partagé |
 | Taux de change de référence | Registre des taux (`POST /fx/rates`, votre jeton) | Vous | **Seule source de taux** du moteur : aucun `fx_*` n'est accepté d'un appelant sur `/sync/run` ni `/catalog/cost-inputs` (422) ; sans taux frais, coût incomplet (fiche en brouillon) et dépense en devise en validation humaine. Source officielle datée (ex. cours de la BNS) ; valable le jour même et le jour ouvré suivant |
 | Apports et retraits de capital | Registre du capital (`POST /capital/movements`, votre jeton, ajout seul) | Vous | **Seule source** des mouvements de capital du stop-loss global : une photo qui en déclare est refusée (422) |
@@ -201,7 +201,7 @@ Total délégable au BP §3 : 2 700 + 300 + 1 500 + 400 + 300 + 500 = **5 700 CH
    La ligne « à remplir » doit afficher `rien`.
 3. Recopier l'empreinte dans `approval.fingerprint_sha256` **et** dans le coffre (`POKESHOP_MANDATE_FINGERPRINT`). C'est ce second report, fait par vous seule, qui vaut signature : **sans lui, le mandat reste inactif** même si le YAML porte une empreinte correcte (un agent sait la calculer, pas écrire dans le coffre).
 4. Relancer la commande avec la variable du coffre chargée : la ligne « coffre » doit afficher `conforme` et l'état `ACTIF`.
-5. Signer de la même façon les **seuils** : `python -m pokeshop.stoploss fingerprint ../config/stoploss.v1.yaml` → `POKESHOP_STOPLOSS_FINGERPRINT` ; `python -m pokeshop.stoploss rules-fingerprint ../config/pricing_rules.v1.yaml` → `POKESHOP_RULES_FINGERPRINT`. Sans ces empreintes, le moteur applique, seuil par seuil, la valeur la plus stricte entre le fichier et sa référence (BP) ; avec une empreinte différente du fichier, le service démarre gelé.
+5. Signer de la même façon les **seuils** : `python -m pokeshop.stoploss fingerprint ../config/stoploss.v1.yaml` → `POKESHOP_STOPLOSS_FINGERPRINT` ; `python -m pokeshop.stoploss rules-fingerprint ../config/pricing_rules.v1.yaml` → `POKESHOP_RULES_FINGERPRINT`. Sans ces empreintes, le moteur applique, seuil par seuil, la valeur la plus stricte entre le fichier et sa référence (BP). Avec une empreinte différente du fichier, chacune ferme à sa façon (revue R6, R5C-DOC-09) : seuils du stop-loss => stop-loss **non chargé** (routes du stop-loss en 503, aucune écriture réelle ni dépense) ; règles de prix, ou écart entre deux sources d'une même règle => service **gelé** (`CONFIG_UNSIGNED`) ; mandat => mandat **inactif** (aucune dépense sans vous).
 6. Générer **un jeton par rôle utilisé** de la matrice (`docs/08-agents/MATRICE_API.md`, intervention B22, J2) : les 10 connecteurs n8n et les 7 agents qui ont `CONN-API-MOTEUR` (03, 04, 05, 07, 10, 11, 12). Les agents 01, 02, 06, 08 et 09 n'ont pas d'accès à l'API : aucun jeton tant que leur connecteur n'est pas ouvert ; 01, 02, 06 et 09 demandent leurs dépenses par le workflow 08 (webhook à leur nom, secret de passerelle ci-dessous), l'agent 08 ne dépense pas. Trois temps, toujours dans cet ordre.
 
    **a. Sur votre ordinateur, à J2 : générer** (dossier privé, rien sur le serveur ni dans le dépôt). **Prérequis** : Linux ou macOS (sous Windows : WSL), avec `bash` et `openssl` (présents sur les deux) ; l'empreinte est calculée par `sha256sum` (Linux) ou, en repli, `shasum -a 256` (macOS), l'effacement par `shred -u` (Linux) ou `rm -P` (macOS). Le bloc s'exécute dans son propre `bash` en `set -euo pipefail` (votre terminal reste ouvert s'il échoue) : un outil absent l'arrête **avant** toute écriture, chaque valeur (jeton, empreinte, secret) doit compter exactement 64 hexadécimaux, et toute erreur efface les fichiers déjà écrits ; il refuse de tourner si les fichiers existent déjà (pas de doublon). Il se termine par le **même contrôle qu'à J8** (17 jetons, 17 empreintes, 10 secrets, aucune valeur vide) et n'affiche « OK » qu'après lui. Vérifié le 5.10.2026 sous Linux et dans un environnement réduit aux outils de macOS (`shasum`, `rm -P`, sans `sha256sum` ni `shred`) : 17, 17 et 10 lignes, et l'API lancée avec ces empreintes accepte chaque jeton sous son rôle ; sans outil d'empreinte, ou avec une valeur vide, rien n'est conservé.
@@ -247,7 +247,7 @@ Total délégable au BP §3 : 2 700 + 300 + 1 500 + 400 + 300 + 500 = **5 700 CH
    ```
    Pas de « OK » : rien n'est à ranger ; lire le message (outil absent, fichiers déjà présents, valeur invalide), corriger, relancer le même bloc.
 
-   **b. Ranger, sur votre ordinateur** : recopier chaque ligne de `jetons-roles.txt` (jetons **en clair**) et de `secrets-passerelles.txt` dans le coffre (B03), une entrée par rôle ou par passerelle, ainsi que le fichier `empreintes-roles.env` (empreintes seulement), puis effacer les deux fichiers en clair : `cd ~/pokeshop-jetons && shred -u jetons-roles.txt secrets-passerelles.txt` (Linux) ou `cd ~/pokeshop-jetons && rm -P jetons-roles.txt secrets-passerelles.txt` (macOS). Sur un SSD, aucune de ces commandes ne garantit l'effacement physique : gardez `~/pokeshop-jetons` sur un disque chiffré (FileVault sous macOS, LUKS sous Linux) et ne le synchronisez avec aucun service en ligne. Chaque jeton n'est ensuite remis, depuis le coffre, qu'à **un** destinataire : le credential n8n « Pokeshop API — jeton nommé <rôle> » (`orchestration/README.md` §4, créé par vous : à J8 pour 04 et 06, à J26 pour les autres) ou l'agent de ce rôle (référence `POKESHOP_AGENT_TOKEN_REF`). Chaque secret de passerelle va dans **deux** endroits seulement : la valeur du credential n8n « Passerelle … » correspondant et l'agent nommé (référence au coffre) ; le secret de 06 n'appartient qu'à l'agent 11, si bien qu'aucun autre agent ne déclare une réception au nom d'`operations-sav`.
+   **b. Ranger, sur votre ordinateur, aussitôt après a** (le même jour, avant toute autre tâche ; revue R6, R5C-DOC-10) : tant que les deux fichiers en clair existent, aucune session d'agent ne tourne sur cet ordinateur (les règles `deny` de `.claude/settings.json` interdisent `~/pokeshop-jetons` à l'outil Read de Claude Code, mais n'arrêtent pas un script : RS-02). Recopier chaque ligne de `jetons-roles.txt` (jetons **en clair**) et de `secrets-passerelles.txt` dans le coffre (B03), une entrée par rôle ou par passerelle, ainsi que le fichier `empreintes-roles.env` (empreintes seulement), puis effacer les deux fichiers en clair : `cd ~/pokeshop-jetons && shred -u jetons-roles.txt secrets-passerelles.txt` (Linux) ou `cd ~/pokeshop-jetons && rm -P jetons-roles.txt secrets-passerelles.txt` (macOS). Sur un SSD, aucune de ces commandes ne garantit l'effacement physique : gardez `~/pokeshop-jetons` sur un disque chiffré (FileVault sous macOS, LUKS sous Linux) et ne le synchronisez avec aucun service en ligne. Chaque jeton n'est ensuite remis, depuis le coffre, qu'à **un** destinataire : le credential n8n « Pokeshop API — jeton nommé <rôle> » (`orchestration/README.md` §4, créé par vous : à J8 pour 04 et 06, à J26 pour les autres) ou l'agent de ce rôle (référence `POKESHOP_AGENT_TOKEN_REF`). Chaque secret de passerelle va dans **deux** endroits seulement : la valeur du credential n8n « Passerelle … » correspondant et l'agent nommé (référence au coffre) ; le secret de 06 n'appartient qu'à l'agent 11, si bien qu'aucun autre agent ne déclare une réception au nom d'`operations-sav`.
 
    **c. Sur le serveur, à J8 (B27) : transférer, contrôler, ajouter** au fichier de variables créé par `sudo install -D -m 600 -o "$USER" .env.example /etc/pokeshop/api.env` (README « Démarrage ») :
    ```bash
@@ -271,6 +271,65 @@ Total délégable au BP §3 : 2 700 + 300 + 1 500 + 400 + 300 + 500 = **5 700 CH
    api GET  /capital/movements
    unset OWNER_TOKEN
    ```
+
+8. **Remplacer un jeton de rôle ou un secret (rotation, revue R6, RS-12)** : **aussitôt** en cas de fuite supposée (jeton lu par un autre rôle, exécution n8n ou copie de `n8n-data` lue par un tiers : `orchestration/README.md` §2), au départ d'un agent ou d'un compte, et **une fois avant le niveau 2** pour l'exercer (B30, BL-206). Un jeton remplacé reste valable tant que son empreinte n'est pas remplacée sur le serveur et l'API relancée : faire les trois temps sans pause. Vérifié le 5.10.2026 (`tests/test_docs_r6.py`) : bloc a exécuté tel quel, bloc c exécuté sur une copie du fichier de variables, API relancée avec le résultat : ancien jeton 401, nouveau 200, les 16 autres inchangés ; fichier d'empreinte invalide ou variable absente : rien n'est changé.
+
+   **a. Jeton de rôle, sur votre ordinateur : générer** (mêmes prérequis que l'étape 6 ; remplacer `qa-conformite` par le rôle concerné) :
+   ```bash
+   bash <<'FIN'
+   set -euo pipefail
+   role=qa-conformite   # rôle dont le jeton est remplacé (un nom de la liste de l'étape 6)
+   command -v openssl >/dev/null || { echo "openssl absent : rien n'est généré" >&2; exit 1; }
+   if command -v sha256sum >/dev/null; then empreinte() { sha256sum | cut -d' ' -f1; }
+   elif command -v shasum >/dev/null; then empreinte() { shasum -a 256 | cut -d' ' -f1; }       # macOS
+   else echo "ni sha256sum ni shasum : rien n'est généré" >&2; exit 1; fi
+   if command -v shred >/dev/null; then effacer() { shred -u "$@"; }; else effacer() { rm -P "$@"; }; fi
+   hex64() { [[ "$1" =~ ^[0-9a-f]{64}$ ]] || { echo "valeur vide ou invalide : tout est effacé" >&2; exit 1; }; }
+   mkdir -m 700 -p ~/pokeshop-jetons && cd ~/pokeshop-jetons && umask 077
+   fichiers="rotation-jeton.txt rotation.env"
+   for f in $fichiers; do test ! -e "$f" || { echo "$f existe déjà : finir ou effacer la rotation en cours" >&2; exit 1; }; done
+   trap 'st=$?; if [ "$st" -ne 0 ]; then for f in $fichiers; do if [ -e "$f" ]; then effacer "$f"; fi; done; fi' EXIT
+   jeton="$(openssl rand -hex 32)"; hex64 "$jeton"
+   hash="$(printf '%s' "$jeton" | empreinte)"; hex64 "$hash"
+   printf '%s\t%s\n' "$role" "$jeton" > rotation-jeton.txt
+   printf 'POKESHOP_ROLE_TOKEN_SHA256_%s=%s\n' "$(printf '%s' "$role" | tr 'a-z-' 'A-Z_')" "$hash" > rotation.env
+   echo "OK : nouveau jeton de $role (rotation-jeton.txt) et son empreinte (rotation.env) dans ~/pokeshop-jetons"
+   FIN
+   ```
+   **b. Ranger aussitôt** : remplacer au coffre l'entrée du rôle par la ligne de `rotation-jeton.txt`, puis effacer ce fichier (`shred -u` sous Linux, `rm -P` sous macOS). Le nouveau jeton ne va qu'à son destinataire : la valeur du credential n8n « Pokeshop API — jeton nommé <rôle> », ou le fichier de jeton du compte système de l'agent (B28).
+
+   **c. Sur le serveur : remplacer la ligne** du fichier de variables (en place : propriétaire, mode 600 et autres lignes inchangés ; aucune copie temporaire du fichier), puis relancer l'API et vérifier :
+   ```bash
+   # sur votre ordinateur : l'empreinte seulement, jamais le jeton
+   scp ~/pokeshop-jetons/rotation.env serveur:~/rotation.env
+   # sur le serveur : une seule ligne valide, dont la variable existe une fois dans le fichier ; sinon rien n'est changé
+   bash <<'FIN'
+   set -euo pipefail
+   f=/etc/pokeshop/api.env; n=~/rotation.env
+   test "$(grep -c '' "$n")" -eq 1 && grep -qxE '(POKESHOP_ROLE_TOKEN_SHA256_[A-Z0-9_]+|POKESHOP_N8N_WEBHOOK_SECRET)=[0-9a-f]{64}' "$n" \
+     || { echo "$n invalide : rien n'est changé" >&2; exit 1; }
+   ligne="$(cat "$n")"; var="${ligne%%=*}"
+   test "$(grep -c "^$var=" "$f")" -eq 1 || { echo "$var absente ou en double dans $f : rien n'est changé" >&2; exit 1; }
+   roles="$(grep -c '^POKESHOP_ROLE_TOKEN_SHA256_' "$f")"
+   reste="$(grep -v "^$var=" "$f")"
+   printf '%s\n%s\n' "$reste" "$ligne" > "$f"
+   test "$(grep -cx "$ligne" "$f")" -eq 1 && test "$(grep -c '^POKESHOP_ROLE_TOKEN_SHA256_' "$f")" -eq "$roles"
+   shred -u "$n"
+   echo "OK : $var remplacée dans $f"
+   FIN
+   scripts/compose.sh up -d api   # depuis le dépôt : l'API est recréée avec la nouvelle valeur
+   # contrôle : jetons saisis sans écho, jamais en argument ni dans l'historique
+   read -rs ANCIEN; read -rs NOUVEAU
+   statut() { curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/incidents -H @<(printf 'X-Pokeshop-Token: %s\n' "$1"); }
+   statut "$ANCIEN"    # 401 attendu : l'ancien jeton est refusé
+   statut "$NOUVEAU"   # 200 attendu
+   unset ANCIEN NOUVEAU
+   ```
+   Puis, sur votre ordinateur, effacer `~/pokeshop-jetons/rotation.env` (`shred -u` ou `rm -P`).
+
+   **d. Secret de passerelle** (un credential « Passerelle … » de `orchestration/README.md` §4) : nouvelle valeur `openssl rand -hex 32` sur votre ordinateur, rangée au coffre à la place de l'ancienne ; puis, dans n8n, la valeur du credential remplacée (Save) et la copie de l'agent nommé remplacée (fichier de son compte, B28). Le moteur ne connaît pas ces secrets : pas de redémarrage. Contrôle : un appel du webhook avec l'**ancien** secret reçoit 403 (`curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<votre n8n>/webhook/<chemin> -H @<(printf 'X-Pokeshop-Gateway: %s\n' "$ANCIEN")`, secret saisi par `read -rs ANCIEN`, puis `unset ANCIEN`).
+
+   **e. Secret des notifications du moteur** (`POKESHOP_N8N_WEBHOOK_SECRET`) : sur le serveur, `umask 077 && printf 'POKESHOP_N8N_WEBHOOK_SECRET=%s\n' "$(openssl rand -hex 32)" > ~/rotation.env` ; recopier la valeur (après le `=`) au coffre et dans le credential n8n « Notification moteur → 04 » ; puis le bloc du serveur de l'étape c (même fichier `~/rotation.env`) et `scripts/compose.sh up -d api`. Entre les deux mises à jour, les alertes sont « non livrées » et signalées (`GET /health`, digest 05) : faire les deux à la suite. Contrôle : un incident FICTIF (`POST /incidents`, `simulation: true`) arrive dans 04 et `GET /health` montre `notifications.last_delivery.delivered: true`.
 
 **Modifier** : toute modification (plafond, bénéficiaire, date, signataire) change l'empreinte, donc **désactive le mandat** jusqu'à ce que vous recalculiez l'empreinte et la reportiez dans le coffre. Changer `mandate_version` à chaque modification de valeur.
 

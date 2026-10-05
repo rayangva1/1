@@ -161,7 +161,7 @@ LIGNES: tuple[Ligne, ...] = (
     Ligne(60, "Email", "Email aux inscrits", "Email 05", "Preuve de service", "S15", "Récapitulatif hebdomadaire",
           "Délais, suivi, cadeaux : ce qu'il faut savoir.", "Voir le stock local", VIS_PRODUIT, COND_RECAP, "A-09"),
     Ligne(60, "Publicité", "Interne", "Bilan", "—", "—", "Gate G5 (option B seulement) : CAC 7 jours contre contribution",
-          "—", "—", "—", "Seulement si l'option B a été retenue au G4 (test dès J46, plafond quotidien divisé par deux "
+          "—", "—", "—", "Seulement si l'option B a été retenue au G4 (test dès J50, plafond quotidien divisé par deux "
           "jusqu'au 30.11) ; 7 jours complets de données ; commandes payées nettes", "A-10, A-05, H (C16)",
           "Option A (recommandée) : G5 à J64, voir la ligne du 7.12 (GATES_GO_NO_GO.md G5)"),
     # --- J61-90 : réassort, SEO extensions, scénarios email, bilan ---------------------------------

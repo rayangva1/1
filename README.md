@@ -95,7 +95,8 @@ test "$(grep -cE '^POKESHOP_ROLE_TOKEN_SHA256_[A-Z0-9_]+=[0-9a-f]{64}$' ~/emprei
 #    POKESHOP_API_TOKEN_SHA256 (jeton commun : lecture et aperçus seulement, pour dashboard/build.py) est facultatif ;
 #    ton jeton (X-Pokeshop-Owner-Token) suffit seul pour tous tes actes et tes lectures.
 # 4. Ton compte doit parler au démon Docker : une fois « sudo usermod -aG docker "$USER" » puis te reconnecter
-#    (ce groupe équivaut à un accès root à la machine) ; sinon, préfixer chaque commande ci-dessous par sudo.
+#    (ce groupe équivaut à un accès root à la machine, donc à la base en superutilisateur : jamais un compte de la
+#    flotte d'agents, revue R6, RS-02 et RS-16) ; sinon, préfixer chaque commande ci-dessous par sudo.
 scripts/compose.sh config --quiet       # échoue en nommant la variable manquante (ou un .env dans le dépôt) ; rien n'est lancé
 scripts/compose.sh up -d db db-migrate db-backup api n8n
 scripts/compose.sh ps                   # db-backup « healthy » : restauration vérifiée depuis moins de 36 h (db/backup.sh etat)

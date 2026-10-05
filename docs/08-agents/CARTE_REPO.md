@@ -108,6 +108,7 @@
 | `docs/08-agents/RUNBOOK.md` | Utilisation quotidienne | flotte-agents | propriétaire, 01 | présent |
 | `docs/08-agents/outils/verifier_agents.py` | Vérificateur de la flotte (frontmatter, outils, permissions, consignes périmées) | flotte-agents | 12 | présent |
 | `docs/08-agents/outils/controle_generateurs.py` | Contrôle en lecture seule des classeurs générés (générateurs exécutés en dossier temporaire) | flotte-agents | 12 | présent |
+| `docs/08-agents/outils/verifier_isolation.py` | Contrôle en lecture seule de l'isolation d'un compte de la flotte (ni root, ni docker, ni sudo ; aucun secret, aucun jeton d'un autre compte lisible), lancé sous ce compte (B28, BL-204) | flotte-agents | 12 | présent |
 | `docs/08-agents/modeles/` | Gabarits (rapport, exception, dispatch, engagement, emails, registre) | flotte-agents | tous | présent |
 | `docs/08-agents/rapports/` | Rapports d'agents (exploitation) | flotte-agents | tous (écriture) | présent |
 | `docs/08-agents/exceptions/` | Fiches d'exception (exploitation) | flotte-agents | tous (écriture) | présent |

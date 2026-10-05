@@ -129,6 +129,11 @@ La chaîne sha256 rend alors toute modification **détectable** (`verify_audit_c
 mais pas impossible : sauvegardes externes et accès superutilisateur réservé à la propriétaire. La suppression
 des **dernières** lignes d'un flux d'`engine_state_journal` par un superutilisateur (triggers désactivés) n'est
 pas détectable par la chaîne seule : d'où la règle de sauvegarde ci-dessous et l'accès superutilisateur réservé.
+Si ces lignes portent le gel global, il est levé au redémarrage (risque résiduel RS-16 de
+`docs/00-pilotage/REVUE_SECURITE.md`) : aucun compte de la flotte n'est membre du groupe `docker` (équivaut à root,
+donc à la base en superutilisateur) ni ne connaît `POSTGRES_PASSWORD` (B28) ; et le nombre de lignes
+d'`engine_state_journal` noté au manifeste ne doit jamais baisser d'une sauvegarde à la suivante (contrôle mensuel
+A12 ; partiel : des écritures entre deux sauvegardes peuvent masquer une troncature).
 
 ## Sauvegarde et test de restauration (BP §6)
 

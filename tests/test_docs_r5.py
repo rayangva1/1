@@ -219,7 +219,7 @@ def test_gateway_secret_count_is_ten_everywhere() -> None:
 def test_security_review_document_holds_history_residual_risks_and_procedure() -> None:
     text = REVUE.read_text(encoding="utf-8")
     heads = re.findall(r"^## (.+)$", text, re.M)
-    assert heads[:6] == ["1. Règle de passage", "2. Historique des 5 rounds",
+    assert heads[:6] == ["1. Règle de passage", "2. Historique des 6 rounds",  # revue R6 : 6e round ajouté
                          "3. Catégories de défauts et principaux correctifs", "4. Risques résiduels connus",
                          "5. Procédure de revue à relancer avant chaque passage de niveau",
                          "6. Décisions de la propriétaire sur les risques résiduels"]  # fmt: skip

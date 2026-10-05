@@ -449,10 +449,10 @@ def test_dependency_dates_detect_task_due_before_dependency(tmp_path):
 def test_counts_detect_wrong_category_count(tmp_path):
     """NEW-01 : les compteurs du tableau suivent le nombre de fiches."""
     src = (v.PILOTAGE / "INTERVENTIONS_HUMAINES.md").read_text(encoding="utf-8")
-    bad = src.replace("| B. Légal et identité, une fois | 27 |", "| B. Légal et identité, une fois | 24 |")
+    bad = src.replace("| B. Légal et identité, une fois | 31 |", "| B. Légal et identité, une fois | 24 |")
     assert bad != src
     errors = v.check_counts(interventions=_copy(tmp_path, "I.md", bad))
-    assert errors == ["INTERVENTIONS : catégorie B annoncée à 24 items, 27 fiches"]
+    assert errors == ["INTERVENTIONS : catégorie B annoncée à 24 items, 31 fiches"]
     readme = _copy(tmp_path, "README.md", "| `BACKLOG.csv` | 159 tâches sur tout le BP |")
     assert any("159 tâches annoncées" in e for e in v.check_counts(readme=readme))
 
