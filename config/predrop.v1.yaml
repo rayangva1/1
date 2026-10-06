@@ -19,7 +19,7 @@
 # - valeur hors des bornes du code => fichier refusé, pré-drop DÉSACTIVÉ.
 # Bornes du code (pokeshop.predrop) : premium_pct 0..0.10 ; per_customer_limit 1..2 ; réserve de sécurité
 # au moins 1 unité et au moins 10 % de l'allocation ferme ; part ouverte en pré-drop ]0, 1] ;
-# fenêtre prioritaire 0..168 h ; seuil de demande 0.1..10.
+# fenêtre prioritaire 0..168 h ; seuil de demande 0.1..10 ; annulation libre 1..60 jours avant la date du drop.
 
 predrop_version: "predrop-v1-2026-10-06"
 status: "décision de la propriétaire du 6.10.2026 ; valeurs par défaut à confirmer"
@@ -33,6 +33,7 @@ safety_reserve_share: "0.10"         # … et au moins 10 % de l'allocation ferm
 per_customer_limit: 1                # unités par client et par pré-drop (borne du code : 2 au plus)
 priority_window_hours: 24            # fenêtre prioritaire des inscrits aux alertes après l'ouverture
 demand_threshold: "0.5"              # inscrits consentants intéressés / allocation ferme >= seuil
+free_cancellation_days_before_drop: 7  # annulation libre d'une réservation jusqu'à 7 jours avant la date du drop
 
 approval:                            # informatif : l'empreinte qui fait foi est celle du coffre
   approved_by: null                  # nom de la propriétaire

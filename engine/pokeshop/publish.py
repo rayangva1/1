@@ -49,8 +49,12 @@ Principes (BP §5-§7, SPEC §0.2 et §2.6) :
   dans la fiche), **dépubliée au drop** (ou à la fermeture, ou sur blocage). La fiche normale n'est jamais
   restructurée par le pré-drop : ``productSet`` a une sémantique « ensemble » ; ajouter puis retirer une variante
   changerait ses options et pourrait recréer sa variante (et son article d'inventaire) le jour même où elle reçoit
-  le stock. Elle ne reçoit que trois métachamps d'information (``boutique.date_drop``,
-  ``boutique.reservation_statut``, ``boutique.fiche_liee``). Aucun quota, compte à rebours, coût ni marge publiés :
+  le stock. Elle ne reçoit que des métachamps d'information (``boutique.date_drop``,
+  ``boutique.reservation_statut``, ``boutique.fiche_liee``, et les deux prix **figés** ``boutique.prix_drop`` et
+  ``boutique.prix_reservation`` affichés par l'encart). Revue pré-drop (PDL-02) : jusqu'au jour du drop inclus, son
+  **prix est figé au prix du drop** du pré-drop (planchers revérifiés) et la fiche de réservation est retirée tant que
+  la fiche normale écrite ne pratique pas ce prix ; son stock local est **retenu jusqu'au drop** et les unités des
+  réservations non expédiées restent hors vente (PDL-01). Aucun quota, compte à rebours, coût ni marge publiés :
   statut « prioritaire / ouvertes / fermées » et date du drop seulement.
 """
 
@@ -142,6 +146,7 @@ __all__ = [
     "PredropPublication",
     "predrop_reservation_sku",
     "predrop_reservation_handle",
+    "reservation_sku_of",
     "reservation_publication_key",
     "build_predrop_publication",
 ]
@@ -163,9 +168,13 @@ PUBLIC_METAFIELDS: dict[str, str] = {
     "date_drop": "date",
     "reservation_statut": "single_line_text_field",
     "fiche_liee": "single_line_text_field",
+    "prix_drop": "single_line_text_field",
+    "prix_reservation": "single_line_text_field",
 }
 """Seuls métachamps publiables (clé -> type Shopify), contrat du thème. Pré-drop : date du drop, statut des
-réservations (``prioritaire`` · ``ouvertes`` · ``fermees``) et handle de la fiche jumelle — jamais un quota."""
+réservations (``prioritaire`` · ``ouvertes`` · ``fermees``), handle de la fiche jumelle et les deux prix **figés** du
+moteur en texte décimal (``prix_drop``, ``prix_reservation`` : affichés « CHF 209.90 » par l'encart, égaux aux prix
+natifs vérifiés des deux fiches) — jamais un quota."""
 
 _S = "str"
 _B = "bool"
@@ -423,6 +432,8 @@ _METAFIELD_VALUES: dict[str, re.Pattern[str]] = {
     "date_drop": re.compile(r"^\d{4}-\d{2}-\d{2}$"),
     "reservation_statut": re.compile(r"^(prioritaire|ouvertes|fermees)$"),
     "fiche_liee": re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$"),
+    "prix_drop": re.compile(r"^[1-9]\d{0,5}\.\d{2}$"),
+    "prix_reservation": re.compile(r"^[1-9]\d{0,5}\.\d{2}$"),
 }
 
 
@@ -1016,6 +1027,9 @@ class PublishBlocker(str, Enum):
     PREDROP_COST_UNKNOWN = "PREDROP_COST_UNKNOWN"
     PREDROP_RETIRED = "PREDROP_RETIRED"
     PREDROP_CLOSED = "PREDROP_CLOSED"
+    PREDROP_NORMAL_PRICE_MISMATCH = "PREDROP_NORMAL_PRICE_MISMATCH"
+    PREDROP_NORMAL_NOT_PUBLISHED = "PREDROP_NORMAL_NOT_PUBLISHED"
+    PREDROP_DROP_PRICE_BELOW_FLOOR = "PREDROP_DROP_PRICE_BELOW_FLOOR"
 
 
 BLOCKER_LABELS_FR: dict[PublishBlocker, str] = {
@@ -1074,6 +1088,17 @@ BLOCKER_LABELS_FR: dict[PublishBlocker, str] = {
     ),
     PublishBlocker.PREDROP_RETIRED: "Drop atteint, pré-drop fermé ou désactivé : fiche de réservation retirée.",
     PublishBlocker.PREDROP_CLOSED: "Réservations fermées : une fiche de réservation n'est jamais créée fermée.",
+    PublishBlocker.PREDROP_NORMAL_PRICE_MISMATCH: (
+        "Fiche normale hors ligne ou à un autre prix que le prix du drop figé : fiche de réservation retirée (« Au drop » "
+        "n'annonce jamais un prix non pratiqué)."
+    ),
+    PublishBlocker.PREDROP_NORMAL_NOT_PUBLISHED: (
+        "Fiche normale pas encore publiée et vérifiée au prix du drop figé : fiche de réservation non publiée."
+    ),
+    PublishBlocker.PREDROP_DROP_PRICE_BELOW_FLOOR: (
+        "Prix du drop figé sous les planchers durs au coût rendu actuel : prix de la fiche normale non modifié, revue "
+        "humaine (la fiche de réservation est retirée tant que la fiche normale ne pratique pas ce prix)."
+    ),
 }
 
 _HARD = frozenset(
@@ -1093,6 +1118,8 @@ _HARD = frozenset(
         PublishBlocker.PREDROP_PRICE_INVALID,
         PublishBlocker.PREDROP_PRICE_BELOW_FLOOR,
         PublishBlocker.PREDROP_COST_UNKNOWN,
+        PublishBlocker.PREDROP_NORMAL_PRICE_MISMATCH,
+        PublishBlocker.PREDROP_NORMAL_NOT_PUBLISHED,
     }
 )
 HARD_BLOCKER_CODES: frozenset[str] = frozenset(b.value for b in _HARD)
@@ -1303,6 +1330,13 @@ def predrop_reservation_sku(public_sku: str, drop_date: date) -> str:
     return f"{public_sku}-RESA-{drop_date:%Y%m%d}"
 
 
+def reservation_sku_of(public_sku: str, predrop: Any) -> str:
+    """SKU de la fiche de réservation d'un pré-drop : celui **figé à l'ouverture** (stable après un report de la date),
+    sinon ``<SKU boutique>-RESA-<date du drop>``."""
+    frozen = getattr(predrop, "reservation_sku", None)
+    return frozen or predrop_reservation_sku(public_sku, predrop.drop_date)
+
+
 def predrop_reservation_handle(normal_handle: str) -> str:
     """Handle de la fiche de réservation, dérivé de celui de la fiche normale."""
     return f"{normal_handle}-reservation-garantie"
@@ -1326,12 +1360,24 @@ class PredropPublication(FrozenModel):
     drop_date: date
     phase: ReservationPhase
     retired: bool = False
-    """Drop atteint, pré-drop fermé par un acte ou paramètres non signés : fiche de réservation retirée (DRAFT)."""
+    """Drop atteint, pré-drop fermé par un acte, paramètres non signés, blocage ou fiche normale qui ne pratique pas le
+    prix du drop figé : fiche de réservation retirée (DRAFT)."""
+    retired_reason: str | None = None
+    """Motif interne du retrait (jamais publié)."""
     predrop_price: Decimal = Field(gt=0)
     drop_price: Decimal = Field(gt=0)
     per_customer_limit: int = Field(ge=1, le=2)
     reservations_available: int = Field(ge=0, default=0)
     reservations_committed: int = Field(ge=0, default=0)
+    """Unités des réservations confirmées **non encore expédiées** (grandeur homogène avec « committed » de Shopify)."""
+    reservation_sku: str | None = None
+    """SKU de la fiche de réservation figé à l'ouverture (stable après un report) ; None : calculé."""
+    held_units: int = Field(ge=0, default=0)
+    """Unités réservées non expédiées : retenues hors du stock vendable de la fiche normale (jamais au prix du drop)."""
+    hold_until_drop: bool = False
+    """Avant le jour du drop : stock local de la fiche normale retenu (rien n'est vendu au prix du drop avant le drop)."""
+    pin_drop_price: bool = False
+    """Jusqu'au jour du drop inclus : prix de la fiche normale figé au prix du drop du pré-drop (« Au drop » pratiqué)."""
 
     @model_validator(mode="after")
     def _coherent(self) -> PredropPublication:
@@ -1445,11 +1491,35 @@ def build_publication(
         if below and not approval.floor_exception_ref:
             reviews.append(PublishBlocker.APPROVED_PRICE_BELOW_FLOOR)
             new_price, source, approval = None, None, None
+    # Revue pré-drop (PDL-02) : pendant un pré-drop et jusqu'au jour du drop inclus, le prix de la fiche normale est
+    # **figé** au prix du drop du pré-drop (le prix « Au drop » annoncé est celui pratiqué), planchers durs revérifiés
+    # au coût rendu actuel ; sous plancher : prix inchangé, revue humaine (la fiche de réservation est alors retirée).
+    pinned = (
+        predrop is not None
+        and predrop.pin_drop_price
+        and predrop.product_key == listing.product_key
+        and not listing.public_sku.endswith("-PRECO")
+    )
+    if pinned:
+        assert predrop is not None
+        frozen = q2(predrop.drop_price)
+        cost = decision.landed_cost if decision is not None else None
+        if cost is None or params is None or decision is None:
+            new_price, source, approval = None, None, None
+        elif price_floor_violations(frozen, cost, params, small_product=decision.small_product):
+            reviews.append(PublishBlocker.PREDROP_DROP_PRICE_BELOW_FLOOR)
+            new_price, source, approval = None, None, None
+        else:
+            new_price, source, approval = frozen, "ENGINE", None
     if new_price is not None and reference_price_24h is not None and reference_price_24h > 0:
         if is_price_anomaly(new_price, reference_price_24h):
             reviews.append(PublishBlocker.PRICE_ANOMALY)
             new_price, source = None, None
-        elif source == "ENGINE" and abs(new_price - reference_price_24h) / reference_price_24h > max_daily_change:
+        elif (
+            source == "ENGINE"
+            and not pinned  # prix du drop figé : vérifié à l'ouverture du pré-drop, jamais plafonné ici
+            and abs(new_price - reference_price_24h) / reference_price_24h > max_daily_change
+        ):
             reviews.append(PublishBlocker.PRICE_CHANGE_ABOVE_CAP)
             new_price, source = None, None
     if source != "HUMAN_VALIDATED":
@@ -1570,11 +1640,14 @@ def build_publication(
             and predrop.product_key == listing.product_key
             and not listing.public_sku.endswith("-PRECO")
         ):
-            # Information seulement (statut, date, fiche liée) : jamais une variante, un quota ni un prix ajoutés.
+            # Information seulement (statut, date, fiche liée, deux prix figés du moteur) : jamais une variante ni un
+            # quota ajoutés ; le prix natif de la fiche normale est lui-même figé au prix du drop (ci-dessus).
             product_input["metafields"] += [
                 _mf("date_drop", predrop.drop_date.isoformat()),
                 _mf("reservation_statut", predrop.phase),
                 _mf("fiche_liee", predrop_reservation_handle(handle)),
+                _mf("prix_drop", _price_text(q2(predrop.drop_price))),
+                _mf("prix_reservation", _price_text(q2(predrop.predrop_price))),
             ]
         if listing.description_html:
             product_input["descriptionHtml"] = listing.description_html
@@ -1624,8 +1697,13 @@ def build_predrop_publication(
     published: PublishedState | None = None,
     validations: ListingApproval | None = None,
     normal_handle: str | None = None,
+    normal_published: PublishedState | None = None,
 ) -> PublicationPlan:
     """Plan de la **fiche jumelle « Réservation garantie »** d'un pré-drop (fermé par défaut).
+
+    ``normal_published`` : état écrit et vérifié de la **fiche normale** (registre du moteur). Revue pré-drop (PDL-02) :
+    un prix connu ≠ prix du drop figé => blocage dur (retrait si en ligne) ; en boutique réelle, fiche normale jamais
+    écrite => blocage dur (« Au drop » n'annonce jamais un prix que la fiche normale ne pratique pas).
 
     ``normal_handle`` : handle de la fiche normale **réellement publiée** (registre du moteur) ; à défaut, celui que
     :func:`build_publication` calcule. La fiche de réservation et la fiche normale se citent par ces handles
@@ -1665,6 +1743,11 @@ def build_predrop_publication(
     drop = q2(predrop.drop_price)
     if price < drop or price > drop * Decimal("1.10"):
         blockers.append(PublishBlocker.PREDROP_PRICE_INVALID)
+    if normal_published is not None:
+        if normal_published.price_chf is None or q2(normal_published.price_chf) != drop:
+            blockers.append(PublishBlocker.PREDROP_NORMAL_PRICE_MISMATCH)
+    elif real_shop:
+        blockers.append(PublishBlocker.PREDROP_NORMAL_NOT_PUBLISHED)
     if landed_cost is None or landed_cost <= 0:
         blockers.append(PublishBlocker.PREDROP_COST_UNKNOWN)
     elif price_floor_violations(price, landed_cost, params, small_product=False):
@@ -1730,7 +1813,7 @@ def build_predrop_publication(
                     "price": _price_text(price),
                     "barcode": ident.gtin or "",
                     "inventoryPolicy": "DENY",
-                    "inventoryItem": {"sku": predrop_reservation_sku(listing.public_sku, predrop.drop_date), "tracked": True},
+                    "inventoryItem": {"sku": reservation_sku_of(listing.public_sku, predrop), "tracked": True},
                 }
             ],
             "files": [{"originalSource": img.url, "alt": img.alt, "contentType": "IMAGE"} for img in authorized],
@@ -1739,6 +1822,8 @@ def build_predrop_publication(
                 _mf("date_drop", predrop.drop_date.isoformat()),
                 _mf("reservation_statut", predrop.phase),
                 _mf("fiche_liee", normal_handle),
+                _mf("prix_drop", _price_text(drop)),
+                _mf("prix_reservation", _price_text(price)),
             ],
             "seo": {"title": full_title[:70], "description": _plain(listing.description_html)[:320]},
         }

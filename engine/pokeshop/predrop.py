@@ -26,8 +26,8 @@ Principes appliqués (fermé par défaut, aucune valeur décisive fournie par so
 * **Quota partagé** (:func:`split_quota`) : réserve de sécurité (au moins 1 unité et au moins 10 %), part de
   l'allocation ouverte en pré-drop (défaut 50 %), le reste au drop.
 * **Réservations payées persistées** (:class:`PredropRegistry`, journal ``predrop``, ajout seul) enregistrées par le
-  workflow 02 : idempotentes par commande, limite par client sur l'**identifiant client haché** fourni par la
-  boutique (jamais un email), fenêtre prioritaire des inscrits aux alertes. Une commande **payée** n'est jamais
+  workflow 02 : idempotentes par commande, limite par client sur l'**empreinte HMAC de l'identifiant client** fournie
+  par la boutique (jamais un email), fenêtre prioritaire des inscrits aux alertes. Une commande **payée** n'est jamais
   perdue : hors quota, hors limite, hors fenêtre ou à un autre prix, elle est enregistrée « non servie » et son
   **remboursement intégral** est préparé.
 * **Réduction d'allocation** (:func:`plan_service`) : réservations pré-drop servies **en premier** (ordre de
@@ -40,10 +40,17 @@ Principes appliqués (fermé par défaut, aucune valeur décisive fournie par so
   avant la date du drop, report au-delà du seuil des conditions ou contenu modifié => remboursement **intégral**,
   supplément compris, préparé dans le même circuit (validation de la propriétaire aux niveaux 1 et 2) ; l'unité revient
   au quota.
-* **Dette jusqu'à livraison** : l'argent encaissé en pré-drop est une dette (:meth:`PredropRegistry.outstanding_debt`)
-  jusqu'à l'expédition (commande enregistrée par ``POST /orders/shipped``) ou au remboursement exécuté ; la photo
-  du stop-loss la **dérive** de ce registre. Étoile polaire : chiffre d'affaires reconnu **à l'expédition**, jamais
-  à l'encaissement (aucune écriture de l'étoile polaire ici).
+* **Dette jusqu'à livraison** : l'argent encaissé en pré-drop (frais de livraison payés compris) est une dette
+  (:meth:`PredropRegistry.outstanding_debt`) jusqu'à l'expédition de **sa ligne** de réservation (SKU ``-RESA-`` du
+  pré-drop expédié en quantité au moins égale à la quantité réservée, envois partiels cumulés : ``POST /orders/shipped``)
+  ou au remboursement exécuté — une réservation non servie ou en cours de remboursement reste une dette même si un
+  autre article de la commande part ; la photo du stop-loss la **dérive** de ce registre. Étoile polaire : chiffre
+  d'affaires reconnu **à l'expédition**, jamais à l'encaissement (aucune écriture de l'étoile polaire ici).
+* **Suspension par précaution** (gel, quarantaine, paramètres non signés) : elle ferme toute **nouvelle** promesse
+  (fiche retirée) ; un paiement antérieur au **retrait vérifié** de la fiche de réservation reste servi (le contrat est
+  conclu, l'exécution attend) ; seul un paiement postérieur au retrait vérifié est « non servi » et remboursé.
+* **Report de la date du drop** (:meth:`PredropRegistry.postpone`) : journalisé (ancienne et nouvelle date), SKU de
+  réservation **stable** (figé à l'ouverture), délais d'annulation calculés sur la date en vigueur.
 * **Aucune fausse urgence** : l'offre publique (:func:`public_offer`) ne dit que « Réservations ouvertes » ou
   « Réservations fermées » et la date du drop ; ni compte à rebours, ni « plus que N », ni coût, ni marge.
 
@@ -68,6 +75,7 @@ from pydantic import Field, ValidationError, field_validator
 from .audit import StateJournal, StateStoreError
 from .errors import PokeshopError, PricingError
 from .models import DEFAULT_ROUNDING_TIERS, DecisionStatus, FrozenModel, PricingParams, RoundingTier, canonical_json
+from .northstar import SHIPMENT_SEPARATOR, shipment_order_base
 from .pricing import as_decimal, contribution, decide_price, price_floor_violations, q2, q4, round_up_retail
 from .publish import predrop_reservation_sku
 from .stock import preorder_quota
@@ -85,6 +93,7 @@ __all__ = [
     "GUARANTEE_TEXT_FR",
     "NO_DIFFERENCE_REFUND_FR",
     "PREDROP_DEBT_LABEL",
+    "PREDROP_IN_TRANSIT_LABEL",
     "STATUS_OPEN_FR",
     "STATUS_CLOSED_FR",
     "PUBLIC_OFFER_FIELDS",
@@ -123,7 +132,11 @@ __all__ = [
     "public_offer",
     "refund_email_draft",
     "RESERVATION_LINE_SEPARATOR",
+    "SHIPMENT_SEPARATOR",
     "reservation_order_base",
+    "shipment_order_base",
+    "PredropPostponement",
+    "MAX_FREE_CANCELLATION_DAYS",
     "reservation_phase",
     "main",
 ]
@@ -147,6 +160,8 @@ DEMAND_SIGNAL_MAX_AGE = timedelta(days=7)
 """Âge maximal du compte agrégé d'inscrits intéressés (au-delà : demande inconnue, pas d'ouverture)."""
 AUTO_REFUND_MIN_LEVEL = 3
 """Niveau d'autonomie à partir duquel un remboursement préparé est approuvé par le moteur (sinon : propriétaire)."""
+MAX_FREE_CANCELLATION_DAYS = 60
+"""Borne du code du délai d'annulation libre (jours avant la date du drop) : au moins 1 (jamais le jour du drop)."""
 FUTURE_SKEW = timedelta(minutes=5)
 
 GUARANTEE_TEXT_FR = (
@@ -158,6 +173,11 @@ NO_DIFFERENCE_REFUND_FR = (
 )
 PREDROP_DEBT_LABEL = "Réservations pré-drop encaissées non livrées (registre du moteur)"
 """Libellé de la dette dérivée du registre dans la photo du stop-loss (construite ou déposée)."""
+PREDROP_IN_TRANSIT_LABEL = (
+    "Réservations pré-drop encaissées en attente de versement du prestataire (relevé du connecteur, plafonné)"
+)
+"""Créance de la photo du stop-loss : argent des réservations encaissé mais pas encore versé sur le compte (solde du
+prestataire relevé **après** la banque, plafonné à la dette pré-drop) — revue pré-drop ARG-02."""
 STATUS_OPEN_FR = "Réservations ouvertes"
 STATUS_CLOSED_FR = "Réservations fermées"
 PUBLIC_OFFER_FIELDS: tuple[str, ...] = (
@@ -208,7 +228,9 @@ def refund_reason_fr(reason: str) -> str:
 
 RESERVATION_LINE_SEPARATOR = "#"
 """Une commande Shopify qui porte des réservations de **plusieurs** pré-drops est enregistrée une fois par pré-drop :
-``<commande>`` puis ``<commande>#2``, ``<commande>#3``… (workflow 02) ; l'expédition et la dette suivent la commande."""
+``<commande>`` puis ``<commande>#2``, ``<commande>#3``… (workflow 02) ; chaque entrée est expédiée par **sa** ligne
+(SKU ``-RESA-`` de son pré-drop) dans un envoi de la commande ``<commande>``."""
+
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:#/-]{0,119}$")
@@ -263,6 +285,9 @@ class PredropConfig(FrozenModel):
     per_customer_limit: int = Field(ge=1, le=MAX_PER_CUSTOMER_LIMIT)
     priority_window_hours: int = Field(ge=0, le=168)
     demand_threshold: Decimal = Field(ge=Decimal("0.1"), le=Decimal("10"))
+    free_cancellation_days_before_drop: int = Field(ge=1, le=MAX_FREE_CANCELLATION_DAYS)
+    """Annulation libre d'une réservation confirmée **jusqu'à N jours avant la date du drop** (incluse), appliquée par
+    :meth:`PredropRegistry.cancel_reservation` et reprise mot pour mot par les conditions publiques."""
     approval: PredropApproval = PredropApproval()
     fingerprint: str = ""
     """Empreinte canonique des paramètres (:func:`predrop_fingerprint`), comparée à celle du coffre."""
@@ -283,10 +308,10 @@ class PredropConfigStatus(FrozenModel):
 _TOP_KEYS = {
     "predrop_version", "status", "source", "effective_date", "premium_pct", "predrop_share_of_allocation",
     "safety_reserve_min_units", "safety_reserve_share", "per_customer_limit", "priority_window_hours",
-    "demand_threshold", "approval",
+    "demand_threshold", "free_cancellation_days_before_drop", "approval",
 }  # fmt: skip
 _DECIMAL_KEYS = ("premium_pct", "predrop_share_of_allocation", "safety_reserve_share", "demand_threshold")
-_INT_KEYS = ("safety_reserve_min_units", "per_customer_limit", "priority_window_hours")
+_INT_KEYS = ("safety_reserve_min_units", "per_customer_limit", "priority_window_hours", "free_cancellation_days_before_drop")
 _REQUIRED = ("predrop_version", "status", *_DECIMAL_KEYS, *_INT_KEYS)
 
 
@@ -694,6 +719,22 @@ class DemandSignal(FrozenModel):
 PredropStatus = Literal["PENDING_OWNER", "OPEN", "CLOSED"]
 
 
+class PredropPostponement(FrozenModel):
+    """Report de la date du drop (journalisé : ancienne et nouvelle date, motif, acteur, référence du justificatif)."""
+
+    previous_date: date
+    new_date: date
+    reason: str = Field(min_length=10, max_length=500)
+    supplier_ref: str = Field(min_length=3, max_length=200)
+    by: str = Field(min_length=2, max_length=120)
+    at: datetime
+
+    @field_validator("at")
+    @classmethod
+    def _tz(cls, v: datetime) -> datetime:
+        return _aware(v, "at")
+
+
 class Predrop(FrozenModel):
     """Pré-drop d'une référence : prix et paramètres **figés** à l'ouverture (instantané de la configuration signée)."""
 
@@ -729,11 +770,32 @@ class Predrop(FrozenModel):
     closed_by: str | None = None
     closed_at: datetime | None = None
     close_reason: str | None = None
+    reservation_sku: str | None = None
+    """SKU de la fiche de réservation **figé à l'ouverture** (``<SKU>-RESA-<date d'origine>``) : stable même après un
+    report de la date (les lignes déjà vendues gardent ce SKU). None (enregistrement ancien) : calculé."""
+    free_cancellation_days: int = Field(default=1, ge=1, le=MAX_FREE_CANCELLATION_DAYS)
+    """Annulation libre jusqu'à N jours avant la date du drop **en vigueur** (paramètre signé figé à l'ouverture)."""
+    expected_delivery: date | None = None
+    """Livraison attendue de l'allocation ferme à l'ouverture (contrôle de la date du drop)."""
+    postponements: tuple[PredropPostponement, ...] = ()
+    """Reports de la date du drop (historique)."""
 
     @field_validator("opens_at", "closes_at", "requested_at", "validated_at", "closed_at")
     @classmethod
     def _tz(cls, v: datetime | None) -> datetime | None:
         return None if v is None else _aware(v, "horodatage")
+
+    @property
+    def sku(self) -> str | None:
+        """SKU de la fiche de réservation (figé à l'ouverture ; calculé pour un enregistrement ancien)."""
+        if self.reservation_sku:
+            return self.reservation_sku
+        return predrop_reservation_sku(self.public_sku, self.drop_date) if self.public_sku else None
+
+    @property
+    def free_cancellation_until(self) -> date:
+        """Dernier jour de l'annulation libre (date du drop en vigueur − N jours)."""
+        return self.drop_date - timedelta(days=self.free_cancellation_days)
 
     def accepting_at(self, at: datetime) -> bool:
         """Vrai si le pré-drop acceptait des réservations à ``at`` (ouvert, fenêtre d'ouverture, pas encore fermé)."""
@@ -763,8 +825,14 @@ class PredropReservation(FrozenModel):
     predrop_id: str = Field(min_length=1, max_length=120)
     product_key: str = Field(min_length=1, max_length=120)
     customer_ref: str = Field(pattern=r"^[0-9a-f]{64}$")
-    qty: int = Field(ge=1, le=10)
-    amount_paid_ttc: Decimal = Field(gt=0)
+    qty: int = Field(ge=1, le=100_000)
+    """Quantité payée (jamais bornée ici : une commande payée est toujours enregistrée ; au-delà de la limite par
+    client ou du quota, elle est non servie et remboursée intégralement)."""
+    amount_paid_ttc: Decimal = Field(ge=0)
+    """Montant payé pour les lignes de réservation (remises déduites ; 0 : bon d'achat, non servi)."""
+    shipping_paid_ttc: Decimal = Field(default=Decimal("0"), ge=0)
+    """Part des frais de livraison payés par le client rattachée à cette réservation (commande composée seulement de
+    réservations ; workflow 02) : remboursée avec elle si elle n'est pas servie, dette jusqu'à l'expédition."""
     expected_ttc: Decimal = Field(gt=0)
     paid_at: datetime
     priority_access: bool = False
@@ -784,16 +852,24 @@ class PredropReservation(FrozenModel):
         return {
             "order_id": self.order_id, "predrop_id": self.predrop_id, "customer_ref": self.customer_ref,
             "qty": self.qty, "amount_paid_ttc": str(q2(self.amount_paid_ttc)), "paid_at": self.paid_at.isoformat(),
-            "priority_access": self.priority_access,
+            "priority_access": self.priority_access, "shipping_paid_ttc": str(q2(self.shipping_paid_ttc)),
         }  # fmt: skip
 
     @property
+    def refund_amount(self) -> Decimal:
+        """Remboursement **intégral** : montant payé (supplément compris) + part des frais de livraison payée."""
+        return q2(self.amount_paid_ttc + self.shipping_paid_ttc)
+
+    @property
     def debt_amount(self) -> Decimal:
-        """Dette retenue : max(montant encaissé, prix pré-drop × quantité) — jamais minorée (fermé par défaut)."""
-        return max(self.amount_paid_ttc, self.expected_ttc)
+        """Dette retenue. Confirmée : max(montant encaissé, prix pré-drop × quantité) + frais de livraison payés —
+        jamais minorée (fermé par défaut) ; non servie : exactement ce qui est dû au client (remboursement intégral)."""
+        if self.status == "NOT_SERVED":
+            return self.refund_amount
+        return q2(max(self.amount_paid_ttc, self.expected_ttc) + self.shipping_paid_ttc)
 
     def public_view(self) -> dict[str, Any]:
-        """Lecture interne sans l'identifiant client haché."""
+        """Lecture interne sans l'empreinte de l'identifiant client."""
         return self.model_dump(mode="json", exclude={"customer_ref"})
 
 
@@ -812,7 +888,10 @@ class PreparedRefund(FrozenModel):
     order_id: str = Field(min_length=1, max_length=120)
     predrop_id: str = Field(min_length=1, max_length=120)
     product_key: str = Field(min_length=1, max_length=120)
-    amount_ttc: Decimal = Field(gt=0)
+    amount_ttc: Decimal = Field(ge=0)
+    """Montant **intégral** : lignes de réservation (supplément compris) + part des frais de livraison payée."""
+    shipping_ttc: Decimal = Field(default=Decimal("0"), ge=0)
+    """Part de ``amount_ttc`` qui rembourse les frais de livraison (remboursement « livraison » chez le prestataire)."""
     reason: str
     prepared_at: datetime
     prepared_by: str
@@ -845,6 +924,7 @@ def reservation_order_base(order_id: str) -> str:
     return order_id.split(RESERVATION_LINE_SEPARATOR, 1)[0]
 
 
+
 def reservation_phase(predrop: Predrop, *, accepting: bool, at: datetime) -> Literal["prioritaire", "ouvertes", "fermees"]:
     """Statut public des réservations : ``prioritaire`` (inscrits aux alertes, fenêtre prioritaire), ``ouvertes``
     (tout le monde) ou ``fermees`` — jamais une heure de fermeture, un compte à rebours ni un nombre d'unités."""
@@ -853,15 +933,18 @@ def reservation_phase(predrop: Predrop, *, accepting: bool, at: datetime) -> Lit
     return "prioritaire" if predrop.in_priority_window(at) else "ouvertes"
 
 
-def refund_email_draft(*, order_id: str, amount: Decimal, reason: str, public_sku: str | None) -> str:
+def refund_email_draft(
+    *, order_id: str, amount: Decimal, reason: str, public_sku: str | None, shipping: Decimal = Decimal("0")
+) -> str:
     """Brouillon d'email au client (français, sans donnée personnelle : n8n retrouve le destinataire par la commande)."""
     why = refund_reason_fr(reason)
     product = f" ({public_sku})" if public_sku else ""
+    included = "supplément et frais de livraison compris" if shipping > 0 else "supplément compris"
     return (
         "Bonjour,\n\n"
         f"Votre réservation pré-drop{product}, commande {order_id} : {why}.\n"
         f"Conformément à nos conditions de réservation garantie, nous vous remboursons intégralement {q2(amount)} CHF, "
-        "supplément compris, "
+        f"{included}, "
         "sur votre moyen de paiement d'origine.\n\n"
         "Nous vous présentons nos excuses pour ce désagrément.\n\n"
         "{{NOM_BOUTIQUE}}"
@@ -873,7 +956,9 @@ class ServicePlan(FrozenModel):
 
     new_allocation: int = Field(ge=0)
     safety_reserve: int = Field(ge=0)
+    """Réserve de sécurité du **drop** sur l'allocation réduite (jamais retenue contre une réservation payée)."""
     servable: int = Field(ge=0)
+    """Unités qui servent les réservations : **toute** l'allocation réduite (la réserve passe après elles)."""
     kept: tuple[str, ...] = ()
     """Commandes servies (ordre de paiement)."""
     refunded: tuple[str, ...] = ()
@@ -892,15 +977,18 @@ def plan_service(
     drop_quota_before: int = 0,
     already_served: frozenset[str] = frozenset(),
 ) -> ServicePlan:
-    """Réservations servies en **ordre de paiement** sur l'allocation réduite (réserve de sécurité conservée).
+    """Réservations servies en **ordre de paiement** sur **toute** l'allocation réduite.
 
+    Revue pré-drop (PDL-05) : la réserve de sécurité n'est jamais retenue contre une réservation payée (sinon l'unité
+    gardée partirait au prix du drop pendant que le dernier réservant est remboursé) ; elle ne vaut que pour le drop.
     La réduction prend d'abord sur le quota drop ; s'il manque encore des unités, la première réservation qui ne tient
     plus et **toutes les suivantes** (ordre de paiement) sont remboursées intégralement — jamais une réservation payée
-    avant une autre servie. ``already_served`` : commandes déjà expédiées (servies, jamais remboursées par un plan).
+    avant une autre servie. ``already_served`` : réservations dont la **ligne** a déjà été expédiée (servies, jamais
+    remboursées par un plan).
     """
     alloc = max(0, int(new_allocation))
     reserve = reserve_units(alloc, min_units=reserve_min_units, share=reserve_share)
-    servable = preorder_quota(alloc, 0, reserve)
+    servable = alloc
     served = [r for r in confirmed if r.order_id in already_served]
     ordered = sorted((r for r in confirmed if r.order_id not in already_served), key=lambda r: (r.paid_at, r.seq))
     kept: list[str] = [r.order_id for r in sorted(served, key=lambda r: (r.paid_at, r.seq))]
@@ -920,11 +1008,15 @@ def plan_service(
         refunded=tuple(refunded),
         kept_units=used,
         drop_quota_before=max(0, drop_quota_before),
-        drop_quota_after=max(0, servable - used),
+        drop_quota_after=preorder_quota(alloc, used, reserve),
     )
 
 
-def _no_shipment(_: str) -> bool:
+ShippedCheck = Callable[[PredropReservation], bool]
+"""Vrai si la **ligne** de la réservation a été expédiée (SKU ``-RESA-`` du pré-drop, quantité au moins égale)."""
+
+
+def _no_shipment(_: PredropReservation) -> bool:
     return False
 
 
@@ -1275,12 +1367,13 @@ class PredropRegistry:
         recorded_by: str,
         at: datetime,
         autonomy_level: int,
-        shipped: Callable[[str], bool] = _no_shipment,
+        shipped: ShippedCheck = _no_shipment,
     ) -> ReductionResult:
         """Réduction annoncée par le fournisseur : plan de service, quota drop réduit d'abord, remboursements préparés.
 
         Idempotente par référence de confirmation (même nouvelle quantité : sans effet ; autre : refus). Une hausse
-        n'est jamais une réduction (refus). ``shipped`` : commandes déjà expédiées (servies, jamais remboursées).
+        n'est jamais une réduction (refus). ``shipped`` : réservations dont la **ligne** est déjà expédiée (servies,
+        jamais remboursées) — l'expédition d'un autre article de la même commande ne compte pas.
         """
         _aware(at, "at")
         with self._lock:
@@ -1325,7 +1418,7 @@ class PredropRegistry:
             })  # fmt: skip
             return ReductionResult(allocation=updated, reduction=reduction, plan=plan, refunds=tuple(prepared))
 
-    def _plan(self, product_key: str, new_qty: int, shipped: Callable[[str], bool] = _no_shipment) -> ServicePlan:
+    def _plan(self, product_key: str, new_qty: int, shipped: ShippedCheck = _no_shipment) -> ServicePlan:
         predrop = self._predrop_on_allocation(product_key)
         if predrop is None:
             reserve = reserve_units(new_qty, min_units=MIN_RESERVE_UNITS, share=MIN_RESERVE_SHARE)
@@ -1339,7 +1432,7 @@ class PredropRegistry:
                                drop_quota_before=before, drop_quota_after=servable)  # fmt: skip
         confirmed = self._committed_reservations(predrop.predrop_id)
         before = self._quota_locked(predrop).drop_quota
-        served = frozenset(r.order_id for r in confirmed if shipped(r.order_id))
+        served = frozenset(r.order_id for r in confirmed if shipped(r))
         return plan_service(confirmed, new_qty, reserve_min_units=predrop.reserve_min_units,
                             reserve_share=predrop.reserve_share, drop_quota_before=before,
                             already_served=served)  # fmt: skip
@@ -1410,7 +1503,7 @@ class PredropRegistry:
             self._commit({"op": "predrop", "predrop": predrop.model_dump(mode="json")})
             return predrop, True
 
-    def unsettled(self, product_key: str, shipped: Callable[[str], bool], *, ignore: str | None = None) -> str | None:
+    def unsettled(self, product_key: str, shipped: ShippedCheck, *, ignore: str | None = None) -> str | None:
         """Pré-drop de la référence encore en cours (ouvert ou en attente) ou dont des réservations confirmées ne sont
         ni expédiées ni remboursées, ou qui a déjà engagé l'allocation ferme en vigueur (None : aucun).
 
@@ -1425,7 +1518,7 @@ class PredropRegistry:
                     return p.predrop_id
                 if allocation is not None and p.allocation_ref == allocation.supplier_confirmation_ref:
                     return p.predrop_id
-                if any(not shipped(r.order_id) for r in self._committed_reservations(p.predrop_id)):
+                if any(not shipped(r) for r in self._committed_reservations(p.predrop_id)):
                     return p.predrop_id
         return None
 
@@ -1456,9 +1549,16 @@ class PredropRegistry:
                 if r.predrop_id == predrop_id and r.status == "CONFIRMED" and refund_id_for(r.order_id) not in self._refunds]  # fmt: skip
 
     def committed_units(self, predrop_id: str) -> int:
-        """Unités confirmées encore à servir (ni remboursées, ni retirées par une réduction)."""
+        """Unités confirmées (ni remboursées, ni retirées par une réduction), expédiées comprises : base du quota."""
         with self._lock:
             return sum(r.qty for r in self._committed_reservations(predrop_id))
+
+    def unshipped_committed_units(self, predrop_id: str, shipped: ShippedCheck) -> int:
+        """Unités confirmées **non encore expédiées** (ligne de réservation pas encore partie) : unités à retenir hors de
+        toute vente au prix du drop et grandeur homogène avec les unités engagées non expédiées de Shopify."""
+        with self._lock:
+            items = self._committed_reservations(predrop_id)
+        return sum(r.qty for r in items if not shipped(r))
 
     def _quota_locked(self, predrop: Predrop, *, at: datetime | None = None) -> QuotaSplit:
         allocation = self._allocations.get(predrop.product_key)
@@ -1486,14 +1586,28 @@ class PredropRegistry:
 
     # -- réservations -----------------------------------------------------------------
     def is_reservation(self, order_id: str) -> bool:
-        """Vrai si la commande porte une réservation pré-drop (reconnaissance du chiffre d'affaires à l'expédition).
+        """Vrai si la commande porte une réservation pré-drop enregistrée.
 
-        Une commande à plusieurs pré-drops est enregistrée ``<commande>``, ``<commande>#2``… : la commande expédiée
-        ``<commande>`` est une réservation dès que l'une de ses entrées l'est.
+        Une commande à plusieurs pré-drops est enregistrée ``<commande>``, ``<commande>#2``… ; un envoi
+        ``<commande>/envoi-<n>`` désigne la même commande.
         """
-        prefix = f"{order_id}{RESERVATION_LINE_SEPARATOR}"
+        base = shipment_order_base(order_id)
+        return bool(self.reservations_for_order(base))
+
+    def reservations_for_order(self, order_base: str) -> tuple[PredropReservation, ...]:
+        """Réservations enregistrées d'une commande Shopify (``<commande>`` et ``<commande>#<n>``), par ordre."""
+        prefix = f"{order_base}{RESERVATION_LINE_SEPARATOR}"
         with self._lock:
-            return order_id in self._reservations or any(k.startswith(prefix) for k in self._reservations)
+            found = [r for k, r in self._reservations.items() if k == order_base or k.startswith(prefix)]
+        return tuple(sorted(found, key=lambda r: r.seq))
+
+    def predrop_for_reservation_sku(self, sku: str) -> Predrop | None:
+        """Pré-drop d'une ligne au SKU d'une fiche de réservation (SKU **figé à l'ouverture**, stable après un report)."""
+        with self._lock:
+            for predrop in sorted(self._predrops.values(), key=lambda p: (p.requested_at, p.predrop_id)):
+                if predrop.sku is not None and sku == predrop.sku:
+                    return predrop
+        return None
 
     def product_for_reservation_sku(self, sku: str) -> str | None:
         """Référence d'une ligne de commande au SKU d'une fiche de réservation (``<SKU>-RESA-<AAAAMMJJ>``) — None sinon.
@@ -1501,11 +1615,8 @@ class PredropRegistry:
         Le SKU d'une fiche de réservation n'est pas celui de la fiche normale : sans cette résolution, la ligne
         expédiée resterait « non rattachée » (coût des ventes en attente). Seuls les pré-drops enregistrés comptent.
         """
-        with self._lock:
-            for predrop in self._predrops.values():
-                if predrop.public_sku and sku == predrop_reservation_sku(predrop.public_sku, predrop.drop_date):
-                    return predrop.product_key
-        return None
+        predrop = self.predrop_for_reservation_sku(sku)
+        return predrop.product_key if predrop is not None else None
 
     def latest_for(self, product_key: str) -> Predrop | None:
         """Dernier pré-drop validé (ouvert ou fermé) de la référence — jamais un pré-drop en attente de la propriétaire."""
@@ -1536,7 +1647,8 @@ class PredropRegistry:
             order_id=res.order_id,
             predrop_id=res.predrop_id,
             product_key=res.product_key,
-            amount_ttc=res.amount_paid_ttc,
+            amount_ttc=res.refund_amount,
+            shipping_ttc=q2(res.shipping_paid_ttc),
             reason=reason,
             prepared_at=at,
             prepared_by=by,
@@ -1544,8 +1656,9 @@ class PredropRegistry:
             status="APPROVED" if auto else "PENDING_OWNER",
             approved_by=f"moteur (niveau d'autonomie {level})" if auto else None,
             approved_at=at if auto else None,
-            email_draft=refund_email_draft(order_id=res.order_id, amount=res.amount_paid_ttc, reason=reason,
-                                           public_sku=predrop.public_sku if predrop is not None else None),  # fmt: skip
+            email_draft=refund_email_draft(order_id=res.order_id, amount=res.refund_amount, reason=reason,
+                                           public_sku=predrop.public_sku if predrop is not None else None,
+                                           shipping=res.shipping_paid_ttc),  # fmt: skip
             reason_fr=refund_reason_fr(reason),
             request_ref=request_ref,
         )
@@ -1565,24 +1678,38 @@ class PredropRegistry:
         enabled: bool,
         blocked_reason: str | None,
         autonomy_level: int,
+        shipping_paid_ttc: Decimal = ZERO,
+        listing_retired_at: datetime | None = None,
     ) -> tuple[PredropReservation, PreparedRefund | None, bool]:
         """Enregistre une réservation **payée** (atomique) ; (réservation, remboursement préparé, nouvelle ?).
 
-        Jamais refusée pour un motif métier (le client a payé) : pré-drop désactivé ou suspendu, fermé à la date du
-        paiement, hors fenêtre prioritaire, montant ≠ prix pré-drop × quantité, limite par client atteinte ou quota
-        épuisé => ``NOT_SERVED`` et remboursement intégral préparé. Même commande, même contenu : sans effet ; autre
-        contenu : :class:`PredropError` (409). Pré-drop inconnu : :class:`PredropError` (rien à rattacher).
+        Jamais refusée pour un motif métier (le client a payé) : fermé à la date du paiement, hors fenêtre prioritaire,
+        montant ≠ prix pré-drop × quantité, limite par client atteinte ou quota épuisé => ``NOT_SERVED`` et
+        remboursement **intégral** préparé (frais de livraison payés compris). Même commande, même contenu : sans effet ;
+        autre contenu : :class:`PredropError` (409). Pré-drop inconnu : :class:`PredropError` (rien à rattacher).
+
+        Suspension par précaution (revue pré-drop PDL-03) : pré-drop désactivé (``enabled`` faux) ou suspendu
+        (``blocked_reason`` : gel, quarantaine, relevé de trésorerie manquant) => ``NOT_SERVED`` **seulement** si le
+        paiement est postérieur au **retrait vérifié** de la fiche de réservation (``listing_retired_at``, registre des
+        fiches publiées) ; un paiement antérieur a été fait sur une fiche « Réservations ouvertes » : le contrat est
+        conclu, la réservation reste servie (l'exécution attend la levée du blocage).
         """
         _aware(paid_at, "paid_at")
         _aware(at, "at")
+        if listing_retired_at is not None:
+            _aware(listing_retired_at, "listing_retired_at")
         if not _SHA256_RE.match(customer_ref or ""):
             raise PredropError("customer_ref : empreinte sha256 hexadécimale de l'identifiant client (jamais l'email)")
+        if qty < 1:
+            raise PredropError("quantité payée : au moins 1")
+        if amount_paid_ttc < 0 or shipping_paid_ttc < 0:
+            raise PredropError("montants payés : jamais négatifs")
         with self._lock:
             existing = self._reservations.get(order_id)
             probe = {
                 "order_id": order_id, "predrop_id": predrop_id, "customer_ref": customer_ref, "qty": qty,
                 "amount_paid_ttc": str(q2(amount_paid_ttc)), "paid_at": paid_at.isoformat(),
-                "priority_access": priority_access,
+                "priority_access": priority_access, "shipping_paid_ttc": str(q2(shipping_paid_ttc)),
             }  # fmt: skip
             if existing is not None:
                 if existing.content() != probe:
@@ -1595,10 +1722,12 @@ class PredropRegistry:
             if price is None:  # pragma: no cover - un pré-drop enregistré a toujours ses deux prix
                 raise PredropError(f"pré-drop {predrop_id} sans prix")
             expected = q2(price * qty)
+            suspended = (not enabled or bool(blocked_reason)) and listing_retired_at is not None \
+                and paid_at >= listing_retired_at
             reason: str | None = None
-            if not enabled:
+            if suspended and not enabled:
                 reason = "DISABLED"
-            elif blocked_reason:
+            elif suspended:
                 reason = "BLOCKED"
             elif not predrop.accepting_at(paid_at):
                 reason = "CLOSED"
@@ -1614,10 +1743,10 @@ class PredropRegistry:
                     reason = "QUOTA_EXHAUSTED"
             reservation = PredropReservation(
                 order_id=order_id, predrop_id=predrop_id, product_key=predrop.product_key, customer_ref=customer_ref,
-                qty=qty, amount_paid_ttc=q2(amount_paid_ttc), expected_ttc=expected, paid_at=paid_at,
-                priority_access=priority_access, seq=len(self._reservations) + 1,
-                status="CONFIRMED" if reason is None else "NOT_SERVED", not_served_reason=reason,
-                recorded_by=recorded_by, recorded_at=at,
+                qty=qty, amount_paid_ttc=q2(amount_paid_ttc), shipping_paid_ttc=q2(shipping_paid_ttc),
+                expected_ttc=expected, paid_at=paid_at, priority_access=priority_access,
+                seq=len(self._reservations) + 1, status="CONFIRMED" if reason is None else "NOT_SERVED",
+                not_served_reason=reason, recorded_by=recorded_by, recorded_at=at,
             )  # fmt: skip
             refund = None
             if reason is not None:
@@ -1639,16 +1768,18 @@ class PredropRegistry:
         at: datetime,
         today: date,
         autonomy_level: int,
-        shipped: Callable[[str], bool] = _no_shipment,
+        shipped: ShippedCheck = _no_shipment,
     ) -> tuple[PreparedRefund, bool]:
         """Annulation d'une réservation **confirmée**, à la demande écrite du client : remboursement **intégral** préparé.
 
-        Motifs (:data:`CANCELLATION_REASONS_FR`) : ``CUSTOMER_CANCELLATION`` (annulation libre, refusée une fois la date
-        du drop atteinte : après réception, c'est le retour volontaire des CGV), ``DATE_POSTPONED`` (report au-delà du
-        seuil des conditions), ``PRODUCT_CHANGED`` (contenu modifié). Même circuit que les autres remboursements :
-        validation de la propriétaire en un clic aux niveaux 1 et 2, exécution relevée par le workflow 02 ; l'unité
-        revient au quota (pré-drop encore ouvert) ou au drop. Déjà remboursée ou en cours de remboursement : sans effet
-        (``(remboursement, False)``, jamais deux remboursements). Expédiée : refus (retour volontaire après réception).
+        Motifs (:data:`CANCELLATION_REASONS_FR`) : ``CUSTOMER_CANCELLATION`` (annulation libre jusqu'à N jours avant la
+        date du drop **en vigueur**, :attr:`Predrop.free_cancellation_until`, paramètre signé ; ensuite : retour
+        volontaire des CGV après réception), ``DATE_POSTPONED`` (report au-delà du seuil des conditions),
+        ``PRODUCT_CHANGED`` (contenu modifié). Même circuit que les autres remboursements : validation de la propriétaire
+        en un clic aux niveaux 1 et 2, exécution relevée par le workflow 02 ; l'unité revient au quota (pré-drop encore
+        ouvert) ou au drop. Déjà remboursée ou en cours de remboursement : sans effet (``(remboursement, False)``, jamais
+        deux remboursements). Ligne de réservation expédiée : refus (retour volontaire après réception) — l'expédition
+        d'un autre article de la même commande ne compte pas.
         """
         _aware(at, "at")
         if reason not in CANCELLATION_REASONS_FR:
@@ -1660,21 +1791,58 @@ class PredropRegistry:
             existing = self._refunds.get(refund_id_for(order_id))
             if existing is not None:
                 return existing, False
-            if shipped(order_id):
+            if shipped(res):
                 raise PredropError(
                     f"réservation {order_id} déjà expédiée : plus d'annulation, retour volontaire après réception (CGV ch. 10)"
                 )
             if res.status != "CONFIRMED":  # pragma: no cover - une réservation non servie a toujours son remboursement
                 raise PredropError(f"réservation {order_id} non servie : remboursement déjà préparé")
             predrop = self._predrops.get(res.predrop_id)
-            if reason == "CUSTOMER_CANCELLATION" and predrop is not None and today >= predrop.drop_date:
+            if reason == "CUSTOMER_CANCELLATION" and predrop is not None and today > predrop.free_cancellation_until:
                 raise PredropError(
-                    f"annulation libre close à la date du drop ({predrop.drop_date.isoformat()}) : après réception, "
-                    "retour volontaire (CGV ch. 10) ; report ou contenu modifié : motif DATE_POSTPONED ou PRODUCT_CHANGED"
+                    f"annulation libre close le {predrop.free_cancellation_until.isoformat()} ({predrop.free_cancellation_days} "
+                    f"jour(s) avant la date du drop {predrop.drop_date.isoformat()}) : après réception, retour volontaire "
+                    "(CGV ch. 10) ; report ou contenu modifié : motif DATE_POSTPONED ou PRODUCT_CHANGED"
                 )
             refund = self._new_refund(res, reason, at=at, by=by, autonomy_level=autonomy_level, request_ref=request_ref)
             self._commit({"op": "refund", "refund": refund.model_dump(mode="json")})
             return refund, True
+
+    def postpone(
+        self, predrop_id: str, *, new_date: date, new_closes_at: datetime, reason: str, supplier_ref: str, by: str,
+        at: datetime,
+    ) -> Predrop:
+        """Report de la date du drop (revue pré-drop PDL-06) : journalisé, SKU de réservation **stable**.
+
+        Seulement vers une date **postérieure** à la date en vigueur (avancer le drop raccourcirait l'annulation libre
+        promise) ; ``new_closes_at`` : fermeture des réservations recalculée par l'appelant (début du nouveau jour du
+        drop, ou fermeture antérieure inchangée). Les délais d'annulation suivent la nouvelle date. Pré-drop en attente
+        de la propriétaire : refus (la date se corrige en le rouvrant).
+        """
+        _aware(at, "at")
+        _aware(new_closes_at, "new_closes_at")
+        with self._lock:
+            predrop = self._predrops.get(predrop_id)
+            if predrop is None:
+                raise PredropError(f"pré-drop {predrop_id} inconnu")
+            if predrop.status == "PENDING_OWNER":
+                raise PredropError(f"pré-drop {predrop_id} en attente de la propriétaire : rien à reporter")
+            if new_date <= predrop.drop_date:
+                raise PredropError(
+                    f"report : nouvelle date {new_date.isoformat()} ≤ date en vigueur {predrop.drop_date.isoformat()} "
+                    "(un drop n'est jamais avancé)"
+                )
+            entry = PredropPostponement(previous_date=predrop.drop_date, new_date=new_date, reason=reason,
+                                        supplier_ref=supplier_ref, by=by, at=at)  # fmt: skip
+            updated = predrop.model_copy(update={
+                "reservation_sku": predrop.sku,  # figé avant tout changement de date (lignes déjà vendues)
+                "drop_date": new_date,
+                "closes_at": new_closes_at,
+                "postponements": (*predrop.postponements, entry),
+            })  # fmt: skip
+            updated = Predrop.model_validate(updated.model_dump(mode="json"))
+            self._commit({"op": "predrop", "predrop": updated.model_dump(mode="json")})
+            return updated
 
     # -- remboursements ---------------------------------------------------------------
     def refund(self, refund_id: str) -> PreparedRefund | None:
@@ -1730,22 +1898,28 @@ class PredropRegistry:
             return done, True
 
     # -- dette ------------------------------------------------------------------------
-    def reservation_state(self, order_id: str, shipped: Callable[[str], bool]) -> str:
-        """État dérivé : ``SHIPPED``, ``REFUNDED``, ``REFUND_PENDING``, ``CONFIRMED`` ou ``NOT_SERVED``."""
+    def reservation_state(self, order_id: str, shipped: ShippedCheck) -> str:
+        """État dérivé : ``REFUNDED``, ``REFUND_PENDING``, ``SHIPPED``, ``CONFIRMED`` ou ``NOT_SERVED``.
+
+        Un remboursement préparé prime toujours (non exécuté : ``REFUND_PENDING``, la dette reste due) ; ``SHIPPED``
+        seulement si la **ligne** de la réservation est partie.
+        """
         with self._lock:
             res = self._reservations[order_id]
             refund = self._refunds.get(refund_id_for(order_id))
-        if shipped(order_id):
-            return "SHIPPED"
         if refund is not None:
             return "REFUNDED" if refund.status == "EXECUTED" else "REFUND_PENDING"
+        if res.status == "CONFIRMED" and shipped(res):
+            return "SHIPPED"
         return res.status
 
-    def outstanding_debt(self, *, as_of: datetime, shipped: Callable[[str], bool]) -> PredropDebt:
-        """Argent encaissé (payé au plus tard à ``as_of``) ni expédié, ni remboursé (exécuté au plus tard à ``as_of``).
+    def outstanding_debt(self, *, as_of: datetime, shipped: ShippedCheck) -> PredropDebt:
+        """Argent encaissé (payé au plus tard à ``as_of``) ni livré, ni remboursé (exécuté au plus tard à ``as_of``).
 
-        Dérivé du registre (jamais déclaré) : chaque réservation payée, servie ou non, est une dette jusqu'à son
-        expédition (commande enregistrée, chiffre d'affaires reconnu) ou à son remboursement exécuté.
+        Dérivé du registre (jamais déclaré) : chaque réservation payée, servie ou non, est une dette jusqu'à
+        l'expédition de **sa ligne** (chiffre d'affaires reconnu) ou à son remboursement exécuté. Une réservation non
+        servie ou dont le remboursement est préparé reste une dette jusqu'à l'exécution du remboursement, même si sa
+        commande a été expédiée (autre article) — fermé par défaut.
         """
         _aware(as_of, "as_of")
         total = ZERO
@@ -1755,15 +1929,20 @@ class PredropRegistry:
             items = list(self._reservations.values())
             refunds = dict(self._refunds)
         for res in items:
-            if res.paid_at > as_of or shipped(res.order_id):
+            if res.paid_at > as_of:
                 continue
             refund = refunds.get(refund_id_for(res.order_id))
-            if refund is not None and refund.status == "EXECUTED" and refund.executed_at is not None \
-                    and refund.executed_at <= as_of:
+            if refund is not None:
+                if refund.status == "EXECUTED" and refund.executed_at is not None and refund.executed_at <= as_of:
+                    continue
+                amount = max(res.debt_amount, refund.amount_ttc)
+            elif res.status == "CONFIRMED" and shipped(res):
                 continue
-            total += res.debt_amount
+            else:
+                amount = res.debt_amount
+            total += amount
             count += 1
-            by_predrop[res.predrop_id] = by_predrop.get(res.predrop_id, ZERO) + res.debt_amount
+            by_predrop[res.predrop_id] = by_predrop.get(res.predrop_id, ZERO) + amount
         return PredropDebt(total_chf=q2(total), reservations=count,
                            by_predrop={k: q2(v) for k, v in sorted(by_predrop.items())})  # fmt: skip
 

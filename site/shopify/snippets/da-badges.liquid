@@ -1,12 +1,13 @@
 {%- comment -%}
   Badges d'un produit (DA : .da-badge--fr | --local | --preorder | --new | --out | --restock | --reservation | --drop).
-  Au plus 3, dans l'ordre : langue, statut, puis « Drop le JJ.MM » (pré-drop à venir), « Nouveauté » (seulement si
+  Au plus 3, dans l'ordre : langue, statut, puis « Drop le JJ.MM (date estimée) » (pré-drop à venir), « Nouveauté » (seulement si
   achetable) ou « Alerte réassort » (seulement en rupture).
   Paramètre : product (obligatoire).
   Sources : métachamps boutique.* et tag « nouveaute » écrits par la publication (site/shopify/STRUCTURE_BOUTIQUE.md §2).
   Règle : l'inventaire Shopify décide de la vente. Produit non achetable => statut « Rupture », quoi que dise le métachamp.
   Pré-drop (fiche jumelle de type « Réservation garantie ») : « Réservation garantie » seulement si les réservations
-  sont ouvertes et la fiche achetable ; « Drop le JJ.MM » tant que la date du drop n'est pas passée. Un statut et une
+  sont ouvertes et la fiche achetable ; « Drop le JJ.MM (date estimée) » tant que la date du drop n'est pas passée
+  (revue pré-drop PDL-07 : la date du drop est une estimation, jamais présentée comme certaine). Un statut et une
   date : jamais de quota, de compteur ni de minuteur.
   Jamais « Stock local » et « Précommande » ensemble ; jamais « Dernières pièces », compteur ou minuteur.
 {%- endcomment -%}
@@ -63,7 +64,7 @@
       <span class="da-badge da-badge--out" role="listitem">{% render 'da-icone', nom: 'rupture' %}Rupture</span>
   {%- endcase -%}
   {%- if drop_a_venir -%}
-    <span class="da-badge da-badge--drop" role="listitem">{% render 'da-icone', nom: 'drop' %}Drop le {{ date_drop | date: '%d.%m' }}</span>
+    <span class="da-badge da-badge--drop" role="listitem">{% render 'da-icone', nom: 'drop' %}Drop le {{ date_drop | date: '%d.%m' }} (date estimée)</span>
   {%- elsif nouveaute -%}
     <span class="da-badge da-badge--new" role="listitem">{% render 'da-icone', nom: 'nouveaute' %}Nouveauté</span>
   {%- elsif statut == 'rupture' and alerte == true and fin_serie != true -%}

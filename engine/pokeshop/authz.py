@@ -64,7 +64,7 @@ __all__ = [
     "matrix_markdown",
 ]
 
-AUTHZ_VERSION = "2026-10-06.predrop-annulation"
+AUTHZ_VERSION = "2026-10-06.predrop-revue"
 """Version de la matrice (à changer à chaque modification ; citée par ``/health`` et la doc générée)."""
 
 OWNER = "propriétaire"
@@ -251,6 +251,10 @@ ROUTE_MATRIX: dict[tuple[str, str], RouteRule] = {
     ("POST", "/mandate/revoke"): _write("mandate.revoke", ALL_NAMED, note="acte protecteur"),
     ("POST", "/treasury/paypal-balance"): _write("treasury.paypal_balance", {"connecteur-tresorerie"}),
     ("POST", "/treasury/bank-balance"): _write("treasury.bank_balance", {"connecteur-tresorerie"}),
+    ("POST", "/treasury/psp-balance"): _write(
+        "treasury.psp_balance", {"connecteur-tresorerie"},
+        note="solde du prestataire en attente de versement, relevé APRÈS la banque : créance « encaissé non versé » du "
+        "pré-drop (plafonnée à sa dette) ; requis pour toute nouvelle promesse pré-drop"),
     ("POST", "/treasury/balance-items"): _write(
         "treasury.balance_items", {"finance-pricing", "connecteur-tresorerie"},
         note="dettes à date (finance-pricing : hausse seulement) ; créances : propriétaire seule ; "
@@ -296,7 +300,8 @@ ROUTE_MATRIX: dict[tuple[str, str], RouteRule] = {
     ("POST", "/predrop/allocations"): _write(
         "predrop.allocation", {"n8n-03-factures"},
         note="allocation ferme (confirmation fournisseur validée par la propriétaire, workflow 03 ; fournisseur connu "
-        "du moteur) : jamais déclarée par l'agent qui bénéficie du pré-drop ; une baisse passe par la réduction"),
+        "du moteur) : jamais déclarée par l'agent qui bénéficie du pré-drop ; une baisse passe par la réduction ; "
+        "engagement d'achat : refusée sous gel des achats du stop-loss (sauf propriétaire)"),
     ("POST", "/predrop/allocations/{product_key}/reduce"): _write(
         "predrop.allocation_reduce", {"n8n-03-factures", "operations-sav"},
         note="réduction annoncée par le fournisseur ou constatée à la réception (acte protecteur, baisse seulement) : "
@@ -315,6 +320,10 @@ ROUTE_MATRIX: dict[tuple[str, str], RouteRule] = {
     ("POST", "/predrop/{predrop_id}/close"): _write(
         "predrop.close", {"chef-de-projet", "finance-pricing", "qa-conformite", "n8n-03-factures"},
         note="acte protecteur (n8n-03-factures : dès qu'une réduction d'allocation est annoncée, avant sa validation)"),
+    ("POST", "/predrop/{predrop_id}/postpone"): _write(
+        "predrop.postpone", {"operations-sav"},
+        note="report de la date du drop sur justificatif (date postérieure seulement) : journalisé, SKU de réservation "
+        "stable, délais d'annulation sur la date en vigueur ; propriétaire aussi"),
     ("POST", "/predrop/{predrop_id}/publish"): _write(
         "predrop.publish", {"n8n-01-sync", "site-integrations"},
         note="fiche « Réservation garantie » construite par le moteur (registres, prix figé, planchers revérifiés), "
@@ -323,8 +332,9 @@ ROUTE_MATRIX: dict[tuple[str, str], RouteRule] = {
         "predrop.offers", "offres publiques (statut ouvert/fermé, date du drop, deux prix, garantie) ; quotas internes"),
     ("POST", "/predrop/reservations"): _write(
         "predrop.reservation", {"n8n-02-commandes"},
-        note="réservation payée (commande Shopify, identifiant client haché) : jamais refusée pour un motif métier — "
-        "hors quota, limite, fenêtre ou prix : non servie et remboursement intégral préparé ; dette jusqu'à expédition"),
+        note="réservation payée (commande Shopify, empreinte HMAC de l'identifiant client) : toute quantité et tout "
+        "montant ≥ 0 enregistrés, jamais refusée pour un motif métier — hors quota, limite, fenêtre ou prix : non servie "
+        "et remboursement intégral préparé (frais de livraison payés compris) ; dette jusqu'à l'expédition de sa ligne"),
     ("POST", "/predrop/reservations/{order_id}/cancel"): _write(
         "predrop.reservation_cancel", {"operations-sav"},
         note="annulation à la demande écrite du client (annulation libre avant le drop, report au-delà du seuil, contenu "

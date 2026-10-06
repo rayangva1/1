@@ -67,6 +67,9 @@ PLAN_DROP = "PLAN_JOUR_DE_DROP.md"
 EMAILS_GARANTIE = ("15-pre-drop-reservation-confirmee", "16-pre-drop-acces-prioritaire", "17-pre-drop-ouverture")
 #: Chiffre de stock ou de réservations dans un texte public (« 12 unités », « plus que 3 », « 40 % réservés »).
 QUANTITE_RE = re.compile(r"\b\d+\s*(?:unités?|exemplaires?|pièces?|cartons?|réservations?|%)", re.IGNORECASE)
+#: Date du drop dans un texte public du plan ou dans le corps d'un email du pré-drop (revue PDL-07 : toujours estimée).
+DATE_DROP_RE = re.compile(r"Drop le \{\{DATE_DROP\}\}")
+DATE_DROP_EMAIL_RE = re.compile(r"Drop le \{\{ \$json\.date_drop \}\}")
 #: Statut public d'un pré-drop : rien d'autre que ces deux libellés (moteur : STATUS_OPEN_FR, STATUS_CLOSED_FR).
 STATUTS_PREDROP = ("Réservations ouvertes", "Réservations fermées")
 VOLUME_RE = re.compile(r"\d[\d'  ]*\s*(recherches|requêtes|searches)\b|volume\s*(mensuel)?\s*:\s*\d", re.IGNORECASE)
@@ -372,6 +375,17 @@ def verifier_predrop(racine: Path = RACINE) -> list[str]:
             m = motif.search(ligne)
             if m:
                 erreurs.append(f"{PLAN_DROP} : {libelle} dans un texte public « {m.group(0)} »")
+        # Revue pré-drop (PDL-07) : la date du drop est toujours donnée comme estimée.
+        for m in DATE_DROP_RE.finditer(ligne):
+            if not ligne[m.end():].startswith(" (date estimée)"):
+                erreurs.append(f"{PLAN_DROP} : date du drop sans « (date estimée) » dans un texte public « {m.group(0)} »")
+    for ident in EMAILS_GARANTIE:
+        chemin = ge.EMAILS / "texte" / f"{ident}.txt"
+        if chemin.exists():
+            contenu = chemin.read_text(encoding="utf-8")
+            for m in DATE_DROP_EMAIL_RE.finditer(contenu):
+                if not contenu[m.end():].startswith(" (date estimée)"):
+                    erreurs.append(f"{chemin.name} : date du drop sans « (date estimée) »")
     return erreurs
 
 

@@ -2,8 +2,13 @@
   Encart « Réservation garantie » d'un pré-drop (décision de la propriétaire du 6.10.2026 ; docs/SPEC.md §2.11).
   Paramètre : product (obligatoire) — la fiche de réservation (type « Réservation garantie ») ou la fiche normale.
   Sources : métachamps boutique.reservation_statut (prioritaire | ouvertes | fermees), boutique.date_drop,
-  boutique.fiche_liee (handle de la fiche jumelle) et boutique.quantite_max, écrits par la publication du moteur
-  (engine/pokeshop/publish.py, build_predrop_publication) ; prix = champs natifs des deux fiches (aucun prix en dur).
+  boutique.fiche_liee (handle de la fiche jumelle), boutique.quantite_max et les deux prix FIGÉS du moteur
+  boutique.prix_reservation et boutique.prix_drop (texte décimal, affiché « CHF 229.90 » sans dépendre du format
+  monétaire de la boutique), écrits par la publication du moteur (engine/pokeshop/publish.py) sur les deux fiches.
+  Revue pré-drop (PDL-02) : « Au drop » = prix du drop figé à l'ouverture, que la fiche normale pratique (son prix
+  natif est figé au même montant jusqu'au jour du drop ; sinon le moteur retire la fiche de réservation) ; aucun prix
+  sans métachamp (jamais un prix courant susceptible de différer). Date du drop toujours « (date estimée) » (PDL-07).
+  Jamais sur une fiche normale en stock local (PDL-01 : le stock reçu avant le drop est retenu jusqu'au drop).
   Textes de garantie identiques à engine/pokeshop/predrop.py (GUARANTEE_TEXT_FR, NO_DIFFERENCE_REFUND_FR), contrôlés
   par les tests : le supplément paie la garantie d'être servi en premier, pas le produit ; aucun remboursement de la
   différence. Aucune fausse urgence : un statut et une date ; jamais une heure de fermeture, un compte à rebours, un
@@ -14,6 +19,9 @@
   assign resa_statut = product.metafields.boutique.reservation_statut.value
   assign date_drop = product.metafields.boutique.date_drop.value
   assign fiche_liee = product.metafields.boutique.fiche_liee.value
+  assign prix_drop = product.metafields.boutique.prix_drop.value
+  assign prix_resa = product.metafields.boutique.prix_reservation.value
+  assign statut_stock = product.metafields.boutique.statut_stock.value
   assign est_reservation = false
   if product.type == 'Réservation garantie'
     assign est_reservation = true
@@ -38,6 +46,9 @@
     if est_reservation or ouvertes
       assign afficher = true
     endif
+  endif
+  if est_reservation == false and statut_stock == 'stock_local'
+    assign afficher = false
   endif
   assign jumelle = nil
   if fiche_liee and fiche_liee != ''
@@ -65,14 +76,14 @@
       {%- endif -%}
     </dd>
     <dt>Drop</dt>
-    <dd>{{ date_drop | date: '%d.%m.%Y' }}</dd>
-    {%- if fiche_resa and fiche_resa.price -%}
+    <dd>{{ date_drop | date: '%d.%m.%Y' }} (date estimée)</dd>
+    {%- if prix_resa and prix_resa != '' -%}
       <dt>Réservation garantie</dt>
-      <dd class="da-price">{{ fiche_resa.price | money }}</dd>
+      <dd class="da-price">CHF {{ prix_resa | escape }}</dd>
     {%- endif -%}
-    {%- if fiche_drop and fiche_drop.price -%}
+    {%- if prix_drop and prix_drop != '' and fiche_drop -%}
       <dt>Au drop</dt>
-      <dd class="da-price">{{ fiche_drop.price | money }}</dd>
+      <dd class="da-price">CHF {{ prix_drop | escape }}</dd>
     {%- endif -%}
     {%- if qmax and qmax != '' -%}
       <dt>Limite</dt>
@@ -81,7 +92,7 @@
   </dl>
   <p class="da-note">Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.</p>
   <p class="da-note">Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.</p>
-  <p class="da-muted">Si nous ne pouvons pas vous servir (par exemple si nous recevons moins d'unités que prévu), nous vous remboursons intégralement, supplément compris, et nous vous prévenons par email.</p>
+  <p class="da-muted">Si nous ne pouvons pas vous servir (par exemple si nous recevons moins d'unités que prévu), nous vous remboursons intégralement, supplément compris, ainsi que les frais de livraison payés pour la réservation, et nous vous prévenons par email. Pas de garantie de livraison le jour du drop.</p>
   {%- if jumelle and jumelle.url -%}
     {%- if est_reservation -%}
       <p><a href="{{ jumelle.url }}">Voir le produit au prix du drop</a></p>

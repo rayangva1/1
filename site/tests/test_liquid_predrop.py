@@ -55,7 +55,7 @@ def test_les_textes_de_garantie_sont_ceux_du_moteur() -> None:
 def test_type_et_metachamps_du_snippet_sont_ceux_de_la_publication() -> None:
     publish = PUBLISH_PY.read_text(encoding="utf-8")
     assert 'PREDROP_PRODUCT_TYPE = "Réservation garantie"' in publish
-    for key in ("date_drop", "reservation_statut", "fiche_liee"):
+    for key in ("date_drop", "reservation_statut", "fiche_liee", "prix_drop", "prix_reservation"):
         assert f'"{key}":' in publish, key
     for nom in ("da-reservation-garantie", "da-reservation-acces", "da-badges", "da-statut-stock", "da-delai-sortie"):
         source = (SNIPPETS / f"{nom}.liquid").read_text(encoding="utf-8")
@@ -116,6 +116,8 @@ def fiche(
     if date_drop is not None:
         champs["date_drop"] = {"value": date_drop}
     champs["fiche_liee"] = {"value": NORMAL if reservation else RESA}
+    champs.setdefault("prix_reservation", {"value": "229.90"})  # prix figés du moteur (deux fiches)
+    champs.setdefault("prix_drop", {"value": "209.90"})
     if reservation:
         champs.setdefault("quantite_max", {"value": 1})
     return {
@@ -149,17 +151,17 @@ def paire(**kw: Any) -> tuple[dict[str, Any], dict[str, Any]]:
 @pytest.mark.parametrize(
     ("product", "attendus"),
     [
-        (fiche(langue="FR"), ["FR", "Réservation garantie", "Drop le 20.10"]),
-        (fiche(statut_resa="prioritaire"), ["Réservation garantie", "Drop le 20.10"]),
+        (fiche(langue="FR"), ["FR", "Réservation garantie", "Drop le 20.10 (date estimée)"]),
+        (fiche(statut_resa="prioritaire"), ["Réservation garantie", "Drop le 20.10 (date estimée)"]),
         # Réservations fermées (quota épuisé : inventaire 0) : jamais « Réservation garantie », la date reste.
-        (fiche(statut_resa="fermees", disponible=False), ["Rupture", "Drop le 20.10"]),
-        (fiche(statut_resa="fermees", statut="precommande"), ["Rupture", "Drop le 20.10"]),
+        (fiche(statut_resa="fermees", disponible=False), ["Rupture", "Drop le 20.10 (date estimée)"]),
+        (fiche(statut_resa="fermees", statut="precommande"), ["Rupture", "Drop le 20.10 (date estimée)"]),
         # Fiche de réservation achetable malgré un statut fermé : le statut du moteur l'emporte sur l'inventaire.
-        (fiche(statut_resa="ouvertes", disponible=False), ["Rupture", "Drop le 20.10"]),
+        (fiche(statut_resa="ouvertes", disponible=False), ["Rupture", "Drop le 20.10 (date estimée)"]),
         # Drop passé : plus de badge « Drop le ».
         (fiche(date_drop=PASSE), ["Réservation garantie"]),
         # Fiche normale pendant le pré-drop : badge de date, jamais « Réservation garantie ».
-        (fiche(reservation=False, statut="precommande"), ["Précommande", "Drop le 20.10"]),
+        (fiche(reservation=False, statut="precommande"), ["Précommande", "Drop le 20.10 (date estimée)"]),
         # Fiche normale en stock local : la date du drop ne s'affiche plus.
         (fiche(reservation=False, statut="stock_local"), ["Stock local"]),
     ],
@@ -173,15 +175,16 @@ def test_badges_pre_drop(product: dict[str, Any], attendus: list[str]) -> None:
 def test_badge_drop_prime_sur_nouveaute_et_jamais_trois_statuts() -> None:
     p = fiche(langue="FR")
     p["tags"].append("nouveaute")
-    assert badges(p) == ["FR", "Réservation garantie", "Drop le 20.10"]
+    assert badges(p) == ["FR", "Réservation garantie", "Drop le 20.10 (date estimée)"]
 
 
 def test_encart_sur_la_fiche_de_reservation_ouverte() -> None:
     resa, normale = paire()
     html = rendre("da-reservation-garantie", product=resa, all_products={NORMAL: normale, RESA: resa})
     assert 'data-reservation="ouvertes"' in html and "Réservations ouvertes." in html
-    assert "<dd>20.10.2099</dd>" in html
-    assert "CHF 229.90" in html and "CHF 209.90" in html  # prix natifs des deux fiches, jamais en dur
+    assert "<dd>20.10.2099 (date estimée)</dd>" in html
+    assert "CHF 229.90" in html and "CHF 209.90" in html  # prix figés du moteur (métachamps), jamais en dur
+    assert "Pas de garantie de livraison le jour du drop." in html
     assert "1 réservation garantie par foyer (toutes commandes confondues)." in html
     assert GARANTIE.replace("'", "&#39;") in html or GARANTIE in html
     assert DIFFERENCE.replace("'", "&#39;") in html or DIFFERENCE in html
@@ -265,10 +268,11 @@ def test_acces_au_bouton_de_reservation(product: dict[str, Any], customer: dict[
 @pytest.mark.parametrize(
     ("product", "libelle", "detail"),
     [
-        (fiche(), "Réservations ouvertes", "Drop le 20.10.2099 · servie en premier, expédiée dès réception du stock."),
-        (fiche(statut_resa="prioritaire"), "Réservations ouvertes aux inscrits aux alertes", "Drop le 20.10.2099"),
-        (fiche(statut_resa="fermees", disponible=False), "Réservations fermées", "Drop le 20.10.2099."),
-        (fiche(statut_resa="ouvertes", disponible=False), "Réservations fermées", "Drop le 20.10.2099."),
+        (fiche(), "Réservations ouvertes",
+         "Drop le 20.10.2099 (date estimée) · servie en premier, expédiée dès réception du stock."),
+        (fiche(statut_resa="prioritaire"), "Réservations ouvertes aux inscrits aux alertes", "Drop le 20.10.2099 (date estimée)"),
+        (fiche(statut_resa="fermees", disponible=False), "Réservations fermées", "Drop le 20.10.2099 (date estimée)."),
+        (fiche(statut_resa="ouvertes", disponible=False), "Réservations fermées", "Drop le 20.10.2099 (date estimée)."),
     ],
 )
 def test_statut_stock_de_la_fiche_de_reservation(product: dict[str, Any], libelle: str, detail: str) -> None:
@@ -282,7 +286,8 @@ def test_delai_de_la_fiche_de_reservation() -> None:
     assert "Réservation garantie : expédiée en premier, dès réception du stock (dans l&#39;ordre des paiements)" in html or (
         "Réservation garantie : expédiée en premier, dès réception du stock (dans l'ordre des paiements)" in html
     )
-    assert "<dt>Drop</dt> <dd>20.10.2099</dd>" in html or "<dt>Drop</dt><dd>20.10.2099</dd>" in html
+    assert "<dt>Drop</dt> <dd>20.10.2099 (date estimée)</dd>" in html or "<dt>Drop</dt><dd>20.10.2099 (date estimée)</dd>" in html
+    assert "Pas de garantie de livraison le jour du drop." in html  # revue pré-drop (PDL-07) : rétablie
     assert "la réservation garantie est expédiée séparément, dès réception" in html
     assert "Date de sortie" not in html  # la date du drop suffit ; aucune « date non confirmée » ambiguë
     avec_sortie = rendre("da-delai-sortie", product=fiche(date_sortie="2099-10-01", date_sortie_statut="confirmee"))
@@ -290,3 +295,33 @@ def test_delai_de_la_fiche_de_reservation() -> None:
     normale = rendre("da-delai-sortie", product=fiche(reservation=False))
     assert "<dt>Drop</dt>" not in normale and "la précommande est expédiée séparément" in normale
     assert "Date de sortie" in normale and "Non confirmée" in normale
+
+
+def test_encart_jamais_sur_une_fiche_normale_en_stock_local() -> None:
+    """Revue pré-drop (PDL-01) : une fiche normale en stock local n'affiche jamais « Réserver avec garantie »."""
+    resa, normale = paire()
+    normale["metafields"]["boutique"]["statut_stock"] = {"value": "stock_local"}
+    assert rendre("da-reservation-garantie", product=normale, all_products={RESA: resa}) == ""
+
+
+def test_au_drop_affiche_le_prix_fige_jamais_le_prix_courant() -> None:
+    """Revue pré-drop (PDL-02) : « Au drop » = prix du drop figé par le moteur (métachamp), même si un prix natif
+    différent traîne sur la fiche ; sans métachamp, aucun prix (jamais un prix susceptible de ne pas être pratiqué)."""
+    resa, normale = paire()
+    normale["price"] = 19990  # prix courant différent : jamais affiché
+    html = rendre("da-reservation-garantie", product=normale, all_products={RESA: resa})
+    assert "CHF 209.90" in html and "CHF 199.90" not in html
+    sans = fiche(reservation=False)
+    del sans["metafields"]["boutique"]["prix_drop"]
+    del sans["metafields"]["boutique"]["prix_reservation"]
+    html = rendre("da-reservation-garantie", product=sans, all_products={RESA: resa})
+    assert "CHF" not in html and "Au drop" not in html
+
+
+def test_la_date_du_drop_est_toujours_estimee() -> None:
+    """Revue pré-drop (PDL-07) : partout où la date du drop s'affiche, elle est donnée comme estimée."""
+    for nom in ("da-badges", "da-statut-stock", "da-reservation-garantie", "da-delai-sortie"):
+        source = (SNIPPETS / f"{nom}.liquid").read_text(encoding="utf-8")
+        visible = re.sub(r"\{%-?\s*comment\s*-?%\}.*?\{%-?\s*endcomment\s*-?%\}", "", source, flags=re.DOTALL)
+        for match in re.finditer(r"date_drop \| date: '[^']+' \}\}([^<{]*)", visible):
+            assert match.group(1).startswith(" (date estimée)"), (nom, match.group(0))

@@ -6,34 +6,34 @@
 
 ## 1. Principes (non négociables)
 
-1. **Un statut et une date, rien d'autre.** On dit « Réservations ouvertes » ou « Réservations fermées » et « Drop le {{DATE_DROP}} ». Jamais de minuteur, d'heure de fermeture, de compte à rebours, de « plus que N », de « dernières réservations », de nombre d'unités reçues, vendues, réservées ou restantes : ce sont des données internes, et une fausse urgence (BP §8, `TON_EDITORIAL.md` §2).
+1. **Un statut et une date, rien d'autre.** On dit « Réservations ouvertes » ou « Réservations fermées » et « Drop le {{DATE_DROP}} (date estimée) » : la date du drop est toujours donnée comme estimée, jamais comme une livraison promise. Jamais de minuteur, d'heure de fermeture, de compte à rebours, de « plus que N », de « dernières réservations », de nombre d'unités reçues, vendues, réservées ou restantes : ce sont des données internes, et une fausse urgence (BP §8, `TON_EDITORIAL.md` §2).
 2. **La garantie, expliquée à chaque fois.** Chaque mention du pré-drop reprend, mot pour mot, les deux phrases du moteur (`engine/pokeshop/predrop.py`), affichées aussi sur la fiche :
    - « Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit. »
    - « Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop. »
 3. **Aucun prix en dur.** « Les deux prix sont sur la fiche » : le prix de la réservation garantie et le prix du drop, lus sur la page publique moins d'une heure avant diffusion (règle 2 du dossier). Aucun coût, aucune marge, aucun nom de fournisseur, aucun écart de prix commenté.
-4. **Pas de stock avant la réception réelle.** « En stock local » seulement après la réception contrôlée (SOP réception) ; avant, « Réservation garantie » ou « Drop le … ».
-5. **Servis en premier, dans les faits.** Le jour de la réception, les réservations garanties sont préparées **avant** toute vente au prix du drop (SOP réception, étape pré-drop) ; la publication « C'est le drop » attend que la fiche normale soit réellement en stock local.
+4. **Pas de stock avant la réception réelle, ni de vente avant le drop.** « En stock local » seulement après la réception contrôlée (SOP réception) **et** à partir de J : si le stock arrive avant J (R < J), le moteur le retient (fiche normale non achetable) jusqu'au jour du drop ; avant, « Réservation garantie » ou « Drop le … (date estimée) ».
+5. **Servis en premier, dans les faits.** Le jour de la réception, les réservations garanties sont préparées **avant** toute vente au prix du drop (SOP réception, étape pré-drop) et partent dès réception ; le moteur exclut du stock vendable les unités réservées non expédiées ; la publication « C'est le drop » attend J et la fiche normale réellement en stock local, **au prix affiché « Au drop »** (prix figé par le moteur).
 6. **Aucun produit scellé ouvert.** Le live montre l'ouverture des **cartons de livraison** et le contrôle à l'œil des produits scellés (film, langue, extension) ; jamais l'ouverture d'un booster, d'un display ou d'un coffret vendu (CGV ch. 2.3).
 7. **Garde-fous du moteur respectés.** Rien n'est publié sur une référence en gel, sous stop-loss ou en quarantaine, ni quand le pré-drop est désactivé (paramètres non signés) : la fiche affiche alors « Réservations fermées » et la communication s'arrête. Une réduction d'allocation n'est jamais chiffrée en public.
 8. **Consentement.** Les annonces par email partent seulement aux inscrits confirmés qui suivent le produit (emails 16 et 17, une fois par pré-drop et par personne) ; jamais de message privé non sollicité.
 
 ## 2. Chronologie d'un pré-drop
 
-J = jour du drop (date du moteur). R = jour de la réception réelle du stock (date non garantie : souvent avant J, parfois après).
+J = jour du drop (date du moteur, **en vigueur** : un report la met à jour, `POST /predrop/{predrop_id}/postpone`). R = jour de la réception réelle du stock (date non garantie : souvent avant J, parfois après). Si R < J : les réservations partent à R, la fiche normale reste non achetable jusqu'à J (stock retenu par le moteur).
 
 | Moment | Canal | Contenu | Condition de publication | Responsable |
 |---|---|---|---|---|
 | Ouverture (fenêtre prioritaire) | Email 16 ; story S-PD1 | Accès prioritaire des inscrits aux alertes du produit | Phase `prioritaire` dans `GET /predrop/offers` ; fiche de réservation publiée et vérifiée | Workflow 06 (email) ; agent 09 (story) |
-| Fin de la fenêtre prioritaire | Email 17 (annonce du drop) ; publication S-PD2 | « Drop le {{DATE_DROP}} » : réserver avec garantie ou attendre le drop | Phase `ouvertes` | Workflow 06 ; agent 09 |
+| Fin de la fenêtre prioritaire | Email 17 (annonce du drop) ; publication S-PD2 | « Drop le {{DATE_DROP}} (date estimée) » : réserver avec garantie ou attendre le drop | Phase `ouvertes` | Workflow 06 ; agent 09 |
 | Pendant les réservations | Story S-PD3 (au plus une par semaine) | Rappel de la différence entre les deux prix, réponse aux questions | Phase `ouvertes` ; aucune relance quotidienne | Agent 09 |
-| Réservations fermées | Story S-PD4 | « Réservations fermées. Drop le {{DATE_DROP}} » | Phase `fermees` ou fiche de réservation retirée | Agent 09 |
+| Réservations fermées | Story S-PD4 | « Réservations fermées. Drop le {{DATE_DROP}} (date estimée) » | Phase `fermees` ou fiche de réservation retirée | Agent 09 |
 | Réception (R) | Live « ouverture des cartons » (facultatif) ; story S-PD5 | Contrôle à réception, sans chiffre | Réception réelle (`POST /stock/receive`), propriétaire présente | Propriétaire ; agent 09 (légendes) |
 | R, préparation | Story S-PD6 | « Les réservations garanties partent en premier » (colis emballés, étiquettes masquées) | Réservations préparées ; aucune donnée client à l'image | Propriétaire (photo) ; agent 09 |
 | Expédition des réservations | Email 19 (en plus de l'email 07) | Réservation expédiée en priorité | Envoi Shopify contenant une ligne de réservation | Workflow 06 |
-| Jour du drop (J, ou R si plus tard) | Email 04 (alerte stock local) ; publication S-PD7 | « C'est le drop : en stock local au prix du drop » | Fiche normale en stock local réel **après** la préparation des réservations ; aucun gel ni stop-loss | Workflow 06 ; agent 09 |
+| Jour du drop (J, ou R si plus tard) | Email 04 (alerte stock local) ; publication S-PD7 | « C'est le drop : en stock local au prix du drop » | J atteint **et** fiche normale en stock local réel **après** la préparation des réservations, au prix « Au drop » ; aucun gel ni stop-loss | Workflow 06 ; agent 09 |
 | J+1 à J+7 | Publication « preuve de service » | Colis partis, délais tenus, questions fréquentes | Faits vérifiés (expéditions enregistrées) | Agent 09 |
 | Réduction d'allocation (si elle survient) | Email 18 aux seuls clients remboursés ; story S-PD8 facultative | Ordre de service et remboursement intégral, sans chiffre | Réduction enregistrée au moteur ; remboursements préparés ; validation de la propriétaire pour la story | Workflow 02 (email) ; propriétaire (GO story) |
-| Report de la date | Email au client (modèle SAV) ; mise à jour de la fiche | Nouvelle date estimée et options du client | Information reçue et vérifiée | Agent 11 ; agent 09 |
+| Report de la date | Email au client (modèle SAV) ; mise à jour de la fiche | Nouvelle date estimée et options du client (annulation libre jusqu'au nouveau délai ; au-delà du seuil de report : annulation remboursée) | Report enregistré au moteur par l'agent 11 sur justificatif (`POST /predrop/{predrop_id}/postpone` : date postérieure seulement, SKU de réservation inchangé, délai d'annulation recalculé) ; métachamps de la fiche mis à jour au cycle suivant | Agent 11 ; agent 09 |
 
 ## 3. Textes prêts à publier
 
@@ -41,12 +41,12 @@ Les textes publics sont les lignes citées (`>`). Ils sont contrôlés automatiq
 
 **S-PD1 — Ouverture prioritaire (story)**
 
-> Réservations garanties ouvertes pour {{PRODUIT}}, d'abord pour les personnes inscrites aux alertes de ce produit. Drop le {{DATE_DROP}}. Les deux prix sont sur la fiche.
+> Réservations garanties ouvertes pour {{PRODUIT}}, d'abord pour les personnes inscrites aux alertes de ce produit. Drop le {{DATE_DROP}} (date estimée). Les deux prix sont sur la fiche.
 > Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.
 
 **S-PD2 — Annonce du drop, ouverture à tous (publication)**
 
-> Drop le {{DATE_DROP}} : {{PRODUIT}}. Deux façons d'acheter, à vous de choisir.
+> Drop le {{DATE_DROP}} (date estimée) : {{PRODUIT}}. Deux façons d'acheter, à vous de choisir.
 > Réservation garantie : le prix du drop plus un supplément. Vous êtes servi en premier et votre commande est expédiée dès réception.
 > Au drop : le prix du drop, s'il reste des unités.
 > Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.
@@ -58,7 +58,7 @@ Les textes publics sont les lignes citées (`>`). Ils sont contrôlés automatiq
 
 **S-PD4 — Réservations fermées (story)**
 
-> Réservations fermées pour {{PRODUIT}}. Drop le {{DATE_DROP}} : au prix du drop, s'il reste des unités. Activez l'alerte sur la fiche pour être prévenu.
+> Réservations fermées pour {{PRODUIT}}. Drop le {{DATE_DROP}} (date estimée) : au prix du drop, s'il reste des unités. Activez l'alerte sur la fiche pour être prévenu.
 
 **S-PD5 — Réception (story ou live)**
 
@@ -123,7 +123,7 @@ Litige, accusation, donnée personnelle ou demande de remboursement : aucune ré
 
 | Interdit | Pourquoi | À la place |
 |---|---|---|
-| Minuteur, heure de fermeture, « dernier jour pour réserver » | Fausse urgence | « Réservations ouvertes » ; « Drop le … » |
+| Minuteur, heure de fermeture, « dernier jour pour réserver » | Fausse urgence | « Réservations ouvertes » ; « Drop le … (date estimée) » |
 | « Plus que N », « X % déjà réservés », « complet en N minutes » | Quantité interne et pression | « Réservations fermées » |
 | Prix en dur, comparaison des deux prix en pourcentage d'économie | Prix relus sur la fiche ; pas de promotion déguisée | « Les deux prix sont sur la fiche » |
 | « Garanti avant tout le monde », « livré le jour du drop » | Promesse non maîtrisée (date estimée, transporteur) | « Servi en premier, expédié dès réception » |

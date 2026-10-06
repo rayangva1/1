@@ -1,6 +1,6 @@
 # Matrice d'autorisations de l'API du moteur
 
-> Générée depuis `engine/pokeshop/authz.py` (version `2026-10-06.predrop-annulation`) — ne pas modifier à la main :
+> Générée depuis `engine/pokeshop/authz.py` (version `2026-10-06.predrop-revue`) — ne pas modifier à la main :
 > `python -m pokeshop.authz > docs/08-agents/MATRICE_API.md`. Refus par défaut : une route absente
 > de la matrice est refusée (403). Le **jeton commun** n'a que la lecture et les aperçus en simulation.
 > Nom d'un jeton nommé = rôle ; son empreinte sha256 va dans `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` (une variable
@@ -42,7 +42,7 @@
 | POST | `/orders/shipped` | WRITE | **non** | n8n-02-commandes | oui | vente dérivée d'une commande (lignes SKU × quantité), coût transporteur réel ; sortie de stock et coût des ventes dérivés au CMP ; enregistrement atomique ; jamais refusée faute de stock valorisé (coût des ventes en attente, étoile polaire incomplète) ni pour un SKU (ancien SKU d'une clé : rattaché ; inconnu ou ambigu : ligne non rattachée, incomplète) |
 | POST | `/orders/{order_id}/lines/resolve` | WRITE | **non** | aucun | oui | rattache une ligne non rattachée (SKU inconnu ou porté par plusieurs clés) à une fiche canonique ; sortie au CMP dérivée ensuite |
 | POST | `/orders/{order_id}/refunds` | WRITE | **non** | n8n-02-commandes, operations-sav | oui | avoir sur une commande enregistrée ; lignes = unités retournées (≤ vendues − déjà retournées) |
-| POST | `/predrop/allocations` | WRITE | **non** | n8n-03-factures | oui | allocation ferme (confirmation fournisseur validée par la propriétaire, workflow 03 ; fournisseur connu du moteur) : jamais déclarée par l'agent qui bénéficie du pré-drop ; une baisse passe par la réduction |
+| POST | `/predrop/allocations` | WRITE | **non** | n8n-03-factures | oui | allocation ferme (confirmation fournisseur validée par la propriétaire, workflow 03 ; fournisseur connu du moteur) : jamais déclarée par l'agent qui bénéficie du pré-drop ; une baisse passe par la réduction ; engagement d'achat : refusée sous gel des achats du stop-loss (sauf propriétaire) |
 | POST | `/predrop/allocations/{product_key}/reduce` | WRITE | **non** | n8n-03-factures, operations-sav | oui | réduction annoncée par le fournisseur ou constatée à la réception (acte protecteur, baisse seulement) : pré-drop servi en premier (ordre de paiement), quota drop réduit d'abord, remboursements intégraux préparés |
 | POST | `/predrop/demand` | WRITE | **non** | n8n-06-marketing | oui | compte agrégé d'inscrits consentants intéressés (aucune donnée personnelle : tout autre champ, 422) |
 | GET | `/predrop/eligibility/{product_key}` | READ | oui | tous | oui | conditions évaluées sur les registres du moteur ; deux prix, sans coût ni marge |
@@ -52,10 +52,11 @@
 | POST | `/predrop/refunds/{refund_id}/approve` | WRITE | **non** | aucun | oui | validation en un clic d'un remboursement préparé (niveaux d'autonomie 1 et 2) |
 | POST | `/predrop/refunds/{refund_id}/executed` | WRITE | **non** | n8n-02-commandes | oui | remboursement PSP relevé (approuvé seulement) : seule sortie de la dette d'une réservation remboursée |
 | GET | `/predrop/reservations` | READ | oui | tous | oui | sans identifiant client |
-| POST | `/predrop/reservations` | WRITE | **non** | n8n-02-commandes | oui | réservation payée (commande Shopify, identifiant client haché) : jamais refusée pour un motif métier — hors quota, limite, fenêtre ou prix : non servie et remboursement intégral préparé ; dette jusqu'à expédition |
+| POST | `/predrop/reservations` | WRITE | **non** | n8n-02-commandes | oui | réservation payée (commande Shopify, empreinte HMAC de l'identifiant client) : toute quantité et tout montant ≥ 0 enregistrés, jamais refusée pour un motif métier — hors quota, limite, fenêtre ou prix : non servie et remboursement intégral préparé (frais de livraison payés compris) ; dette jusqu'à l'expédition de sa ligne |
 | POST | `/predrop/reservations/{order_id}/cancel` | WRITE | **non** | operations-sav | oui | annulation à la demande écrite du client (annulation libre avant le drop, report au-delà du seuil, contenu modifié ; référence de la demande) : remboursement intégral préparé, supplément compris (validation de la propriétaire aux niveaux 1 et 2) ; expédiée : refus (retour volontaire) |
 | POST | `/predrop/{predrop_id}/approve` | WRITE | **non** | aucun | oui | validation d'un pré-drop en attente (référence marché attestée ou inconnue assumée) |
 | POST | `/predrop/{predrop_id}/close` | WRITE | **non** | chef-de-projet, finance-pricing, n8n-03-factures, qa-conformite | oui | acte protecteur (n8n-03-factures : dès qu'une réduction d'allocation est annoncée, avant sa validation) |
+| POST | `/predrop/{predrop_id}/postpone` | WRITE | **non** | operations-sav | oui | report de la date du drop sur justificatif (date postérieure seulement) : journalisé, SKU de réservation stable, délais d'annulation sur la date en vigueur ; propriétaire aussi |
 | POST | `/predrop/{predrop_id}/publish` | WRITE | **non** | n8n-01-sync, site-integrations | oui | fiche « Réservation garantie » construite par le moteur (registres, prix figé, planchers revérifiés), retirée au drop ou sur blocage ; simulation par défaut ; inventaire = réservations ouvertes |
 | GET | `/pricing/approvals` | READ | oui | tous | oui |  |
 | POST | `/pricing/approvals` | WRITE | **non** | aucun | oui | approbation d'un prix public |
@@ -78,6 +79,7 @@
 | POST | `/treasury/balance-items` | WRITE | **non** | connecteur-tresorerie, finance-pricing | oui | dettes à date (finance-pricing : hausse seulement) ; créances : propriétaire seule ; plancher : factures enregistrées non payées |
 | POST | `/treasury/bank-balance` | WRITE | **non** | connecteur-tresorerie | oui |  |
 | POST | `/treasury/paypal-balance` | WRITE | **non** | connecteur-tresorerie | oui |  |
+| POST | `/treasury/psp-balance` | WRITE | **non** | connecteur-tresorerie | oui | solde du prestataire en attente de versement, relevé APRÈS la banque : créance « encaissé non versé » du pré-drop (plafonnée à sa dette) ; requis pour toute nouvelle promesse pré-drop |
 
 ## Rôles
 
@@ -124,7 +126,7 @@ Propriétaire seule : POST `/capital/movements`, POST `/catalog/approvals`, POST
 | `seo-redaction` | aucune (lecture, aperçus et actes protecteurs seulement) |
 | `communication` | POST `/mandate/check` |
 | `acquisition` | POST `/mandate/check` |
-| `operations-sav` | POST `/mandate/check`, POST `/orders/{order_id}/refunds`, POST `/predrop/allocations/{product_key}/reduce`, POST `/predrop/reservations/{order_id}/cancel`, POST `/stock/receive`, POST `/stock/reorder-proposal` |
+| `operations-sav` | POST `/mandate/check`, POST `/orders/{order_id}/refunds`, POST `/predrop/allocations/{product_key}/reduce`, POST `/predrop/reservations/{order_id}/cancel`, POST `/predrop/{predrop_id}/postpone`, POST `/stock/receive`, POST `/stock/reorder-proposal` |
 | `qa-conformite` | POST `/incidents/{incident_id}/close`, POST `/incidents/{incident_id}/resume`, POST `/predrop/{predrop_id}/close`, POST `/pricing/approvals/{approval_id}/revoke` |
 | `n8n-01-sync` | POST `/imports/{supplier}/run`, POST `/predrop/{predrop_id}/publish`, POST `/sync/run` |
 | `n8n-02-commandes` | POST `/northstar/entries`, POST `/orders/shipped`, POST `/orders/{order_id}/refunds`, POST `/predrop/refunds/{refund_id}/executed`, POST `/predrop/reservations` |
@@ -134,7 +136,7 @@ Propriétaire seule : POST `/capital/movements`, POST `/catalog/approvals`, POST
 | `n8n-06-marketing` | POST `/predrop/demand` |
 | `n8n-07-stoploss` | POST `/stoploss/state/refresh` |
 | `n8n-08-mandat` | POST `/mandate/check` |
-| `connecteur-tresorerie` | POST `/costs/invoices/{invoice_ref}/payments`, POST `/treasury/balance-items`, POST `/treasury/bank-balance`, POST `/treasury/paypal-balance` |
+| `connecteur-tresorerie` | POST `/costs/invoices/{invoice_ref}/payments`, POST `/treasury/balance-items`, POST `/treasury/bank-balance`, POST `/treasury/paypal-balance`, POST `/treasury/psp-balance` |
 | `connecteur-publicite` | POST `/ads/activity` |
 
 ## Séparation des rôles (aucune valeur décisive déclarée par son bénéficiaire)

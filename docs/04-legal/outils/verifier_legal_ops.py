@@ -716,6 +716,7 @@ PREDROP_DOCS = ("PRECOMMANDES.md", "CGV.md", "FAQ_CLIENTS.md")
 PREDROP_FIELDS = (
     ("LIMITE_RESERVATION_PREDROP", "per_customer_limit", "{n} réservation"),
     ("FENETRE_PRIORITAIRE_PREDROP", "priority_window_hours", "{n} heures"),
+    ("DELAI_ANNULATION_PREDROP", "free_cancellation_days_before_drop", "jusqu'à {n} jours avant la date du drop"),
 )
 
 

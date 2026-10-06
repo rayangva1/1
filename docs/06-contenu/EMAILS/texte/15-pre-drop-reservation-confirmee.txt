@@ -20,9 +20,9 @@ Ce que garantit votre réservation
 
 Si quelque chose change
 
-- Si nous recevons moins d'unités que prévu et ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris, et nous vous prévenons par email.
-- Si la date change, nous vous écrivons dans un délai de {{DELAI_INFORMATION_REPORT}}. Si le report dépasse {{SEUIL_REPORT_PRECOMMANDE}}, vous pouvez annuler et être remboursé intégralement, supplément compris.
-- Annulation gratuite {{DELAI_ANNULATION_PRECOMMANDE}} : répondez à cet email avec votre numéro de commande. Remboursement intégral, supplément compris.
+- Si nous recevons moins d'unités que prévu et ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris, frais de livraison payés pour la réservation inclus, et nous vous prévenons par email.
+- Si la date change, nous vous écrivons dans un délai de {{DELAI_INFORMATION_REPORT}} et la date de la fiche est mise à jour. Si le report dépasse {{SEUIL_REPORT_PRECOMMANDE}}, vous pouvez annuler et être remboursé intégralement, supplément compris.
+- Annulation gratuite {{DELAI_ANNULATION_PREDROP}} (date affichée sur la fiche) : répondez à cet email avec votre numéro de commande. Remboursement intégral, supplément compris, frais de livraison payés pour la réservation inclus.
 
 Voir ma commande : {{ $json.url_commande }}
 

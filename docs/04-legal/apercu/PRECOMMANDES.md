@@ -55,7 +55,7 @@ Pour certains produits, nous ouvrons avant leur réception une **réservation ga
 
 ### Deux prix, affichés côte à côte
 
-- Avant votre commande, la fiche affiche deux prix : le **prix de la réservation garantie** et le **prix du drop**, c'est-à-dire le prix de vente du produit à partir de la date du drop, s'il en reste.
+- Avant votre commande, la fiche affiche deux prix : le **prix de la réservation garantie** et le **prix du drop**, c'est-à-dire le prix de vente du produit à partir de la date du drop, s'il en reste. Le prix du drop est fixé à l'ouverture des réservations : c'est le prix pratiqué sur la fiche du produit jusqu'au jour du drop inclus.
 - Le prix de la réservation garantie est le prix du drop augmenté d'un supplément. Il ne dépasse jamais le prix du drop de plus de 10 %.
 - Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.
 - Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.
@@ -64,38 +64,40 @@ Pour certains produits, nous ouvrons avant leur réception une **réservation ga
 ### Ce que garantit le supplément
 
 - **Servi en premier** : les réservations garanties sont servies avant toute vente au prix du drop, dans l'ordre de leur paiement.
-- **Expédié dès réception** : votre commande est préparée dès la réception et le contrôle du produit, avant les commandes passées au prix du drop, et remise au transporteur en principe dans un délai de 3 jours ouvrés ⟦à valider⟧ après la réception.
-- **Remboursé intégralement si nous ne pouvons pas vous servir**, supplément compris (voir « Si nous recevons moins que prévu »).
+- **Expédié dès réception** : votre commande est préparée dès la réception et le contrôle du produit, avant les commandes passées au prix du drop, et remise au transporteur en principe dans un délai de 3 jours ouvrés ⟦à valider⟧ après la réception. Si le produit arrive avant la date du drop, votre réservation part dès réception ; le produit n'est mis en vente au prix du drop qu'à la date du drop.
+- **Remboursé intégralement si nous ne pouvons pas vous servir**, supplément compris, frais de livraison payés pour la réservation inclus (voir « Si nous recevons moins que prévu »).
 
-Le supplément ne garantit pas une livraison à une date précise (la date du drop est une date estimée), ni un contenu, une carte ou une rareté. Il ne garantit pas non plus qu'il ne restera aucune unité au drop.
+Le supplément ne garantit pas une livraison à une date précise (la date du drop est une date estimée : pas de garantie de livraison le jour du drop), ni un contenu, une carte ou une rareté. Il ne garantit pas non plus qu'il ne restera aucune unité au drop.
 
 ### Statut des réservations
 
-- La fiche indique seulement « Réservations ouvertes » ou « Réservations fermées », et la date du drop. Nous n'affichons ni minuteur ni nombre d'unités restantes.
+- La fiche indique seulement « Réservations ouvertes » ou « Réservations fermées », et la date du drop (date estimée). Nous n'affichons ni minuteur ni nombre d'unités restantes.
 - Une partie seulement de la quantité confirmée par écrit est ouverte en réservation garantie ; une réserve de sécurité est conservée ; le reste est vendu au prix du drop.
 - Les réservations ferment quand la quantité ouverte en réservation est atteinte, au plus tard à la date du drop, ou si nous les suspendons par précaution.
-- **Accès prioritaire** : pendant les 24 heures ⟦à valider⟧ qui suivent l'ouverture, seules les personnes inscrites aux alertes de ce produit (inscription confirmée), connectées à leur compte client avec la même adresse email, peuvent réserver. Les réservations s'ouvrent ensuite à tous.
+- **Accès prioritaire** : pendant les 24 heures ⟦à valider⟧ qui suivent l'ouverture, seules les personnes inscrites aux alertes de ce produit (inscription confirmée **avant** l'ouverture des réservations), connectées à leur compte client avec la même adresse email et dont le compte accepte nos emails (consentement confirmé), peuvent réserver. Nous ne prévenons de l'accès prioritaire que les inscrits dont le compte client est relié à leur inscription. Les réservations s'ouvrent ensuite à tous.
 
 ### Limite par client
 
 - La limite est de 1 réservation garantie par produit et par foyer ⟦à valider⟧, toutes commandes confondues. Le foyer est défini comme pour les quantités limitées (CGV ch. 4.4).
+- Contrairement aux quantités limitées (CGV ch. 4.4), une commande de réservation garantie n'est jamais réduite : si elle dépasse la limite ou la quantité encore ouverte, elle n'est pas servie et elle est remboursée intégralement.
+- Les codes de réduction ne s'appliquent pas aux réservations garanties.
 
 ### Une réservation payée en dehors de ces règles
 
-Si votre paiement arrive alors que les réservations sont fermées ou suspendues, pendant l'accès prioritaire sans en remplir les conditions, au-delà de la limite par client, ou pour un autre montant que le prix affiché, la réservation n'est pas servie : nous la remboursons intégralement, supplément compris, dans un délai de 10 jours ⟦à valider⟧, et nous vous prévenons par email.
+Si votre paiement arrive alors que les réservations sont fermées, après leur suspension par précaution (une fois la fiche de réservation retirée de la vente), pendant l'accès prioritaire sans en remplir les conditions, au-delà de la limite par client ou de la quantité encore ouverte, ou pour un autre montant que le prix affiché, la réservation n'est pas servie : nous la remboursons intégralement, supplément compris, frais de livraison payés pour la réservation inclus, dans un délai de 10 jours ⟦à valider⟧, et nous vous prévenons par email. Une suspension décidée après votre paiement n'annule pas votre réservation : elle reste servie en premier.
 
 ### Si nous recevons moins que prévu (réservations)
 
-- Les réservations garanties sont servies **en premier**, dans l'ordre de leur paiement : la quantité prévue pour la vente au prix du drop est réduite d'abord.
-- S'il manque encore des unités, les dernières réservations payées sont annulées et remboursées intégralement, supplément compris, dans un délai de 10 jours ⟦à valider⟧. Nous vous prévenons par email.
+- Les réservations garanties sont servies **en premier**, dans l'ordre de leur paiement, sur toute la quantité reçue : la quantité prévue pour la vente au prix du drop est réduite d'abord, et aucune unité n'est gardée en réserve tant qu'une réservation payée peut être servie.
+- S'il manque encore des unités, les dernières réservations payées sont annulées et remboursées intégralement, supplément compris, frais de livraison payés pour la réservation inclus, dans un délai de 10 jours ⟦à valider⟧. Nous vous prévenons par email.
 
 ### Si la date du drop change
 
-- Nous vous informons de tout report dans un délai de 2 jours ouvrés après l'information du fournisseur ⟦à valider⟧. Votre réservation reste servie en premier et expédiée dès réception.
-- Si le report dépasse 30 jours ⟦à valider⟧ par rapport à la date annoncée lors de votre réservation, vous pouvez annuler et être remboursé intégralement, supplément compris.
+- Nous vous informons de tout report dans un délai de 2 jours ouvrés après l'information du fournisseur ⟦à valider⟧ et la date de la fiche est mise à jour. Votre réservation reste servie en premier et expédiée dès réception ; le délai d'annulation libre suit la nouvelle date.
+- Si le report dépasse 30 jours ⟦à valider⟧ par rapport à la date annoncée lors de votre réservation, vous pouvez annuler et être remboursé intégralement, supplément compris, frais de livraison payés pour la réservation inclus.
 
 ### Annuler votre réservation garantie
 
-- Vous pouvez annuler gratuitement jusqu'à 7 jours avant la date de sortie annoncée ⟦à valider⟧ : écrivez-nous à ⟦À REMPLIR : EMAIL_SUPPORT⟧ avec votre numéro de commande. Le remboursement est intégral, supplément compris, dans un délai de 10 jours ⟦à valider⟧.
-- Si le contenu du produit livré par le fabricant diffère de manière importante de celui annoncé lors de votre réservation, nous vous en informons avant l'expédition et vous pouvez annuler avec remboursement intégral, supplément compris.
+- Vous pouvez annuler gratuitement jusqu'à 7 jours avant la date du drop ⟦à valider⟧ (date affichée sur la fiche, reportée le cas échéant) : écrivez-nous à ⟦À REMPLIR : EMAIL_SUPPORT⟧ avec votre numéro de commande. Le remboursement est intégral, supplément compris, frais de livraison payés pour la réservation inclus, dans un délai de 10 jours ⟦à valider⟧.
+- Si le contenu du produit livré par le fabricant diffère de manière importante de celui annoncé lors de votre réservation, nous vous en informons avant l'expédition et vous pouvez annuler avec remboursement intégral, supplément compris, frais de livraison payés pour la réservation inclus.
 - Après l'expédition, la politique de retour volontaire s'applique (article scellé, non ouvert, dans un délai de 14 jours après réception ⟦à valider⟧).

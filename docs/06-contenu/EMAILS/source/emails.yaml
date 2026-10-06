@@ -430,9 +430,9 @@ emails:
           - "Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop."
       - sous_titre: "Si quelque chose change"
       - liste:
-          - "Si nous recevons moins d'unités que prévu et ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris, et nous vous prévenons par email."
-          - "Si la date change, nous vous écrivons dans un délai de {{DELAI_INFORMATION_REPORT}}. Si le report dépasse {{SEUIL_REPORT_PRECOMMANDE}}, vous pouvez annuler et être remboursé intégralement, supplément compris."
-          - "Annulation gratuite {{DELAI_ANNULATION_PRECOMMANDE}} : répondez à cet email avec votre numéro de commande. Remboursement intégral, supplément compris."
+          - "Si nous recevons moins d'unités que prévu et ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris, frais de livraison payés pour la réservation inclus, et nous vous prévenons par email."
+          - "Si la date change, nous vous écrivons dans un délai de {{DELAI_INFORMATION_REPORT}} et la date de la fiche est mise à jour. Si le report dépasse {{SEUIL_REPORT_PRECOMMANDE}}, vous pouvez annuler et être remboursé intégralement, supplément compris."
+          - "Annulation gratuite {{DELAI_ANNULATION_PREDROP}} (date affichée sur la fiche) : répondez à cet email avec votre numéro de commande. Remboursement intégral, supplément compris, frais de livraison payés pour la réservation inclus."
       - bouton: {texte: "Voir ma commande", url: "[[url_commande]]"}
       - bouton: {texte: "Nos conditions de réservation garantie", url: "{{URL_PRECOMMANDES}}", style: secondaire}
 
@@ -442,7 +442,7 @@ emails:
     categorie: marketing
     motif_pied: alertes
     declencheur: "Pré-drop ouvert, fenêtre prioritaire (étape « prioritaire » calculée par le moteur, GET /predrop/offers)"
-    segment: "Inscrits confirmés qui suivent ce produit (alerte sur la fiche), non désinscrits"
+    segment: "Inscrits confirmés AVANT l'ouverture qui suivent ce produit (alerte sur la fiche), non désinscrits, dont le compte de la boutique est relié à l'inscription (étiquette alerte-produit posée) : sans compte relié, aucun email pendant la fenêtre prioritaire (email 17 à l'ouverture à tous)"
     base: "Consentement confirmé (alerte demandée sur ce produit)"
     frequence: "Une annonce par pré-drop et par personne ; pas de seconde annonce à l'ouverture à tous"
     objet: "Réservations garanties : [[produit_titre]], d'abord pour vous"
@@ -461,7 +461,7 @@ emails:
       - p: "Vous avez demandé une alerte pour [[produit_titre]]. Les réservations garanties sont ouvertes, d'abord aux personnes inscrites aux alertes de ce produit, puis à tous."
       - produit: {titre: "[[produit_titre]]", statut: reservation, detail: "Drop le [[date_drop]] (date estimée)"}
       - liste:
-          - "Pour réserver pendant l'accès prioritaire, connectez-vous à votre compte client avec l'adresse de cet email."
+          - "Pour réserver pendant l'accès prioritaire, connectez-vous à votre compte client avec l'adresse de cet email ; votre compte doit accepter nos emails (consentement confirmé)."
           - "Le prix de la réservation garantie et le prix du drop sont affichés côte à côte sur la fiche ; le prix affiché au moment de votre commande fait foi."
           - "La limite par foyer, toutes commandes confondues, figure sur la fiche."
       - encadre:
@@ -476,10 +476,10 @@ emails:
     categorie: marketing
     motif_pied: alertes
     declencheur: "Fin de la fenêtre prioritaire : réservations ouvertes à tous (étape « ouvertes » calculée par le moteur)"
-    segment: "Inscrits confirmés qui suivent ce produit et n'ont pas reçu l'accès prioritaire (inscrits depuis), non désinscrits"
+    segment: "Inscrits confirmés qui suivent ce produit et n'ont pas reçu l'accès prioritaire (inscrits depuis l'ouverture, ou sans compte de la boutique relié), non désinscrits"
     base: "Consentement confirmé (alerte demandée sur ce produit)"
     frequence: "Une annonce par pré-drop et par personne"
-    objet: "Drop le [[date_drop]] : [[produit_titre]]"
+    objet: "Drop le [[date_drop]] (date estimée) : [[produit_titre]]"
     pre_entete: "Réserver avec garantie ou attendre le drop : les deux prix, et ce qui les distingue."
     variables:
       - [salutation, "Salutation calculée par le workflow", "Bonjour Léa,"]
@@ -514,10 +514,12 @@ emails:
     frequence: "Une fois par remboursement"
     objet: "Réservation garantie remboursée : commande [[numero_commande]]"
     pre_entete: "Remboursement intégral, supplément compris, et son motif."
+    # Revue pré-drop (PDL-12) : un seul paragraphe neutre, valable pour tous les motifs (réduction, non servie,
+    # annulation, report…) ; le motif propre au client est la variable [[motif_remboursement]] du moteur.
     variables:
       - [salutation, "Salutation calculée par l'outil d'emailing", "Bonjour Léa,"]
       - [numero_commande, "Numéro de commande (lu par l'outil d'emailing depuis la commande Shopify)", "#1001 (FICTIF)"]
-      - [montant_rembourse, "Montant remboursé du moteur (amount_ttc, CHF, 2 décimales), jamais recalculé", "229.90 (FICTIF)"]
+      - [montant_rembourse, "Montant remboursé du moteur (amount_ttc, CHF, 2 décimales : supplément et frais de livraison payés pour la réservation compris), jamais recalculé", "229.90 (FICTIF)"]
       - [motif_remboursement, "Motif en français du moteur (reason_fr), sans terme interne", "la quantité qui nous a été attribuée a été réduite et nous ne pourrons pas vous servir"]
       - [url_alerte_produit, "Formulaire d'alerte de la fiche normale (consentement demandé)", "https://exemple.invalid/products/display-extension-exemple-fr#alerte"]
     blocs:
@@ -525,8 +527,8 @@ emails:
       - p: "[[salutation]]"
       - p: "Votre réservation garantie (commande [[numero_commande]]) est remboursée intégralement. Motif : [[motif_remboursement]]."
       - encadre:
-          - "**Remboursement intégral, supplément compris** : CHF [[montant_rembourse]], sur votre moyen de paiement d'origine. Le crédit sur votre compte dépend ensuite de votre banque."
-      - p: "Quand nous recevons moins d'unités que prévu, les réservations garanties sont servies en premier, dans l'ordre de leur paiement, avant toute vente au prix du drop ; les dernières qui ne peuvent pas être servies sont remboursées intégralement."
+          - "**Remboursement intégral, supplément compris** : CHF [[montant_rembourse]], frais de livraison payés pour la réservation inclus, sur votre moyen de paiement d'origine. Le crédit sur votre compte dépend ensuite de votre banque."
+      - p: "Nos conditions de réservation garantie prévoient un remboursement intégral chaque fois qu'une réservation n'est pas servie ou est annulée."
       - p: "Les autres articles éventuels de votre commande ne sont pas concernés."
       - p: "Si vous le souhaitez, nous pouvons vous prévenir quand ce produit arrive en stock local :"
       - bouton: {texte: "Demander une alerte", url: "[[url_alerte_produit]]", style: secondaire}

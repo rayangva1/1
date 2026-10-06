@@ -5,8 +5,9 @@
   Aucune quantité en stock n'est affichée ; seule la quantité maximale par foyer l'est (CGV ch. 4.4 : limite par
   référence et par foyer, toutes commandes confondues ; valeur = LIMITE_PAR_CLIENT validé).
   Fiche de réservation d'un pré-drop (type « Réservation garantie ») : expédition en premier, dès réception du stock,
-  dans l'ordre des paiements ; date du drop ; quantité maximale = limite de réservations par client ; la ligne « Date
-  de sortie » n'y apparaît que si une date est connue (la date du drop suffit).
+  dans l'ordre des paiements, sans garantie de livraison le jour du drop ; date du drop « (date estimée) » ; quantité
+  maximale = limite de réservations par client ; la ligne « Date de sortie » n'y apparaît que si une date est connue
+  (la date du drop, estimée, suffit).
 {%- endcomment -%}
 {%- liquid
   assign statut = product.metafields.boutique.statut_stock.value | default: 'inconnu'
@@ -40,7 +41,7 @@
       {%- case statut -%}
         {%- when 'stock_local' -%}Depuis Genève{% if delai and delai != '' %}, sous {{ delai | escape }}{% endif %}.
         {%- when 'precommande' -%}
-          {%- if est_reservation -%}Réservation garantie : expédiée en premier, dès réception du stock (dans l'ordre des paiements){% if delai and delai != '' %}, en principe sous {{ delai | escape }} après réception{% endif %}.
+          {%- if est_reservation -%}Réservation garantie : expédiée en premier, dès réception du stock (dans l'ordre des paiements){% if delai and delai != '' %}, en principe sous {{ delai | escape }} après réception{% endif %}. Pas de garantie de livraison le jour du drop.
           {%- else -%}Dès réception du produit{% if delai and delai != '' %}, en principe sous {{ delai | escape }} après réception{% endif %}. Pas de garantie de livraison le jour de la sortie.
           {%- endif -%}
         {%- else -%}Aucune expédition possible pour le moment.
@@ -59,7 +60,7 @@
     {%- endif -%}
     {%- if date_drop and date_drop != '' and est_reservation -%}
       <dt>Drop</dt>
-      <dd>{{ date_drop | date: '%d.%m.%Y' }}</dd>
+      <dd>{{ date_drop | date: '%d.%m.%Y' }} (date estimée)</dd>
     {%- endif -%}
     {%- if qmax and qmax != '' -%}
       <dt>Quantité maximale</dt>

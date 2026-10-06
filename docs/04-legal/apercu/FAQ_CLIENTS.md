@@ -83,25 +83,28 @@ Les articles en stock partent tout de suite ; la précommande suit dès sa réce
 Pour certains produits, vous pouvez réserver avant leur réception. Vous êtes servi en premier, avant toute vente au prix du drop, et votre commande est expédiée dès que nous avons reçu et contrôlé le produit. Tout est expliqué sur la page Précommandes : ⟦À REMPLIR : URL_PRECOMMANDES⟧.
 
 **Pourquoi deux prix ?**
-La fiche affiche le prix de la réservation garantie et le prix du drop. Le premier est le prix du drop augmenté d'un supplément de 10 % au plus. Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.
+La fiche affiche le prix de la réservation garantie et le prix du drop. Le premier est le prix du drop augmenté d'un supplément de 10 % au plus. Le prix du drop est fixé à l'ouverture des réservations et pratiqué sur la fiche du produit jusqu'au jour du drop. Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.
 
 **S'il reste des unités au drop, suis-je remboursé de la différence ?**
 Non. Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop. Si vous n'avez pas besoin de la garantie, vous pouvez attendre le drop et acheter au prix du drop, s'il reste des unités.
 
 **Combien de réservations reste-t-il ?**
-Nous n'affichons pas de nombre d'unités. La fiche indique seulement « Réservations ouvertes » ou « Réservations fermées », et la date du drop.
+Nous n'affichons pas de nombre d'unités. La fiche indique seulement « Réservations ouvertes » ou « Réservations fermées », et la date du drop, qui est une date estimée (pas de garantie de livraison le jour du drop).
 
 **Pourquoi ne puis-je pas réserver tout de suite ?**
-Pendant les 24 heures ⟦à valider⟧ qui suivent l'ouverture, les réservations sont réservées aux personnes inscrites aux alertes de ce produit, connectées à leur compte client avec la même adresse email. Elles s'ouvrent ensuite à tous.
+Pendant les 24 heures ⟦à valider⟧ qui suivent l'ouverture, les réservations sont réservées aux personnes inscrites aux alertes de ce produit (inscription confirmée avant l'ouverture), connectées à leur compte client avec la même adresse email et dont le compte accepte nos emails. Elles s'ouvrent ensuite à tous.
 
 **Combien de réservations puis-je faire ?**
-La limite est de 1 réservation garantie par produit et par foyer ⟦à valider⟧, toutes commandes confondues. Une réservation au-delà de la limite n'est pas servie : elle est remboursée intégralement, supplément compris.
+La limite est de 1 réservation garantie par produit et par foyer ⟦à valider⟧, toutes commandes confondues. Une commande de réservation au-delà de la limite n'est pas réduite : elle n'est pas servie et elle est remboursée intégralement, supplément compris, frais de livraison payés pour la réservation inclus. Les codes de réduction ne s'appliquent pas aux réservations garanties.
 
 **Et si vous recevez moins que prévu ?**
-Les réservations garanties sont servies en premier, dans l'ordre de leur paiement : nous réduisons d'abord la quantité prévue pour le drop. Si nous ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris, et nous vous prévenons par email.
+Les réservations garanties sont servies en premier, dans l'ordre de leur paiement, sur toute la quantité reçue : nous réduisons d'abord la quantité prévue pour le drop. Si nous ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris, frais de livraison payés pour la réservation inclus, et nous vous prévenons par email.
+
+**Et si le produit arrive avant la date du drop ?**
+Votre réservation part dès réception. Le produit n'est mis en vente au prix du drop qu'à la date du drop.
 
 **Puis-je annuler ma réservation garantie ?**
-Oui, gratuitement jusqu'à 7 jours avant la date de sortie annoncée ⟦à valider⟧, avec un remboursement intégral, supplément compris. Si la date du drop est reportée de plus de 30 jours ⟦à valider⟧, vous pouvez aussi annuler avec un remboursement intégral.
+Oui, gratuitement jusqu'à 7 jours avant la date du drop ⟦à valider⟧ (la date affichée sur la fiche, reportée le cas échéant), avec un remboursement intégral, supplément compris, frais de livraison payés pour la réservation inclus. Si la date du drop est reportée de plus de 30 jours ⟦à valider⟧, vous pouvez aussi annuler avec un remboursement intégral.
 
 ### Livraison
 

@@ -231,8 +231,8 @@ champs:
 
   # ------------------------------------------------- pré-drop (réservation garantie)
   # Valeurs proposées ALIGNÉES sur les paramètres signés du moteur (config/predrop.v1.yaml : per_customer_limit,
-  # priority_window_hours) : contrôle check_predrop_alignment de outils/verifier_legal_ops.py. Changer l'un impose de
-  # changer l'autre, puis de signer à nouveau les paramètres (C32).
+  # priority_window_hours, free_cancellation_days_before_drop) : contrôle check_predrop_alignment de
+  # outils/verifier_legal_ops.py. Changer l'un impose de changer l'autre, puis de signer à nouveau les paramètres (C32).
   LIMITE_RESERVATION_PREDROP:
     description: "Nombre maximal de réservations garanties par pré-drop et par foyer, toutes commandes confondues (limite par client du moteur : 1 à 2)"
     valeur_proposee: "1 réservation garantie par produit et par foyer"
@@ -245,8 +245,20 @@ champs:
     statut: a_valider
     decideur: "Propriétaire (signature des paramètres du pré-drop, C32)"
     source: "config/predrop.v1.yaml priority_window_hours ; décision de la propriétaire du 6.10.2026"
+  DELAI_ANNULATION_PREDROP:
+    description: "Jusqu'à quand le client peut annuler gratuitement une réservation garantie (date du drop EN VIGUEUR, reportée le cas échéant ; appliqué par le moteur, PredropRegistry.cancel_reservation)"
+    valeur_proposee: "jusqu'à 7 jours avant la date du drop"
+    statut: a_valider
+    decideur: "Propriétaire (signature des paramètres du pré-drop, C32)"
+    source: "config/predrop.v1.yaml free_cancellation_days_before_drop ; revue pré-drop PDL-10 (6.10.2026)"
 
   # ------------------------------------------------------- données personnelles
+  DUREE_CLE_EMPREINTE_PREDROP:
+    description: "Durée maximale de vie de la clé secrète des empreintes client du pré-drop (renouvelée et détruite après chaque pré-drop soldé ; l'empreinte du journal du moteur n'est alors plus rattachable)"
+    valeur_proposee: "6 mois après le drop"
+    statut: a_valider
+    decideur: "Propriétaire + juriste (note C10 de CONFIDENTIALITE.md ; acte C35 d'INTERVENTIONS_HUMAINES.md)"
+    source: "revue pré-drop PDL-09 (6.10.2026) ; LPD art. 6 al. 4 (proportionnalité)"
   DUREE_CONSERVATION_SAV:
     description: "Durée de conservation des échanges du service client"
     valeur_proposee: "24 mois après le dernier échange"

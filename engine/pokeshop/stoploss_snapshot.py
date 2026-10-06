@@ -67,7 +67,7 @@ from .errors import PokeshopError
 from .mandate import PayPalBalanceReading
 from .models import FrozenModel, PricingParams
 from .northstar import CostRegister
-from .predrop import PREDROP_DEBT_LABEL
+from .predrop import PREDROP_DEBT_LABEL, PREDROP_IN_TRANSIT_LABEL
 from .pricing import contribution, small_product_rule_active
 from .stoploss import (
     AdSpend,
@@ -85,6 +85,7 @@ __all__ = [
     "CapitalRegister",
     "CapitalRecord",
     "BankBalanceReading",
+    "PspBalanceReading",
     "BalanceStatement",
     "BalanceStatementBook",
     "ReceivablesStatement",
@@ -232,6 +233,43 @@ class BankBalanceReading(FrozenModel):
     @classmethod
     def _tz(cls, v: datetime) -> datetime:
         return _aware(v, "as_of")
+
+
+class PspBalanceReading(FrozenModel):
+    """Solde du prestataire de paiement **en attente de versement** (Shopify Payments), relevé par le connecteur de
+    trésorerie (acteur déduit du jeton) — revue pré-drop ARG-02 : l'argent d'une réservation encaissée n'arrive sur le
+    compte qu'au versement ; sans ce relevé, sa dette serait comptée sans son encaissement."""
+
+    as_of: datetime
+    balance_chf: Decimal = Field(ge=0)
+    source: str = Field(min_length=3)
+    recorded_by: str = Field(min_length=2)
+
+    @field_validator("as_of")
+    @classmethod
+    def _tz(cls, v: datetime) -> datetime:
+        return _aware(v, "as_of")
+
+
+def psp_reading_problem(
+    psp: PspBalanceReading | None, bank: BankBalanceReading | None, *, now: datetime, max_age: timedelta
+) -> str | None:
+    """Motif pour lequel le solde du prestataire n'est **pas** compté (None : compté).
+
+    Compté seulement s'il est frais (âge ≤ ``max_age``, jamais daté du futur) et relevé **après** le relevé bancaire :
+    un versement parti du prestataire avant le relevé bancaire y est déjà ; relevé avant, il serait compté deux fois.
+    """
+    if psp is None:
+        return "solde du prestataire de paiement non relevé (POST /treasury/psp-balance, connecteur de trésorerie)"
+    if psp.as_of - now > FUTURE_SKEW:
+        return f"solde du prestataire daté du futur ({psp.as_of.isoformat()})"
+    if now - psp.as_of > max_age:
+        return f"solde du prestataire périmé, du {psp.as_of.isoformat()} (> {max_age})"
+    if bank is None:
+        return "solde bancaire non relevé : solde du prestataire non comptable"
+    if psp.as_of < bank.as_of:
+        return "solde du prestataire relevé avant la banque (risque de double compte d'un versement) : relever la banque puis le prestataire"
+    return None
 
 
 class BalanceStatement(FrozenModel):
@@ -629,6 +667,7 @@ def build_activity_photo(
     incomplete: Mapping[str, str] | None = None,
     order_book: Any = None,
     predrop_debts: Callable[[datetime], Any] | None = None,
+    psp: PspBalanceReading | None = None,
 ) -> tuple[StopLossState, dict[str, Any]]:
     """Photo d'activité tirée des registres ; :class:`PhotoSourcesError` si une source manque ou est périmée.
 
@@ -649,6 +688,13 @@ def build_activity_photo(
     la photo) ni expédié ni remboursé (:meth:`pokeshop.predrop.PredropRegistry.outstanding_debt`) ; il est **dérivé** du
     registre, ajouté aux précommandes déclarées (``preorders_collected_chf`` = précommandes **hors** pré-drop) dans les
     dettes, et déduit du cash disponible.
+
+    Revue pré-drop (ARG-02) : ``psp`` = solde du prestataire en attente de versement (connecteur de trésorerie). Compté
+    seulement s'il est frais et relevé **après** la banque (:func:`psp_reading_problem`) : la dette pré-drop est alors
+    comptée jusqu'à la date de ce relevé et une **créance** « encaissé en attente de versement » = min(solde du
+    prestataire, dette pré-drop) entre dans la valeur nette ; le cash disponible ne déduit que la part de la dette dont
+    l'argent est déjà sur le compte. Sans relevé comptable : aucune créance (fermé par défaut ; le pré-drop est alors
+    suspendu par le moteur, :mod:`pokeshop.predrop`).
     """
     _aware(now, "now")
     problems: list[str] = []
@@ -689,11 +735,16 @@ def build_activity_photo(
     debts = balances.debts
     if balances.preorders_collected_chf > 0:
         debts = (BalanceItem(label="Précommandes encaissées non livrées", amount=balances.preorders_collected_chf), *debts)
-    predrop = predrop_debts(as_of) if predrop_debts is not None else None
+    psp_problem = psp_reading_problem(psp, bank, now=now, max_age=max_age)
+    debt_as_of = psp.as_of if psp is not None and psp_problem is None else as_of
+    predrop = predrop_debts(debt_as_of) if predrop_debts is not None else None
     predrop_total = Decimal(getattr(predrop, "total_chf", Decimal("0"))) if predrop is not None else Decimal("0")
     if predrop_total > 0:  # dette dérivée du registre du pré-drop, jamais déclarée
         debts = (*debts, BalanceItem(label=PREDROP_DEBT_LABEL, amount=predrop_total))
-    preorders = balances.preorders_collected_chf + predrop_total
+    in_transit = Decimal("0")
+    if psp is not None and psp_problem is None:
+        in_transit = min(psp.balance_chf, predrop_total)
+    preorders = balances.preorders_collected_chf + predrop_total - in_transit
     unpaid = invoices.unpaid(paid_until=as_of) if invoices is not None else ()  # paiement compté si le cash l'a vu
     debts = (
         *debts,
@@ -708,6 +759,8 @@ def build_activity_photo(
         counted = balances.receivables if owner_statement else ()
         ignored = 0 if owner_statement else len(balances.receivables)
     receivable_items = counted
+    if in_transit > 0:  # revue pré-drop (ARG-02) : argent des réservations encaissé, pas encore versé
+        receivable_items = (*receivable_items, BalanceItem(label=PREDROP_IN_TRANSIT_LABEL, amount=in_transit))
 
     stock: list[StockValuationLine] = []
     unit_costs: dict[str, Decimal] = {}
@@ -816,7 +869,12 @@ def build_activity_photo(
         # Pré-drop : précommandes déclarées (hors pré-drop) + réservations pré-drop dérivées du registre du moteur.
         "precommandes": {"declarees_chf": balances.preorders_collected_chf, "predrop_derivees_chf": predrop_total,
                          "predrop_reservations": int(getattr(predrop, "reservations", 0) or 0),
-                         "total_chf": preorders},
+                         "predrop_en_attente_de_versement_chf": in_transit,
+                         "total_chf": balances.preorders_collected_chf + predrop_total},
+        # Revue pré-drop (ARG-02) : solde du prestataire (compté seulement frais et relevé après la banque).
+        "prestataire": {"as_of": psp.as_of if psp is not None else None,
+                        "recorded_by": psp.recorded_by if psp is not None else None,
+                        "counted": psp is not None and psp_problem is None, "problem": psp_problem},
         "capital_movements": len(movements),
         "stock_lines": len(stock),
         "extensions": [e.extension for e in extensions],

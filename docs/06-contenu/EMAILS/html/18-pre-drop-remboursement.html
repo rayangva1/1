@@ -18,7 +18,7 @@
     Variables :
       - salutation : Salutation calculée par l'outil d'emailing
       - numero_commande : Numéro de commande (lu par l'outil d'emailing depuis la commande Shopify)
-      - montant_rembourse : Montant remboursé du moteur (amount_ttc, CHF, 2 décimales), jamais recalculé
+      - montant_rembourse : Montant remboursé du moteur (amount_ttc, CHF, 2 décimales : supplément et frais de livraison payés pour la réservation compris), jamais recalculé
       - motif_remboursement : Motif en français du moteur (reason_fr), sans terme interne
       - url_alerte_produit : Formulaire d'alerte de la fiche normale (consentement demandé)
     Champs fixes (MAJUSCULES entre doubles accolades) : registre docs/04-legal/champs_a_remplir.yaml, plus URL_LOGO_PNG
@@ -55,12 +55,12 @@
           </tr>
           <tr>
             <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;"><strong>Remboursement intégral, supplément compris</strong> : CHF {{ $json.montant_rembourse }}, sur votre moyen de paiement d'origine. Le crédit sur votre compte dépend ensuite de votre banque.</td></tr></table>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;"><strong>Remboursement intégral, supplément compris</strong> : CHF {{ $json.montant_rembourse }}, frais de livraison payés pour la réservation inclus, sur votre moyen de paiement d'origine. Le crédit sur votre compte dépend ensuite de votre banque.</td></tr></table>
             </td>
           </tr>
           <tr>
             <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
-              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Quand nous recevons moins d'unités que prévu, les réservations garanties sont servies en premier, dans l'ordre de leur paiement, avant toute vente au prix du drop ; les dernières qui ne peuvent pas être servies sont remboursées intégralement.</p>
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Nos conditions de réservation garantie prévoient un remboursement intégral chaque fois qu'une réservation n'est pas servie ou est annulée.</p>
             </td>
           </tr>
           <tr>

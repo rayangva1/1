@@ -99,7 +99,7 @@ from .publish import (
     assert_protective_payload,
     build_predrop_publication,
     build_publication,
-    predrop_reservation_sku,
+    reservation_sku_of,
     reservation_publication_key,
     sensitive_violations,
     stock_status_for,
@@ -131,6 +131,7 @@ __all__ = [
     "StockSyncReport",
     "PredropPublishReport",
     "predrop_inventory_target",
+    "predrop_sellable",
     "ImportBaselineStore",
     "BaselinePersistenceError",
     "ShopPublication",
@@ -429,6 +430,9 @@ def predrop_inventory_target(predrop: PredropPublication, remote: RemoteInventor
     Réservations fermées ou retirées : 0. Sinon réservations encore ouvertes du registre du moteur, diminuées des
     unités engagées sur Shopify au-delà des réservations confirmées enregistrées (commandes payées pas encore
     relevées par le workflow 02, ou non servies en attente de remboursement) : jamais une promesse au-delà du quota.
+    Revue pré-drop (ARG-03) : grandeurs homogènes — ``committed`` de Shopify (commandes non expédiées) est comparé aux
+    réservations confirmées **non expédiées** du registre (``reservations_committed``), jamais aux réservations déjà
+    parties (sinon une commande payée non relevée serait masquée et l'unité vendue republiée).
     """
     if not predrop.accepting:
         return 0
@@ -637,6 +641,20 @@ def price_reference_24h(
     if events:
         return events[0].price
     return fallback
+
+
+def predrop_sellable(sellable: int, predrop: PredropPublication | None) -> int:
+    """Stock local vendable de la fiche **normale** pendant un pré-drop (revue pré-drop PDL-01, BL-212).
+
+    Avant le jour du drop : 0 (stock retenu ; les réservations sont servies dès réception, rien n'est vendu au prix du
+    drop avant le drop) ; ensuite : stock vendable − unités des réservations confirmées non encore expédiées (jamais
+    vendues au prix du drop). Sans pré-drop : inchangé.
+    """
+    if predrop is None:
+        return sellable
+    if predrop.hold_until_drop:
+        return 0
+    return max(0, sellable - predrop.held_units)
 
 
 def stock_target(local: StockLevel, remote: RemoteInventoryLevel, *, blocked: bool = False) -> StockTarget:
@@ -1393,6 +1411,7 @@ class SyncService:
         Jamais le statut déclaré par l'appelant : sans registre, le stock local est inconnu (``rupture``).
         """
         sellable = self.stock.sellable(listing.public_sku) if self.stock is not None else 0
+        sellable = predrop_sellable(sellable, self._predrop_for(listing, at))
         firm = 0
         if listing.public_sku.endswith("-PRECO") and offers:
             promise = availability_promise(
@@ -1400,6 +1419,15 @@ class SyncService:
             )
             firm = promise.firm_allocation
         return stock_status_for(listing, local_sellable=sellable, firm_allocation=firm)
+
+    def _predrop_for(self, listing: CatalogListing, at: datetime) -> PredropPublication | None:
+        """Pré-drop de la référence (registre du moteur) pour la fiche **normale** ; jamais pour une fiche ``-PRECO``."""
+        if self.predrop_lookup is None or listing.public_sku.endswith("-PRECO"):
+            return None
+        try:
+            return self.predrop_lookup(listing.product_key, at)
+        except Exception:  # registre illisible : aucune information (le service est gelé de toute façon)
+            return None
 
     def _verify(
         self,
@@ -1552,6 +1580,7 @@ class SyncService:
             published=published,
             validations=validations,
             normal_handle=normal_handle or (normal.handle if (normal := self.publications.get(pid)) else None),
+            normal_published=normal.state() if (normal := self.publications.get(pid)) is not None else None,
         )
         messages.extend(plan.messages)
         if plan.violations:
@@ -1678,7 +1707,7 @@ class SyncService:
         """État réel de la fiche de réservation (statut, prix, SKU) ; renvoie (vérifiée, article d'inventaire)."""
         problems: list[str] = []
         item: str | None = None
-        sku = predrop_reservation_sku(listing.public_sku, predrop.drop_date)
+        sku = reservation_sku_of(listing.public_sku, predrop)
         if plan.outcome is PlanOutcome.UNPUBLISH:
             if plan.product_input != {"status": "DRAFT"}:
                 problems.append("retrait : charge autre que le statut")
@@ -1768,7 +1797,7 @@ class SyncService:
         """
         item = item_id or (remote_level.inventory_item_id if remote_level is not None else None)
         if item is None and handle is not None and not dry_run and self.client.configured:
-            sku = predrop_reservation_sku(listing.public_sku, predrop.drop_date)
+            sku = reservation_sku_of(listing.public_sku, predrop)
             try:
                 remote_product = self.client.product_by_handle(handle)
             except ShopifyError as exc:
@@ -1883,6 +1912,16 @@ class SyncService:
             line_incidents: list[str] = []
             if blocked:
                 reasons.append("BLOQUE_STOPLOSS_OU_QUARANTAINE : 0 publié (vente bloquée)")
+            pre = self._predrop_for(listing, at)
+            held = predrop_sellable(target.target_available, pre)
+            hold_lower = held < target.target_available
+            if hold_lower:  # revue pré-drop (PDL-01, BL-212) : réservations servies en premier
+                reasons.append(
+                    "PREDROP_RETENU : stock retenu jusqu'au drop" if pre is not None and pre.hold_until_drop
+                    else f"PREDROP_RESERVE : {pre.held_units if pre is not None else 0} unité(s) réservée(s) non "
+                    "expédiée(s) hors vente"
+                )
+                target = target.model_copy(update={"target_available": held})
             if target.oversell and not rem.assumed:
                 critical.append(f"{pid} : survente (engagé Shopify {rem.committed} > stock physique vendable)")
                 self._incident(
@@ -1900,7 +1939,7 @@ class SyncService:
             written = replayed = False
             if target.target_available != rem.available:
                 # Bloquer la vente (0 publié) est protecteur ; toute autre écriture de stock exige le niveau 2.
-                protective = blocked and target.target_available < rem.available
+                protective = (blocked or hold_lower) and target.target_available < rem.available
                 gate = self.gate.authorize(
                     WriteAction.UNPUBLISH_PRODUCT if protective else WriteAction.SYNC_STOCK,
                     dry_run=dry_run,
@@ -1923,6 +1962,7 @@ class SyncService:
                         max_conflict_retries,
                         reasons,
                         blocked=blocked,
+                        predrop=pre,
                     )
                     if action == "CONFLICT":
                         self._incident(
@@ -2005,6 +2045,7 @@ class SyncService:
         reasons: list[str],
         *,
         blocked: bool,
+        predrop: PredropPublication | None = None,
     ) -> tuple[Literal["SET", "NONE", "REFUSED", "CONFLICT", "ERROR"], bool, bool, RemoteInventoryLevel]:
         """Écriture CAS ; en cas de conflit, relit Shopify, recalcule et réessaie (``retries`` fois)."""
         item_id = listing.shopify_inventory_item_id or ""
@@ -2043,6 +2084,7 @@ class SyncService:
                 return "CONFLICT", False, False, current
             current = fresh
             target = stock_target(level, fresh, blocked=blocked)
+            target = target.model_copy(update={"target_available": predrop_sellable(target.target_available, predrop)})
             if target.target_available == current.available:
                 return "NONE", False, False, current
         return "CONFLICT", False, False, current

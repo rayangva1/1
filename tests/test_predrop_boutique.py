@@ -110,10 +110,15 @@ def test_reservation_payload_passes_the_whitelist_and_carries_only_public_predro
     assert m["statut_stock"] == "precommande" and m["quantite_max"] == "1"  # limite par client, jamais un quota
     normal = m["fiche_liee"]
     assert predrop_reservation_handle(normal) == p.handle and not normal.endswith("-reservation-garantie")
-    text = json.dumps(pi, ensure_ascii=False).lower()
+    # Revue pré-drop (PDL-02) : les deux prix FIGÉS du moteur sont publiés en métachamps (lus par l'encart « Au drop »)
+    # — exactement les prix natifs des deux fiches, jamais un autre montant.
+    assert m["prix_drop"] == "154.90" and m["prix_reservation"] == "169.90"
+    text = json.dumps({k: v for k, v in pi.items() if k != "metafields"}, ensure_ascii=False).lower()
     for forbidden in ("quota", "committed", "available", "restant", "plus que", "dernière", "compte à rebours",
                       "coût", "cost", "marge", "margin", "100.00", "154.90", "contribution"):  # fmt: skip
-        assert forbidden not in text, forbidden  # ni coût, ni marge, ni prix du drop en dur, ni fausse urgence
+        assert forbidden not in text, forbidden  # ni coût, ni marge, ni prix du drop hors métachamp, ni fausse urgence
+    full = json.dumps(pi, ensure_ascii=False).lower()
+    assert "100.00" not in full and "contribution" not in full and "marge" not in full
 
 
 def test_normal_handle_comes_from_the_engine_registry_when_given() -> None:
@@ -199,10 +204,12 @@ def test_supplier_term_in_the_content_blocks_the_reservation_payload() -> None:
 @pytest.mark.parametrize(
     "mutate",
     [
-        lambda pi: pi["metafields"].__setitem__(-2, {**pi["metafields"][-2], "value": "plus que 2"}),
-        lambda pi: pi["metafields"].__setitem__(-2, {**pi["metafields"][-2], "value": "bientot"}),
-        lambda pi: pi["metafields"].__setitem__(-3, {**pi["metafields"][-3], "value": "20.10.2026"}),
-        lambda pi: pi["metafields"].__setitem__(-1, {**pi["metafields"][-1], "value": "Fiche Liée !"}),
+        lambda pi: pi["metafields"].__setitem__(-4, {**pi["metafields"][-4], "value": "plus que 2"}),
+        lambda pi: pi["metafields"].__setitem__(-4, {**pi["metafields"][-4], "value": "bientot"}),
+        lambda pi: pi["metafields"].__setitem__(-5, {**pi["metafields"][-5], "value": "20.10.2026"}),
+        lambda pi: pi["metafields"].__setitem__(-3, {**pi["metafields"][-3], "value": "Fiche Liée !"}),
+        lambda pi: pi["metafields"].__setitem__(-2, {**pi["metafields"][-2], "value": "154.90 (-10 %)"}),
+        lambda pi: pi["metafields"].__setitem__(-1, {**pi["metafields"][-1], "value": "plus que 2"}),
         lambda pi: pi["metafields"].append({"namespace": "boutique", "key": "quota_restant", "type": "number_integer",
                                             "value": "2"}),
         lambda pi: pi["metafields"].append({"namespace": "boutique", "key": "fermeture", "type": "single_line_text_field",
@@ -213,7 +220,8 @@ def test_supplier_term_in_the_content_blocks_the_reservation_payload() -> None:
 )
 def test_whitelist_rejects_a_tampered_reservation_payload(mutate: Any) -> None:
     pi = copy.deepcopy(resa_plan().product_input)
-    assert [m["key"] for m in pi["metafields"][-3:]] == ["date_drop", "reservation_statut", "fiche_liee"]
+    assert [m["key"] for m in pi["metafields"][-5:]] == ["date_drop", "reservation_statut", "fiche_liee", "prix_drop",
+                                                         "prix_reservation"]
     mutate(pi)
     assert sensitive_violations(pi)
 
@@ -241,7 +249,8 @@ def test_normal_fiche_carries_the_three_predrop_metafields_and_nothing_else_chan
     assert base.price_chf == with_pd.price_chf and base.product_input["variants"] == with_pd.product_input["variants"]
     added = {k: v for k, v in mf(with_pd.product_input).items() if k not in mf(base.product_input)}
     assert added == {"date_drop": "2026-10-20", "reservation_statut": "ouvertes",
-                     "fiche_liee": predrop_reservation_handle(base.handle)}  # fmt: skip
+                     "fiche_liee": predrop_reservation_handle(base.handle), "prix_drop": "154.90",
+                     "prix_reservation": "169.90"}  # fmt: skip
     assert sensitive_violations(with_pd.product_input) == []
     assert with_pd.product_input["title"] == base.product_input["title"]  # jamais « Réservation garantie » ici
     # Autre référence, ou fiche -PRECO : aucun métachamp de pré-drop.

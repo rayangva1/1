@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="supported-color-schemes" content="light">
-  <title>Drop le {{ $json.date_drop }} : {{ $json.produit_titre }}</title>
+  <title>Drop le {{ $json.date_drop }} (date estimée) : {{ $json.produit_titre }}</title>
   <!--
     FICHIER GÉNÉRÉ par docs/06-contenu/outils/generer_emails.py depuis EMAILS/source/emails.yaml — ne pas modifier.
     Email 17-pre-drop-ouverture — Pré-drop : annonce du drop, réservations garanties ouvertes à tous — canal : n8n
-    Objet : Drop le [[date_drop]] : [[produit_titre]]
+    Objet : Drop le [[date_drop]] (date estimée) : [[produit_titre]]
     Pré-en-tête : Réserver avec garantie ou attendre le drop : les deux prix, et ce qui les distingue.
     Déclencheur : Fin de la fenêtre prioritaire : réservations ouvertes à tous (étape « ouvertes » calculée par le moteur)
-    Segment : Inscrits confirmés qui suivent ce produit et n'ont pas reçu l'accès prioritaire (inscrits depuis), non désinscrits
+    Segment : Inscrits confirmés qui suivent ce produit et n'ont pas reçu l'accès prioritaire (inscrits depuis l'ouverture, ou sans compte de la boutique relié), non désinscrits
     Base : Consentement confirmé (alerte demandée sur ce produit)
     Fréquence : Une annonce par pré-drop et par personne
     Variables :

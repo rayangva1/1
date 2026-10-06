@@ -9,7 +9,7 @@ Vous avez demandé une alerte pour {{ $json.produit_titre }}. Les réservations 
 {{ $json.produit_titre }}
 Réservation garantie · Drop le {{ $json.date_drop }} (date estimée)
 
-- Pour réserver pendant l'accès prioritaire, connectez-vous à votre compte client avec l'adresse de cet email.
+- Pour réserver pendant l'accès prioritaire, connectez-vous à votre compte client avec l'adresse de cet email ; votre compte doit accepter nos emails (consentement confirmé).
 - Le prix de la réservation garantie et le prix du drop sont affichés côte à côte sur la fiche ; le prix affiché au moment de votre commande fait foi.
 - La limite par foyer, toutes commandes confondues, figure sur la fiche.
 

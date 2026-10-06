@@ -1,7 +1,7 @@
 # FAQ clients — {{NOM_BOUTIQUE}}
 
 > **À FAIRE REVOIR PAR UN JURISTE AVANT PUBLICATION** (réponses sur les retours, la garantie, les précommandes et les données) ; validation finale par la propriétaire.
-> Version v0.2 du 6.10.2026 (v0.1 du 4.10.2026 + questions sur le pré-drop), rédigée par l'agent legal-ops. Prête à publier une fois les champs `{{…}}` validés (`docs/04-legal/champs_a_remplir.yaml`) et les textes légaux relus : les réponses résument les CGV, qui font foi.
+> Version v0.3 du 6.10.2026 (v0.1 du 4.10.2026 + questions sur le pré-drop ; v0.3 : revue du pré-drop — frais de livraison, date estimée, délai d'annulation propre au pré-drop), rédigée par l'agent legal-ops. Prête à publier une fois les champs `{{…}}` validés (`docs/04-legal/champs_a_remplir.yaml`) et les textes légaux relus : les réponses résument les CGV, qui font foi.
 > Sources : BP §1 (publics : collectionneurs, parents, joueurs), §7 (fiche produit, paiement, conformité), §8 (ton : précis, accessible, sans jargon inutile, sans fausse urgence) ; `docs/04-legal/CGV.md`, `LIVRAISON_RETOURS.md`, `PRECOMMANDES.md` (dont la partie « Pré-drop »), `CONFIDENTIALITE.md` ; décision de la propriétaire du 6.10.2026 (pré-drop) : les deux phrases de garantie sont celles du moteur, mot pour mot.
 > Aucun fait produit n'est inventé : les contenus exacts renvoient à la fiche de chaque produit.
 
@@ -88,25 +88,28 @@ Les articles en stock partent tout de suite ; la précommande suit dès sa réce
 Pour certains produits, vous pouvez réserver avant leur réception. Vous êtes servi en premier, avant toute vente au prix du drop, et votre commande est expédiée dès que nous avons reçu et contrôlé le produit. Tout est expliqué sur la page Précommandes : {{URL_PRECOMMANDES}}.
 
 **Pourquoi deux prix ?**
-La fiche affiche le prix de la réservation garantie et le prix du drop. Le premier est le prix du drop augmenté d'un supplément de 10 % au plus. Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.
+La fiche affiche le prix de la réservation garantie et le prix du drop. Le premier est le prix du drop augmenté d'un supplément de 10 % au plus. Le prix du drop est fixé à l'ouverture des réservations et pratiqué sur la fiche du produit jusqu'au jour du drop. Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.
 
 **S'il reste des unités au drop, suis-je remboursé de la différence ?**
 Non. Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop. Si vous n'avez pas besoin de la garantie, vous pouvez attendre le drop et acheter au prix du drop, s'il reste des unités.
 
 **Combien de réservations reste-t-il ?**
-Nous n'affichons pas de nombre d'unités. La fiche indique seulement « Réservations ouvertes » ou « Réservations fermées », et la date du drop.
+Nous n'affichons pas de nombre d'unités. La fiche indique seulement « Réservations ouvertes » ou « Réservations fermées », et la date du drop, qui est une date estimée (pas de garantie de livraison le jour du drop).
 
 **Pourquoi ne puis-je pas réserver tout de suite ?**
-Pendant les {{FENETRE_PRIORITAIRE_PREDROP}} qui suivent l'ouverture, les réservations sont réservées aux personnes inscrites aux alertes de ce produit, connectées à leur compte client avec la même adresse email. Elles s'ouvrent ensuite à tous.
+Pendant les {{FENETRE_PRIORITAIRE_PREDROP}} qui suivent l'ouverture, les réservations sont réservées aux personnes inscrites aux alertes de ce produit (inscription confirmée avant l'ouverture), connectées à leur compte client avec la même adresse email et dont le compte accepte nos emails. Elles s'ouvrent ensuite à tous.
 
 **Combien de réservations puis-je faire ?**
-La limite est de {{LIMITE_RESERVATION_PREDROP}}, toutes commandes confondues. Une réservation au-delà de la limite n'est pas servie : elle est remboursée intégralement, supplément compris.
+La limite est de {{LIMITE_RESERVATION_PREDROP}}, toutes commandes confondues. Une commande de réservation au-delà de la limite n'est pas réduite : elle n'est pas servie et elle est remboursée intégralement, supplément compris, frais de livraison payés pour la réservation inclus. Les codes de réduction ne s'appliquent pas aux réservations garanties.
 
 **Et si vous recevez moins que prévu ?**
-Les réservations garanties sont servies en premier, dans l'ordre de leur paiement : nous réduisons d'abord la quantité prévue pour le drop. Si nous ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris, et nous vous prévenons par email.
+Les réservations garanties sont servies en premier, dans l'ordre de leur paiement, sur toute la quantité reçue : nous réduisons d'abord la quantité prévue pour le drop. Si nous ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris, frais de livraison payés pour la réservation inclus, et nous vous prévenons par email.
+
+**Et si le produit arrive avant la date du drop ?**
+Votre réservation part dès réception. Le produit n'est mis en vente au prix du drop qu'à la date du drop.
 
 **Puis-je annuler ma réservation garantie ?**
-Oui, gratuitement {{DELAI_ANNULATION_PRECOMMANDE}}, avec un remboursement intégral, supplément compris. Si la date du drop est reportée de plus de {{SEUIL_REPORT_PRECOMMANDE}}, vous pouvez aussi annuler avec un remboursement intégral.
+Oui, gratuitement {{DELAI_ANNULATION_PREDROP}} (la date affichée sur la fiche, reportée le cas échéant), avec un remboursement intégral, supplément compris, frais de livraison payés pour la réservation inclus. Si la date du drop est reportée de plus de {{SEUIL_REPORT_PRECOMMANDE}}, vous pouvez aussi annuler avec un remboursement intégral.
 
 ### Livraison
 
@@ -164,5 +167,5 @@ Par email à {{EMAIL_SUPPORT}}, avec votre numéro de commande si vous en avez u
 
 - [ ] Propriétaire : relire le ton et valider la FAQ après validation des textes légaux.
 - [ ] Juriste : relire les réponses sur les retours, la garantie, les précommandes et les données.
-- [ ] Juriste : relire les réponses du pré-drop avec les notes P1 à P10 de `docs/04-legal/PRECOMMANDES.md`.
+- [ ] Juriste : relire les réponses du pré-drop avec les notes P1 à P12 de `docs/04-legal/PRECOMMANDES.md`.
 - [ ] Propriétaire : confirmer l'absence de retrait sur place au lancement.

@@ -67,7 +67,9 @@ from pokeshop.predrop import (
     validate_predrop_data,
 )
 from pokeshop.pricing import decide_price, price_floor_violations, round_up_retail
+from pokeshop.publish import reservation_publication_key
 from pokeshop.rules import load_rules
+from pokeshop.sync import ShopPublication
 
 NOW = F.NOW
 TZ = F.TZ
@@ -78,6 +80,8 @@ P1 = "FICTIF-P1"
 SUPPLIER = "fictif_grossiste_a"
 DROP = date(2026, 10, 20)
 PID = f"PD-{P1}-20261020"
+RESA_SKU = "DSP-FICTIF_ALPHA-FR-RESA-20261020"
+"""SKU de la fiche de réservation : seule sa LIGNE expédiée sert la réservation (revue pré-drop ARG-01)."""
 PARAMS = load_rules().pricing
 RAW = yaml.safe_load(DEFAULT_PREDROP_PATH.read_text(encoding="utf-8"))
 
@@ -140,10 +144,13 @@ def demand(client: Any, count: int = 10, at: datetime | None = None) -> Any:
     return client.post("/predrop/demand", headers=JR.headers("n8n-06-marketing"), json=payload)
 
 
-def photo(client: Any, at: datetime | None = None, *, capital: bool = True, bank: str = "2000.00") -> Any:
+def photo(client: Any, at: datetime | None = None, *, capital: bool = True, bank: str = "2000.00",
+          psp: str | None = "0.00") -> Any:
     """Photo du stop-loss construite par le moteur (apport, soldes, dettes déclarées hors pré-drop).
 
     ``bank`` : solde bancaire relevé — l'argent encaissé en pré-drop y est (et reste une dette jusqu'à l'expédition).
+    ``psp`` : solde du prestataire en attente de versement, relevé APRÈS la banque (None : aucun relevé) — requis pour
+    toute nouvelle promesse pré-drop (revue pré-drop ARG-02).
     """
     at = at or NOW
     if capital:
@@ -153,6 +160,10 @@ def photo(client: Any, at: datetime | None = None, *, capital: bool = True, bank
     for route, value in (("/treasury/paypal-balance", "1500"), ("/treasury/bank-balance", bank)):
         reading = {"as_of": (at - timedelta(minutes=10)).isoformat(), "balance_chf": value, "source": "relevé FICTIF"}
         assert client.post(route, headers=JR.HTRES, json=reading).status_code == 200
+    if psp is not None:
+        reading = {"as_of": (at - timedelta(minutes=9)).isoformat(), "balance_chf": psp,
+                   "source": "solde Shopify Payments FICTIF en attente de versement"}
+        assert client.post("/treasury/psp-balance", headers=JR.HTRES, json=reading).status_code == 200
     balances = {"as_of": (at - timedelta(minutes=5)).isoformat(), "preorders_collected_chf": "0", "debts": [],
                 "source": "agent finance FICTIF : aucune précommande hors pré-drop"}
     assert client.post("/treasury/balance-items", headers=JR.HTRES, json=balances).status_code == 200
@@ -327,16 +338,26 @@ def test_unsigned_parameters_close_the_predrop_in_the_api_and_a_paid_order_is_ne
     refused = open_predrop(client)
     assert refused.status_code == 409 and "CONFIG_SIGNED" in body(refused)["erreur"]
     assert svc.predrop.predrops() == ()
-    # Pré-drop ouvert puis paramètres non signés au redémarrage : réservation payée enregistrée, remboursement préparé.
+    # Pré-drop ouvert puis paramètres non signés au redémarrage : plus aucune nouvelle promesse (fiche retirée).
     client2, svc2, _ = ready(tmp_path / "b")
     assert open_predrop(client2).status_code == 201
     client3, svc3, _ = boot(tmp_path / "b", signed=False)
-    resp = reserve(client3, "FICTIF-CMD-1")
-    data = body(resp)
-    assert resp.status_code == 201 and data["reservation"]["status"] == "NOT_SERVED"
-    assert data["reservation"]["not_served_reason"] == "DISABLED" and data["refund"]["amount_ttc"] == "229.90"
     offers = body(client3.get("/predrop/offers", headers=H))
     assert offers["enabled"] is False and offers["offers"][0]["statut"] == STATUS_CLOSED_FR
+    assert offers["internal"][0]["retired"] is True and "non signés" in offers["internal"][0]["retired_reason"]
+    # Revue pré-drop (PDL-03) : paiement fait AVANT le retrait vérifié de la fiche (« Réservations ouvertes » encore en
+    # ligne) : contrat conclu, réservation servie — jamais annulée pour une suspension survenue après le paiement.
+    resp = reserve(client3, "FICTIF-CMD-1")
+    data = body(resp)
+    assert resp.status_code == 201 and data["reservation"]["status"] == "CONFIRMED" and data["refund"] is None
+    # Retrait VÉRIFIÉ de la fiche (registre des fiches publiées), puis paiement postérieur : non servi, remboursé.
+    svc3.publications.record(ShopPublication(
+        product_id=reservation_publication_key(P1), shopify_product_id="gid://shopify/Product/91", status="DRAFT",
+        handle="fiche-fictive-reservation-garantie", run_id="PREDROP-FICTIF-RETRAIT", recorded_at=NOW + timedelta(minutes=1),
+        price_chf=D("229.90")))  # fmt: skip
+    late = body(reserve(client3, "FICTIF-CMD-2", "b", paid_at=NOW + timedelta(minutes=2)))
+    assert late["reservation"]["status"] == "NOT_SERVED" and late["reservation"]["not_served_reason"] == "DISABLED"
+    assert late["refund"]["amount_ttc"] == "229.90"
 
 
 # ============================================================================================== éligibilité
@@ -667,12 +688,13 @@ def test_allocation_reduction_serves_predrop_first_cuts_the_drop_then_refunds_th
     plan = body(cut)["plan"]
     assert plan["kept"] == [f"FICTIF-CMD-{i}" for i in range(4)] and plan["refunded"] == []
     assert (plan["drop_quota_before"], plan["drop_quota_after"]) == (5, 1)
-    # Réduction 6 → 3 : servable 2 : les deux premières payées servies, les deux dernières remboursées intégralement.
+    # Réduction 6 → 2 : revue pré-drop (PDL-05) — toute l'allocation réduite sert d'abord les réservations (la réserve
+    # de sécurité ne vaut que pour le drop) : les deux premières payées servies, les deux dernières remboursées.
     cut2 = client.post(f"/predrop/allocations/{P1}/reduce", headers=JR.headers("n8n-03-factures"),
-                       json={"new_qty": 3, "supplier_confirmation_ref": "FICTIF-REDUC-2", "reason": "seconde réduction FICTIVE"})
+                       json={"new_qty": 2, "supplier_confirmation_ref": "FICTIF-REDUC-2", "reason": "seconde réduction FICTIVE"})
     data = body(cut2)
     assert data["plan"]["kept"] == ["FICTIF-CMD-0", "FICTIF-CMD-1"] and data["plan"]["refunded"] == ["FICTIF-CMD-2", "FICTIF-CMD-3"]
-    assert data["plan"]["drop_quota_after"] == 0
+    assert data["plan"]["servable"] == 2 and data["plan"]["drop_quota_after"] == 0
     refunds = data["refunds"]
     assert [r["order_id"] for r in refunds] == ["FICTIF-CMD-2", "FICTIF-CMD-3"]
     assert all(r["reason"] == "ALLOCATION_REDUCED" and r["status"] == "PENDING_OWNER" and r["amount_ttc"] == "229.90" for r in refunds)
@@ -682,20 +704,20 @@ def test_allocation_reduction_serves_predrop_first_cuts_the_drop_then_refunds_th
     assert svc.predrop.committed_units(PID) == 2
     # Rejeu identique : sans effet ; même référence, autre quantité : 409 ; hausse par réduction : 409.
     replay = client.post(f"/predrop/allocations/{P1}/reduce", headers=JR.headers("n8n-03-factures"),
-                         json={"new_qty": 3, "supplier_confirmation_ref": "FICTIF-REDUC-2", "reason": "seconde réduction FICTIVE"})
+                         json={"new_qty": 2, "supplier_confirmation_ref": "FICTIF-REDUC-2", "reason": "seconde réduction FICTIVE"})
     assert body(replay)["created"] is False and body(replay)["plan"]["refunded"] == ["FICTIF-CMD-2", "FICTIF-CMD-3"]
     assert client.post(f"/predrop/allocations/{P1}/reduce", headers=JR.HOPS,
-                       json={"new_qty": 2, "supplier_confirmation_ref": "FICTIF-REDUC-2", "reason": "conflit FICTIF xxxx"}).status_code == 409
+                       json={"new_qty": 1, "supplier_confirmation_ref": "FICTIF-REDUC-2", "reason": "conflit FICTIF xxxx"}).status_code == 409
     assert client.post(f"/predrop/allocations/{P1}/reduce", headers=JR.HOPS,
                        json={"new_qty": 8, "supplier_confirmation_ref": "FICTIF-REDUC-3", "reason": "hausse FICTIVE xxxxx"}).status_code == 409
     # Une baisse par une « nouvelle allocation » est refusée (elle contournerait le plan de service).
-    assert allocation(client, 2, ref="FICTIF-CONF-2").status_code == 409
+    assert allocation(client, 1, ref="FICTIF-CONF-2").status_code == 409
     # Rejeu de l'allocation d'origine après réduction : sans effet, l'allocation réduite reste en vigueur.
     replay_alloc = allocation(client, 10, ref="FICTIF-CONF-1")
-    assert replay_alloc.status_code == 200 and svc.predrop.allocation(P1).qty == 3
+    assert replay_alloc.status_code == 200 and svc.predrop.allocation(P1).qty == 2
     # Persisté : le plan et les remboursements survivent au redémarrage.
     _, svc2, _ = boot(tmp_path)
-    assert svc2.predrop.allocation(P1).qty == 3 and len(svc2.predrop.refunds("PENDING_OWNER")) == 2
+    assert svc2.predrop.allocation(P1).qty == 2 and len(svc2.predrop.refunds("PENDING_OWNER")) == 2
 
 
 def test_plan_service_is_strict_payment_order() -> None:
@@ -710,13 +732,24 @@ def test_plan_service_is_strict_payment_order() -> None:
                                     priority_access=True, recorded_by="n8n-02-commandes", at=NOW, enabled=True,
                                     blocked_reason=None, autonomy_level=1)  # fmt: skip
     confirmed = [r for r in registry.reservations() if r.status == "CONFIRMED"]
-    # Allocation 4 : réserve 1, servable 3 → 1 + 2 servies ; la 3ᵉ (payée en dernier) remboursée.
-    plan = plan_service(confirmed, 4, reserve_min_units=1, reserve_share=D("0.10"))
-    assert plan.kept == ("FICTIF-CMD-0", "FICTIF-CMD-1") and plan.refunded == ("FICTIF-CMD-2",)
-    # Allocation 3 : servable 2 → la 2ᵉ (2 unités) ne tient plus : elle et toutes les suivantes sont remboursées.
+    # Revue pré-drop (PDL-05) : toute l'allocation réduite sert les réservations (la réserve ne vaut que pour le drop).
+    # Allocation 3 → 1 + 2 servies ; la 3ᵉ (payée en dernier) remboursée ; plus rien au drop.
     plan = plan_service(confirmed, 3, reserve_min_units=1, reserve_share=D("0.10"))
+    assert plan.kept == ("FICTIF-CMD-0", "FICTIF-CMD-1") and plan.refunded == ("FICTIF-CMD-2",)
+    assert plan.servable == 3 and plan.safety_reserve == 1 and plan.drop_quota_after == 0
+    # Allocation 2 → la 2ᵉ (2 unités) ne tient plus : elle et toutes les suivantes sont remboursées (jamais la 3ᵉ, plus
+    # petite, servie avant la 2ᵉ payée plus tôt).
+    plan = plan_service(confirmed, 2, reserve_min_units=1, reserve_share=D("0.10"))
     assert plan.kept == ("FICTIF-CMD-0",) and plan.refunded == ("FICTIF-CMD-1", "FICTIF-CMD-2")
+    # Allocation 4 : tout est servi ; il reste 0 au drop (réserve 1 non retenue contre une réservation payée).
+    plan = plan_service(confirmed, 4, reserve_min_units=1, reserve_share=D("0.10"))
+    assert plan.refunded == () and plan.drop_quota_after == 0
     assert plan_service(confirmed, 0, reserve_min_units=1, reserve_share=D("0.10")).refunded == tuple(r.order_id for r in confirmed)
+    # Cas de la revue : allocation 5, deux réservations, réduite à 2 → les deux servies, aucune unité gardée en réserve
+    # pendant qu'une réservation payée serait remboursée.
+    two = [r for r in confirmed if r.qty == 1]
+    plan = plan_service(two, 2, reserve_min_units=1, reserve_share=D("0.10"))
+    assert plan.kept == ("FICTIF-CMD-0", "FICTIF-CMD-2") and plan.refunded == () and plan.drop_quota_after == 0
 
 
 def test_refund_execution_follows_the_autonomy_level_and_owner_one_click(tmp_path: Path) -> None:
@@ -763,7 +796,8 @@ def test_collected_money_is_a_derived_debt_in_the_stoploss_photo_until_shipped_o
     clock.now = NOW + timedelta(hours=1)
     data = photo(client, clock.now, capital=False, bank="3149.50")  # l'argent encaissé est sur le compte
     pre = data["sources"]["precommandes"]
-    assert pre == {"declarees_chf": "0", "predrop_derivees_chf": "1149.50", "predrop_reservations": 5, "total_chf": "1149.50"}
+    assert pre == {"declarees_chf": "0", "predrop_derivees_chf": "1149.50", "predrop_reservations": 5,
+                   "predrop_en_attente_de_versement_chf": "0.00", "total_chf": "1149.50"}
     # Cash relevé 4 649.50 − dette dérivée 1 149.50 : le cash disponible ne gonfle pas avec l'argent encaissé.
     assert data["cash_available_chf"] == "3500.00" and data["status"]["global_frozen"] is False
     # Sans le relevé de l'encaissement (cash inchangé), la même dette fait baisser la valeur nette (fermé par défaut).
@@ -776,7 +810,7 @@ def test_collected_money_is_a_derived_debt_in_the_stoploss_photo_until_shipped_o
     # Expédition d'une commande pré-drop : la dette sort, la vente est reconnue.
     shipped = {"order_id": "FICTIF-CMD-0", "paid_at": NOW.isoformat(), "net_sales_ht": "212.67",
                "payment_fees": "6.05", "shipping_cost_actual": "7.40", "shipping_label_ref": "FICTIF-ETIQ-0",
-               "source": "webhook Shopify FICTIF", "lines": [{"public_sku": "DSP-FICTIF_ALPHA-FR", "qty": 1}]}
+               "source": "webhook Shopify FICTIF", "lines": [{"public_sku": RESA_SKU, "qty": 1}]}
     assert client.post("/orders/shipped", headers=JR.HORDERS, json=shipped).status_code == 201
     # Remboursement exécuté de la réservation non servie : la dette sort aussi.
     assert client.post("/predrop/refunds/pdr:FICTIF-CMD-4/approve", headers=OWNER).status_code == 200
@@ -800,7 +834,7 @@ def test_revenue_is_recognized_at_shipment_never_at_collection(tmp_path: Path) -
     clock.now = NOW + timedelta(days=12)  # réception puis expédition dès réception
     shipped = {"order_id": "FICTIF-CMD-1", "paid_at": paid.isoformat(), "net_sales_ht": "212.67", "payment_fees": "6.05",
                "shipping_cost_actual": "7.40", "shipping_label_ref": "FICTIF-ETIQ-1", "source": "webhook Shopify FICTIF",
-               "lines": [{"public_sku": "DSP-FICTIF_ALPHA-FR", "qty": 1}]}
+               "lines": [{"public_sku": RESA_SKU, "qty": 1}]}
     resp = client.post("/orders/shipped", headers=JR.HORDERS, json=shipped)
     assert resp.status_code == 201, resp.text
     sales = [e for e in svc.northstar.entries() if e.entry_id == "order:FICTIF-CMD-1:NET_SALES"]
@@ -812,7 +846,8 @@ def test_revenue_is_recognized_at_shipment_never_at_collection(tmp_path: Path) -
     assert client.post("/orders/shipped", headers=JR.HORDERS, json=shipped).status_code == 200
     assert svc.orders.get("FICTIF-CMD-1").recognized_at == NOW + timedelta(days=12)
     # Commande ordinaire (hors pré-drop) : inchangée, datée du paiement.
-    ordinary = {**shipped, "order_id": "FICTIF-CMD-ORD", "shipping_label_ref": "FICTIF-ETIQ-ORD"}
+    ordinary = {**shipped, "order_id": "FICTIF-CMD-ORD", "shipping_label_ref": "FICTIF-ETIQ-ORD",
+                "lines": [{"public_sku": "DSP-FICTIF_ALPHA-FR", "qty": 1}]}
     assert client.post("/orders/shipped", headers=JR.HORDERS, json=ordinary).status_code == 201
     assert svc.orders.get("FICTIF-CMD-ORD").recognized_at is None
     # Redémarrage : la date de reconnaissance est relue telle quelle.
@@ -826,7 +861,7 @@ def test_revenue_is_recognized_at_shipment_never_at_collection(tmp_path: Path) -
 def test_matrix_roles_and_common_token(tmp_path: Path) -> None:
     client, svc, _ = ready(tmp_path)
     writes = [(m, p) for (m, p), r in authz.ROUTE_MATRIX.items() if p.startswith("/predrop") and r.kind is authz.Kind.WRITE]
-    assert len(writes) == 11  # étape 2 : + publication ; étape 3 : + annulation à la demande du client
+    assert len(writes) == 12  # étape 2 : + publication ; étape 3 : + annulation ; revue : + report de la date
     for method, path in writes:
         concrete = (path.replace("{product_key}", P1).replace("{predrop_id}", PID).replace("{refund_id}", "pdr:X")
                     .replace("{order_id}", "FICTIF-CMD-X"))
@@ -901,7 +936,7 @@ def test_one_predrop_per_firm_allocation_and_a_new_one_only_once_the_previous_is
     # Réservation expédiée (précédent soldé) : nouveau pré-drop admis sur la nouvelle allocation.
     shipped = {"order_id": "FICTIF-CMD-1", "paid_at": NOW.isoformat(), "net_sales_ht": "212.67", "payment_fees": "6.05",
                "shipping_cost_actual": "7.40", "shipping_label_ref": "FICTIF-ETIQ-1", "source": "webhook Shopify FICTIF",
-               "lines": [{"public_sku": "DSP-FICTIF_ALPHA-FR", "qty": 1}]}
+               "lines": [{"public_sku": RESA_SKU, "qty": 1}]}
     assert client.post("/orders/shipped", headers=JR.HORDERS, json=shipped).status_code == 201
     second = client.post("/predrop/open", headers=OWNER, json={"product_key": P1, "drop_date": "2026-10-27", "market_ref_chf": "250"})
     assert second.status_code == 201, second.text
@@ -917,10 +952,10 @@ def test_reduction_never_refunds_an_already_shipped_reservation(tmp_path: Path) 
     # La dernière payée a déjà été expédiée (arrivage partiel) : elle est servie, jamais remboursée.
     shipped = {"order_id": "FICTIF-CMD-2", "paid_at": (NOW + timedelta(minutes=2)).isoformat(), "net_sales_ht": "212.67",
                "payment_fees": "6.05", "shipping_cost_actual": "7.40", "shipping_label_ref": "FICTIF-ETIQ-2",
-               "source": "webhook Shopify FICTIF", "lines": [{"public_sku": "DSP-FICTIF_ALPHA-FR", "qty": 1}]}
+               "source": "webhook Shopify FICTIF", "lines": [{"public_sku": RESA_SKU, "qty": 1}]}
     assert client.post("/orders/shipped", headers=JR.HORDERS, json=shipped).status_code == 201
     cut = client.post(f"/predrop/allocations/{P1}/reduce", headers=JR.HOPS,
-                      json={"new_qty": 3, "supplier_confirmation_ref": "FICTIF-REDUC-1", "reason": "livraison partielle FICTIVE"})
+                      json={"new_qty": 2, "supplier_confirmation_ref": "FICTIF-REDUC-1", "reason": "livraison partielle FICTIVE"})
     plan = body(cut)["plan"]
     assert plan["kept"] == ["FICTIF-CMD-2", "FICTIF-CMD-0"] and plan["refunded"] == ["FICTIF-CMD-1"]
 
@@ -989,7 +1024,7 @@ def test_customer_cancellation_prepares_a_full_refund_in_the_same_circuit(tmp_pa
     # Expédiée : plus d'annulation (retour volontaire après réception).
     shipped = {"order_id": "FICTIF-CMD-0", "paid_at": NOW.isoformat(), "net_sales_ht": "212.67", "payment_fees": "6.05",
                "shipping_cost_actual": "7.40", "shipping_label_ref": "FICTIF-ETIQ-C0", "source": "webhook Shopify FICTIF",
-               "lines": [{"public_sku": "DSP-FICTIF_ALPHA-FR", "qty": 1}]}
+               "lines": [{"public_sku": RESA_SKU, "qty": 1}]}
     assert client.post("/orders/shipped", headers=JR.HORDERS, json=shipped).status_code == 201
     late = client.post("/predrop/reservations/FICTIF-CMD-0/cancel", headers=JR.HOPS, json={**ask, "request_ref": "FICTIF-TICKET-0"})
     assert late.status_code == 409 and "retour volontaire" in body(late)["erreur"]

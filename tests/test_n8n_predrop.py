@@ -86,9 +86,13 @@ def test_01_publishes_the_reservation_fiche_in_simulation_with_its_own_role() ->
 
 
 def test_02_hashes_the_customer_before_the_engine_and_keeps_the_psp_refund_disabled() -> None:
-    crypto = B02["Identifiant client haché (SHA-256)"]
+    crypto = B02["Empreinte client (HMAC-SHA256, clé secrète)"]
     assert crypto["type"] == "n8n-nodes-base.crypto"
-    assert crypto["parameters"]["type"] == "SHA256" and crypto["parameters"]["dataPropertyName"] == "customer_ref"
+    params = crypto["parameters"]
+    assert params["action"] == "hmac" and params["type"] == "SHA256" and params["dataPropertyName"] == "customer_ref"
+    assert params["secret"] == "={{ $('Paramètres — commande').first().json.cle_empreinte_client }}"
+    keys = {a["name"]: a["value"] for a in B02["Paramètres — commande"]["parameters"]["assignments"]["assignments"]}
+    assert keys["cle_empreinte_client"] == GEN.CUSTOMER_REF_KEY_PLACEHOLDER  # jamais une vraie clé dans le dépôt
     post = B02["Enregistrer la réservation payée (POST /predrop/reservations)"]
     body = post["parameters"]["jsonBody"]
     assert "customer_ref: $json.customer_ref" in body
@@ -179,14 +183,16 @@ console.log(JSON.stringify({{ out: out.map((o) => o.json), static: STATIC }}));
 
 
 P1 = {"predrop_id": "PD-FICTIF-P1-20261020", "product_key": "FICTIF-P1", "status": "OPEN", "accepting": True,
-      "phase": "prioritaire", "drop_date": "2026-10-20", "reservation_sku": "DSP-FICTIF_ALPHA-FR-RESA-20261020",
+      "phase": "prioritaire", "drop_date": "2026-10-20", "opens_at": "2026-10-06T08:00:00+02:00",
+      "reservation_sku": "DSP-FICTIF_ALPHA-FR-RESA-20261020",
       "reservation_handle": "display-alpha-fictif-reservation-garantie", "normal_handle": "display-alpha-fictif",
       "alert_tag": "alerte-produit:display-alpha-fictif"}  # fmt: skip
 P2 = {**P1, "predrop_id": "PD-FICTIF-P2-20261020", "product_key": "FICTIF-P2",
       "reservation_sku": "DSP-FICTIF_BETA-FR-RESA-20261020", "alert_tag": "alerte-produit:display-beta-fictif"}  # fmt: skip
 ORDER = {"id": 1001, "name": "#FICTIF-1001", "processed_at": "2026-10-06T10:00:00+02:00", "email": "client@exemple.invalid",
          "customer": {"id": 55, "tags": "alerte-produit:display-alpha-fictif, autre", "email": "client@exemple.invalid",
-                      "email_marketing_consent": {"state": "subscribed"}},
+                      "email_marketing_consent": {"state": "subscribed", "opt_in_level": "confirmed_opt_in",
+                                                  "consent_updated_at": "2026-10-01T09:00:00+02:00"}},
          "line_items": [
              {"sku": "DSP-FICTIF_BETA-FR-RESA-20261020", "quantity": 1, "price": "219.90", "discount_allocations": []},
              {"sku": "DSP-FICTIF_ALPHA-FR-RESA-20261020", "quantity": 2, "price": "229.90",
@@ -194,6 +200,8 @@ ORDER = {"id": 1001, "name": "#FICTIF-1001", "processed_at": "2026-10-06T10:00:0
              {"sku": "DSP-FICTIF_ALPHA-FR", "quantity": 1, "price": "209.90"},
              {"sku": "DSP-FICTIF_GAMMA-FR-RESA-20261101", "quantity": 1, "price": "99.90"}]}  # fmt: skip
 DEDUP = "Contrôle doublon (idempotence)"
+PARAMS02 = {"cle_empreinte_client": "FICTIF-cle-empreinte-client-0123456789abcdef"}
+"""Paramètres du workflow 02 avec une clé d'empreinte FICTIVE configurée (≥ 32 caractères)."""
 
 
 @needs_node
@@ -201,24 +209,54 @@ def test_reservations_are_grouped_by_predrop_with_attested_priority(tmp_path: Pa
     js = code(B02, "Préparer les réservations (une par pré-drop)", GEN.JS_PREDROP_RESERVATIONS)
     offers = {"internal": [P1, P2, {**P1, "predrop_id": "PD-ATTENTE", "status": "PENDING_OWNER",
                                     "reservation_sku": "DSP-FICTIF_GAMMA-FR-RESA-20261101"}]}  # fmt: skip
-    out, _ = run(tmp_path, js, [offers], first={DEDUP: ORDER})
+    out, _ = run(tmp_path, js, [offers], first={DEDUP: ORDER, "Paramètres — commande": PARAMS02})
     first, second, unknown = out
     assert first["predrop_id"] == "PD-FICTIF-P1-20261020" and first["order_id"] == "1001"
     assert first["qty"] == 2 and first["amount_paid_ttc"] == "449.80"  # 2 × 229.90 − 10.00 (centimes, jamais de flottant)
     assert first["priority_access"] is True and first["customer_key"] == "shopify-customer:55"
     assert second["predrop_id"] == "PD-FICTIF-P2-20261020" and second["order_id"] == "1001#2"
     assert second["amount_paid_ttc"] == "219.90" and second["priority_access"] is False  # étiquette d'une autre fiche
-    assert unknown == {"rattachee": False, "sku": "DSP-FICTIF_GAMMA-FR-RESA-20261101", "order_name": "#FICTIF-1001",
+    assert unknown == {"rattachee": False, "motif": "SKU de réservation inconnu du moteur",
+                       "sku": "DSP-FICTIF_GAMMA-FR-RESA-20261101", "order_name": "#FICTIF-1001",
                        "order_id": "1001"}  # pré-drop en attente de la propriétaire : jamais rattaché
+    # Commande mixte (article en stock, SKU inconnu) : aucun frais de livraison rattaché aux réservations.
+    assert first["shipping_paid_ttc"] == "0.00" and second["shipping_paid_ttc"] == "0.00"
     assert "client@" not in json.dumps(out)  # identifiant client Shopify présent : l'email n'est pas lu
     # Consentement non confirmé : jamais d'accès prioritaire, même avec l'étiquette.
     pending = {**ORDER, "customer": {**ORDER["customer"], "email_marketing_consent": {"state": "pending"}}}
-    out, _ = run(tmp_path, js, [offers], first={DEDUP: pending})
+    out, _ = run(tmp_path, js, [offers], first={DEDUP: pending, "Paramètres — commande": PARAMS02})
     assert [o.get("priority_access") for o in out if o.get("rattachee")] == [False, False]
-    # Commande sans client : clé de repli (hachée au nœud suivant), accès prioritaire impossible.
+    # Revue pré-drop (PDL-08) : consentement simple (sans double opt-in) ou donné APRÈS l'ouverture : pas d'accès.
+    for consent in ({"state": "subscribed", "opt_in_level": "single_opt_in", "consent_updated_at": "2026-10-01T09:00:00+02:00"},
+                    {"state": "subscribed", "opt_in_level": "confirmed_opt_in", "consent_updated_at": "2026-10-06T09:00:00+02:00"}):
+        late = {**ORDER, "customer": {**ORDER["customer"], "email_marketing_consent": consent}}
+        out, _ = run(tmp_path, js, [offers], first={DEDUP: late, "Paramètres — commande": PARAMS02})
+        assert out[0]["priority_access"] is False, consent
+    # Commande sans client : clé de repli (empreinte HMAC au nœud suivant), accès prioritaire impossible.
     guest = {k: v for k, v in ORDER.items() if k != "customer"}
-    out, _ = run(tmp_path, js, [offers], first={DEDUP: guest})
+    out, _ = run(tmp_path, js, [offers], first={DEDUP: guest, "Paramètres — commande": PARAMS02})
     assert out[0]["customer_key"] == "shopify-email:client@exemple.invalid" and out[0]["priority_access"] is False
+    # Clé d'empreinte non configurée (valeur de l'export) : rien n'est rattaché, incident (jamais une empreinte faible).
+    out, _ = run(tmp_path, js, [offers], first={DEDUP: ORDER, "Paramètres — commande": {
+        "cle_empreinte_client": GEN.CUSTOMER_REF_KEY_PLACEHOLDER}})  # fmt: skip
+    assert all(o["rattachee"] is False for o in out) and "clé" in out[0]["motif"]
+
+
+@needs_node
+def test_shipping_paid_on_a_reservation_only_order_is_split_and_sent_to_the_engine(tmp_path: Path) -> None:
+    """Revue pré-drop (ARG-06 / PDL-04) : commande composée seulement de réservations, frais de livraison payés
+    répartis au prorata des montants (centimes, le dernier reçoit le reste) et envoyés au moteur."""
+    js = code(B02, "Préparer les réservations (une par pré-drop)", GEN.JS_PREDROP_RESERVATIONS)
+    only = {**ORDER, "total_shipping_price_set": {"shop_money": {"amount": "9.00", "currency_code": "CHF"}},
+            "line_items": ORDER["line_items"][:2]}  # fmt: skip
+    out, _ = run(tmp_path, js, [{"internal": [P1, P2]}], first={DEDUP: only, "Paramètres — commande": PARAMS02})
+    assert [(o["predrop_id"], o["amount_paid_ttc"], o["shipping_paid_ttc"]) for o in out] == [
+        ("PD-FICTIF-P1-20261020", "449.80", "6.04"), ("PD-FICTIF-P2-20261020", "219.90", "2.96")]
+    single = {**only, "line_items": ORDER["line_items"][1:2]}
+    out, _ = run(tmp_path, js, [{"internal": [P1]}], first={DEDUP: single, "Paramètres — commande": PARAMS02})
+    assert out[0]["shipping_paid_ttc"] == "9.00"
+    post = B02["Enregistrer la réservation payée (POST /predrop/reservations)"]["parameters"]["jsonBody"]
+    assert "shipping_paid_ttc: $json.shipping_paid_ttc" in post
 
 
 @needs_node
@@ -239,11 +277,17 @@ def test_publication_list_skips_pending_and_long_past_predrops(tmp_path: Path) -
 @needs_node
 def test_refunds_are_executed_only_when_approved_and_recorded_only_when_confirmed(tmp_path: Path) -> None:
     pick = code(B02, "Un remboursement par élément", GEN.JS_PREDROP_REFUNDS_TO_EXECUTE)
-    refunds = {"refunds": [{"refund_id": "pdr:1", "order_id": "1001#2", "amount_ttc": "229.90", "reason": "QUOTA", "status": "APPROVED"},
+    refunds = {"refunds": [{"refund_id": "pdr:1", "order_id": "1001#2", "amount_ttc": "238.90", "shipping_ttc": "9.00",
+                            "reason": "QUOTA", "status": "APPROVED"},
                            {"refund_id": "pdr:2", "order_id": "1002", "amount_ttc": "229.90", "reason": "QUOTA",
-                            "status": "PENDING_OWNER"}]}  # fmt: skip
+                            "status": "PENDING_OWNER"},
+                           {"refund_id": "pdr:3", "order_id": "1003", "amount_ttc": "0.00", "reason": "AMOUNT_MISMATCH",
+                            "status": "APPROVED"}]}  # fmt: skip
     out, _ = run(tmp_path, pick, [refunds])
-    assert out == [{"refund_id": "pdr:1", "shopify_order_id": "1001", "amount_ttc": "229.90", "reason": "QUOTA"}]
+    assert out == [{"refund_id": "pdr:1", "shopify_order_id": "1001", "amount_ttc": "238.90", "shipping_ttc": "9.00",
+                    "reason": "QUOTA"}]  # montant nul : rien à rembourser chez le prestataire
+    psp = B02["Rembourser intégralement — Shopify refundCreate (désactivé)"]["parameters"]["jsonBody"]
+    assert "shipping: { amount: $json.shipping_ttc }" in psp and "amount: $json.amount_ttc" in psp
     bilan = code(B02, "Bilan du remboursement (prestataire)", GEN.JS_PSP_REFUND_BILAN)
     source = out * 3
     responses = [
@@ -345,14 +389,23 @@ def test_steps_are_announced_once_and_never_for_closed_reservations(tmp_path: Pa
     pending, _ = run(tmp_path, js, [{"internal": [{**P2, "status": "PENDING_OWNER"}]}], static=memo)
     assert pending == []
     audience = code(B06, "Inscrits consentants qui suivent la référence", GEN.JS_PREDROP_AUDIENCE)
-    step = {"predrop_id": P1["predrop_id"], "product_key": "FICTIF-P1", "etape": "prioritaire"}
+    step = {"predrop_id": P1["predrop_id"], "product_key": "FICTIF-P1", "etape": "prioritaire", "opens_at": P1["opens_at"]}
     subscribers = {"subscribers": [
-        {"id": "s1", "status": "confirme", "alert_products": ["FICTIF-P1"], "shopify_customer_id": "gid://shopify/Customer/55"},
+        {"id": "s1", "status": "confirme", "alert_products": ["FICTIF-P1"], "shopify_customer_id": "gid://shopify/Customer/55",
+         "date_consentement": "2026-10-01T09:00:00+02:00"},
         {"id": "s2", "status": "confirme", "alert_products": ["FICTIF-P2"]},
         {"id": "s3", "status": "en_attente", "alert_products": ["FICTIF-P1"]},
-        {"id": "s4", "status": "confirme", "unsubscribed": True, "alert_products": ["FICTIF-P1"]}]}  # fmt: skip
+        {"id": "s4", "status": "confirme", "unsubscribed": True, "alert_products": ["FICTIF-P1"]},
+        {"id": "s5", "status": "confirme", "alert_products": ["FICTIF-P1"], "date_consentement": "2026-10-01T09:00:00+02:00"},
+        {"id": "s6", "status": "confirme", "alert_products": ["FICTIF-P1"], "shopify_customer_id": "56",
+         "date_consentement": "2026-10-06T09:00:00+02:00"}]}  # fmt: skip
     out, _ = run(tmp_path, audience, [subscribers], all_={"Étapes à annoncer (une par pré-drop)": [step]})
+    # Revue pré-drop (PDL-08) : email 16 seulement avec un compte client lié ET une inscription confirmée avant
+    # l'ouverture (s5 sans compte lié, s6 inscrit après l'ouverture : rien pendant la fenêtre prioritaire).
     assert [(o["subscriber_id"], o["shopify_customer_id"]) for o in out] == [("s1", "55")]
+    opening = {**step, "etape": "ouvertes"}
+    out, _ = run(tmp_path, audience, [subscribers], all_={"Étapes à annoncer (une par pré-drop)": [opening]})
+    assert sorted(o["subscriber_id"] for o in out) == ["s1", "s5", "s6"]  # email 17 : tous les inscrits qui suivent
     out, _ = run(tmp_path, audience, [step], all_={"Étapes à annoncer (une par pré-drop)": [step]})
     assert out == []  # outil d'emailing non branché : personne
 
@@ -408,5 +461,6 @@ def test_predrop_customer_emails_are_disabled_and_carry_no_price_or_quantity() -
 def test_prepared_reservations_carry_the_drop_date_for_email_15(tmp_path: Path) -> None:
     js = code(B02, "Préparer les réservations (une par pré-drop)", GEN.JS_PREDROP_RESERVATIONS)
     offers = {"internal": [{**P1, "drop_date": "2026-10-20"}, P2]}
-    out, _ = run(tmp_path, js, [offers], first={DEDUP: ORDER})
+    out, _ = run(tmp_path, js, [offers], first={DEDUP: ORDER, "Paramètres — commande": PARAMS02})
     assert out[0]["date_drop"] == "2026-10-20" and "prix" not in json.dumps(out)
+    assert "cle_empreinte" not in json.dumps(out) and PARAMS02["cle_empreinte_client"] not in json.dumps(out)

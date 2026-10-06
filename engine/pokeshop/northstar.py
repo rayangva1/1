@@ -1034,6 +1034,16 @@ def is_unresolved_key(key: str) -> bool:
     return key.startswith(UNRESOLVED_KEY_PREFIX)
 
 
+SHIPMENT_SEPARATOR = "/envoi-"
+"""Une commande expédiée en **plusieurs envois** est enregistrée une fois par envoi : ``<commande>`` (ou
+``<commande>/envoi-1``) puis ``<commande>/envoi-2``… ; les lignes expédiées se cumulent par commande Shopify."""
+
+
+def shipment_order_base(order_id: str) -> str:
+    """Commande Shopify d'un envoi enregistré (``<commande>/envoi-<n>`` -> ``<commande>``)."""
+    return order_id.split(SHIPMENT_SEPARATOR, 1)[0]
+
+
 class OrderLine(FrozenModel):
     """Ligne expédiée d'une commande : SKU boutique, clé produit canonique (résolue par le moteur), quantité."""
 
@@ -1477,6 +1487,16 @@ class OrderRegister:
         """Commande enregistrée (None si inconnue)."""
         with self._lock:
             return self._orders.get(order_id)
+
+    def shipments(self, order_base: str) -> tuple[ShippedOrder, ...]:
+        """Envois enregistrés d'une commande Shopify (``<commande>`` et ``<commande>/envoi-<n>``), par date."""
+        with self._lock:
+            found = [o for oid, o in self._orders.items() if shipment_order_base(oid) == order_base]
+        return tuple(sorted(found, key=lambda o: (o.recorded_at, o.order_id)))
+
+    def shipped_units(self, order_base: str, public_sku: str) -> int:
+        """Unités expédiées d'un SKU sur l'ensemble des envois d'une commande (pré-drop : ligne ``-RESA-``)."""
+        return sum(ln.qty for o in self.shipments(order_base) for ln in o.lines if ln.public_sku == public_sku)
 
     def refund(self, refund_id: str) -> OrderRefund | None:
         """Avoir enregistré (None si inconnu)."""

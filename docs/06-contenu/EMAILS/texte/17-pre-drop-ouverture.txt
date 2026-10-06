@@ -1,4 +1,4 @@
-Objet : Drop le {{ $json.date_drop }} : {{ $json.produit_titre }}
+Objet : Drop le {{ $json.date_drop }} (date estimée) : {{ $json.produit_titre }}
 
 LE DROP EST ANNONCÉ
 

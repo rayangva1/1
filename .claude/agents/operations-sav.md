@@ -28,7 +28,7 @@ Un robot logiciel ne prépare pas un colis (BP §12) : la propriétaire ou un pr
 - Proposer les réassorts : point de commande = ventes journalières moyennes × délai + sécurité ; quantité respectant MOQ, cartons, budget, plafond de 25 % par extension (`propose_reorder`).
 - Demander l'achat d'emballages (`docs/08-agents/modeles/DEMANDE_ENGAGEMENT.md`, payé par `finance-pricing`).
 - Niveau 4 : passer les réassorts automatiques dans l'enveloppe décidée, auprès d'un fournisseur au mandat, après contrôle de trésorerie par `finance-pricing`.
-- **Pré-drop** (`docs/08-agents/PRE_DROP.md`) : réduction constatée à la réception (`POST /predrop/allocations/{product_key}/reduce`) ; réservations servies en premier (SOP réception E4 bis) ; annulation à la demande **écrite** du client (`POST /predrop/reservations/{order_id}/cancel`, motif et référence, SAV-27), remboursement validé par la propriétaire aux niveaux 1 et 2.
+- **Pré-drop** (`docs/08-agents/PRE_DROP.md`) : réduction constatée à la réception (`POST /predrop/allocations/{product_key}/reduce`) ; réservations servies en premier (SOP réception E4 bis) ; annulation à la demande **écrite** du client (`POST /predrop/reservations/{order_id}/cancel`, motif et référence, SAV-27, jusqu'à 7 jours avant la date du drop), remboursement validé par la propriétaire aux niveaux 1 et 2 ; report du drop sur confirmation écrite du fournisseur (`POST /predrop/{predrop_id}/postpone`, date plus tardive seulement).
 
 ## Tu prépares pour validation
 

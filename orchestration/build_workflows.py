@@ -1338,30 +1338,44 @@ items.forEach((item) => {
 return out;
 """
 
+CUSTOMER_REF_KEY_PLACEHOLDER = "A_REMPLIR_DANS_N8N_CLE_SECRETE_EMPREINTE_CLIENT"
+"""Valeur du paramètre ``cle_empreinte_client`` à l'export : la clé secrète (≥ 32 caractères) n'est JAMAIS dans le dépôt ;
+la propriétaire la colle dans n8n après import (C10, revue pré-drop PDL-09), et la renouvelle après chaque pré-drop soldé."""
+
 JS_PREDROP_RESERVATIONS = (
     JS_CENTS
     + r"""
 // Commande payée qui porte une ou plusieurs fiches « Réservation garantie » (SKU <SKU>-RESA-<AAAAMMJJ>) : une
 // réservation PAR PRÉ-DROP -> POST /predrop/reservations, jamais refusée pour un motif métier (hors quota, limite,
 // fenêtre prioritaire ou montant : « non servie », remboursement intégral préparé). Une commande à plusieurs pré-drops
-// est enregistrée <commande>, <commande>#2… (la dette et l'expédition suivent la commande).
-// Données personnelles : l'identifiant client n'est lu que pour être HACHÉ (SHA-256, nœud suivant) ; l'accès
-// prioritaire est un booléen : étiquette « alerte-produit:<handle> » ET consentement marketing confirmé.
+// est enregistrée <commande>, <commande>#2… ; chaque entrée est servie par SA ligne (SKU -RESA- de son pré-drop).
+// Frais de livraison (revue pré-drop ARG-06 / PDL-04) : commande composée SEULEMENT de réservations => frais payés
+// répartis au prorata des montants entre les entrées (shipping_paid_ttc), remboursés avec une réservation non servie.
+// Données personnelles (PDL-09) : l'identifiant client (ou, à défaut, l'email) n'est lu que pour être passé au nœud
+// HMAC-SHA256 suivant, avec la clé secrète du paramètre « cle_empreinte_client » (jamais dans le dépôt) ; clé absente :
+// rien n'est envoyé au moteur, incident. Accès prioritaire (PDL-08) : étiquette « alerte-produit:<handle> » ET
+// consentement marketing CONFIRMÉ (double opt-in) donné AVANT l'ouverture des réservations.
 const order = $('Contrôle doublon (idempotence)').first().json;
+const params = $('Paramètres — commande').first().json || {};
+const key = String(params.cle_empreinte_client || '');
+const keyOk = key.length >= 32 && !key.startsWith('A_REMPLIR');
 const data = $input.first().json || {};
 const internal = Array.isArray(data.internal) ? data.internal : [];
 const bySku = {};
 for (const p of internal) if (p && p.reservation_sku && p.status !== 'PENDING_OWNER') bySku[p.reservation_sku] = p;
 const customer = order.customer || {};
 const tags = String(customer.tags || '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
-const consent = (customer.email_marketing_consent || {}).state === 'subscribed';
-const key = customer.id ? `shopify-customer:${customer.id}`
+const consentInfo = customer.email_marketing_consent || {};
+const consent = consentInfo.state === 'subscribed' && consentInfo.opt_in_level === 'confirmed_opt_in';
+const consentAt = consentInfo.consent_updated_at ? Date.parse(consentInfo.consent_updated_at) : NaN;
+const customerKey = customer.id ? `shopify-customer:${customer.id}`
   : order.email ? `shopify-email:${String(order.email).trim().toLowerCase()}` : `shopify-order:${order.id}`;
 const groups = {};
 const unknown = [];
+let otherLines = 0;
 for (const line of order.line_items || []) {
   const sku = String(line.sku || '');
-  if (!/-RESA-\d{8}$/.test(sku)) continue;
+  if (!/-RESA-\d{8}$/.test(sku)) { otherLines += 1; continue; }
   const p = bySku[sku];
   if (!p) { unknown.push(sku); continue; }
   const qty = Number.isInteger(line.quantity) ? line.quantity : 0;
@@ -1370,38 +1384,63 @@ for (const line of order.line_items || []) {
   g.qty += qty;
   g.amount += cents(line.price) * qty - discount;
 }
+// Frais de livraison payés (après remises de livraison) : seulement si la commande n'a QUE des réservations.
+let shipping = 0;
+if (otherLines === 0 && unknown.length === 0) {
+  const set = order.total_shipping_price_set && order.total_shipping_price_set.shop_money;
+  shipping = set && set.amount !== undefined ? cents(set.amount)
+    : (order.shipping_lines || []).reduce((sum, l) => sum + cents(l.price)
+      - (l.discount_allocations || []).reduce((d, a) => d + cents(a.amount), 0), 0);
+  if (shipping < 0) shipping = 0;
+}
+const ids = Object.keys(groups).sort();
+const totalAmount = ids.reduce((sum, id) => sum + Math.max(0, groups[id].amount), 0);
+let shippingLeft = shipping;
 const out = [];
-Object.keys(groups).sort().forEach((id, i) => {
+ids.forEach((id, i) => {
   const g = groups[id];
+  const last = i === ids.length - 1;
+  const share = last ? shippingLeft
+    : (totalAmount > 0 ? Math.floor(shipping * Math.max(0, g.amount) / totalAmount) : Math.floor(shipping / ids.length));
+  shippingLeft -= share;
+  const opensAt = g.p.opens_at ? Date.parse(g.p.opens_at) : NaN;
+  const before = Number.isFinite(consentAt) && Number.isFinite(opensAt) && consentAt <= opensAt;
   out.push({ json: {
-    rattachee: true,
+    rattachee: keyOk,
+    motif: keyOk ? null : 'clé d’empreinte client non configurée (paramètre cle_empreinte_client) : rien n’est envoyé',
+    sku: g.p.reservation_sku,
     predrop_id: id,
     order_id: i === 0 ? String(order.id) : `${order.id}#${i + 1}`,
     order_name: order.name,
-    customer_key: key,
+    customer_key: customerKey,
     qty: g.qty,
-    amount_paid_ttc: chf(g.amount),
+    amount_paid_ttc: chf(Math.max(0, g.amount)),
+    shipping_paid_ttc: chf(Math.max(0, share)),
     paid_at: order.processed_at || order.created_at,
-    priority_access: consent && !!g.p.alert_tag && tags.includes(String(g.p.alert_tag).toLowerCase()),
+    priority_access: consent && before && !!g.p.alert_tag && tags.includes(String(g.p.alert_tag).toLowerCase()),
     date_drop: g.p.drop_date || null, // variable de l'email 15 (aucun prix, aucune quantité restante)
   } });
 });
-unknown.forEach((sku) => out.push({ json: { rattachee: false, sku, order_name: order.name, order_id: String(order.id) } }));
+unknown.forEach((sku) => out.push({ json: { rattachee: false, motif: 'SKU de réservation inconnu du moteur', sku,
+  order_name: order.name, order_id: String(order.id) } }));
 return out;
 """
 )
 
 JS_PREDROP_REFUNDS_TO_EXECUTE = r"""
 // Remboursements pré-drop APPROUVÉS (par la propriétaire en un clic aux niveaux 1-2, par le moteur à partir du
-// niveau 3) à exécuter chez le prestataire : montant INTÉGRAL (supplément compris) lu dans le moteur, jamais recalculé.
+// niveau 3) à exécuter chez le prestataire : montant INTÉGRAL (supplément et part des frais de livraison compris) lu
+// dans le moteur, jamais recalculé ; la part « livraison » est remboursée comme telle (shipping_ttc). Montant nul (bon
+// d'achat à 100 %) : rien à rembourser chez le prestataire, jamais envoyé.
 const data = $input.first().json || {};
 const refunds = Array.isArray(data.refunds) ? data.refunds : [];
 return refunds
-  .filter((r) => r && r.status === 'APPROVED')
+  .filter((r) => r && r.status === 'APPROVED' && Number(r.amount_ttc) > 0)
   .map((r) => ({ json: {
     refund_id: String(r.refund_id),
     shopify_order_id: String(r.order_id).split('#')[0].replace(/\D/g, ''),
     amount_ttc: String(r.amount_ttc),
+    shipping_ttc: String(r.shipping_ttc || '0.00'),
     reason: r.reason,
   } }));
 """
@@ -1536,6 +1575,7 @@ for (const p of internal) {
     product_key: p.product_key,
     etape: p.phase,
     date_drop: p.drop_date,
+    opens_at: p.opens_at || null,
     url_reservation: p.reservation_handle ? `/products/${p.reservation_handle}` : null,
     alert_tag: p.alert_tag || null,
   } });
@@ -1546,15 +1586,24 @@ return out;
 JS_PREDROP_AUDIENCE = r"""
 // Destinataires d'une annonce de pré-drop : inscrits CONFIRMÉS, non désinscrits, qui suivent la référence (alerte
 // produit). Aucune adresse ici : l'outil d'emailing envoie par identifiant d'inscrit. Outil non branché : personne.
+// Revue pré-drop (PDL-08) : l'email 16 (accès prioritaire) ne part qu'aux inscrits dont l'accès est réellement
+// attestable — compte client Shopify LIÉ (étiquette alerte-produit posée) et inscription CONFIRMÉE AVANT l'ouverture
+// des réservations ; les autres ne reçoivent rien pendant la fenêtre prioritaire (email 17 à l'ouverture à tous).
 const steps = $('Étapes à annoncer (une par pré-drop)').all();
 const out = [];
 $input.all().forEach((item, i) => {
   const step = (steps[i] || {}).json;
   const subscribers = item.json && Array.isArray(item.json.subscribers) ? item.json.subscribers : null;
   if (!step || !subscribers) return;
+  const opens = step.opens_at ? Date.parse(step.opens_at) : NaN;
   subscribers
     .filter((s) => s && s.status === 'confirme' && s.unsubscribed !== true)
     .filter((s) => Array.isArray(s.alert_products) && s.alert_products.includes(step.product_key))
+    .filter((s) => {
+      if (step.etape !== 'prioritaire') return true;
+      const confirmedAt = Date.parse(s.date_consentement || s.confirmed_at || '');
+      return !!s.shopify_customer_id && Number.isFinite(confirmedAt) && Number.isFinite(opens) && confirmedAt <= opens;
+    })
     .forEach((s) => out.push({ json: Object.assign({}, step, {
       subscriber_id: String(s.id),
       shopify_customer_id: s.shopify_customer_id ? String(s.shopify_customer_id).replace(/\D/g, '') : '',
@@ -1877,8 +1926,9 @@ Rapprochement hebdomadaire : frais PSP réels **sans commande** (abonnement, ver
 jamais comptés deux fois (le moteur refuse un PAYMENT portant l'`order_id` d'une commande enregistrée).
 Données personnelles : aucune conservée (exécutions réussies non sauvegardées).
 **Pré-drop** : une ligne « Réservation garantie » (SKU `-RESA-<date>`) = réservation **payée** enregistrée au moteur
-(`POST /predrop/reservations`, identifiant client **haché**, accès prioritaire attesté : étiquette `alerte-produit:<handle>`
-+ consentement confirmé) ; jamais refusée : hors quota, limite ou fenêtre => non servie, remboursement intégral préparé.
+(`POST /predrop/reservations`, empreinte **HMAC-SHA256** de l'identifiant client avec la clé `cle_empreinte_client`,
+frais de livraison au prorata, accès prioritaire attesté : étiquette `alerte-produit:<handle>` + consentement confirmé
+antérieur à l'ouverture) ; jamais refusée : hors quota, limite ou fenêtre => non servie, remboursement intégral préparé.
 Remboursements **approuvés** (propriétaire en un clic aux niveaux 1-2, moteur dès le niveau 3) : exécution chez le
 prestataire (désactivée) puis relevé `POST /predrop/refunds/{id}/executed` ; emails 15 (réservation confirmée) et 18
 (remboursement : montant et motif du moteur), désactivés.
@@ -1891,7 +1941,8 @@ mutation de remboursement Shopify (à revérifier sur la version 2026-10).
     )
     trigger = shopify_trigger(wf, "Shopify : commande payée (orders/paid)", (0, 0), "orders/paid")
     pa = params_node(
-        wf, "Paramètres — commande", (1, 0), WORKFLOW_KEYS["02"], ("delai_expedition_jours_ouvres", 3, "number")
+        wf, "Paramètres — commande", (1, 0), WORKFLOW_KEYS["02"], ("delai_expedition_jours_ouvres", 3, "number"),
+        ("cle_empreinte_client", CUSTOMER_REF_KEY_PLACEHOLDER, "string"),
     )
     dup = dedupe(
         wf,
@@ -1979,13 +2030,15 @@ mutation de remboursement Shopify (à revérifier sur la version 2026-10).
         wf, "Réservation rattachée à un pré-drop ?", (8, 1.2), [condition("={{ $json.rattachee }}", "boolean", "true")]
     )
     resa_hash = wf.add(
-        "Identifiant client haché (SHA-256)",
+        "Empreinte client (HMAC-SHA256, clé secrète)",
         "n8n-nodes-base.crypto",
         1,
-        {"action": "hash", "type": "SHA256", "value": "={{ $json.customer_key }}", "dataPropertyName": "customer_ref",
-         "encoding": "hex"},
+        {"action": "hmac", "type": "SHA256", "value": "={{ $json.customer_key }}", "dataPropertyName": "customer_ref",
+         "secret": "={{ $('Paramètres — commande').first().json.cle_empreinte_client }}", "encoding": "hex"},
         (9, 0.9),
-        notes="Le moteur ne reçoit que l'empreinte (limite par client) : jamais l'identifiant, l'email ni le nom.",
+        notes="Revue pré-drop (PDL-09) : HMAC avec la clé secrète du paramètre cle_empreinte_client (jamais dans le dépôt, "
+        "renouvelée après chaque pré-drop soldé : les anciennes empreintes ne sont alors plus rattachables à personne) ; "
+        "le moteur ne reçoit que l'empreinte (limite par client) : jamais l'identifiant, l'email ni le nom.",
     )  # fmt: skip
     resa_record = engine(
         wf,
@@ -1995,7 +2048,8 @@ mutation de remboursement Shopify (à revérifier sur la version 2026-10).
         (10, 0.9),
         params="Paramètres — commande",
         body="{ predrop_id: $json.predrop_id, order_id: $json.order_id, customer_ref: $json.customer_ref, qty: $json.qty, "
-        "amount_paid_ttc: $json.amount_paid_ttc, paid_at: $json.paid_at, priority_access: $json.priority_access }",
+        "amount_paid_ttc: $json.amount_paid_ttc, shipping_paid_ttc: $json.shipping_paid_ttc, paid_at: $json.paid_at, "
+        "priority_access: $json.priority_access }",
         on_error="continueErrorOutput",
         notes="Idempotente par commande (rejeu du webhook : sans effet). Jamais refusée pour un motif métier : non servie "
         "=> remboursement intégral préparé (validation de la propriétaire aux niveaux 1 et 2).",
@@ -2061,16 +2115,17 @@ mutation de remboursement Shopify (à revérifier sur la version 2026-10).
     )
     resa_unknown = engine(
         wf,
-        "Incident : SKU de réservation inconnu du moteur",
+        "Incident : réservation non rattachée (SKU inconnu ou clé d’empreinte absente)",
         "POST",
         "/incidents",
         (9, 1.6),
         params="Paramètres — commande",
         body=(
-            "{ cause: 'Commande ' + $json.order_name + ' : SKU de réservation ' + $json.sku + ' inconnu du moteur (aucun "
-            "pré-drop enregistré)', kind: 'PREDROP_SKU_INCONNU', severity: 'MAJEUR', scope: 'WORKFLOW', "
-            "workflow: '02-commande:' + $json.order_name, proposed_action: 'Commande payée : rattacher la réservation au "
-            "bon pré-drop (propriétaire) ou rembourser intégralement ; retirer la fiche de réservation orpheline.', "
+            "{ cause: 'Commande ' + $json.order_name + ' : réservation ' + $json.sku + ' non enregistrée (' + $json.motif "
+            "+ ')', kind: 'PREDROP_RESERVATION_NON_RATTACHEE', severity: 'MAJEUR', scope: 'WORKFLOW', "
+            "workflow: '02-commande:' + $json.order_name, proposed_action: 'Commande payée : configurer la clé "
+            "d’empreinte client dans n8n puis rejouer, ou rattacher la réservation au bon pré-drop (propriétaire, toute "
+            "quantité acceptée) ou rembourser intégralement (frais de livraison compris) ; retirer une fiche orpheline.', "
             f"actor: 'n8n:02-commande-livraison', simulation: {ref('Paramètres — commande')}.first().json.simulation }}"
         ),
     )
@@ -2179,11 +2234,13 @@ mutation de remboursement Shopify (à revérifier sur la version 2026-10).
         body="{ query: 'mutation($input: RefundInput!, $key: String!) { refundCreate(input: $input) @idempotent(key: $key) "
         "{ refund { id createdAt } userErrors { field message } } }', variables: { key: $json.refund_id, input: { "
         "orderId: 'gid://shopify/Order/' + $json.shopify_order_id, notify: false, note: 'Remboursement intégral pré-drop "
-        "(supplément compris) : ' + $json.refund_id, transactions: [{ orderId: 'gid://shopify/Order/' + "
+        "(supplément et frais de livraison compris) : ' + $json.refund_id, shipping: { amount: $json.shipping_ttc }, "
+        "transactions: [{ orderId: 'gid://shopify/Order/' + "
         "$json.shopify_order_id, kind: 'REFUND', gateway: 'shopify_payments', amount: $json.amount_ttc }] } } }",
         notes="Écriture d'argent : activer au niveau 2 seulement, après recette (forme de refundCreate, transaction parente "
         "et passerelle à revérifier sur la version 2026-10). @idempotent (clé = identifiant du remboursement) : jamais "
-        "deux remboursements, même rejoué. Montant intégral lu dans le moteur.",
+        "deux remboursements, même rejoué. Montant intégral lu dans le moteur (frais de livraison payés compris, part "
+        "« livraison » dans shipping).",
         on_error="continueErrorOutput",
     )
     bilan = code_node(wf, "Bilan du remboursement (prestataire)", (7, 4.6), JS_PSP_REFUND_BILAN)

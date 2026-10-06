@@ -9,7 +9,7 @@ Dossier du chef de projet (BP §11, agent 01). Source métier : BP du 4.10.2026 
 | Fichier | Rôle | Propriétaire |
 |---|---|---|
 | `PLAN_90_JOURS.md` | Plan au jour (J1-J15), puis à la semaine (S3-S13) ; responsables humain/agent ; critères de passage BP §9 et §13 | Agent pilotage |
-| `BACKLOG.csv` | 188 tâches sur tout le BP, importables dans Notion ; dépendances vérifiées sans cycle | Agent pilotage |
+| `BACKLOG.csv` | 191 tâches sur tout le BP, importables dans Notion ; dépendances vérifiées sans cycle | Agent pilotage |
 | `GATES_GO_NO_GO.md` | Gates G0 à G7, seuils chiffrés, décideur, modèle de fiche | Agent pilotage |
 | `INTERVENTIONS_HUMAINES.md` | Checklist maîtresse et exhaustive de ce qui exige une personne (A physique, B légal une fois, C validations, signatures et réarmement), chaque fiche reliée à ses tâches du backlog | Agent pilotage |
 | `REGISTRE_RISQUES.md` | 31 risques : probabilité, impact, mitigation, déclencheur, stop-loss lié | Agent pilotage |

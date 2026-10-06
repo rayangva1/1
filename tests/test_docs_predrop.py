@@ -92,12 +92,13 @@ def test_precommandes_covers_every_point_of_the_owner_decision() -> None:
     for needle in ("Deux prix", "Ce que garantit le supplément", "« Réservations ouvertes »", "« Réservations fermées »",
                    "Accès prioritaire", "{{LIMITE_RESERVATION_PREDROP}}", "Si nous recevons moins que prévu",
                    "servies **en premier**", "dernières réservations payées", "Si la date du drop change",
-                   "{{SEUIL_REPORT_PRECOMMANDE}}", "Annuler votre réservation garantie", "{{DELAI_ANNULATION_PRECOMMANDE}}"):  # fmt: skip
+                   "{{SEUIL_REPORT_PRECOMMANDE}}", "Annuler votre réservation garantie", "{{DELAI_ANNULATION_PREDROP}}"):  # fmt: skip
         assert needle in section, needle
     text = _text("docs/04-legal/PRECOMMANDES.md")
     assert "À FAIRE REVOIR PAR UN JURISTE AVANT PUBLICATION" in text.splitlines()[2]
     notes = text.split("## Notes pour le juriste — pré-drop", 1)[1].split("## Validation humaine requise", 1)[0]
-    assert [f"P{n}" for n in range(1, 11)] == re.findall(r"^\| (P\d+) \|", notes, re.M)
+    # Revue pré-drop : P11 (suspension après paiement) et P12 (frais de livraison remboursés) s'ajoutent.
+    assert [f"P{n}" for n in range(1, 13)] == re.findall(r"^\| (P\d+) \|", notes, re.M)
     assert "### 2.5 Pré-drop" in text and "C32" in text and "C34" in text
     cgv = _public("docs/04-legal/CGV.md")
     for ch in ("7.7", "7.8", "7.9", "7.10", "7.11", "7.12"):
