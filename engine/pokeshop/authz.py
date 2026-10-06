@@ -28,6 +28,11 @@ Principes (``docs/08-agents/MATRICE_API.md`` est généré depuis ce module) :
   référence du moteur (facture enregistrée par ``n8n-03-factures`` ou coût rendu de l'offre) ; les créances
   de la photo : propriétaire seule ; les dettes : plancher des factures enregistrées non payées.
 
+Pré-drop (6.10.2026) : l'allocation ferme vient de la propriétaire ou de ``n8n-03-factures`` (confirmation fournisseur
+validée par elle), jamais d'un agent qui bénéficie du pré-drop ; la demande est un compte agrégé (``n8n-06-marketing``) ;
+la référence marché et la validation d'un pré-drop en attente ou d'un remboursement préparé : propriétaire ; les
+réservations payées et les remboursements exécutés : ``n8n-02-commandes``.
+
 Les contrôles fins restent dans les routes (ex. test d'incident réussi : ``qa-conformite`` ou
 propriétaire ; hausse d'autonomie : propriétaire) : la matrice dit **qui peut appeler** la route.
 """

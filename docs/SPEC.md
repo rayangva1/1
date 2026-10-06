@@ -127,7 +127,7 @@ Jetons (empreintes sha256 seulement dans l'environnement ; acteur journalisé **
 |---|---|---|
 | `GET /health` | public, sans secret | workflow 05 |
 | `POST /pricing/quote`, `POST /pricing/basket`, `POST /stock/sellable`, `POST /publish/preview` | COMMUN (aperçu) | prix, publication : valeurs du moteur et des registres ; champs de validation ou d'identifiant Shopify dans la fiche : 422 |
-| `GET /pricing/approvals`, `GET /catalog`, `GET /catalog/approvals`, `GET /sync/history`, `GET /incidents`, `GET /autonomy`, `GET /stoploss/status`, `GET /capital/movements`, `GET /northstar` | COMMUN (lecture) | `consecutive_clean_runs` : cycles réels distincts ; `GET /northstar` : `incomplete` et `derivation_errors` quand une écriture dérivée d'une commande est impossible, `cost_of_sales_pending` quand le coût des ventes d'une commande attend l'inscription du coût de réception (gates : critère ROUGE) ; journal illisible : 503 |
+| `GET /pricing/approvals`, `GET /catalog`, `GET /catalog/approvals`, `GET /sync/history`, `GET /incidents`, `GET /autonomy`, `GET /stoploss/status`, `GET /capital/movements`, `GET /northstar` | COMMUN (lecture) | `consecutive_clean_runs` : cycles réels distincts ; `GET /northstar` : `incomplete` et `derivation_errors` quand une écriture dérivée d'une commande est impossible, `cost_of_sales_pending` quand le coût des ventes d'une commande attend l'inscription du coût de réception (gates : critère ROUGE), `predrop_collected_not_recognized_chf` (argent encaissé en pré-drop, dette non reconnue en ventes) ; journal illisible : 503 |
 | `GET /dashboard/daily`, `GET /dashboard/weekly`, `GET /dashboard/monthly` | COMMUN (lecture) | journal non relu : KPI indisponibles, statut CRITIQUE |
 | `POST /pricing/approvals` | PROPRIO seul | motif ≥ 10 caractères, `valid_hours` 1-168 ; `floor_exception_ref` sous plancher (C27) |
 | `POST /pricing/approvals/{approval_id}/revoke` | `finance-pricing`, `qa-conformite`, `chef-de-projet` | acte protecteur |
@@ -143,7 +143,7 @@ Jetons (empreintes sha256 seulement dans l'environnement ; acteur journalisé **
 | `POST /incidents/{incident_id}/resume`, `POST /incidents/{incident_id}/close` | `qa-conformite`, `chef-de-projet`, `n8n-04-incidents` | incident critique : PROPRIO |
 | `POST /autonomy` | tous les rôles nommés | hausse de niveau : PROPRIO |
 | `POST /stoploss/state/refresh` | `n8n-07-stoploss` | photo construite par le moteur, datée par le plus ancien relevé de cash ; source manquante ou périmée (soldes, apports, déclaration des dettes de plus de 24 h) : 409 nommant la source ; dettes = déclarées + factures enregistrées non payées + **réservations pré-drop encaissées ni expédiées ni remboursées** (dérivées du registre du pré-drop, déduites du cash disponible, `sources.precommandes`) ; créances : relevé PROPRIO seulement ; `sources.complete` / `sources.incomplete` (coût des ventes en attente) ; publicité = MAX(déclaration, paiements pub **engagés** — approuvés ou exécutés — du mandat) |
-| `POST /stoploss/state` | PROPRIO seul | photo déposée (relevé de la propriétaire) : cash ≠ relevés du connecteur de trésorerie : 409 ; `capital_movements` du corps : 422 |
+| `POST /stoploss/state` | PROPRIO seul | photo déposée (relevé de la propriétaire) : cash ≠ relevés du connecteur de trésorerie : 409 ; `capital_movements` du corps : 422 ; dette des réservations pré-drop dérivée du registre : jamais moins (ligne ajoutée ou relevée, cash disponible diminué d'autant, `overridden`) |
 | `POST /stoploss/freeze` | tous les rôles nommés | acte protecteur |
 | `POST /stoploss/rearm` | PROPRIO seul | `reference_chf` attestée (C18) |
 | `POST /stoploss/baseline` | PROPRIO seul | `with_photo:true` : premier point zéro posé atomiquement avec la première photo (C19) ; sinon photo acceptée requise |
@@ -195,8 +195,9 @@ actes de la propriétaire : `docs/00-pilotage/INTERVENTIONS_HUMAINES.md` (B25, C
   (`POKESHOP_STOPLOSS_FINGERPRINT`, sinon les plus stricts). Définition unique : `docs/00-pilotage/STOP_LOSS.md` §3.
 - `mandate.py` : `check` de chaque dépense (mandat actif seulement si son empreinte est au coffre,
   `POKESHOP_MANDATE_FINGERPRINT`), registre `SpendLedger`, registres des taux de change et des révocations.
-- `northstar.py` : registre de l'étoile polaire (contribution nette cumulée). `autonomy.py` : niveaux 1 à 4 et porte de
-  gouvernance (niveau + mandat + stop-loss) devant toute écriture réelle.
+- `northstar.py` : registre de l'étoile polaire (contribution nette cumulée ; ventes d'une réservation pré-drop reconnues
+  à l'expédition). `autonomy.py` : niveaux 1 à 4 et porte de gouvernance (niveau + mandat + stop-loss) devant toute
+  écriture réelle. `predrop.py` : pré-drop (§2.11), paramètres signés (`POKESHOP_PREDROP_FINGERPRINT`, sinon désactivé).
 
 ### 2.11 `pokeshop/predrop.py` (gouvernance) — pré-drop
 Décision de la propriétaire du 6.10.2026 : **réservation GARANTIE avant réception** du stock. Le supplément paie la

@@ -792,6 +792,7 @@ def test_revenue_is_recognized_at_shipment_never_at_collection(tmp_path: Path) -
     assert body(reserve(client, "FICTIF-CMD-1", paid_at=paid))["reservation"]["status"] == "CONFIRMED"
     report = body(client.get("/northstar", headers=H))
     assert report["cumulative"] == "0.00" and svc.northstar.entries() == ()  # encaissement : aucune vente
+    assert report["predrop_collected_not_recognized_chf"] == "229.90"  # encaissé, non reconnu : dette
     clock.now = NOW + timedelta(days=12)  # réception puis expédition dès réception
     shipped = {"order_id": "FICTIF-CMD-1", "paid_at": paid.isoformat(), "net_sales_ht": "212.67", "payment_fees": "6.05",
                "shipping_cost_actual": "7.40", "shipping_label_ref": "FICTIF-ETIQ-1", "source": "webhook Shopify FICTIF",
@@ -800,6 +801,7 @@ def test_revenue_is_recognized_at_shipment_never_at_collection(tmp_path: Path) -
     assert resp.status_code == 201, resp.text
     sales = [e for e in svc.northstar.entries() if e.entry_id == "order:FICTIF-CMD-1:NET_SALES"]
     assert sales and sales[0].at == NOW + timedelta(days=12)  # date de l'expédition, pas du paiement
+    assert body(client.get("/northstar", headers=H))["predrop_collected_not_recognized_chf"] == "0.00"
     assert svc.orders.get("FICTIF-CMD-1").recognized_at == NOW + timedelta(days=12)
     # Rejeu de la commande expédiée plus tard : idempotent (la date de reconnaissance ne change pas).
     clock.now = NOW + timedelta(days=13)

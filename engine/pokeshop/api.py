@@ -42,6 +42,12 @@
   dépenses en validation humaine) et lot pub jamais refusé pour une commande attribuée inconnue (R4-NEW-01) ; dettes
   et créances en deux registres persistés (R4-NEW-02, R4-DOC-01, R3-NEW-02) ; ``POST /mandate/human-decision``
   (propriétaire, R4-DOC-03) ; ``finance-pricing`` ne demande jamais de dépense (R4-DOC-11).
+* **Pré-drop** (décision de la propriétaire du 6.10.2026, :mod:`pokeshop.predrop`) : réservation **garantie** avant
+  réception, paramètres signés (``POKESHOP_PREDROP_FINGERPRINT``, sinon désactivé) ; allocation ferme (propriétaire ou
+  ``n8n-03-factures``), demande agrégée (``n8n-06-marketing``), éligibilité évaluée sur les registres, deux prix (drop du
+  moteur, pré-drop ≤ +10 % et ≤ marché), réservations payées (``n8n-02-commandes``) jamais perdues (non servies :
+  remboursement intégral préparé, validé par la propriétaire aux niveaux 1 et 2) ; argent encaissé = dette dérivée de
+  la photo du stop-loss jusqu'à l'expédition ; ventes reconnues à l'expédition (``ShippedOrder.recognized_at``).
 * **Taux de change** : uniquement le registre de la propriétaire (``POST /fx/rates``) ; aucun champ
   ``fx_*`` accepté dans ``/sync/run`` ni ``/catalog/cost-inputs`` (422) ; sans taux : coût incomplet,
   fiche en brouillon. ``/mandate/check`` ne retient jamais le taux déclaré (contrôle à ± 1 % contre la
@@ -3756,9 +3762,15 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         _persistence_guard(NorthStarLedger.STREAM, "journal de l'étoile polaire")
         # Revues R4 (R3-NEW-04/05) et R5 (R4-NEW-01) : écriture dérivée impossible ou coût des ventes en attente.
         incomplete = svc.orders.incomplete_reasons()
+        # Pré-drop : argent encaissé non reconnu (dette jusqu'à l'expédition), jamais une vente de l'étoile polaire.
+        deferred = (
+            None if PredropRegistry.STREAM in svc.restore_errors
+            else svc.predrop.outstanding_debt(as_of=svc.clock(), shipped=_shipped).total_chf
+        )
         if not svc.northstar.entries() and (start is None or end is None):
             return _ok({"cumulative": Decimal("0.00"), "rows": [], "markdown": "", "note": "aucune écriture",
-                        "incomplete": bool(incomplete), "derivation_errors": incomplete})  # fmt: skip
+                        "incomplete": bool(incomplete), "derivation_errors": incomplete,
+                        "predrop_collected_not_recognized_chf": deferred})  # fmt: skip
         try:
             report = svc.northstar.weekly_report(start, end)
         except NorthStarError as exc:
@@ -3774,6 +3786,8 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 "incomplete": bool(incomplete),
                 "derivation_errors": incomplete,
                 "cost_of_sales_pending": svc.orders.pending_cogs(),
+                # Pré-drop : chiffre d'affaires reconnu à l'expédition ; encaissé avant : dette, hors étoile polaire.
+                "predrop_collected_not_recognized_chf": deferred,
             }
         )
 

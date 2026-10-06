@@ -1258,22 +1258,22 @@ class PredropRegistry:
                 recorded_at=at,
             )  # fmt: skip
             plan = self._plan(product_key, new_qty, shipped)
-            refunds = []
+            prepared: list[PreparedRefund] = []
             for order_id in plan.refunded:
                 res = self._reservations[order_id]
                 if refund_id_for(order_id) in self._refunds:
                     continue
-                refunds.append(self._new_refund(res, "ALLOCATION_REDUCED", at=at, by=recorded_by,
-                                                autonomy_level=autonomy_level))  # fmt: skip
+                prepared.append(self._new_refund(res, "ALLOCATION_REDUCED", at=at, by=recorded_by,
+                                                 autonomy_level=autonomy_level))  # fmt: skip
             updated = current.model_copy(update={"qty": new_qty})
             self._commit({
                 "op": "reduction",
                 "reduction": reduction.model_dump(mode="json"),
                 "allocation": updated.model_dump(mode="json"),
                 "plan": plan.model_dump(mode="json"),
-                "refunds": [r.model_dump(mode="json") for r in refunds],
+                "refunds": [r.model_dump(mode="json") for r in prepared],
             })  # fmt: skip
-            return ReductionResult(allocation=updated, reduction=reduction, plan=plan, refunds=tuple(refunds))
+            return ReductionResult(allocation=updated, reduction=reduction, plan=plan, refunds=tuple(prepared))
 
     def _plan(self, product_key: str, new_qty: int, shipped: Callable[[str], bool] = _no_shipment) -> ServicePlan:
         predrop = self._predrop_on_allocation(product_key)

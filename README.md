@@ -36,6 +36,7 @@ La propriétaire intervient seulement pour :
 - **Niveaux d'autonomie 1 à 4** (BP §13) : chaque écriture exige le niveau requis ; un incident critique fait redescendre d'un niveau.
 - **Aucun coût interne public** : liste blanche des champs publiés, vue SQL `public_catalog` sans coûts, tests de fuite.
 - **Aucun faux stock** : le stock fournisseur n'est pas le stock boutique ; pas de précommande sans allocation ferme.
+- **Pré-drop** (réservation garantie avant réception, décision du 6.10.2026, `docs/SPEC.md` §2.11) : paramètres signés par toi (`config/predrop.v1.yaml`, sinon désactivé) ; allocation ferme posée par toi ou le workflow 03 ; prix pré-drop = prix drop du moteur + supplément (≤ 10 %, ≤ marché) qui paie la garantie d'être servi en premier, pas le produit, sans remboursement de la différence ; réservation payée jamais perdue (non servie : remboursement intégral préparé, validé par toi aux niveaux 1-2) ; argent encaissé = dette jusqu'à l'expédition ; ni compte à rebours ni « plus que N ».
 - Les calculs se font en `Decimal`, de façon déterministe et versionnée. L'IA rédige et extrait ; elle ne décide ni d'une TVA ni d'un prix.
 
 ## Ce qu'il y a dans le repo
