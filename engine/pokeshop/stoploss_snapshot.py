@@ -67,6 +67,7 @@ from .errors import PokeshopError
 from .mandate import PayPalBalanceReading
 from .models import FrozenModel, PricingParams
 from .northstar import CostRegister
+from .predrop import PREDROP_DEBT_LABEL
 from .pricing import contribution, small_product_rule_active
 from .stoploss import (
     AdSpend,
@@ -691,8 +692,7 @@ def build_activity_photo(
     predrop = predrop_debts(as_of) if predrop_debts is not None else None
     predrop_total = Decimal(getattr(predrop, "total_chf", Decimal("0"))) if predrop is not None else Decimal("0")
     if predrop_total > 0:  # dette dérivée du registre du pré-drop, jamais déclarée
-        debts = (*debts, BalanceItem(label="Réservations pré-drop encaissées non livrées (registre du moteur)",
-                                     amount=predrop_total))  # fmt: skip
+        debts = (*debts, BalanceItem(label=PREDROP_DEBT_LABEL, amount=predrop_total))
     preorders = balances.preorders_collected_chf + predrop_total
     unpaid = invoices.unpaid(paid_until=as_of) if invoices is not None else ()  # paiement compté si le cash l'a vu
     debts = (

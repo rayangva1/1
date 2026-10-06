@@ -218,6 +218,7 @@ from .northstar import (
     unresolved_key,
 )
 from .predrop import (
+    PREDROP_DEBT_LABEL,
     Eligibility,
     FirmAllocation,
     DemandSignal,
@@ -2940,7 +2941,26 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             capital_movements=svc.capital.movements(until=posted.as_of),
             ad_spends=merge_ad_spends(posted.ad_spends, committed, until=posted.as_of.astimezone(engine.config.tz).date()),
         )
-        return svc.authoritative_photo(posted, now)
+        # Pré-drop : la dette des réservations encaissées ni expédiées ni remboursées est **dérivée** du registre ; une
+        # photo (même déposée par la propriétaire) n'en compte jamais moins — ligne ajoutée ou relevée, cash disponible
+        # diminué d'autant (fermé par défaut ; sans effet sur une photo construite par le moteur, déjà complète).
+        _persistence_guard(PredropRegistry.STREAM, "registre du pré-drop")
+        derived = svc.predrop.outstanding_debt(as_of=posted.as_of, shipped=_shipped).total_chf
+        notes: list[str] = []
+        if derived > 0:
+            items = list(posted.net_worth.debts)
+            index = next((i for i, d in enumerate(items) if d.label == PREDROP_DEBT_LABEL), None)
+            delta = derived if index is None else max(Decimal("0"), derived - items[index].amount)
+            if delta > 0:
+                if index is None:
+                    items.append(BalanceItem(label=PREDROP_DEBT_LABEL, amount=derived))
+                else:
+                    items[index] = BalanceItem(label=PREDROP_DEBT_LABEL, amount=derived)
+                posted = posted.replace(net_worth=posted.net_worth.replace(debts=tuple(items)),
+                                        cash_available_chf=posted.cash_available_chf - delta)  # fmt: skip
+                notes.append(f"dette pré-drop dérivée du registre : {derived} CHF (photo relevée de {delta} CHF)")
+        state, overridden = svc.authoritative_photo(posted, now)
+        return state, [*overridden, *notes]
 
     def _build_photo(engine: StopLossEngine, principal: Principal) -> tuple[StopLossState, dict[str, Any]]:
         """Photo d'activité construite par le moteur depuis ses registres (409 si une source manque)."""

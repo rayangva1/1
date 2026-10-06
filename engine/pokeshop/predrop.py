@@ -79,6 +79,7 @@ __all__ = [
     "AUTO_REFUND_MIN_LEVEL",
     "GUARANTEE_TEXT_FR",
     "NO_DIFFERENCE_REFUND_FR",
+    "PREDROP_DEBT_LABEL",
     "STATUS_OPEN_FR",
     "STATUS_CLOSED_FR",
     "PUBLIC_OFFER_FIELDS",
@@ -145,6 +146,8 @@ GUARANTEE_TEXT_FR = (
 NO_DIFFERENCE_REFUND_FR = (
     "Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop."
 )
+PREDROP_DEBT_LABEL = "Réservations pré-drop encaissées non livrées (registre du moteur)"
+"""Libellé de la dette dérivée du registre dans la photo du stop-loss (construite ou déposée)."""
 STATUS_OPEN_FR = "Réservations ouvertes"
 STATUS_CLOSED_FR = "Réservations fermées"
 PUBLIC_OFFER_FIELDS: tuple[str, ...] = (

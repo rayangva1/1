@@ -41,6 +41,7 @@ from pokeshop.predrop import (
     GUARANTEE_TEXT_FR,
     MAX_PREMIUM_PCT,
     NO_DIFFERENCE_REFUND_FR,
+    PREDROP_DEBT_LABEL,
     PUBLIC_OFFER_FIELDS,
     STATUS_CLOSED_FR,
     STATUS_OPEN_FR,
@@ -915,3 +916,22 @@ def test_reduction_never_refunds_an_already_shipped_reservation(tmp_path: Path) 
                       json={"new_qty": 3, "supplier_confirmation_ref": "FICTIF-REDUC-1", "reason": "livraison partielle FICTIVE"})
     plan = body(cut)["plan"]
     assert plan["kept"] == ["FICTIF-CMD-2", "FICTIF-CMD-0"] and plan["refunded"] == ["FICTIF-CMD-1"]
+
+
+def test_an_owner_deposited_photo_never_counts_less_than_the_derived_predrop_debt(tmp_path: Path) -> None:
+    client, svc, clock = ready(tmp_path)
+    assert open_predrop(client).status_code == 201
+    reserve(client, "FICTIF-CMD-1", "a")
+    clock.now = NOW + timedelta(minutes=30)
+    built = photo(client, clock.now, capital=False, bank="2229.90")
+    assert built["overridden"] == [] and built["cash_available_chf"] == "3500.00"  # photo du moteur : déjà complète
+    state = svc.stoploss_state.model_dump(mode="json")
+    state["capital_movements"] = []
+    state["net_worth"]["debts"] = [d for d in state["net_worth"]["debts"] if d["label"] != PREDROP_DEBT_LABEL]
+    state["cash_available_chf"] = "3729.90"  # relevé de la propriétaire qui oublie la réservation encaissée
+    resp = client.post("/stoploss/state", headers=OWNER, json=state)
+    assert resp.status_code == 200, resp.text
+    assert any("dette pré-drop dérivée" in note for note in body(resp)["overridden"])
+    accepted = svc.stoploss_state
+    assert [(d.label, d.amount) for d in accepted.net_worth.debts] == [(PREDROP_DEBT_LABEL, D("229.90"))]
+    assert accepted.cash_available_chf == D("3500.00")
