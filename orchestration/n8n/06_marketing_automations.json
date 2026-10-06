@@ -5,8 +5,8 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## 06 — Automatisations marketing (BP §9, docs/06-contenu/EMAILS)\n- **Réception contrôlée** (passerelle de l'agent 11 seul, son secret) → `POST /stock/receive` (stock local réel), puis alerte « nouveau stock local » aux inscrits\n  **consentants** (email 04). **Garde-fous** : incident ouvert sur « marketing », stock vendable < seuil, référence sous\n  stop-loss produit (marge insuffisante), gel global ou stop-loss non évaluable.\n- **Commande expédiée** → suivi (email 07 envoyé par Shopify ; alerte si aucun numéro de suivi).\n- **Livraison** → demande d'avis (email 11) **7 jours** après (hypothèse), une seule, sans réclamation ni opposition.\n- **Liens des emails** (jeton) : désinscription `alertes-desinscrire`, refus d'avis `avis-refus`, préférences\n  `alertes-preferences`, confirmation `alertes-confirmer`. La page de confirmation ne s'affiche **qu'après** les appels\n  aux outils ; lien invalide = page d'erreur honnête ; retrait non confirmé par un outil = incident (traitement manuel\n  sans délai, envois marketing suspendus jusqu'à la reprise).\nAucun prix ni donnée interne dans un email : titre, statut et prix lus sur la page publique au moment de l'envoi.\n**Activation** : liens des emails AVANT tout envoi ; envois au niveau 3. Pas de SMS ni d'email non sollicité.\n**Validation humaine requise** : outil d'emailing (B04), seuil de stock d'alerte, délai d'avis, notes juristes C2-C4.",
-        "height": 480,
+        "content": "## 06 — Automatisations marketing (BP §9, docs/06-contenu/EMAILS)\n- **Réception contrôlée** (passerelle de l'agent 11 seul, son secret) → `POST /stock/receive` (stock local réel), puis alerte « nouveau stock local » aux inscrits\n  **consentants** (email 04). **Garde-fous** : incident ouvert sur « marketing », stock vendable < seuil, référence sous\n  stop-loss produit (marge insuffisante), gel global ou stop-loss non évaluable.\n- **Commande expédiée** → suivi (email 07 envoyé par Shopify ; alerte si aucun numéro de suivi).\n- **Livraison** → demande d'avis (email 11) **7 jours** après (hypothèse), une seule, sans réclamation ni opposition.\n- **Liens des emails** (jeton) : désinscription `alertes-desinscrire`, refus d'avis `avis-refus`, préférences\n  `alertes-preferences`, confirmation `alertes-confirmer`. La page de confirmation ne s'affiche **qu'après** les appels\n  aux outils ; lien invalide = page d'erreur honnête ; retrait non confirmé par un outil = incident (traitement manuel\n  sans délai, envois marketing suspendus jusqu'à la reprise).\nAucun prix ni donnée interne dans un email : titre, statut et prix lus sur la page publique au moment de l'envoi.\n- **Pré-drop** : signal de demande **agrégé** chaque jour (`POST /predrop/demand` : un nombre par référence, aucune\n  adresse) ; annonces par étape calculée par le moteur : **fenêtre prioritaire** (24 h par défaut) aux seuls inscrits\n  consentants qui suivent la référence, puis **ouverture à tous** ; jamais pour des réservations fermées ; ni quantité, ni\n  heure de fermeture, ni compte à rebours.\n**Activation** : liens des emails AVANT tout envoi ; envois au niveau 3. Pas de SMS ni d'email non sollicité.\n**Validation humaine requise** : outil d'emailing (B04), seuil de stock d'alerte, délai d'avis, notes juristes C2-C4,\ntextes des annonces pré-drop (aucune fausse urgence).",
+        "height": 560,
         "width": 720,
         "color": 4
       },
@@ -2641,6 +2641,631 @@
         1120,
         3000
       ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "40 6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "bfd88148-7bbe-50cd-bf4d-cca1988b0e68",
+      "name": "Chaque jour 06:40 — signal de demande pré-drop",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        3320
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "94a443e9-dfb4-56f7-8f97-7d449648ce2d",
+              "name": "workflow",
+              "value": "marketing",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "4e70df90-f8cb-599d-a497-af7d3affc15f",
+      "name": "Paramètres — demande pré-drop",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        3320
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — demande pré-drop').first().json.api_base_url }}/incidents?open_only=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "3794408e-b61f-56fd-a28c-57a95dd70e24",
+      "name": "Garde : incidents ouverts (demande pré-drop)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        3320
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n06Mkt",
+          "name": "Pokeshop API — jeton nommé n8n-06-marketing"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "97692739-5ed2-5a12-b4d9-22301d7aed8e",
+              "leftValue": "={{ Object.keys($json.suspended || {}).some(t => t === $('Paramètres — demande pré-drop').first().json.workflow) }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "f8a7f9a7-d390-53f0-94a2-a9d977e7c688",
+      "name": "Workflow suspendu ? (demande pré-drop)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        3320
+      ],
+      "notes": "Suspension = incident ouvert sur ce workflow (un gel global n'arrête pas une simulation : le moteur refuse toute écriture réelle).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "26b7e655-937a-51cb-841d-b6b8d513ffe5",
+      "name": "Signal de demande suspendu (incident ouvert)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        3200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/subscribers?status=confirme",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "2988fae2-145e-5416-bf2d-9866cc094a5b",
+      "name": "Lire les inscrits confirmés — outil d’emailing (désactivé, demande)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        3320
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Lecture seule des inscrits confirmés ; le compte est fait dans n8n, seul un nombre par référence sort.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Signal de demande AGRÉGÉ par référence (POST /predrop/demand) : nombre d'inscrits CONFIRMÉS, non désinscrits, qui\n// suivent la référence. Aucune adresse ni identifiant d'inscrit ne sort de ce nœud : un nombre par référence.\nconst data = $input.first().json || {};\nconst subscribers = Array.isArray(data.subscribers) ? data.subscribers : null;\nif (!subscribers) return []; // outil d'emailing non branché : aucun signal (pré-drop fermé faute de demande)\nconst counts = {};\nfor (const s of subscribers) {\n  if (!s || s.status !== 'confirme' || s.unsubscribed === true) continue;\n  const products = Array.isArray(s.alert_products) ? Array.from(new Set(s.alert_products.map(String))) : [];\n  for (const key of products) {\n    if (/^[A-Za-z0-9][A-Za-z0-9_.:#/-]{0,119}$/.test(key)) counts[key] = (counts[key] || 0) + 1;\n  }\n}\nconst asOf = new Date().toISOString();\nreturn Object.keys(counts).sort().map((key) => ({ json: {\n  product_key: key,\n  interested_consenting_subscribers: counts[key],\n  as_of: asOf,\n  source: \"outil d'emailing : inscrits confirmés qui suivent la référence (compte agrégé)\",\n} }));\n"
+      },
+      "id": "0d1caef2-a170-596f-9c8f-5093be545032",
+      "name": "Compter les inscrits par référence (agrégé, sans donnée personnelle)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        3320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — demande pré-drop').first().json.api_base_url }}/predrop/demand",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ product_key: $json.product_key, interested_consenting_subscribers: $json.interested_consenting_subscribers, as_of: $json.as_of, source: $json.source }) }}"
+      },
+      "id": "53f9d6e8-0fe2-52d1-8358-6ca4c71a62a0",
+      "name": "Signal de demande agrégé (POST /predrop/demand)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        3320
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n06Mkt",
+          "name": "Pokeshop API — jeton nommé n8n-06-marketing"
+        }
+      },
+      "notes": "Jeton n8n-06-marketing : un nombre, une date, une source ; tout autre champ (adresse, nom) est refusé (422). Plus ancien que le compte en vigueur : 409 (ignoré).",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {},
+      "id": "3326aeae-bc07-5ce0-bf56-92a08c97f593",
+      "name": "Journal : demande relevée",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1960,
+        3260
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "c5037de7-acf9-51ed-a384-e250df844671",
+      "name": "Compte refusé par le moteur (ancien ou invalide)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1960,
+        3379
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "25 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "b9a5acca-1305-5012-bdc7-ce5c02e04279",
+      "name": "Toutes les heures (:25) — annonces pré-drop",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        3640
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "94a443e9-dfb4-56f7-8f97-7d449648ce2d",
+              "name": "workflow",
+              "value": "marketing",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "93194b6d-b53c-5d35-b499-2cbae8156200",
+      "name": "Paramètres — annonces pré-drop",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        3640
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — annonces pré-drop').first().json.api_base_url }}/incidents?open_only=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "1a3ff00d-c4e6-5064-83b4-274d781b358b",
+      "name": "Garde : incidents ouverts (annonces pré-drop)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        3640
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n06Mkt",
+          "name": "Pokeshop API — jeton nommé n8n-06-marketing"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5f09ac0a-b374-5bc4-8b3c-fa8535dd80b1",
+              "leftValue": "={{ Object.keys($json.suspended || {}).some(t => t === $('Paramètres — annonces pré-drop').first().json.workflow || t === '*') }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "c2e6bd58-63a7-5a4a-ba08-419b65d4be31",
+      "name": "Workflow suspendu ? (annonces pré-drop)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        3640
+      ],
+      "notes": "Suspension = incident ouvert sur ce workflow ou suspension globale de toutes les écritures (SOP_INCIDENTS §2).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "80e143ba-a151-50f6-883b-56842d1d6cc2",
+      "name": "Annonces pré-drop suspendues (incident ouvert)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        3520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — annonces pré-drop').first().json.api_base_url }}/predrop/offers",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "4089d408-74b8-5434-bae3-a0f2efb7de0a",
+      "name": "Pré-drops du moteur (GET /predrop/offers)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        3640
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n06Mkt",
+          "name": "Pokeshop API — jeton nommé n8n-06-marketing"
+        }
+      },
+      "notes": "L'étape (prioritaire, ouvertes, fermées) est calculée par le moteur : paramètres signés, quota, gel, stop-loss non évaluable ou quarantaine => fermées, rien n'est annoncé.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Une annonce par étape et par pré-drop : fenêtre prioritaire (inscrits consentants qui suivent la référence),\n// puis ouverture à tous. L'étape vient du MOTEUR (statut calculé : paramètres signés, quota, gel, quarantaine,\n// stop-loss) ; rien n'est annoncé pour des réservations fermées. Mémoire : données statiques du workflow.\n// Aucune fausse urgence : ni quantité, ni heure de fermeture, ni compte à rebours dans les variables de l'email.\nconst memo = $getWorkflowStaticData('global');\nmemo.predrops = memo.predrops || {};\nconst data = $input.first().json || {};\nconst internal = Array.isArray(data.internal) ? data.internal : [];\nconst out = [];\nfor (const p of internal) {\n  if (!p || p.status !== 'OPEN' || p.accepting !== true) continue;\n  if (p.phase !== 'prioritaire' && p.phase !== 'ouvertes') continue;\n  const seen = memo.predrops[p.predrop_id];\n  if (seen === p.phase || (seen === 'ouvertes' && p.phase === 'prioritaire')) continue;\n  memo.predrops[p.predrop_id] = p.phase;\n  out.push({ json: {\n    predrop_id: String(p.predrop_id),\n    product_key: p.product_key,\n    etape: p.phase,\n    date_drop: p.drop_date,\n    url_reservation: p.reservation_handle ? `/products/${p.reservation_handle}` : null,\n    alert_tag: p.alert_tag || null,\n  } });\n}\nreturn out;\n"
+      },
+      "id": "a46ae06e-b6b1-59f7-899d-25886fed6b4f",
+      "name": "Étapes à annoncer (une par pré-drop)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        3640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/subscribers?status=confirme",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "0944e309-fe8c-5287-9fb2-6eaaefdd9e73",
+      "name": "Lire les inscrits confirmés — outil d’emailing (désactivé, annonces)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        3640
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Lecture seule ; une lecture par pré-drop à annoncer.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Destinataires d'une annonce de pré-drop : inscrits CONFIRMÉS, non désinscrits, qui suivent la référence (alerte\n// produit). Aucune adresse ici : l'outil d'emailing envoie par identifiant d'inscrit. Outil non branché : personne.\nconst steps = $('Étapes à annoncer (une par pré-drop)').all();\nconst out = [];\n$input.all().forEach((item, i) => {\n  const step = (steps[i] || {}).json;\n  const subscribers = item.json && Array.isArray(item.json.subscribers) ? item.json.subscribers : null;\n  if (!step || !subscribers) return;\n  subscribers\n    .filter((s) => s && s.status === 'confirme' && s.unsubscribed !== true)\n    .filter((s) => Array.isArray(s.alert_products) && s.alert_products.includes(step.product_key))\n    .forEach((s) => out.push({ json: Object.assign({}, step, {\n      subscriber_id: String(s.id),\n      shopify_customer_id: s.shopify_customer_id ? String(s.shopify_customer_id).replace(/\\D/g, '') : '',\n    }) }));\n});\nreturn out;\n"
+      },
+      "id": "73c593ff-39f3-53b8-b574-ef3694408c15",
+      "name": "Inscrits consentants qui suivent la référence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        3640
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "logic": "removeItemsWithAlreadySeenKeyValues",
+        "dedupeValue": "={{ $json.predrop_id }}|{{ $json.subscriber_id }}",
+        "options": {
+          "scope": "workflow",
+          "historySize": 10000
+        }
+      },
+      "id": "bf74193c-bd31-5e67-9384-cdfb660a766f",
+      "name": "Une annonce par pré-drop et par personne",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        3640
+      ],
+      "notes": "Annoncé en fenêtre prioritaire : pas de second email à l'ouverture à tous.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "73aae871-33e9-505a-8a1a-1bafe127b3dc",
+              "name": "modele",
+              "value": "={{ $json.etape === 'prioritaire' ? 'pre-drop-acces-prioritaire' : 'pre-drop-ouverture' }}",
+              "type": "string"
+            },
+            {
+              "id": "a1781c43-83d4-50d3-a6dd-53c59794ae64",
+              "name": "url_reservation",
+              "value": "={{ $json.url_reservation }}",
+              "type": "string"
+            },
+            {
+              "id": "522a61c4-0fb9-554e-938d-a3a7cdf43fa2",
+              "name": "date_drop",
+              "value": "={{ $json.date_drop }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "5bfd0d9a-0135-5cb1-9c18-ed740d06d577",
+      "name": "Composer l’annonce pré-drop (sans prix ni compte à rebours)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2520,
+        3640
+      ],
+      "notes": "Variables : lien de la fiche de réservation et date du drop seulement. Prix, statut et textes de garantie lus sur la page publique au moment de l'envoi (EMAILS §4) ; jamais de quantité ni d'heure de fermeture.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "77460da8-a3b8-5c4e-a54c-85cdd32e3fdd",
+              "leftValue": "={{ $json.etape }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "prioritaire"
+            },
+            {
+              "id": "49951ef0-2cd5-5f1c-8640-f1b7343b4084",
+              "leftValue": "={{ $json.shopify_customer_id }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "af50b8d1-04b2-5d3a-b8dc-a280db434c2b",
+      "name": "Fenêtre prioritaire et client Shopify lié ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2800,
+        3640
+      ],
+      "notes": "L'accès prioritaire est attesté par l'étiquette alerte-produit:<handle> du client Shopify (thème et workflow 02).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-boutique.myshopify.com/admin/api/2026-10/graphql.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyAccessTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: 'mutation($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { field message } } }', variables: { id: 'gid://shopify/Customer/' + $json.shopify_customer_id, tags: [$json.alert_tag] } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "1bf11239-2bae-5ecc-a449-f00c2e3fb080",
+      "name": "Étiqueter l’inscrit (alerte-produit) — Shopify (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        3560
+      ],
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "pkshpShopifyAdm1",
+          "name": "Shopify Admin — app personnalisée"
+        }
+      },
+      "disabled": true,
+      "notes": "Écriture Shopify (niveau 3) : seulement pour un inscrit confirmé qui suit la référence ; l'étiquette ouvre le bouton pendant la fenêtre prioritaire (da-reservation-acces).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ template: $('Composer l’annonce pré-drop (sans prix ni compte à rebours)').item.json.modele, subscriber_id: $('Composer l’annonce pré-drop (sans prix ni compte à rebours)').item.json.subscriber_id, variables: { url_reservation: $('Composer l’annonce pré-drop (sans prix ni compte à rebours)').item.json.url_reservation, date_drop: $('Composer l’annonce pré-drop (sans prix ni compte à rebours)').item.json.date_drop } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "eecd1a60-2d22-5cf1-baae-03c1b823dfae",
+      "name": "Envoyer l’annonce pré-drop — outil d’emailing (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3360,
+        3640
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Niveau 3 seulement. Annonce aux seuls inscrits confirmés qui suivent la référence ; désinscription en un clic.",
+      "notesInFlow": true
     }
   ],
   "connections": {
@@ -3659,6 +4284,243 @@
         [
           {
             "node": "Répondre : confirmation non enregistrée",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Garde : incidents ouverts (demande pré-drop)": {
+      "main": [
+        [
+          {
+            "node": "Workflow suspendu ? (demande pré-drop)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chaque jour 06:40 — signal de demande pré-drop": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — demande pré-drop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — demande pré-drop": {
+      "main": [
+        [
+          {
+            "node": "Garde : incidents ouverts (demande pré-drop)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow suspendu ? (demande pré-drop)": {
+      "main": [
+        [
+          {
+            "node": "Signal de demande suspendu (incident ouvert)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lire les inscrits confirmés — outil d’emailing (désactivé, demande)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire les inscrits confirmés — outil d’emailing (désactivé, demande)": {
+      "main": [
+        [
+          {
+            "node": "Compter les inscrits par référence (agrégé, sans donnée personnelle)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compter les inscrits par référence (agrégé, sans donnée personnelle)": {
+      "main": [
+        [
+          {
+            "node": "Signal de demande agrégé (POST /predrop/demand)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signal de demande agrégé (POST /predrop/demand)": {
+      "main": [
+        [
+          {
+            "node": "Journal : demande relevée",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Compte refusé par le moteur (ancien ou invalide)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Garde : incidents ouverts (annonces pré-drop)": {
+      "main": [
+        [
+          {
+            "node": "Workflow suspendu ? (annonces pré-drop)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Toutes les heures (:25) — annonces pré-drop": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — annonces pré-drop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — annonces pré-drop": {
+      "main": [
+        [
+          {
+            "node": "Garde : incidents ouverts (annonces pré-drop)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow suspendu ? (annonces pré-drop)": {
+      "main": [
+        [
+          {
+            "node": "Annonces pré-drop suspendues (incident ouvert)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pré-drops du moteur (GET /predrop/offers)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pré-drops du moteur (GET /predrop/offers)": {
+      "main": [
+        [
+          {
+            "node": "Étapes à annoncer (une par pré-drop)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Étapes à annoncer (une par pré-drop)": {
+      "main": [
+        [
+          {
+            "node": "Lire les inscrits confirmés — outil d’emailing (désactivé, annonces)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire les inscrits confirmés — outil d’emailing (désactivé, annonces)": {
+      "main": [
+        [
+          {
+            "node": "Inscrits consentants qui suivent la référence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inscrits consentants qui suivent la référence": {
+      "main": [
+        [
+          {
+            "node": "Une annonce par pré-drop et par personne",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Une annonce par pré-drop et par personne": {
+      "main": [
+        [
+          {
+            "node": "Composer l’annonce pré-drop (sans prix ni compte à rebours)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Composer l’annonce pré-drop (sans prix ni compte à rebours)": {
+      "main": [
+        [
+          {
+            "node": "Fenêtre prioritaire et client Shopify lié ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fenêtre prioritaire et client Shopify lié ?": {
+      "main": [
+        [
+          {
+            "node": "Étiqueter l’inscrit (alerte-produit) — Shopify (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Envoyer l’annonce pré-drop — outil d’emailing (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Étiqueter l’inscrit (alerte-produit) — Shopify (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Envoyer l’annonce pré-drop — outil d’emailing (désactivé)",
             "type": "main",
             "index": 0
           }

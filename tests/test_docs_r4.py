@@ -1,7 +1,7 @@
 """Docs de la revue R4 tenues contre le code : procédures exécutables, ordre d'activation unique, aucune promesse périmée.
 
 * Jetons (R3-DOC-01, R3-DOC-06) : la commande de génération de ``DELEGATION_AUTONOMIE.md`` §10 étape 6 est exécutée
-  telle quelle dans un dossier temporaire (17 jetons, 17 empreintes, 10 secrets de passerelle — revue R5 : plus de passerelle 08 pour l'agent 05) ; le bloc de transfert
+  telle quelle dans un dossier temporaire (17 jetons, 17 empreintes, 11 secrets de passerelle — revue R5 : plus de passerelle 08 pour l'agent 05 ; pré-drop, 6.10.2026 : passerelle 03 des allocations pour l'agent 02) ; le bloc de transfert
   (contrôle des 17 lignes, ajout, ``shred -u``) est rejoué, y compris le refus d'un fichier doublé ; README « Démarrage »
   et B27 montrent le même transfert ; l'API configurée comme à B27 (sans jeton commun) accepte chaque jeton produit.
 * Ordre d'activation (R2-ADV-01) : les commandes propriétaire de ``STOP_LOSS.md`` §5 et ``DELEGATION_AUTONOMIE.md`` §10
@@ -89,7 +89,7 @@ def test_documented_roles_are_the_17_known_roles_with_the_three_mandatory_ones()
     assert len(roles) == len(set(roles)) == 17 and set(roles) <= KNOWN_ROLES
     assert {"n8n-07-stoploss", "connecteur-tresorerie", "finance-pricing"} <= set(roles)
     gateways = re.search(r"for passerelle in (.*?); do", _generation_block(), re.S)
-    assert gateways is not None and len(gateways.group(1).replace("\\", " ").split()) == 10
+    assert gateways is not None and len(gateways.group(1).replace("\\", " ").split()) == 11
 
 
 @pytest.mark.skipif(not all(shutil.which(t) for t in ("bash", "openssl", "sha256sum", "shred")),
@@ -101,7 +101,7 @@ def test_token_procedure_runs_as_written_and_the_api_accepts_every_token(tmp_pat
     subprocess.run(["bash", "-e", "-c", _generation_block()], env=env, check=True, capture_output=True)
     folder = home / "pokeshop-jetons"
     assert oct(folder.stat().st_mode & 0o777) == "0o700"
-    for name, lines in (("jetons-roles.txt", 17), ("empreintes-roles.env", 17), ("secrets-passerelles.txt", 10)):
+    for name, lines in (("jetons-roles.txt", 17), ("empreintes-roles.env", 17), ("secrets-passerelles.txt", 11)):
         assert len((folder / name).read_text().splitlines()) == lines, name
         assert oct((folder / name).stat().st_mode & 0o777) == "0o600", name
     # Transfert : « scp » remplacé par une copie locale, /etc/pokeshop/api.env par un fichier temporaire.

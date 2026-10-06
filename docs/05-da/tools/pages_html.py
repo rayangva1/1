@@ -141,7 +141,7 @@ PAIR_ROWS = "".join(
 
 
 # --- components/badges.html ---
-_BADGES = head("Badges — composants DA", "Badges de statut produit : FR, Stock local, Précommande, Nouveauté, Rupture, Alerte réassort.") + """<body class="da-root">
+_BADGES = head("Badges — composants DA", "Badges de statut produit : FR, Stock local, Précommande, Nouveauté, Rupture, Alerte réassort, Réservation garantie, Drop.") + """<body class="da-root">
 """ + BAR + """  <main class="da-container">
     <h1 class="da-title" style="font-size:var(--da-text-2xl);margin:var(--da-space-6) 0 var(--da-space-2)">Badges de statut</h1>
     <p class="da-muted" style="max-width:40rem">Un badge dit un fait vérifiable (langue, stock, date). Il est toujours écrit en toutes lettres et accompagné d'une icône : la couleur seule ne porte jamais l'information. Maximum 3 badges par carte, dans l'ordre ci-dessous.</p>
@@ -156,6 +156,13 @@ _BADGES = head("Badges — composants DA", "Badges de statut produit : FR, Stock
       <span class="da-badge da-badge--restock" role="listitem">[[i:alerte:14]]Alerte réassort</span>
     </div>
 
+    <h2 class="da-title" style="font-size:var(--da-text-xl);margin:var(--da-space-6) 0 var(--da-space-3)">Pré-drop : réservation garantie</h2>
+    <div class="da-badges" role="list">
+      <span class="da-badge da-badge--reservation" role="listitem">[[i:scelle:14]]Réservation garantie</span>
+      <span class="da-badge da-badge--drop" role="listitem">[[i:precommande:14]]Drop le 20.10</span>
+    </div>
+    <p class="da-muted" style="max-width:40rem">Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit. Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop. Un statut (« Réservations ouvertes » ou « Réservations fermées ») et une date : jamais de compteur, de minuteur ni de « plus que N ». Date FICTIVE.</p>
+
     <h2 class="da-title" style="font-size:var(--da-text-xl);margin:var(--da-space-6) 0 var(--da-space-3)">Règles d'attribution (automatiques, depuis le catalogue validé)</h2>
     <div style="overflow-x:auto">
     <table style="border-collapse:collapse;width:100%;min-width:560px;font-size:var(--da-text-sm)">
@@ -166,7 +173,9 @@ _BADGES = head("Badges — composants DA", "Badges de statut produit : FR, Stock
         <tr style="border-bottom:1px solid var(--da-color-line)"><td style="padding:8px"><span class="da-badge da-badge--preorder">[[i:precommande:14]]Précommande</span></td><td style="padding:8px">Allocation ferme confirmée par écrit et quota de précommande &gt; 0.</td><td style="padding:8px">Allocation non confirmée, ou date de sortie inconnue sans mention « date à confirmer ».</td></tr>
         <tr style="border-bottom:1px solid var(--da-color-line)"><td style="padding:8px"><span class="da-badge da-badge--new">[[i:nouveaute:14]]Nouveauté</span></td><td style="padding:8px">Mise en vente depuis moins de {{N_JOURS_NOUVEAUTE}} jours ET achetable (stock local ou précommande).</td><td style="padding:8px">Produit en rupture : « Nouveauté » ne sert pas d'appât.</td></tr>
         <tr style="border-bottom:1px solid var(--da-color-line)"><td style="padding:8px"><span class="da-badge da-badge--out">[[i:rupture:14]]Rupture</span></td><td style="padding:8px">Stock vendable local = 0 et aucun quota de précommande.</td><td style="padding:8px">—</td></tr>
-        <tr><td style="padding:8px"><span class="da-badge da-badge--restock">[[i:alerte:14]]Alerte réassort</span></td><td style="padding:8px">Produit en rupture pour lequel l'inscription à une alerte est ouverte.</td><td style="padding:8px">Un réassort est déjà exclu (fin de série confirmée).</td></tr>
+        <tr style="border-bottom:1px solid var(--da-color-line)"><td style="padding:8px"><span class="da-badge da-badge--restock">[[i:alerte:14]]Alerte réassort</span></td><td style="padding:8px">Produit en rupture pour lequel l'inscription à une alerte est ouverte.</td><td style="padding:8px">Un réassort est déjà exclu (fin de série confirmée).</td></tr>
+        <tr style="border-bottom:1px solid var(--da-color-line)"><td style="padding:8px"><span class="da-badge da-badge--reservation">[[i:scelle:14]]Réservation garantie</span></td><td style="padding:8px">Fiche de réservation d'un pré-drop dont les réservations sont ouvertes (allocation ferme, paramètres signés, prix du moteur) et achetable.</td><td style="padding:8px">Réservations fermées, drop atteint, gel ou quarantaine (la fiche est retirée).</td></tr>
+        <tr><td style="padding:8px"><span class="da-badge da-badge--drop">[[i:precommande:14]]Drop le 20.10</span></td><td style="padding:8px">Date du drop d'un pré-drop, sur la fiche de réservation et sur la fiche normale, jusqu'au jour du drop.</td><td style="padding:8px">Date passée ; jamais une heure, un compte à rebours ou un nombre d'unités.</td></tr>
       </tbody>
     </table>
     </div>
@@ -176,12 +185,14 @@ _BADGES = head("Badges — composants DA", "Badges de statut produit : FR, Stock
       <li class="da-badges"><span class="da-badge da-badge--fr">[[i:langue:14]]FR</span><span class="da-badge da-badge--local">[[i:stock-local:14]]Stock local</span><span class="da-badge da-badge--new">[[i:nouveaute:14]]Nouveauté</span></li>
       <li class="da-badges"><span class="da-badge da-badge--fr">[[i:langue:14]]FR</span><span class="da-badge da-badge--preorder">[[i:precommande:14]]Précommande</span></li>
       <li class="da-badges"><span class="da-badge da-badge--fr">[[i:langue:14]]FR</span><span class="da-badge da-badge--out">[[i:rupture:14]]Rupture</span><span class="da-badge da-badge--restock">[[i:alerte:14]]Alerte réassort</span></li>
+      <li class="da-badges"><span class="da-badge da-badge--fr">[[i:langue:14]]FR</span><span class="da-badge da-badge--reservation">[[i:scelle:14]]Réservation garantie</span><span class="da-badge da-badge--drop">[[i:precommande:14]]Drop le 20.10</span></li>
+      <li class="da-badges"><span class="da-badge da-badge--fr">[[i:langue:14]]FR</span><span class="da-badge da-badge--out">[[i:rupture:14]]Rupture</span><span class="da-badge da-badge--drop">[[i:precommande:14]]Drop le 20.10</span></li>
     </ul>
     <p class="da-note">[[i:info:18]]<span>Interdit : « Stock local » + « Précommande » sur le même produit (deux promesses différentes = deux variantes ou deux fiches), « Dernières pièces », « Bientôt épuisé », compteurs ou minuteurs.</span></p>
 
     <h2 class="da-title" style="font-size:var(--da-text-xl);margin:var(--da-space-6) 0 var(--da-space-3)">Code (Shopify / thème)</h2>
     <pre style="overflow-x:auto;padding:var(--da-space-3);background:var(--da-color-surface);border:1px solid var(--da-color-line);font-size:var(--da-text-sm)"><code>&lt;span class="da-badge da-badge--local"&gt;&lt;svg class="da-icon" …&gt;…&lt;/svg&gt;Stock local&lt;/span&gt;
-Modificateurs : --fr · --local · --preorder · --new · --out · --restock
+Modificateurs : --fr · --local · --preorder · --new · --out · --restock · --reservation · --drop
 Dépendances : tokens/tokens.css + components/components.css</code></pre>
 """ + FOOT + """  </main>
 </body>

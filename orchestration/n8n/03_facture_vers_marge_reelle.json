@@ -5,9 +5,9 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## 03 — Facture vers marge réelle (BP §12)\nL'agent 05 extrait la facture et le justificatif d'import (PDF/email) et l'envoie à **sa** passerelle (secret de l'agent 05 seul).\n**Contrôles déterministes** (centimes, total des lignes, devise + taux sourcé) → **validation humaine** de l'extraction\n(formulaire protégé, 72 h) → frais ventilés au coût rendu unitaire → **facture enregistrée au moteur**\n(`POST /costs/invoices`, jeton `n8n-03-factures`) : référence du coût d'une réception (± 2 %, sinon propriétaire) et dette\nde la photo du stop-loss jusqu'au paiement relevé (`POST /costs/invoices/{ref}/payments`, connecteur-tresorerie ou\npropriétaire) → **écarts > 2 %** signalés. Jamais de modification d'une commande client déjà conclue.\n**Activation** : niveau 1 (contrôles, validation, enregistrement de la facture).\n**Validation humaine requise** : chaque extraction (A_VALIDER_HUMAINEMENT), seuil d'écart de 2 %.",
-        "height": 340,
-        "width": 640,
+        "content": "## 03 — Facture vers marge réelle (BP §12)\nL'agent 05 extrait la facture et le justificatif d'import (PDF/email) et l'envoie à **sa** passerelle (secret de l'agent 05 seul).\n**Contrôles déterministes** (centimes, total des lignes, devise + taux sourcé) → **validation humaine** de l'extraction\n(formulaire protégé, 72 h) → frais ventilés au coût rendu unitaire → **facture enregistrée au moteur**\n(`POST /costs/invoices`, jeton `n8n-03-factures`) : référence du coût d'une réception (± 2 %, sinon propriétaire) et dette\nde la photo du stop-loss jusqu'au paiement relevé (`POST /costs/invoices/{ref}/payments`, connecteur-tresorerie ou\npropriétaire) → **écarts > 2 %** signalés. Jamais de modification d'une commande client déjà conclue.\n**Pré-drop** : confirmation d'allocation **ferme** ou **réduction** extraite par l'agent 02 (sa passerelle, son secret)\n→ contrôles → réduction : réservations **fermées aussitôt** (acte protecteur) → **validation humaine** du justificatif\n(formulaire 72 h) → `POST /predrop/allocations` ou `/reduce` (pré-drop servi en premier, quota drop réduit d'abord,\ndernières réservations remboursées intégralement) → remboursements à valider **en un clic** par la propriétaire\n(niveaux 1-2, son jeton, depuis son terminal) ; rappel quotidien des remboursements en attente.\n**Activation** : niveau 1 (contrôles, validation, enregistrement de la facture et de l'allocation).\n**Validation humaine requise** : chaque extraction (A_VALIDER_HUMAINEMENT), seuil d'écart de 2 %, chaque allocation\nferme et chaque réduction (justificatif fournisseur), chaque remboursement pré-drop aux niveaux 1 et 2.",
+        "height": 480,
+        "width": 680,
         "color": 4
       },
       "id": "b6dc7534-dc53-5ea8-b376-d85d59c8f1ca",
@@ -496,6 +496,762 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-allocation",
+        "responseMode": "onReceived",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "ea65dcc4-b1a0-58cc-bbd8-02efbd6ebb66",
+      "name": "Confirmation d’allocation extraite par l’agent 02 (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        520
+      ],
+      "webhookId": "1f14f564-fe0e-5ff1-8c99-8e2626052835",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw03Alloc02",
+          "name": "Passerelle 03 allocations — secret de l'agent 02 (sourcing)"
+        }
+      },
+      "notes": "Secret remis au SEUL agent 02 (sourcing), qui ne bénéficie pas du pré-drop. Corps : {\"kind\": \"allocation\" | \"reduction\", \"product_key\", \"supplier_id\", \"qty\" | \"new_qty\", \"supplier_confirmation_ref\", \"expected_delivery\", \"reason\" (réduction), \"document\" (justificatif)}.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "6309fda0-ebb3-5e56-9a66-fd7abdd1b989",
+              "name": "workflow",
+              "value": "facture-marge",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "2fe0e182-7c87-5614-a6d2-31abcdc30023",
+      "name": "Paramètres — allocations",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        520
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Confirmation fournisseur extraite par l'agent 02 (sourcing, sa passerelle) : allocation FERME ou RÉDUCTION annoncée.\n// Contrôles déterministes ; l'IA extrait, la propriétaire valide le justificatif (formulaire) ; jamais l'agent qui\n// bénéficie du pré-drop (chef de projet, finance) : la valeur décisive est posée par n8n-03-factures après validation.\nconst body = $input.first().json.body || {};\nconst anomalies = [];\nconst kind = body.kind === 'reduction' ? 'reduction' : body.kind === 'allocation' ? 'allocation' : null;\nif (!kind) anomalies.push(`nature inconnue : ${body.kind} (allocation ou reduction)`);\nconst ident = /^[A-Za-z0-9][A-Za-z0-9_.:#/-]{0,119}$/;\nif (!ident.test(String(body.product_key || ''))) anomalies.push('référence (product_key) manquante ou invalide');\nconst ref = String(body.supplier_confirmation_ref || '');\nif (ref.length < 3 || ref.length > 200) anomalies.push('référence de la confirmation fournisseur manquante');\nif (!body.document) anomalies.push('justificatif (document) manquant : rien sans pièce');\nconst qty = kind === 'reduction' ? body.new_qty : body.qty;\nconst minimum = kind === 'reduction' ? 0 : 1;\nif (!Number.isInteger(qty) || qty < minimum || qty > 100000) anomalies.push(`quantité invalide : ${qty}`);\nif (kind === 'allocation' && !ident.test(String(body.supplier_id || ''))) anomalies.push('fournisseur manquant');\nif (kind === 'allocation' && body.expected_delivery && !/^\\d{4}-\\d{2}-\\d{2}$/.test(String(body.expected_delivery))) {\n  anomalies.push('date de livraison attendue illisible');\n}\nif (kind === 'reduction' && String(body.reason || '').trim().length < 10) anomalies.push('motif de la réduction trop court');\nconst resume = kind === 'reduction'\n  ? `RÉDUCTION annoncée : ${body.product_key} ramenée à ${qty} unité(s) (confirmation ${ref}) — motif : ${body.reason || '?'}`\n  : `ALLOCATION FERME : ${qty} unité(s) de ${body.product_key} chez ${body.supplier_id} (confirmation ${ref}, livraison attendue ${body.expected_delivery || 'non précisée'})`;\nreturn [{ json: {\n  kind, product_key: body.product_key || null, supplier_id: body.supplier_id || null, qty,\n  supplier_confirmation_ref: ref || null, expected_delivery: body.expected_delivery || null,\n  reason: body.reason ? String(body.reason).trim() : null, document: body.document || null,\n  anomalies, anomalies_count: anomalies.length, resume,\n} }];\n"
+      },
+      "id": "029a674d-1405-5849-b043-ef0dc8b1bbfa",
+      "name": "Contrôles de la confirmation (déterministes)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0ce522ce-bc22-5de6-a63c-f1cec7515415",
+              "leftValue": "={{ $json.anomalies_count }}",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "54bf3b38-e872-5707-9387-59f7164e6202",
+      "name": "Confirmation cohérente ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — allocations').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Confirmation d’allocation ' + ($json.supplier_confirmation_ref || '?') + ' : ' + $json.anomalies.join(' ; '), kind: 'ALLOCATION_ANOMALIE', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: '03-allocation:' + ($json.product_key || 'inconnue'), proposed_action: 'Reprendre l’extraction (référence, quantité, justificatif) puis renvoyer ; aucune allocation enregistrée.', actor: 'n8n:03-facture-marge', simulation: $('Paramètres — allocations').first().json.simulation, details: { anomalies: $json.anomalies } }) }}"
+      },
+      "id": "551775c5-28e0-5bd0-84fe-08887ce63861",
+      "name": "Ouvrir un incident d’allocation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        680
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b46abcb1-88b0-526e-af22-a50fae3de4dd",
+              "leftValue": "={{ $json.kind }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "reduction"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "41d3c489-4a64-505d-bb70-9de2f10c2114",
+      "name": "Réduction annoncée ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — allocations').first().json.api_base_url }}/predrop/offers",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "4fed5d39-1bbb-5b59-8a3c-03c3bc5cffbf",
+      "name": "Pré-drops du moteur (GET /predrop/offers)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        360
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pré-drop OUVERT de la référence dont la réduction est annoncée (au plus un par référence) : il est fermé aussitôt\n// (acte protecteur) pour ne plus encaisser d'argent à rembourser ; aucun pré-drop ouvert : rien à fermer.\nconst want = $('Contrôles de la confirmation (déterministes)').first().json.product_key;\nconst data = $input.first().json || {};\nconst internal = Array.isArray(data.internal) ? data.internal : [];\nconst open = internal.find((p) => p && p.product_key === want && p.status === 'OPEN');\nreturn [{ json: { predrop_id: open ? String(open.predrop_id) : null, ouvert: !!open } }];\n"
+      },
+      "id": "a2aef24c-ecf5-5f4d-bb74-55577b656bd9",
+      "name": "Pré-drop ouvert de la référence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0e58101f-60bc-5d28-b008-abbe2a4b50a8",
+              "leftValue": "={{ $json.ouvert }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "1dd8e130-3131-5546-ba4f-f8b162dab0af",
+      "name": "Pré-drop ouvert ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1960,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — allocations').first().json.api_base_url }}/predrop/{{ encodeURIComponent($json.predrop_id) }}/close",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ reason: 'Réduction d’allocation annoncée par le fournisseur (workflow 03) : réservations fermées avant validation' }) }}"
+      },
+      "id": "24b07ef6-4e1c-5038-9dff-5e5034304d46",
+      "name": "Fermer les réservations (acte protecteur, POST /predrop/{id}/close)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        320
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "notes": "Protecteur (plus aucun argent encaissé à rembourser) : jamais une réouverture ; un nouveau pré-drop exige une nouvelle allocation ferme.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "46ace2e6-78ea-5b83-9fe5-47f7ad1fd8c4",
+              "name": "sujet",
+              "value": "=[PRÉ-DROP] Valider : {{ $('Contrôles de la confirmation (déterministes)').first().json.resume }}",
+              "type": "string"
+            },
+            {
+              "id": "2c9f4e92-0735-56ea-bcf9-79946c34cd1f",
+              "name": "texte",
+              "value": "={{ $('Contrôles de la confirmation (déterministes)').first().json.resume }}\nJustificatif : {{ $('Contrôles de la confirmation (déterministes)').first().json.document }}\nVérifier le document du fournisseur (référence, quantité ferme, date), puis répondre : {{ $execution.resumeFormUrl }}\nUne allocation ferme rend le pré-drop possible ; une réduction sert le pré-drop en premier (ordre de paiement), réduit d'abord le quota drop puis prépare le remboursement intégral des dernières réservations.\nINTERNE — ne jamais transférer ni publier.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "a041bf7b-6c73-5154-803d-ecfe0d85e123",
+      "name": "Préparer la demande de validation (allocation ou réduction)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2240,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — allocations').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "f0465fdb-db4d-5c23-8c50-afbff405a036",
+      "name": "Demander la validation de la confirmation (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2520,
+        520
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "resume": "form",
+        "incomingAuthentication": "basicAuth",
+        "formTitle": "Pré-drop : confirmation fournisseur",
+        "formDescription": "={{ $('Contrôles de la confirmation (déterministes)').first().json.resume }}\nJustificatif : {{ $('Contrôles de la confirmation (déterministes)').first().json.document }}\nLe document du fournisseur confirme-t-il exactement cette quantité ?",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Décision",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Conforme au justificatif"
+                  },
+                  {
+                    "option": "Non conforme"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Motif",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        },
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 72,
+        "resumeUnit": "hours",
+        "options": {}
+      },
+      "id": "65c1cb64-17d5-5c68-98a9-cc2f8cf6ce74",
+      "name": "Validation humaine de la confirmation fournisseur (formulaire, 72 h)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2800,
+        520
+      ],
+      "webhookId": "f4e9b776-edec-5953-bfd9-70f32ce61b1b",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "pkshpOwnerForm01",
+          "name": "Formulaires propriétaire — Basic Auth"
+        }
+      },
+      "notes": "Sans réponse sous 72 h : la branche « non » s'applique (statu quo sûr).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dcf0e87e-d9d1-5e6d-bbf3-a23117357da4",
+              "leftValue": "={{ $json['Décision'] }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "Conforme au justificatif"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "f371d365-5f92-5f14-b717-e40a1f092a11",
+      "name": "Confirmation validée ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3080,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "225f9d1e-6a97-5cae-a30b-d9bf233cf4a2",
+              "leftValue": "={{ $('Contrôles de la confirmation (déterministes)').first().json.kind }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "reduction"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "d8d7a66f-db70-5c16-b832-99b8d88bd17d",
+      "name": "Réduction validée ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3360,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — allocations').first().json.api_base_url }}/predrop/allocations/{{ encodeURIComponent($('Contrôles de la confirmation (déterministes)').first().json.product_key) }}/reduce",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ new_qty: $('Contrôles de la confirmation (déterministes)').first().json.qty, supplier_confirmation_ref: $('Contrôles de la confirmation (déterministes)').first().json.supplier_confirmation_ref, reason: $('Contrôles de la confirmation (déterministes)').first().json.reason }) }}"
+      },
+      "id": "e8427287-7eef-539e-bbf2-1f8318be74f5",
+      "name": "Enregistrer la réduction (POST /predrop/allocations/{référence}/reduce)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3640,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "notes": "Pré-drop servi en premier (ordre de paiement, réserve conservée), quota drop réduit d'abord, puis remboursement intégral des dernières réservations (préparé + brouillon d'email). Idempotente par confirmation.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Remboursements pré-drop préparés qui ATTENDENT la propriétaire (niveaux d'autonomie 1 et 2) : liste et commande de\n// validation en un clic (son jeton, depuis son terminal ; jamais dans n8n ni chez un agent). Rien à valider : rien.\nconst data = $input.first().json || {};\nconst all = Array.isArray(data.refunds) ? data.refunds : [];\nconst pending = all.filter((r) => r && r.status === 'PENDING_OWNER');\nif (!pending.length) return [];\nconst lines = pending.map((r) => `- ${r.refund_id} : commande ${r.order_id}, ${r.amount_ttc} CHF intégral (${r.reason})`);\nconst cmds = pending.map((r) => `curl -fsS -X POST -H \"X-Pokeshop-Owner-Token: $JETON\" \"$API/predrop/refunds/${encodeURIComponent(r.refund_id)}/approve\"`);\nreturn [{ json: {\n  sujet: `[PRÉ-DROP] ${pending.length} remboursement(s) intégral(aux) à valider`,\n  texte: ['Remboursements préparés par le moteur (réservations non servies ou réduction d\\'allocation, ordre de paiement) :',\n    ...lines, '',\n    'Validation en un clic (corps vide), depuis votre terminal, avec VOTRE jeton (API = adresse du moteur) :', ...cmds, '',\n    'Le workflow 02 exécute ensuite le remboursement chez le prestataire et le relève au moteur ; l\\'email au client',\n    'reprend le brouillon du moteur (remboursement intégral, supplément compris). Sans validation : rien ne part.',\n    'INTERNE — ne jamais transférer ni publier.'].join('\\n'),\n} }];\n"
+      },
+      "id": "bacedef6-f49f-532e-b612-36ff017bc8d8",
+      "name": "Remboursements à valider par la propriétaire ?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3920,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — allocations').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "eb9f8175-5308-58f5-8c53-46f33daa96b4",
+      "name": "Demander la validation des remboursements (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        4200,
+        400
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — allocations').first().json.api_base_url }}/predrop/allocations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ product_key: $('Contrôles de la confirmation (déterministes)').first().json.product_key, supplier_id: $('Contrôles de la confirmation (déterministes)').first().json.supplier_id, qty: $('Contrôles de la confirmation (déterministes)').first().json.qty, supplier_confirmation_ref: $('Contrôles de la confirmation (déterministes)').first().json.supplier_confirmation_ref, expected_delivery: $('Contrôles de la confirmation (déterministes)').first().json.expected_delivery || null, source: 'confirmation fournisseur extraite par l’agent 02, validée par la propriétaire (formulaire 03)' }) }}"
+      },
+      "id": "dc079598-43cf-53af-81ba-1b5485be962f",
+      "name": "Enregistrer l’allocation ferme (POST /predrop/allocations)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3640,
+        560
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "notes": "Valeur décisive posée par n8n-03-factures APRÈS la validation de la propriétaire ; fournisseur inconnu du moteur pour la référence : 409 (la propriétaire la pose elle-même). Une baisse passe par la réduction.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {},
+      "id": "a0a7e7d7-e985-5771-8090-b988bf8f6542",
+      "name": "Journal : allocation ferme enregistrée",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3920,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — allocations').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Confirmation ' + $('Contrôles de la confirmation (déterministes)').first().json.supplier_confirmation_ref + ' jugée non conforme : ' + ($json['Motif'] || 'sans réponse sous 72 h'), kind: 'ALLOCATION_NON_CONFORME', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: '03-allocation:' + $('Contrôles de la confirmation (déterministes)').first().json.product_key, proposed_action: 'Aucune allocation ni réduction enregistrée ; réservations déjà fermées par précaution le restent (nouveau pré-drop sur nouvelle confirmation).', actor: 'n8n:03-facture-marge', simulation: $('Paramètres — allocations').first().json.simulation }) }}"
+      },
+      "id": "506a0b72-fd46-51bb-a7eb-6900c94ef8b8",
+      "name": "Confirmation refusée : incident",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3360,
+        640
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "15 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "aa17c1b8-93b0-5e49-95b1-176c5ae6c7e5",
+      "name": "Chaque jour 08:15 — remboursements pré-drop à valider",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        840
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "6309fda0-ebb3-5e56-9a66-fd7abdd1b989",
+              "name": "workflow",
+              "value": "facture-marge",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "45242af5-5aa1-5cac-a7a8-77bad01de9d5",
+      "name": "Paramètres — remboursements à valider",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        840
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — remboursements à valider').first().json.api_base_url }}/predrop/refunds?status=PENDING_OWNER",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "f62cf0af-f937-5574-bc72-7682089f4a8c",
+      "name": "Remboursements en attente (GET /predrop/refunds)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        840
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Remboursements pré-drop préparés qui ATTENDENT la propriétaire (niveaux d'autonomie 1 et 2) : liste et commande de\n// validation en un clic (son jeton, depuis son terminal ; jamais dans n8n ni chez un agent). Rien à valider : rien.\nconst data = $input.first().json || {};\nconst all = Array.isArray(data.refunds) ? data.refunds : [];\nconst pending = all.filter((r) => r && r.status === 'PENDING_OWNER');\nif (!pending.length) return [];\nconst lines = pending.map((r) => `- ${r.refund_id} : commande ${r.order_id}, ${r.amount_ttc} CHF intégral (${r.reason})`);\nconst cmds = pending.map((r) => `curl -fsS -X POST -H \"X-Pokeshop-Owner-Token: $JETON\" \"$API/predrop/refunds/${encodeURIComponent(r.refund_id)}/approve\"`);\nreturn [{ json: {\n  sujet: `[PRÉ-DROP] ${pending.length} remboursement(s) intégral(aux) à valider`,\n  texte: ['Remboursements préparés par le moteur (réservations non servies ou réduction d\\'allocation, ordre de paiement) :',\n    ...lines, '',\n    'Validation en un clic (corps vide), depuis votre terminal, avec VOTRE jeton (API = adresse du moteur) :', ...cmds, '',\n    'Le workflow 02 exécute ensuite le remboursement chez le prestataire et le relève au moteur ; l\\'email au client',\n    'reprend le brouillon du moteur (remboursement intégral, supplément compris). Sans validation : rien ne part.',\n    'INTERNE — ne jamais transférer ni publier.'].join('\\n'),\n} }];\n"
+      },
+      "id": "1072c4c4-fb74-584b-8069-83c74a21ba33",
+      "name": "Liste des remboursements à valider",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        840
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — remboursements à valider').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "632aef5a-5c24-56fc-a5ae-114db1a9b7e0",
+      "name": "Rappeler les remboursements à valider (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1120,
+        840
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
     }
   ],
   "connections": {
@@ -646,6 +1402,272 @@
         [
           {
             "node": "Signaler les écarts (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmation d’allocation extraite par l’agent 02 (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — allocations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — allocations": {
+      "main": [
+        [
+          {
+            "node": "Contrôles de la confirmation (déterministes)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contrôles de la confirmation (déterministes)": {
+      "main": [
+        [
+          {
+            "node": "Confirmation cohérente ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmation cohérente ?": {
+      "main": [
+        [
+          {
+            "node": "Réduction annoncée ?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ouvrir un incident d’allocation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Réduction annoncée ?": {
+      "main": [
+        [
+          {
+            "node": "Pré-drops du moteur (GET /predrop/offers)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Préparer la demande de validation (allocation ou réduction)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pré-drops du moteur (GET /predrop/offers)": {
+      "main": [
+        [
+          {
+            "node": "Pré-drop ouvert de la référence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pré-drop ouvert de la référence": {
+      "main": [
+        [
+          {
+            "node": "Pré-drop ouvert ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pré-drop ouvert ?": {
+      "main": [
+        [
+          {
+            "node": "Fermer les réservations (acte protecteur, POST /predrop/{id}/close)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Préparer la demande de validation (allocation ou réduction)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fermer les réservations (acte protecteur, POST /predrop/{id}/close)": {
+      "main": [
+        [
+          {
+            "node": "Préparer la demande de validation (allocation ou réduction)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer la demande de validation (allocation ou réduction)": {
+      "main": [
+        [
+          {
+            "node": "Demander la validation de la confirmation (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demander la validation de la confirmation (email, désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Validation humaine de la confirmation fournisseur (formulaire, 72 h)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation humaine de la confirmation fournisseur (formulaire, 72 h)": {
+      "main": [
+        [
+          {
+            "node": "Confirmation validée ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmation validée ?": {
+      "main": [
+        [
+          {
+            "node": "Réduction validée ?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Confirmation refusée : incident",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Réduction validée ?": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer la réduction (POST /predrop/allocations/{référence}/reduce)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enregistrer l’allocation ferme (POST /predrop/allocations)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer la réduction (POST /predrop/allocations/{référence}/reduce)": {
+      "main": [
+        [
+          {
+            "node": "Remboursements à valider par la propriétaire ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remboursements à valider par la propriétaire ?": {
+      "main": [
+        [
+          {
+            "node": "Demander la validation des remboursements (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer l’allocation ferme (POST /predrop/allocations)": {
+      "main": [
+        [
+          {
+            "node": "Journal : allocation ferme enregistrée",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chaque jour 08:15 — remboursements pré-drop à valider": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — remboursements à valider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — remboursements à valider": {
+      "main": [
+        [
+          {
+            "node": "Remboursements en attente (GET /predrop/refunds)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remboursements en attente (GET /predrop/refunds)": {
+      "main": [
+        [
+          {
+            "node": "Liste des remboursements à valider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Liste des remboursements à valider": {
+      "main": [
+        [
+          {
+            "node": "Rappeler les remboursements à valider (email, désactivé)",
             "type": "main",
             "index": 0
           }

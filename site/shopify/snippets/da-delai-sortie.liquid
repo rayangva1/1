@@ -4,6 +4,9 @@
   Paramètre : product (obligatoire). Réglages du thème utilisés : delai_expedition_local, url_page_precommandes.
   Aucune quantité en stock n'est affichée ; seule la quantité maximale par foyer l'est (CGV ch. 4.4 : limite par
   référence et par foyer, toutes commandes confondues ; valeur = LIMITE_PAR_CLIENT validé).
+  Fiche de réservation d'un pré-drop (type « Réservation garantie ») : expédition en premier, dès réception du stock,
+  dans l'ordre des paiements ; date du drop ; quantité maximale = limite de réservations par client ; la ligne « Date
+  de sortie » n'y apparaît que si une date est connue (la date du drop suffit).
 {%- endcomment -%}
 {%- liquid
   assign statut = product.metafields.boutique.statut_stock.value | default: 'inconnu'
@@ -16,6 +19,17 @@
   assign date_sortie = product.metafields.boutique.date_sortie.value
   assign statut_date = product.metafields.boutique.date_sortie_statut.value | default: 'inconnue'
   assign qmax = product.metafields.boutique.quantite_max.value
+  assign date_drop = product.metafields.boutique.date_drop.value
+  assign est_reservation = false
+  if product.type == 'Réservation garantie'
+    assign est_reservation = true
+  endif
+  assign montrer_sortie = false
+  if date_sortie and date_sortie != ''
+    assign montrer_sortie = true
+  elsif statut == 'precommande' and est_reservation == false
+    assign montrer_sortie = true
+  endif
 -%}
 <div class="da-panel da-delais" data-statut="{{ statut }}">
   <dl class="da-facts">
@@ -25,11 +39,14 @@
     <dd>
       {%- case statut -%}
         {%- when 'stock_local' -%}Depuis Genève{% if delai and delai != '' %}, sous {{ delai | escape }}{% endif %}.
-        {%- when 'precommande' -%}Dès réception du produit{% if delai and delai != '' %}, en principe sous {{ delai | escape }} après réception{% endif %}. Pas de garantie de livraison le jour de la sortie.
+        {%- when 'precommande' -%}
+          {%- if est_reservation -%}Réservation garantie : expédiée en premier, dès réception du stock (dans l'ordre des paiements){% if delai and delai != '' %}, en principe sous {{ delai | escape }} après réception{% endif %}.
+          {%- else -%}Dès réception du produit{% if delai and delai != '' %}, en principe sous {{ delai | escape }} après réception{% endif %}. Pas de garantie de livraison le jour de la sortie.
+          {%- endif -%}
         {%- else -%}Aucune expédition possible pour le moment.
       {%- endcase -%}
     </dd>
-    {%- if statut == 'precommande' or date_sortie and date_sortie != '' -%}
+    {%- if montrer_sortie -%}
       <dt>Date de sortie</dt>
       <dd>
         {%- unless date_sortie and date_sortie != '' -%}Non confirmée
@@ -40,6 +57,10 @@
         {%- endunless -%}
       </dd>
     {%- endif -%}
+    {%- if date_drop and date_drop != '' and est_reservation -%}
+      <dt>Drop</dt>
+      <dd>{{ date_drop | date: '%d.%m.%Y' }}</dd>
+    {%- endif -%}
     {%- if qmax and qmax != '' -%}
       <dt>Quantité maximale</dt>
       <dd>{{ qmax }} par foyer (toutes commandes confondues)</dd>
@@ -48,7 +69,7 @@
     <dd>En Suisse uniquement.</dd>
   </dl>
   {%- if statut == 'precommande' -%}
-    <p class="da-note">Commande mixte&nbsp;: les articles en stock local partent dès qu'ils sont prêts&#8239;; la précommande est expédiée séparément, dès réception. La livraison n'est facturée qu'une fois.
+    <p class="da-note">Commande mixte&nbsp;: les articles en stock local partent dès qu'ils sont prêts&#8239;; {% if est_reservation %}la réservation garantie{% else %}la précommande{% endif %} est expédiée séparément, dès réception. La livraison n'est facturée qu'une fois.
       {%- if settings.url_page_precommandes and settings.url_page_precommandes != '' %} <a href="{{ settings.url_page_precommandes }}">Comment fonctionnent les précommandes</a>{% endif -%}
     </p>
   {%- endif -%}

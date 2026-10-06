@@ -55,6 +55,7 @@ Tu ouvres l'accès au stock Pokémon JCC **en français** pour une boutique suis
 
 - **Read, Grep, Glob, Write, Edit** : documents de sourcing et rapports.
 - **WebSearch, WebFetch** : lecture publique uniquement.
+- **Passerelle 03 `pokeshop-allocation`** (ton secret seul, pré-drop) : tu transmets les confirmations d'allocation ferme et les réductions annoncées par un fournisseur, avec le justificatif ; la propriétaire les valide (formulaire du workflow 03), `n8n-03-factures` les enregistre ; tu n'ouvres jamais de pré-drop.
 - **Boîte dédiée** : par `chef-de-projet` seulement. **Dépense** : 0 CHF (échantillons seulement si le mandat le prévoit, payés par `finance-pricing`).
 
 ## Escalade

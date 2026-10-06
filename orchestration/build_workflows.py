@@ -117,6 +117,9 @@ CREDENTIALS: dict[str, tuple[str, str, str]] = {
     # secret partagé entre rôles. 03 : agent 05 seul ; 04 (reprise) : agent 12 seul ; 06 (réception) : agent 11 seul ;
     # 08 (dépense) : un webhook et un secret par agent qui dépense (le demandeur est fixé par le webhook, pas le corps).
     "gateway_03": ("httpHeaderAuth", "pkshpGw03Factu05", "Passerelle 03 factures — secret de l'agent 05 (finance-pricing)"),
+    # Pré-drop (6.10.2026) : confirmations d'allocation ferme et réductions extraites par l'agent 02 (sourcing), qui ne
+    # bénéficie pas du pré-drop (ouvert par le chef de projet ou la finance) ; validées par la propriétaire (formulaire 03).
+    "gateway_03_alloc": ("httpHeaderAuth", "pkshpGw03Alloc02", "Passerelle 03 allocations — secret de l'agent 02 (sourcing)"),
     "gateway_04": ("httpHeaderAuth", "pkshpGw04Repri12", "Passerelle 04 reprise — secret de l'agent 12 (qa-conformite)"),
     "gateway_06": ("httpHeaderAuth", "pkshpGw06Recep11", "Passerelle 06 réception — secret de l'agent 11 (operations-sav)"),
     **{
@@ -150,6 +153,7 @@ CREDENTIALS: dict[str, tuple[str, str, str]] = {
 
 GATEWAY_HOLDERS: dict[str, str] = {
     "gateway_03": "finance-pricing",
+    "gateway_03_alloc": "sourcing",
     "gateway_04": "qa-conformite",
     "gateway_06": "operations-sav",
     **{key: key.removeprefix("gateway_08_") for key in CREDENTIALS if key.startswith("gateway_08_")},
@@ -1296,6 +1300,268 @@ return [{ json: { etape: 'normalise', valide, jeton: valide ? token : null, rece
 """
 
 
+# ------------------------------------------------------------------------ pré-drop (décision du 6.10.2026)
+
+PREDROP_RESA_SKU_RE = r"-RESA-\d{8}$"
+"""Fin du SKU d'une fiche « Réservation garantie » (``<SKU>-RESA-<AAAAMMJJ>``, ``pokeshop.publish.predrop_reservation_sku``)."""
+
+JS_PREDROP_TO_PUBLISH = r"""
+// Pré-drops dont la fiche « Réservation garantie » est à publier, mettre à jour ou retirer (registre du moteur).
+// Rien n'est décidé ici : statut des réservations, prix, retrait au drop et inventaire sont calculés par le moteur
+// (POST /predrop/{id}/publish). Un pré-drop en attente de la propriétaire n'est jamais publié ; deux jours après le
+// drop, la fiche est retirée depuis longtemps (brouillon) : plus rien à faire.
+const data = $input.first().json || {};
+const internal = Array.isArray(data.internal) ? data.internal : [];
+const now = new Date();
+const limit = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 2)).toISOString().slice(0, 10);
+return internal
+  .filter((p) => p && p.status !== 'PENDING_OWNER' && typeof p.drop_date === 'string' && p.drop_date >= limit)
+  .map((p) => ({ json: { predrop_id: String(p.predrop_id), phase: p.phase || null, drop_date: p.drop_date } }));
+"""
+
+JS_PREDROP_PUBLISH_ALERT = r"""
+// Publication de la fiche de réservation : seules les erreurs critiques (vérification, champ interne, inventaire
+// inconnu en écriture réelle) donnent une alerte ; le compte rendu est INTERNE (cible d'inventaire comprise).
+const items = $input.all();
+const out = [];
+items.forEach((item) => {
+  const r = (item.json || {}).report || {};
+  const errors = Array.isArray(r.critical_errors) ? r.critical_errors : [];
+  if (!errors.length) return;
+  out.push({ json: {
+    sujet: `[PRÉ-DROP] Fiche de réservation ${r.predrop_id || '?'} : ${errors.length} erreur(s) critique(s)`,
+    texte: `Pré-drop ${r.predrop_id} (${r.phase}) : ${errors.join(' ; ')}\nIssue : ${r.plan_outcome} ; inventaire : ${r.inventory_action}.\n`
+      + 'Rien d\'autre n\'est publié tant que la cause n\'est pas corrigée (fermé par défaut).\n'
+      + 'INTERNE — ne jamais transférer ni publier.',
+  } });
+});
+return out;
+"""
+
+JS_PREDROP_RESERVATIONS = (
+    JS_CENTS
+    + r"""
+// Commande payée qui porte une ou plusieurs fiches « Réservation garantie » (SKU <SKU>-RESA-<AAAAMMJJ>) : une
+// réservation PAR PRÉ-DROP -> POST /predrop/reservations, jamais refusée pour un motif métier (hors quota, limite,
+// fenêtre prioritaire ou montant : « non servie », remboursement intégral préparé). Une commande à plusieurs pré-drops
+// est enregistrée <commande>, <commande>#2… (la dette et l'expédition suivent la commande).
+// Données personnelles : l'identifiant client n'est lu que pour être HACHÉ (SHA-256, nœud suivant) ; l'accès
+// prioritaire est un booléen : étiquette « alerte-produit:<handle> » ET consentement marketing confirmé.
+const order = $('Contrôle doublon (idempotence)').first().json;
+const data = $input.first().json || {};
+const internal = Array.isArray(data.internal) ? data.internal : [];
+const bySku = {};
+for (const p of internal) if (p && p.reservation_sku && p.status !== 'PENDING_OWNER') bySku[p.reservation_sku] = p;
+const customer = order.customer || {};
+const tags = String(customer.tags || '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+const consent = (customer.email_marketing_consent || {}).state === 'subscribed';
+const key = customer.id ? `shopify-customer:${customer.id}`
+  : order.email ? `shopify-email:${String(order.email).trim().toLowerCase()}` : `shopify-order:${order.id}`;
+const groups = {};
+const unknown = [];
+for (const line of order.line_items || []) {
+  const sku = String(line.sku || '');
+  if (!/-RESA-\d{8}$/.test(sku)) continue;
+  const p = bySku[sku];
+  if (!p) { unknown.push(sku); continue; }
+  const qty = Number.isInteger(line.quantity) ? line.quantity : 0;
+  const discount = (line.discount_allocations || []).reduce((sum, d) => sum + cents(d.amount), 0);
+  const g = groups[p.predrop_id] || (groups[p.predrop_id] = { p, qty: 0, amount: 0 });
+  g.qty += qty;
+  g.amount += cents(line.price) * qty - discount;
+}
+const out = [];
+Object.keys(groups).sort().forEach((id, i) => {
+  const g = groups[id];
+  out.push({ json: {
+    rattachee: true,
+    predrop_id: id,
+    order_id: i === 0 ? String(order.id) : `${order.id}#${i + 1}`,
+    order_name: order.name,
+    customer_key: key,
+    qty: g.qty,
+    amount_paid_ttc: chf(g.amount),
+    paid_at: order.processed_at || order.created_at,
+    priority_access: consent && !!g.p.alert_tag && tags.includes(String(g.p.alert_tag).toLowerCase()),
+  } });
+});
+unknown.forEach((sku) => out.push({ json: { rattachee: false, sku, order_name: order.name, order_id: String(order.id) } }));
+return out;
+"""
+)
+
+JS_PREDROP_REFUNDS_TO_EXECUTE = r"""
+// Remboursements pré-drop APPROUVÉS (par la propriétaire en un clic aux niveaux 1-2, par le moteur à partir du
+// niveau 3) à exécuter chez le prestataire : montant INTÉGRAL (supplément compris) lu dans le moteur, jamais recalculé.
+const data = $input.first().json || {};
+const refunds = Array.isArray(data.refunds) ? data.refunds : [];
+return refunds
+  .filter((r) => r && r.status === 'APPROVED')
+  .map((r) => ({ json: {
+    refund_id: String(r.refund_id),
+    shopify_order_id: String(r.order_id).split('#')[0].replace(/\D/g, ''),
+    amount_ttc: String(r.amount_ttc),
+    reason: r.reason,
+  } }));
+"""
+
+JS_PSP_REFUND_BILAN = r"""
+// Bilan du remboursement chez le prestataire : seul un remboursement CONFIRMÉ (identifiant renvoyé, aucune erreur)
+// est relevé au moteur ; nœud désactivé, erreur ou réponse non conforme => rien n'est relevé (nouvel essai au passage
+// suivant, même clé d'idempotence : jamais deux remboursements).
+const source = $('Un remboursement par élément').all();
+return $input.all().map((item, i) => {
+  const j = item.json || {};
+  const base = (source[i] || {}).json || {};
+  const r = j.data && j.data.refundCreate;
+  const ok = !j.error && !!r && !!r.refund && !!r.refund.id && Array.isArray(r.userErrors) && r.userErrors.length === 0;
+  let motif = 'réponse non conforme';
+  if (ok) motif = 'remboursement confirmé par le prestataire';
+  else if (j.error) motif = `échec (${(j.error && j.error.message) || 'erreur'})`;
+  else if (!j.data && j.refund_id) motif = 'non branché (nœud désactivé)';
+  return { json: Object.assign({}, base, {
+    confirme: ok,
+    psp_refund_ref: ok ? String(r.refund.id) : null,
+    executed_at: ok ? String(r.refund.createdAt || new Date().toISOString()) : null,
+    motif,
+  }) };
+});
+"""
+
+JS_ALLOCATION_CHECKS = r"""
+// Confirmation fournisseur extraite par l'agent 02 (sourcing, sa passerelle) : allocation FERME ou RÉDUCTION annoncée.
+// Contrôles déterministes ; l'IA extrait, la propriétaire valide le justificatif (formulaire) ; jamais l'agent qui
+// bénéficie du pré-drop (chef de projet, finance) : la valeur décisive est posée par n8n-03-factures après validation.
+const body = $input.first().json.body || {};
+const anomalies = [];
+const kind = body.kind === 'reduction' ? 'reduction' : body.kind === 'allocation' ? 'allocation' : null;
+if (!kind) anomalies.push(`nature inconnue : ${body.kind} (allocation ou reduction)`);
+const ident = /^[A-Za-z0-9][A-Za-z0-9_.:#/-]{0,119}$/;
+if (!ident.test(String(body.product_key || ''))) anomalies.push('référence (product_key) manquante ou invalide');
+const ref = String(body.supplier_confirmation_ref || '');
+if (ref.length < 3 || ref.length > 200) anomalies.push('référence de la confirmation fournisseur manquante');
+if (!body.document) anomalies.push('justificatif (document) manquant : rien sans pièce');
+const qty = kind === 'reduction' ? body.new_qty : body.qty;
+const minimum = kind === 'reduction' ? 0 : 1;
+if (!Number.isInteger(qty) || qty < minimum || qty > 100000) anomalies.push(`quantité invalide : ${qty}`);
+if (kind === 'allocation' && !ident.test(String(body.supplier_id || ''))) anomalies.push('fournisseur manquant');
+if (kind === 'allocation' && body.expected_delivery && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.expected_delivery))) {
+  anomalies.push('date de livraison attendue illisible');
+}
+if (kind === 'reduction' && String(body.reason || '').trim().length < 10) anomalies.push('motif de la réduction trop court');
+const resume = kind === 'reduction'
+  ? `RÉDUCTION annoncée : ${body.product_key} ramenée à ${qty} unité(s) (confirmation ${ref}) — motif : ${body.reason || '?'}`
+  : `ALLOCATION FERME : ${qty} unité(s) de ${body.product_key} chez ${body.supplier_id} (confirmation ${ref}, livraison attendue ${body.expected_delivery || 'non précisée'})`;
+return [{ json: {
+  kind, product_key: body.product_key || null, supplier_id: body.supplier_id || null, qty,
+  supplier_confirmation_ref: ref || null, expected_delivery: body.expected_delivery || null,
+  reason: body.reason ? String(body.reason).trim() : null, document: body.document || null,
+  anomalies, anomalies_count: anomalies.length, resume,
+} }];
+"""
+
+JS_OPEN_PREDROP_OF_PRODUCT = r"""
+// Pré-drop OUVERT de la référence dont la réduction est annoncée (au plus un par référence) : il est fermé aussitôt
+// (acte protecteur) pour ne plus encaisser d'argent à rembourser ; aucun pré-drop ouvert : rien à fermer.
+const want = $('Contrôles de la confirmation (déterministes)').first().json.product_key;
+const data = $input.first().json || {};
+const internal = Array.isArray(data.internal) ? data.internal : [];
+const open = internal.find((p) => p && p.product_key === want && p.status === 'OPEN');
+return [{ json: { predrop_id: open ? String(open.predrop_id) : null, ouvert: !!open } }];
+"""
+
+JS_REFUNDS_FOR_OWNER = r"""
+// Remboursements pré-drop préparés qui ATTENDENT la propriétaire (niveaux d'autonomie 1 et 2) : liste et commande de
+// validation en un clic (son jeton, depuis son terminal ; jamais dans n8n ni chez un agent). Rien à valider : rien.
+const data = $input.first().json || {};
+const all = Array.isArray(data.refunds) ? data.refunds : [];
+const pending = all.filter((r) => r && r.status === 'PENDING_OWNER');
+if (!pending.length) return [];
+const lines = pending.map((r) => `- ${r.refund_id} : commande ${r.order_id}, ${r.amount_ttc} CHF intégral (${r.reason})`);
+const cmds = pending.map((r) => `curl -fsS -X POST -H "X-Pokeshop-Owner-Token: $JETON" "$API/predrop/refunds/${encodeURIComponent(r.refund_id)}/approve"`);
+return [{ json: {
+  sujet: `[PRÉ-DROP] ${pending.length} remboursement(s) intégral(aux) à valider`,
+  texte: ['Remboursements préparés par le moteur (réservations non servies ou réduction d\'allocation, ordre de paiement) :',
+    ...lines, '',
+    'Validation en un clic (corps vide), depuis votre terminal, avec VOTRE jeton (API = adresse du moteur) :', ...cmds, '',
+    'Le workflow 02 exécute ensuite le remboursement chez le prestataire et le relève au moteur ; l\'email au client',
+    'reprend le brouillon du moteur (remboursement intégral, supplément compris). Sans validation : rien ne part.',
+    'INTERNE — ne jamais transférer ni publier.'].join('\n'),
+} }];
+"""
+
+JS_DEMAND_COUNT = r"""
+// Signal de demande AGRÉGÉ par référence (POST /predrop/demand) : nombre d'inscrits CONFIRMÉS, non désinscrits, qui
+// suivent la référence. Aucune adresse ni identifiant d'inscrit ne sort de ce nœud : un nombre par référence.
+const data = $input.first().json || {};
+const subscribers = Array.isArray(data.subscribers) ? data.subscribers : null;
+if (!subscribers) return []; // outil d'emailing non branché : aucun signal (pré-drop fermé faute de demande)
+const counts = {};
+for (const s of subscribers) {
+  if (!s || s.status !== 'confirme' || s.unsubscribed === true) continue;
+  const products = Array.isArray(s.alert_products) ? Array.from(new Set(s.alert_products.map(String))) : [];
+  for (const key of products) {
+    if (/^[A-Za-z0-9][A-Za-z0-9_.:#/-]{0,119}$/.test(key)) counts[key] = (counts[key] || 0) + 1;
+  }
+}
+const asOf = new Date().toISOString();
+return Object.keys(counts).sort().map((key) => ({ json: {
+  product_key: key,
+  interested_consenting_subscribers: counts[key],
+  as_of: asOf,
+  source: "outil d'emailing : inscrits confirmés qui suivent la référence (compte agrégé)",
+} }));
+"""
+
+JS_PREDROP_STEPS = r"""
+// Une annonce par étape et par pré-drop : fenêtre prioritaire (inscrits consentants qui suivent la référence),
+// puis ouverture à tous. L'étape vient du MOTEUR (statut calculé : paramètres signés, quota, gel, quarantaine,
+// stop-loss) ; rien n'est annoncé pour des réservations fermées. Mémoire : données statiques du workflow.
+// Aucune fausse urgence : ni quantité, ni heure de fermeture, ni compte à rebours dans les variables de l'email.
+const memo = $getWorkflowStaticData('global');
+memo.predrops = memo.predrops || {};
+const data = $input.first().json || {};
+const internal = Array.isArray(data.internal) ? data.internal : [];
+const out = [];
+for (const p of internal) {
+  if (!p || p.status !== 'OPEN' || p.accepting !== true) continue;
+  if (p.phase !== 'prioritaire' && p.phase !== 'ouvertes') continue;
+  const seen = memo.predrops[p.predrop_id];
+  if (seen === p.phase || (seen === 'ouvertes' && p.phase === 'prioritaire')) continue;
+  memo.predrops[p.predrop_id] = p.phase;
+  out.push({ json: {
+    predrop_id: String(p.predrop_id),
+    product_key: p.product_key,
+    etape: p.phase,
+    date_drop: p.drop_date,
+    url_reservation: p.reservation_handle ? `/products/${p.reservation_handle}` : null,
+    alert_tag: p.alert_tag || null,
+  } });
+}
+return out;
+"""
+
+JS_PREDROP_AUDIENCE = r"""
+// Destinataires d'une annonce de pré-drop : inscrits CONFIRMÉS, non désinscrits, qui suivent la référence (alerte
+// produit). Aucune adresse ici : l'outil d'emailing envoie par identifiant d'inscrit. Outil non branché : personne.
+const steps = $('Étapes à annoncer (une par pré-drop)').all();
+const out = [];
+$input.all().forEach((item, i) => {
+  const step = (steps[i] || {}).json;
+  const subscribers = item.json && Array.isArray(item.json.subscribers) ? item.json.subscribers : null;
+  if (!step || !subscribers) return;
+  subscribers
+    .filter((s) => s && s.status === 'confirme' && s.unsubscribed !== true)
+    .filter((s) => Array.isArray(s.alert_products) && s.alert_products.includes(step.product_key))
+    .forEach((s) => out.push({ json: Object.assign({}, step, {
+      subscriber_id: String(s.id),
+      shopify_customer_id: s.shopify_customer_id ? String(s.shopify_customer_id).replace(/\D/g, '') : '',
+    }) }));
+});
+return out;
+"""
+
+
 def js_prepare_shopify(link_node: str, ok_field: str) -> str:
     """Résultat de l'outil d'emailing (succès, erreur ou nœud désactivé) -> étape Shopify éventuelle."""
     return (
@@ -1552,6 +1818,36 @@ Import rejeté (> 24 h, incomplet, ×10…) => incident **INC-03** (achats et pr
     wf.link(clean, ok, 0)
     wf.link(clean, alert, 1)
     wf.link(alert, mail)
+    # Pré-drop (6.10.2026) : fiche « Réservation garantie » publiée, mise à jour ou retirée par le moteur.
+    t3 = cron(wf, "Toutes les heures (:20) — fiches de réservation pré-drop", (0, 3), "20 * * * *")
+    pp = params_node(wf, "Paramètres — pré-drop", (1, 3), WORKFLOW_KEYS["01"])
+    read_p, guard_p = suspension_guard(
+        wf, 2, 3, params="Paramètres — pré-drop", include_global=False, suffix=" (pré-drop)"
+    )
+    held_p = noop(wf, "Publication pré-drop suspendue (incident ouvert)", (4, 2.4))
+    offers = engine(
+        wf, "Pré-drops du moteur (GET /predrop/offers)", "GET", "/predrop/offers", (4, 3), params="Paramètres — pré-drop"
+    )
+    pick = code_node(wf, "Pré-drops à publier ou à retirer", (5, 3), JS_PREDROP_TO_PUBLISH)
+    publish = engine(
+        wf,
+        "Fiche de réservation (POST /predrop/{id}/publish, simulation)",
+        "POST",
+        "/predrop/{{ encodeURIComponent($json.predrop_id) }}/publish",
+        (6, 3),
+        params="Paramètres — pré-drop",
+        body="{ dry_run: true }",
+        notes="dry_run: true explicite. Le moteur construit tout depuis ses registres : fiche jumelle « Réservation "
+        "garantie » (prix pré-drop figé, planchers revérifiés), statut prioritaire / ouvertes / fermées, retrait au drop "
+        "ou sur blocage (gel, quarantaine, paramètres non signés), inventaire = réservations encore ouvertes. Écriture "
+        "réelle : même décision que pour 01 (C14, niveau 2 ; création d'une fiche : niveau 3).",
+    )
+    palert = code_node(wf, "Erreurs critiques de publication ?", (7, 3), JS_PREDROP_PUBLISH_ALERT)
+    pmail = email(wf, "Alerter : fiche de réservation (email, désactivé)", (8, 3), params="Paramètres — pré-drop")
+    wf.chain(t3, pp, read_p)
+    wf.link(guard_p, held_p, 0)
+    wf.link(guard_p, offers, 1)
+    wf.chain(offers, pick, publish, palert, pmail)
     return wf
 
 
@@ -1578,11 +1874,17 @@ Rapprochement hebdomadaire : frais PSP réels **sans commande** (abonnement, ver
 (`POST /northstar/entries`) ; les frais d'une commande viennent de `POST /orders/shipped` (`payment_fees`, BL-199) :
 jamais comptés deux fois (le moteur refuse un PAYMENT portant l'`order_id` d'une commande enregistrée).
 Données personnelles : aucune conservée (exécutions réussies non sauvegardées).
-**Activation** : niveau 2 (l'activation inscrit le webhook chez Shopify).
-**Validation humaine requise** : délai d'expédition (DELAI_EXPEDITION), jours de dépôt, route moteur de réservation.
+**Pré-drop** : une ligne « Réservation garantie » (SKU `-RESA-<date>`) = réservation **payée** enregistrée au moteur
+(`POST /predrop/reservations`, identifiant client **haché**, accès prioritaire attesté : étiquette `alerte-produit:<handle>`
++ consentement confirmé) ; jamais refusée : hors quota, limite ou fenêtre => non servie, remboursement intégral préparé.
+Remboursements **approuvés** (propriétaire en un clic aux niveaux 1-2, moteur dès le niveau 3) : exécution chez le
+prestataire (désactivée) puis relevé `POST /predrop/refunds/{id}/executed` ; email au client = brouillon du moteur.
+**Activation** : niveau 2 (l'activation inscrit le webhook chez Shopify) ; remboursements : niveau 2 + recette du PSP.
+**Validation humaine requise** : délai d'expédition (DELAI_EXPEDITION), jours de dépôt, route moteur de réservation,
+mutation de remboursement Shopify (à revérifier sur la version 2026-10).
 """,
-        width=640,
-        height=400,
+        width=680,
+        height=520,
     )
     trigger = shopify_trigger(wf, "Shopify : commande payée (orders/paid)", (0, 0), "orders/paid")
     pa = params_node(
@@ -1652,6 +1954,117 @@ Données personnelles : aucune conservée (exécutions réussies non sauvegardé
     wf.link(anomaly, inc, 0)
     wf.link(anomaly, reserve, 1)
     wf.chain(reserve, slip, task, done)
+    # Pré-drop (6.10.2026) : réservations payées (fiche « Réservation garantie », SKU -RESA-<date>).
+    has_resa = if_node(
+        wf,
+        "Réservation pré-drop dans la commande ?",
+        (5, 1.4),
+        [condition("={{ $json.lines.some(l => String(l.sku || '').includes('-RESA-')) }}", "boolean", "true")],
+        notes="Ligne d'une fiche « Réservation garantie » : réservation payée à enregistrer au moteur (dette jusqu'à "
+        "l'expédition, chiffre d'affaires reconnu à l'expédition).",
+    )
+    no_resa = noop(wf, "Aucune réservation pré-drop", (6, 2))
+    resa_offers = engine(
+        wf, "Pré-drops du moteur (GET /predrop/offers)", "GET", "/predrop/offers", (6, 1.2), params="Paramètres — commande"
+    )
+    resa_prep = code_node(
+        wf, "Préparer les réservations (une par pré-drop)", (7, 1.2), JS_PREDROP_RESERVATIONS,
+        notes="Identifiant client lu seulement pour être haché au nœud suivant ; accès prioritaire = étiquette "
+        "alerte-produit:<handle> et consentement marketing confirmé (attestation de la boutique).",
+    )  # fmt: skip
+    resa_known = if_node(
+        wf, "Réservation rattachée à un pré-drop ?", (8, 1.2), [condition("={{ $json.rattachee }}", "boolean", "true")]
+    )
+    resa_hash = wf.add(
+        "Identifiant client haché (SHA-256)",
+        "n8n-nodes-base.crypto",
+        1,
+        {"action": "hash", "type": "SHA256", "value": "={{ $json.customer_key }}", "dataPropertyName": "customer_ref",
+         "encoding": "hex"},
+        (9, 0.9),
+        notes="Le moteur ne reçoit que l'empreinte (limite par client) : jamais l'identifiant, l'email ni le nom.",
+    )  # fmt: skip
+    resa_record = engine(
+        wf,
+        "Enregistrer la réservation payée (POST /predrop/reservations)",
+        "POST",
+        "/predrop/reservations",
+        (10, 0.9),
+        params="Paramètres — commande",
+        body="{ predrop_id: $json.predrop_id, order_id: $json.order_id, customer_ref: $json.customer_ref, qty: $json.qty, "
+        "amount_paid_ttc: $json.amount_paid_ttc, paid_at: $json.paid_at, priority_access: $json.priority_access }",
+        on_error="continueErrorOutput",
+        notes="Idempotente par commande (rejeu du webhook : sans effet). Jamais refusée pour un motif métier : non servie "
+        "=> remboursement intégral préparé (validation de la propriétaire aux niveaux 1 et 2).",
+    )
+    resa_served = if_node(
+        wf, "Réservation servie ?", (11, 0.6),
+        [condition("={{ ($json.reservation || {}).status }}", "string", "equals", "CONFIRMED")],
+    )  # fmt: skip
+    resa_ok = noop(wf, "Journal : réservation confirmée (servie en premier)", (12, 0.3))
+    resa_ko = set_node(
+        wf,
+        "Préparer l’avis : réservation non servie (remboursement préparé)",
+        (12, 0.9),
+        [
+            ("sujet", "=[PRÉ-DROP] Réservation {{ $json.reservation.order_id }} non servie : remboursement intégral préparé", "string"),
+            (
+                "texte",
+                "=Motif : {{ $json.reservation.not_served_reason }}. Remboursement {{ ($json.refund || {}).refund_id }} "
+                "({{ ($json.refund || {}).status }}) : intégral, supplément compris. Niveaux 1 et 2 : validation en un clic "
+                "depuis votre terminal (POST /predrop/refunds/<id>/approve, votre jeton) ; le workflow 02 l'exécute ensuite.\n"
+                "INTERNE — ne jamais transférer ni publier.",
+                "string",
+            ),
+        ],
+    )
+    resa_ko_mail = email(
+        wf, "Avis : réservation non servie (email, désactivé)", (13, 0.9), params="Paramètres — commande"
+    )
+    resa_fail = engine(
+        wf,
+        "Incident : réservation pré-drop non enregistrée",
+        "POST",
+        "/incidents",
+        (11, 1.4),
+        params="Paramètres — commande",
+        body=(
+            "{ cause: 'Commande ' + $('Préparer les réservations (une par pré-drop)').first().json.order_name + ' : "
+            "réservation pré-drop payée NON enregistrée par le moteur (' + (($json.error && ($json.error.message || "
+            "$json.error.description)) || 'erreur') + ')', kind: 'PREDROP_RESERVATION_NON_ENREGISTREE', severity: 'MAJEUR', "
+            "scope: 'WORKFLOW', workflow: '02-commande:' + $('Préparer les réservations (une par pré-drop)').first().json.order_name, "
+            "proposed_action: 'Une commande payée n’est jamais perdue : la rattacher à la main (propriétaire) ou la rembourser "
+            "intégralement ; vérifier la dette de la photo du stop-loss.', actor: 'n8n:02-commande-livraison', "
+            f"simulation: {ref('Paramètres — commande')}.first().json.simulation }}"
+        ),
+    )
+    resa_unknown = engine(
+        wf,
+        "Incident : SKU de réservation inconnu du moteur",
+        "POST",
+        "/incidents",
+        (9, 1.6),
+        params="Paramètres — commande",
+        body=(
+            "{ cause: 'Commande ' + $json.order_name + ' : SKU de réservation ' + $json.sku + ' inconnu du moteur (aucun "
+            "pré-drop enregistré)', kind: 'PREDROP_SKU_INCONNU', severity: 'MAJEUR', scope: 'WORKFLOW', "
+            "workflow: '02-commande:' + $json.order_name, proposed_action: 'Commande payée : rattacher la réservation au "
+            "bon pré-drop (propriétaire) ou rembourser intégralement ; retirer la fiche de réservation orpheline.', "
+            f"actor: 'n8n:02-commande-livraison', simulation: {ref('Paramètres — commande')}.first().json.simulation }}"
+        ),
+    )
+    wf.link(anomaly, has_resa, 1)
+    wf.link(has_resa, resa_offers, 0)
+    wf.link(has_resa, no_resa, 1)
+    wf.chain(resa_offers, resa_prep, resa_known)
+    wf.link(resa_known, resa_hash, 0)
+    wf.link(resa_known, resa_unknown, 1)
+    wf.link(resa_hash, resa_record)
+    wf.link(resa_record, resa_served, 0)
+    wf.link(resa_record, resa_fail, 1)
+    wf.link(resa_served, resa_ok, 0)
+    wf.link(resa_served, resa_ko, 1)
+    wf.link(resa_ko, resa_ko_mail)
     # Suivi quotidien des colis.
     t2 = cron(wf, "Chaque jour ouvré 07:30 — colis à remettre", (0, 2), "30 7 * * 1-5")
     pb = params_node(
@@ -1717,6 +2130,82 @@ Données personnelles : aucune conservée (exécutions réussies non sauvegardé
         wf, "Envoyer le résumé du rapprochement (email, désactivé)", (6, 3.2), params="Paramètres — rapprochement"
     )
     wf.chain(t3, pc, tx, fees, record, summary, summary_mail)
+    # Pré-drop : remboursements APPROUVÉS -> exécution chez le prestataire (désactivée) -> relevé au moteur -> email.
+    t4 = cron(wf, "Toutes les 30 min — remboursements pré-drop approuvés", (0, 4.6), "*/30 * * * *")
+    pr = params_node(wf, "Paramètres — remboursements pré-drop", (1, 4.6), WORKFLOW_KEYS["02"])
+    read_r, guard_r = suspension_guard(wf, 2, 4.6, params="Paramètres — remboursements pré-drop", suffix=" (remboursements)")
+    held_r = noop(wf, "Remboursements suspendus (incident ouvert)", (4, 4))
+    approved = engine(
+        wf,
+        "Remboursements approuvés (GET /predrop/refunds)",
+        "GET",
+        "/predrop/refunds?status=APPROVED",
+        (4, 4.6),
+        params="Paramètres — remboursements pré-drop",
+    )
+    each = code_node(wf, "Un remboursement par élément", (5, 4.6), JS_PREDROP_REFUNDS_TO_EXECUTE)
+    psp = external(
+        wf,
+        "Rembourser intégralement — Shopify refundCreate (désactivé)",
+        "POST",
+        SHOPIFY_GRAPHQL_PLACEHOLDER,
+        (6, 4.6),
+        "shopify",
+        predefined=True,
+        body="{ query: 'mutation($input: RefundInput!, $key: String!) { refundCreate(input: $input) @idempotent(key: $key) "
+        "{ refund { id createdAt } userErrors { field message } } }', variables: { key: $json.refund_id, input: { "
+        "orderId: 'gid://shopify/Order/' + $json.shopify_order_id, notify: false, note: 'Remboursement intégral pré-drop "
+        "(supplément compris) : ' + $json.refund_id, transactions: [{ orderId: 'gid://shopify/Order/' + "
+        "$json.shopify_order_id, kind: 'REFUND', gateway: 'shopify_payments', amount: $json.amount_ttc }] } } }",
+        notes="Écriture d'argent : activer au niveau 2 seulement, après recette (forme de refundCreate, transaction parente "
+        "et passerelle à revérifier sur la version 2026-10). @idempotent (clé = identifiant du remboursement) : jamais "
+        "deux remboursements, même rejoué. Montant intégral lu dans le moteur.",
+        on_error="continueErrorOutput",
+    )
+    bilan = code_node(wf, "Bilan du remboursement (prestataire)", (7, 4.6), JS_PSP_REFUND_BILAN)
+    confirmed = if_node(
+        wf, "Remboursement confirmé par le prestataire ?", (8, 4.6), [condition("={{ $json.confirme }}", "boolean", "true")]
+    )
+    not_confirmed = noop(wf, "Non confirmé : rien n’est relevé (nouvel essai au passage suivant)", (9, 5.2))
+    executed = engine(
+        wf,
+        "Relever le remboursement exécuté (POST /predrop/refunds/{id}/executed)",
+        "POST",
+        "/predrop/refunds/{{ encodeURIComponent($json.refund_id) }}/executed",
+        (9, 4.4),
+        params="Paramètres — remboursements pré-drop",
+        body="{ executed_at: $json.executed_at, psp_refund_ref: $json.psp_refund_ref }",
+        notes="Seule sortie de la dette d'une réservation remboursée (photo du stop-loss) ; même référence : sans effet.",
+    )
+    first_time = if_node(
+        wf, "Premier relevé ?", (10, 4.4), [condition("={{ $json.changed }}", "boolean", "true")]
+    )
+    mail_client = external(
+        wf,
+        "Email au client : remboursement intégral — outil d’emailing (désactivé)",
+        "POST",
+        f"{EMAILING_PLACEHOLDER}/send",
+        (11, 4.2),
+        "emailing",
+        body="{ template: 'pre-drop-remboursement', shopify_order_id: String($json.refund.order_id).split('#')[0], "
+        "variables: { texte: $json.refund.email_draft } }",
+        notes="Texte = brouillon du moteur (motif, remboursement intégral supplément compris, aucune donnée interne) ; le "
+        "destinataire est retrouvé par la commande dans l'outil (aucune adresse ici). Champ {{NOM_BOUTIQUE}} remplacé à "
+        "l'intégration.",
+    )
+    already = noop(wf, "Déjà relevé : aucun nouvel email", (11, 4.8))
+    wf.chain(t4, pr, read_r)
+    wf.link(guard_r, held_r, 0)
+    wf.link(guard_r, approved, 1)
+    wf.chain(approved, each, psp)
+    wf.link(psp, bilan, 0)
+    wf.link(psp, bilan, 1)
+    wf.link(bilan, confirmed)
+    wf.link(confirmed, executed, 0)
+    wf.link(confirmed, not_confirmed, 1)
+    wf.link(executed, first_time)
+    wf.link(first_time, mail_client, 0)
+    wf.link(first_time, already, 1)
     return wf
 
 
@@ -1735,11 +2224,17 @@ L'agent 05 extrait la facture et le justificatif d'import (PDF/email) et l'envoi
 (`POST /costs/invoices`, jeton `n8n-03-factures`) : référence du coût d'une réception (± 2 %, sinon propriétaire) et dette
 de la photo du stop-loss jusqu'au paiement relevé (`POST /costs/invoices/{ref}/payments`, connecteur-tresorerie ou
 propriétaire) → **écarts > 2 %** signalés. Jamais de modification d'une commande client déjà conclue.
-**Activation** : niveau 1 (contrôles, validation, enregistrement de la facture).
-**Validation humaine requise** : chaque extraction (A_VALIDER_HUMAINEMENT), seuil d'écart de 2 %.
+**Pré-drop** : confirmation d'allocation **ferme** ou **réduction** extraite par l'agent 02 (sa passerelle, son secret)
+→ contrôles → réduction : réservations **fermées aussitôt** (acte protecteur) → **validation humaine** du justificatif
+(formulaire 72 h) → `POST /predrop/allocations` ou `/reduce` (pré-drop servi en premier, quota drop réduit d'abord,
+dernières réservations remboursées intégralement) → remboursements à valider **en un clic** par la propriétaire
+(niveaux 1-2, son jeton, depuis son terminal) ; rappel quotidien des remboursements en attente.
+**Activation** : niveau 1 (contrôles, validation, enregistrement de la facture et de l'allocation).
+**Validation humaine requise** : chaque extraction (A_VALIDER_HUMAINEMENT), seuil d'écart de 2 %, chaque allocation
+ferme et chaque réduction (justificatif fournisseur), chaque remboursement pré-drop aux niveaux 1 et 2.
 """,
-        width=640,
-        height=340,
+        width=680,
+        height=480,
     )
     hook = webhook(
         wf, "Facture extraite par l’agent 05 (passerelle)", (0, 0), "pokeshop-facture", gateway="gateway_03",
@@ -1869,6 +2364,176 @@ propriétaire) → **écarts > 2 %** signalés. Jamais de modification d'une com
     wf.link(gap, gap_msg, 0)
     wf.link(gap, up_to_date, 1)
     wf.link(gap_msg, gap_mail)
+    # Pré-drop (6.10.2026) : allocation ferme ou réduction, validée par la propriétaire sur justificatif.
+    ahook = webhook(
+        wf, "Confirmation d’allocation extraite par l’agent 02 (passerelle)", (0, 2.6), "pokeshop-allocation",
+        gateway="gateway_03_alloc",
+        notes='Secret remis au SEUL agent 02 (sourcing), qui ne bénéficie pas du pré-drop. Corps : {"kind": "allocation" | '
+        '"reduction", "product_key", "supplier_id", "qty" | "new_qty", "supplier_confirmation_ref", "expected_delivery", '
+        '"reason" (réduction), "document" (justificatif)}.',
+    )  # fmt: skip
+    ap = params_node(wf, "Paramètres — allocations", (1, 2.6), WORKFLOW_KEYS["03"])
+    achecks = code_node(wf, "Contrôles de la confirmation (déterministes)", (2, 2.6), JS_ALLOCATION_CHECKS)
+    acoherent = if_node(
+        wf, "Confirmation cohérente ?", (3, 2.6), [condition("={{ $json.anomalies_count }}", "number", "equals", 0)]
+    )
+    ainc = engine(
+        wf,
+        "Ouvrir un incident d’allocation",
+        "POST",
+        "/incidents",
+        (4, 3.4),
+        params="Paramètres — allocations",
+        body=(
+            "{ cause: 'Confirmation d’allocation ' + ($json.supplier_confirmation_ref || '?') + ' : ' + $json.anomalies.join(' ; '), "
+            "kind: 'ALLOCATION_ANOMALIE', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: '03-allocation:' + "
+            "($json.product_key || 'inconnue'), proposed_action: 'Reprendre l’extraction (référence, quantité, justificatif) "
+            "puis renvoyer ; aucune allocation enregistrée.', actor: 'n8n:03-facture-marge', "
+            "simulation: $('Paramètres — allocations').first().json.simulation, details: { anomalies: $json.anomalies } }"
+        ),
+    )
+    is_red = if_node(
+        wf, "Réduction annoncée ?", (4, 2.2), [condition("={{ $json.kind }}", "string", "equals", "reduction")]
+    )
+    red_offers = engine(
+        wf, "Pré-drops du moteur (GET /predrop/offers)", "GET", "/predrop/offers", (5, 1.8), params="Paramètres — allocations"
+    )
+    red_open = code_node(wf, "Pré-drop ouvert de la référence", (6, 1.8), JS_OPEN_PREDROP_OF_PRODUCT)
+    has_open = if_node(wf, "Pré-drop ouvert ?", (7, 1.8), [condition("={{ $json.ouvert }}", "boolean", "true")])
+    close = engine(
+        wf,
+        "Fermer les réservations (acte protecteur, POST /predrop/{id}/close)",
+        "POST",
+        "/predrop/{{ encodeURIComponent($json.predrop_id) }}/close",
+        (8, 1.6),
+        params="Paramètres — allocations",
+        body="{ reason: 'Réduction d’allocation annoncée par le fournisseur (workflow 03) : réservations fermées avant validation' }",
+        notes="Protecteur (plus aucun argent encaissé à rembourser) : jamais une réouverture ; un nouveau pré-drop exige "
+        "une nouvelle allocation ferme.",
+    )
+    ask_v = set_node(
+        wf,
+        "Préparer la demande de validation (allocation ou réduction)",
+        (8, 2.6),
+        [
+            ("sujet", "=[PRÉ-DROP] Valider : {{ $('Contrôles de la confirmation (déterministes)').first().json.resume }}", "string"),
+            (
+                "texte",
+                "={{ $('Contrôles de la confirmation (déterministes)').first().json.resume }}\n"
+                "Justificatif : {{ $('Contrôles de la confirmation (déterministes)').first().json.document }}\n"
+                "Vérifier le document du fournisseur (référence, quantité ferme, date), puis répondre : "
+                "{{ $execution.resumeFormUrl }}\n"
+                "Une allocation ferme rend le pré-drop possible ; une réduction sert le pré-drop en premier (ordre de "
+                "paiement), réduit d'abord le quota drop puis prépare le remboursement intégral des dernières réservations.\n"
+                "INTERNE — ne jamais transférer ni publier.",
+                "string",
+            ),
+        ],
+    )
+    ask_v_mail = email(
+        wf, "Demander la validation de la confirmation (email, désactivé)", (9, 2.6), params="Paramètres — allocations"
+    )
+    wait_v = wait_form(
+        wf,
+        "Validation humaine de la confirmation fournisseur (formulaire, 72 h)",
+        (10, 2.6),
+        title="Pré-drop : confirmation fournisseur",
+        description="={{ $('Contrôles de la confirmation (déterministes)').first().json.resume }}\nJustificatif : "
+        "{{ $('Contrôles de la confirmation (déterministes)').first().json.document }}\nLe document du fournisseur "
+        "confirme-t-il exactement cette quantité ?",
+        choices=("Conforme au justificatif", "Non conforme"),
+        hours=72,
+    )
+    valid_v = if_node(
+        wf,
+        "Confirmation validée ?",
+        (11, 2.6),
+        [condition("={{ $json['Décision'] }}", "string", "equals", "Conforme au justificatif")],
+    )
+    route_v = if_node(
+        wf,
+        "Réduction validée ?",
+        (12, 2.4),
+        [condition("={{ $('Contrôles de la confirmation (déterministes)').first().json.kind }}", "string", "equals", "reduction")],
+    )
+    chk = "$('Contrôles de la confirmation (déterministes)').first().json"
+    reduce = engine(
+        wf,
+        "Enregistrer la réduction (POST /predrop/allocations/{référence}/reduce)",
+        "POST",
+        f"/predrop/allocations/{{{{ encodeURIComponent({chk}.product_key) }}}}/reduce",
+        (13, 2),
+        params="Paramètres — allocations",
+        body=f"{{ new_qty: {chk}.qty, supplier_confirmation_ref: {chk}.supplier_confirmation_ref, reason: {chk}.reason }}",
+        notes="Pré-drop servi en premier (ordre de paiement, réserve conservée), quota drop réduit d'abord, puis "
+        "remboursement intégral des dernières réservations (préparé + brouillon d'email). Idempotente par confirmation.",
+    )
+    refunds_msg = code_node(wf, "Remboursements à valider par la propriétaire ?", (14, 2), JS_REFUNDS_FOR_OWNER)
+    refunds_mail = email(
+        wf, "Demander la validation des remboursements (email, désactivé)", (15, 2), params="Paramètres — allocations"
+    )
+    alloc = engine(
+        wf,
+        "Enregistrer l’allocation ferme (POST /predrop/allocations)",
+        "POST",
+        "/predrop/allocations",
+        (13, 2.8),
+        params="Paramètres — allocations",
+        body=f"{{ product_key: {chk}.product_key, supplier_id: {chk}.supplier_id, qty: {chk}.qty, "
+        f"supplier_confirmation_ref: {chk}.supplier_confirmation_ref, expected_delivery: {chk}.expected_delivery || null, "
+        "source: 'confirmation fournisseur extraite par l’agent 02, validée par la propriétaire (formulaire 03)' }",
+        notes="Valeur décisive posée par n8n-03-factures APRÈS la validation de la propriétaire ; fournisseur inconnu du "
+        "moteur pour la référence : 409 (la propriétaire la pose elle-même). Une baisse passe par la réduction.",
+    )
+    alloc_done = noop(wf, "Journal : allocation ferme enregistrée", (14, 2.8))
+    refused_v = engine(
+        wf,
+        "Confirmation refusée : incident",
+        "POST",
+        "/incidents",
+        (12, 3.2),
+        params="Paramètres — allocations",
+        body=(
+            f"{{ cause: 'Confirmation ' + {chk}.supplier_confirmation_ref + ' jugée non conforme : ' + ($json['Motif'] || "
+            "'sans réponse sous 72 h'), kind: 'ALLOCATION_NON_CONFORME', severity: 'MAJEUR', scope: 'WORKFLOW', "
+            f"workflow: '03-allocation:' + {chk}.product_key, proposed_action: 'Aucune allocation ni réduction enregistrée ; "
+            "réservations déjà fermées par précaution le restent (nouveau pré-drop sur nouvelle confirmation).', "
+            "actor: 'n8n:03-facture-marge', simulation: $('Paramètres — allocations').first().json.simulation }"
+        ),
+    )
+    wf.chain(ahook, ap, achecks, acoherent)
+    wf.link(acoherent, is_red, 0)
+    wf.link(acoherent, ainc, 1)
+    wf.link(is_red, red_offers, 0)
+    wf.link(is_red, ask_v, 1)
+    wf.chain(red_offers, red_open, has_open)
+    wf.link(has_open, close, 0)
+    wf.link(has_open, ask_v, 1)
+    wf.link(close, ask_v)
+    wf.chain(ask_v, ask_v_mail, wait_v, valid_v)
+    wf.link(valid_v, route_v, 0)
+    wf.link(valid_v, refused_v, 1)
+    wf.link(route_v, reduce, 0)
+    wf.link(route_v, alloc, 1)
+    wf.chain(reduce, refunds_msg, refunds_mail)
+    wf.link(alloc, alloc_done)
+    # Rappel quotidien : remboursements pré-drop préparés qui attendent la propriétaire (réservations non servies ou
+    # réduction) ; validation en un clic par son jeton, jamais dans n8n.
+    t2 = cron(wf, "Chaque jour 08:15 — remboursements pré-drop à valider", (0, 4.2), "15 8 * * *")
+    rp = params_node(wf, "Paramètres — remboursements à valider", (1, 4.2), WORKFLOW_KEYS["03"])
+    pending = engine(
+        wf,
+        "Remboursements en attente (GET /predrop/refunds)",
+        "GET",
+        "/predrop/refunds?status=PENDING_OWNER",
+        (2, 4.2),
+        params="Paramètres — remboursements à valider",
+    )
+    pending_msg = code_node(wf, "Liste des remboursements à valider", (3, 4.2), JS_REFUNDS_FOR_OWNER)
+    pending_mail = email(
+        wf, "Rappeler les remboursements à valider (email, désactivé)", (4, 4.2), params="Paramètres — remboursements à valider"
+    )
+    wf.chain(t2, rp, pending, pending_msg, pending_mail)
     return wf
 
 
@@ -2182,11 +2847,16 @@ def wf06(cmap: Mapping[str, str] | None = None) -> Workflow:
   aux outils ; lien invalide = page d'erreur honnête ; retrait non confirmé par un outil = incident (traitement manuel
   sans délai, envois marketing suspendus jusqu'à la reprise).
 Aucun prix ni donnée interne dans un email : titre, statut et prix lus sur la page publique au moment de l'envoi.
+- **Pré-drop** : signal de demande **agrégé** chaque jour (`POST /predrop/demand` : un nombre par référence, aucune
+  adresse) ; annonces par étape calculée par le moteur : **fenêtre prioritaire** (24 h par défaut) aux seuls inscrits
+  consentants qui suivent la référence, puis **ouverture à tous** ; jamais pour des réservations fermées ; ni quantité, ni
+  heure de fermeture, ni compte à rebours.
 **Activation** : liens des emails AVANT tout envoi ; envois au niveau 3. Pas de SMS ni d'email non sollicité.
-**Validation humaine requise** : outil d'emailing (B04), seuil de stock d'alerte, délai d'avis, notes juristes C2-C4.
+**Validation humaine requise** : outil d'emailing (B04), seuil de stock d'alerte, délai d'avis, notes juristes C2-C4,
+textes des annonces pré-drop (aucune fausse urgence).
 """,
         width=720,
-        height=480,
+        height=560,
     )
     # A. Réception contrôlée -> stock local -> alerte.
     hook = webhook(
@@ -2650,6 +3320,133 @@ Aucun prix ni donnée interne dans un email : titre, statut et prix lus sur la p
     wf.link(ac, okc)
     wf.link(okc, go_c, 0)
     wf.link(okc, not_c, 1)
+    # H. Pré-drop (6.10.2026) : signal de demande agrégé (aucune donnée personnelle dans le moteur).
+    td = cron(wf, "Chaque jour 06:40 — signal de demande pré-drop", (0, 16.6), "40 6 * * *")
+    pdm = params_node(wf, "Paramètres — demande pré-drop", (1, 16.6), WORKFLOW_KEYS["06"])
+    read_d, guard_d = suspension_guard(
+        wf, 2, 16.6, params="Paramètres — demande pré-drop", include_global=False, suffix=" (demande pré-drop)"
+    )
+    held_d = noop(wf, "Signal de demande suspendu (incident ouvert)", (4, 16))
+    subs_d = external(
+        wf,
+        "Lire les inscrits confirmés — outil d’emailing (désactivé, demande)",
+        "GET",
+        f"{EMAILING_PLACEHOLDER}/subscribers?status=confirme",
+        (4, 16.6),
+        "emailing",
+        notes="Lecture seule des inscrits confirmés ; le compte est fait dans n8n, seul un nombre par référence sort.",
+    )
+    count_d = code_node(wf, "Compter les inscrits par référence (agrégé, sans donnée personnelle)", (5, 16.6), JS_DEMAND_COUNT)
+    post_d = engine(
+        wf,
+        "Signal de demande agrégé (POST /predrop/demand)",
+        "POST",
+        "/predrop/demand",
+        (6, 16.6),
+        params="Paramètres — demande pré-drop",
+        body="{ product_key: $json.product_key, interested_consenting_subscribers: $json.interested_consenting_subscribers, "
+        "as_of: $json.as_of, source: $json.source }",
+        on_error="continueErrorOutput",
+        notes="Jeton n8n-06-marketing : un nombre, une date, une source ; tout autre champ (adresse, nom) est refusé (422). "
+        "Plus ancien que le compte en vigueur : 409 (ignoré).",
+    )
+    done_d = noop(wf, "Journal : demande relevée", (7, 16.3))
+    skip_d = noop(wf, "Compte refusé par le moteur (ancien ou invalide)", (7, 16.9))
+    wf.chain(td, pdm, read_d)
+    wf.link(guard_d, held_d, 0)
+    wf.link(guard_d, subs_d, 1)
+    wf.chain(subs_d, count_d, post_d)
+    wf.link(post_d, done_d, 0)
+    wf.link(post_d, skip_d, 1)
+    # I. Pré-drop : fenêtre prioritaire puis ouverture à tous (une annonce par étape, étape calculée par le moteur).
+    tp = cron(wf, "Toutes les heures (:25) — annonces pré-drop", (0, 18.2), "25 * * * *")
+    ppa = params_node(wf, "Paramètres — annonces pré-drop", (1, 18.2), WORKFLOW_KEYS["06"])
+    read_a2, guard_a2 = suspension_guard(wf, 2, 18.2, params="Paramètres — annonces pré-drop", suffix=" (annonces pré-drop)")
+    held_a2 = noop(wf, "Annonces pré-drop suspendues (incident ouvert)", (4, 17.6))
+    offers_a = engine(
+        wf,
+        "Pré-drops du moteur (GET /predrop/offers)",
+        "GET",
+        "/predrop/offers",
+        (4, 18.2),
+        params="Paramètres — annonces pré-drop",
+        notes="L'étape (prioritaire, ouvertes, fermées) est calculée par le moteur : paramètres signés, quota, gel, "
+        "stop-loss non évaluable ou quarantaine => fermées, rien n'est annoncé.",
+    )
+    steps = code_node(wf, "Étapes à annoncer (une par pré-drop)", (5, 18.2), JS_PREDROP_STEPS)
+    subs_a = external(
+        wf,
+        "Lire les inscrits confirmés — outil d’emailing (désactivé, annonces)",
+        "GET",
+        f"{EMAILING_PLACEHOLDER}/subscribers?status=confirme",
+        (6, 18.2),
+        "emailing",
+        notes="Lecture seule ; une lecture par pré-drop à annoncer.",
+    )
+    audience = code_node(wf, "Inscrits consentants qui suivent la référence", (7, 18.2), JS_PREDROP_AUDIENCE)
+    once_a = dedupe(
+        wf,
+        "Une annonce par pré-drop et par personne",
+        (8, 18.2),
+        "={{ $json.predrop_id }}|{{ $json.subscriber_id }}",
+        notes="Annoncé en fenêtre prioritaire : pas de second email à l'ouverture à tous.",
+    )
+    comp_a = set_node(
+        wf,
+        "Composer l’annonce pré-drop (sans prix ni compte à rebours)",
+        (9, 18.2),
+        [
+            ("modele", "={{ $json.etape === 'prioritaire' ? 'pre-drop-acces-prioritaire' : 'pre-drop-ouverture' }}", "string"),
+            ("url_reservation", "={{ $json.url_reservation }}", "string"),
+            ("date_drop", "={{ $json.date_drop }}", "string"),
+        ],
+        notes="Variables : lien de la fiche de réservation et date du drop seulement. Prix, statut et textes de garantie "
+        "lus sur la page publique au moment de l'envoi (EMAILS §4) ; jamais de quantité ni d'heure de fermeture.",
+    )
+    tag_if = if_node(
+        wf,
+        "Fenêtre prioritaire et client Shopify lié ?",
+        (10, 18.2),
+        [
+            condition("={{ $json.etape }}", "string", "equals", "prioritaire"),
+            condition("={{ $json.shopify_customer_id }}", "string", "notEmpty"),
+        ],
+        notes="L'accès prioritaire est attesté par l'étiquette alerte-produit:<handle> du client Shopify (thème et "
+        "workflow 02).",
+    )
+    tag_a = external(
+        wf,
+        "Étiqueter l’inscrit (alerte-produit) — Shopify (désactivé)",
+        "POST",
+        SHOPIFY_GRAPHQL_PLACEHOLDER,
+        (11, 17.8),
+        "shopify",
+        predefined=True,
+        body="{ query: 'mutation($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { field message } } }', "
+        "variables: { id: 'gid://shopify/Customer/' + $json.shopify_customer_id, tags: [$json.alert_tag] } }",
+        notes="Écriture Shopify (niveau 3) : seulement pour un inscrit confirmé qui suit la référence ; l'étiquette ouvre "
+        "le bouton pendant la fenêtre prioritaire (da-reservation-acces).",
+    )
+    send_a = external(
+        wf,
+        "Envoyer l’annonce pré-drop — outil d’emailing (désactivé)",
+        "POST",
+        f"{EMAILING_PLACEHOLDER}/send",
+        (12, 18.2),
+        "emailing",
+        body="{ template: $('Composer l’annonce pré-drop (sans prix ni compte à rebours)').item.json.modele, "
+        "subscriber_id: $('Composer l’annonce pré-drop (sans prix ni compte à rebours)').item.json.subscriber_id, "
+        "variables: { url_reservation: $('Composer l’annonce pré-drop (sans prix ni compte à rebours)').item.json.url_reservation, "
+        "date_drop: $('Composer l’annonce pré-drop (sans prix ni compte à rebours)').item.json.date_drop } }",
+        notes="Niveau 3 seulement. Annonce aux seuls inscrits confirmés qui suivent la référence ; désinscription en un clic.",
+    )
+    wf.chain(tp, ppa, read_a2)
+    wf.link(guard_a2, held_a2, 0)
+    wf.link(guard_a2, offers_a, 1)
+    wf.chain(offers_a, steps, subs_a, audience, once_a, comp_a, tag_if)
+    wf.link(tag_if, tag_a, 0)
+    wf.link(tag_if, send_a, 1)
+    wf.link(tag_a, send_a)
     return wf
 
 

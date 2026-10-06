@@ -99,6 +99,18 @@
 .da-badge--new { background: var(--da-color-status-new-bg); color: var(--da-color-status-new-fg); }
 .da-badge--out { background: var(--da-color-status-out-bg); color: var(--da-color-status-out-fg); }
 .da-badge--restock { background: var(--da-color-status-restock-bg); color: var(--da-color-status-restock-fg); }
+/* Pré-drop : « Réservation garantie » (paire précommande, contour plein pour la distinguer) et « Drop le JJ.MM »
+   (paire texte/fond). Jamais de compteur, de minuteur ni de « plus que N » : un statut et une date. */
+.da-badge--reservation {
+  background: var(--da-color-status-preorder-bg);
+  color: var(--da-color-status-preorder-fg);
+  box-shadow: inset 0 0 0 2px var(--da-color-status-preorder-fg);
+}
+.da-badge--drop {
+  background: var(--da-color-bg);
+  color: var(--da-color-ink);
+  box-shadow: inset 0 0 0 1px var(--da-color-line-strong);
+}
 
 /* ---------- Boutons ---------- */
 .da-btn {
@@ -185,6 +197,7 @@
 .da-stock .da-icon { margin-top: 1px; }
 .da-stock--local { color: var(--da-color-status-local-fg); }
 .da-stock--preorder { color: var(--da-color-status-preorder-fg); }
+.da-stock--reservation { color: var(--da-color-status-preorder-fg); }
 .da-stock--out { color: var(--da-color-status-out-fg); }
 .da-stock__detail { display: block; font-weight: 400; color: var(--da-color-ink-muted); }
 

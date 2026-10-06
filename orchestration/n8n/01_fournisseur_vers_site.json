@@ -609,6 +609,262 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "20 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "7b09ad11-352c-50ba-bc42-f6a33bbdea2b",
+      "name": "Toutes les heures (:20) — fiches de réservation pré-drop",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "226e17ac-5e47-5736-a6d6-5965a85bfce5",
+              "name": "workflow",
+              "value": "fournisseur-site",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "fb426f43-21f4-55d0-a590-a1186558113f",
+      "name": "Paramètres — pré-drop",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        600
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — pré-drop').first().json.api_base_url }}/incidents?open_only=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "340d2483-9644-5cda-ba41-e0ba7fe6e302",
+      "name": "Garde : incidents ouverts (pré-drop)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        600
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n01Syn",
+          "name": "Pokeshop API — jeton nommé n8n-01-sync"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "41db045e-a4f6-501e-9791-7d17db2473ed",
+              "leftValue": "={{ Object.keys($json.suspended || {}).some(t => t === $('Paramètres — pré-drop').first().json.workflow) }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "884c3f93-e68c-51e8-977f-c41fd5d0398c",
+      "name": "Workflow suspendu ? (pré-drop)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        600
+      ],
+      "notes": "Suspension = incident ouvert sur ce workflow (un gel global n'arrête pas une simulation : le moteur refuse toute écriture réelle).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "df0c5834-b9a2-5fe1-9148-eb1fa47737cc",
+      "name": "Publication pré-drop suspendue (incident ouvert)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — pré-drop').first().json.api_base_url }}/predrop/offers",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "4eedb02a-8047-5489-b48d-990181b5ddfe",
+      "name": "Pré-drops du moteur (GET /predrop/offers)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        600
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n01Syn",
+          "name": "Pokeshop API — jeton nommé n8n-01-sync"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pré-drops dont la fiche « Réservation garantie » est à publier, mettre à jour ou retirer (registre du moteur).\n// Rien n'est décidé ici : statut des réservations, prix, retrait au drop et inventaire sont calculés par le moteur\n// (POST /predrop/{id}/publish). Un pré-drop en attente de la propriétaire n'est jamais publié ; deux jours après le\n// drop, la fiche est retirée depuis longtemps (brouillon) : plus rien à faire.\nconst data = $input.first().json || {};\nconst internal = Array.isArray(data.internal) ? data.internal : [];\nconst now = new Date();\nconst limit = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 2)).toISOString().slice(0, 10);\nreturn internal\n  .filter((p) => p && p.status !== 'PENDING_OWNER' && typeof p.drop_date === 'string' && p.drop_date >= limit)\n  .map((p) => ({ json: { predrop_id: String(p.predrop_id), phase: p.phase || null, drop_date: p.drop_date } }));\n"
+      },
+      "id": "64a25faf-3cb6-54be-a305-e7cb32d2545f",
+      "name": "Pré-drops à publier ou à retirer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — pré-drop').first().json.api_base_url }}/predrop/{{ encodeURIComponent($json.predrop_id) }}/publish",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ dry_run: true }) }}"
+      },
+      "id": "be61dd00-d14d-53c8-8479-ba9f1a2a716b",
+      "name": "Fiche de réservation (POST /predrop/{id}/publish, simulation)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        600
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n01Syn",
+          "name": "Pokeshop API — jeton nommé n8n-01-sync"
+        }
+      },
+      "notes": "dry_run: true explicite. Le moteur construit tout depuis ses registres : fiche jumelle « Réservation garantie » (prix pré-drop figé, planchers revérifiés), statut prioritaire / ouvertes / fermées, retrait au drop ou sur blocage (gel, quarantaine, paramètres non signés), inventaire = réservations encore ouvertes. Écriture réelle : même décision que pour 01 (C14, niveau 2 ; création d'une fiche : niveau 3).",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Publication de la fiche de réservation : seules les erreurs critiques (vérification, champ interne, inventaire\n// inconnu en écriture réelle) donnent une alerte ; le compte rendu est INTERNE (cible d'inventaire comprise).\nconst items = $input.all();\nconst out = [];\nitems.forEach((item) => {\n  const r = (item.json || {}).report || {};\n  const errors = Array.isArray(r.critical_errors) ? r.critical_errors : [];\n  if (!errors.length) return;\n  out.push({ json: {\n    sujet: `[PRÉ-DROP] Fiche de réservation ${r.predrop_id || '?'} : ${errors.length} erreur(s) critique(s)`,\n    texte: `Pré-drop ${r.predrop_id} (${r.phase}) : ${errors.join(' ; ')}\\nIssue : ${r.plan_outcome} ; inventaire : ${r.inventory_action}.\\n`\n      + 'Rien d\\'autre n\\'est publié tant que la cause n\\'est pas corrigée (fermé par défaut).\\n'\n      + 'INTERNE — ne jamais transférer ni publier.',\n  } });\n});\nreturn out;\n"
+      },
+      "id": "022035f9-8d32-5006-afbc-b74cfe207d73",
+      "name": "Erreurs critiques de publication ?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — pré-drop').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "691e7618-39f5-50b9-9b31-0310c3a5e761",
+      "name": "Alerter : fiche de réservation (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2240,
+        600
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
     }
   ],
   "connections": {
@@ -821,6 +1077,101 @@
         [
           {
             "node": "Alerter la responsable (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Garde : incidents ouverts (pré-drop)": {
+      "main": [
+        [
+          {
+            "node": "Workflow suspendu ? (pré-drop)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Toutes les heures (:20) — fiches de réservation pré-drop": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — pré-drop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — pré-drop": {
+      "main": [
+        [
+          {
+            "node": "Garde : incidents ouverts (pré-drop)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow suspendu ? (pré-drop)": {
+      "main": [
+        [
+          {
+            "node": "Publication pré-drop suspendue (incident ouvert)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pré-drops du moteur (GET /predrop/offers)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pré-drops du moteur (GET /predrop/offers)": {
+      "main": [
+        [
+          {
+            "node": "Pré-drops à publier ou à retirer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pré-drops à publier ou à retirer": {
+      "main": [
+        [
+          {
+            "node": "Fiche de réservation (POST /predrop/{id}/publish, simulation)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fiche de réservation (POST /predrop/{id}/publish, simulation)": {
+      "main": [
+        [
+          {
+            "node": "Erreurs critiques de publication ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Erreurs critiques de publication ?": {
+      "main": [
+        [
+          {
+            "node": "Alerter : fiche de réservation (email, désactivé)",
             "type": "main",
             "index": 0
           }

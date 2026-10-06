@@ -2,7 +2,7 @@
 
 * R4-DOC-06 : la commande de génération de ``DELEGATION_AUTONOMIE.md`` §10 étape 6 est exécutée **telle qu'écrite** avec
   les seuls outils de macOS (``shasum -a 256`` et ``rm -P`` simulés, ni ``sha256sum`` ni ``shred``) : 17 jetons, 17
-  empreintes justes, 10 secrets ; sans outil d'empreinte, arrêt avant toute écriture ; valeur vide en cours de route,
+  empreintes justes, 11 secrets (pré-drop : passerelle 03 des allocations) ; sans outil d'empreinte, arrêt avant toute écriture ; valeur vide en cours de route,
   arrêt et fichiers déjà écrits effacés ; fichiers déjà présents, refus sans rien toucher.
 * R4-DOC-04 et R4-DOC-05 : un seul ordre d'activation des workflows, cohérent avec les niveaux d'autonomie (02 et les
   déclencheurs Shopify de 06 au niveau 2, 07 après C19) ; C29 bloque l'alerte S1 de 04 et l'activation de 07, jamais
@@ -113,12 +113,12 @@ def test_r4doc06_generation_runs_with_macos_tools_only(tmp_path: Path) -> None:
     home.mkdir()
     done = _run_generation(_toolbox(tmp_path), home)
     assert done.returncode == 0, done.stderr
-    assert "OK : 17 jetons, 17 empreintes, 10 secrets" in done.stdout
+    assert "OK : 17 jetons, 17 empreintes, 11 secrets" in done.stdout
     folder = home / "pokeshop-jetons"
     tokens = dict(ln.split("\t") for ln in (folder / "jetons-roles.txt").read_text().splitlines())
     hashes = dict(ln.split("=", 1) for ln in (folder / "empreintes-roles.env").read_text().splitlines())
     gateways = (folder / "secrets-passerelles.txt").read_text().splitlines()
-    assert len(tokens) == len(hashes) == 17 and len(gateways) == 10
+    assert len(tokens) == len(hashes) == 17 and len(gateways) == 11
     for role, token in tokens.items():  # empreinte = sha256 du jeton, jamais vide (sortie de shasum découpée)
         var = "POKESHOP_ROLE_TOKEN_SHA256_" + role.upper().replace("-", "_")
         assert hashes[var] == hashlib.sha256(token.encode()).hexdigest(), role
@@ -203,14 +203,22 @@ def test_r4doc05_c29_blocks_the_s1_alert_and_workflow_07_never_the_activation_of
         assert "J8" in text or "BL-186" in text  # 04 est actif par email depuis J8 (B27, BL-186)
 
 
-def test_gateway_secret_count_is_ten_everywhere() -> None:
+def test_gateway_secret_count_matches_the_generator_everywhere() -> None:
+    """R4-DOC-11 : plus de passerelle 08 pour l'agent 05 (10 secrets) ; pré-drop (6.10.2026) : + passerelle 03 des
+    allocations de l'agent 02. Partout le nombre du générateur n8n (un secret par credential « Passerelle … »)."""
+    import test_n8n_workflows as N
+
+    expected = len(N.GEN.GATEWAY_HOLDERS)
+    assert expected == 11 and N.GEN.GATEWAY_HOLDERS["gateway_03_alloc"] == "sourcing"
+    assert "gateway_08_finance-pricing" not in N.GEN.GATEWAY_HOLDERS  # R4-DOC-11 : l'agent 05 paie, ne demande pas
     for rel in ("docs/08-agents/README.md", "docs/00-pilotage/PLAN_90_JOURS.md", "docs/00-pilotage/INTERVENTIONS_HUMAINES.md",
                 "docs/00-pilotage/DELEGATION_AUTONOMIE.md", "README.md"):  # fmt: skip
         text = D4._text(rel)
-        assert not re.search(r"secrets? (par|de) passerelles?[^|.;]{0,20}\(11\b", text), rel
-        assert "11 secrets" not in text and "11 passerelles" not in text, rel
-    assert "secret par passerelle n8n (10" in D4._text("docs/08-agents/README.md")
-    assert "secret par passerelle n8n (10)" in D4._text("docs/00-pilotage/PLAN_90_JOURS.md")
+        assert not re.search(r"secrets? (par|de) passerelles?[^|.;]{0,20}\((10|dix)\b", text), rel
+        assert "10 secrets" not in text and "10 passerelles" not in text, rel
+    assert f"secret par passerelle n8n ({expected}" in D4._text("docs/08-agents/README.md")
+    assert f"secret par passerelle n8n ({expected})" in D4._text("docs/00-pilotage/PLAN_90_JOURS.md")
+    assert f"-eq {expected}\n" in D4._text("docs/00-pilotage/DELEGATION_AUTONOMIE.md")
 
 
 # ======================================================================= revue adverse de sécurité
@@ -294,7 +302,7 @@ STALE_R5 = (
     "exige un avoir enregistré",  # R3-NEW-05 : avoir à lignes ≥ coût + retour physique d'un autre jeton
     "tous activés à J26 sauf 07",  # R4-DOC-04
     "Activation des workflows 04 et 07",  # R4-DOC-05
-    "secret par passerelle n8n (11",  # R4-DOC-11 : 10 secrets, plus de passerelle 08 pour l'agent 05
+    "secret par passerelle n8n (10",  # pré-drop (6.10.2026) : 11 secrets (passerelle 03 des allocations, agent 02)
     "× 6 ou × 36",  # R2-NEW-01 c : quantités rapprochées
     "Passerelle 08 dépense — secret de l'agent 05",  # R4-DOC-11
     "| sha256sum | cut -d' ' -f1)\" >> empreintes-roles.env",  # R4-DOC-06 : empreinte non portable, jamais contrôlée

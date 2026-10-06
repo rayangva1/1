@@ -4,6 +4,10 @@
     « Stock local »                         produit à Genève, vendable (stock local après réservations, dommages, sécurité)
     « Précommande (allocation confirmée) »  quantité attribuée confirmée par écrit (PRECOMMANDES §2.1)
     « Rupture – alerte »                    plus d'unité vendable ; alerte de réassort proposée
+  Fiche de réservation d'un pré-drop (type « Réservation garantie », métachamps boutique.reservation_statut et
+  boutique.date_drop) : « Réservations ouvertes », « Réservations ouvertes aux inscrits aux alertes » (fenêtre
+  prioritaire) ou « Réservations fermées », avec la date du drop ; jamais une heure de fermeture, un compte à rebours
+  ni un nombre d'unités.
   Paramètres : product (obligatoire) ; contexte = 'fiche' (défaut, avec détail) | 'carte' (libellé seul).
   Règle : l'inventaire Shopify décide. Produit non achetable => rupture. Produit achetable sans statut public cohérent
   => « Disponibilité à confirmer » (data-statut="inconnu") : anomalie que la recette doit faire corriger (fiche en brouillon).
@@ -21,8 +25,41 @@
   assign statut_date = product.metafields.boutique.date_sortie_statut.value | default: 'inconnue'
   assign alerte = product.metafields.boutique.alerte_reassort.value
   assign fin_serie = product.metafields.boutique.fin_de_serie.value
+  assign resa_statut = product.metafields.boutique.reservation_statut.value
+  assign date_drop = product.metafields.boutique.date_drop.value
+  if product.type == 'Réservation garantie'
+    assign statut = 'reservation_fermee'
+    if product.available == true
+      if resa_statut == 'ouvertes' or resa_statut == 'prioritaire'
+        assign statut = 'reservation'
+      endif
+    endif
+  endif
 -%}
 {%- case statut -%}
+  {%- when 'reservation' -%}
+    <p class="da-stock da-stock--reservation" data-statut="reservation">
+      {%- render 'da-icone', nom: 'garantie', taille: 16 -%}
+      <span>{% if resa_statut == 'prioritaire' %}Réservations ouvertes aux inscrits aux alertes{% else %}Réservations ouvertes{% endif %}
+        {%- if contexte == 'fiche' -%}
+          <span class="da-stock__detail">
+            {%- if date_drop and date_drop != '' -%}Drop le {{ date_drop | date: '%d.%m.%Y' }} · {% endif -%}
+            servie en premier, expédiée dès réception du stock.
+          </span>
+        {%- endif -%}
+      </span>
+    </p>
+  {%- when 'reservation_fermee' -%}
+    <p class="da-stock da-stock--out" data-statut="reservation-fermee">
+      {%- render 'da-icone', nom: 'drop', taille: 16 -%}
+      <span>Réservations fermées
+        {%- if contexte == 'fiche' -%}
+          <span class="da-stock__detail">
+            {%- if date_drop and date_drop != '' -%}Drop le {{ date_drop | date: '%d.%m.%Y' }}.{%- endif -%}
+          </span>
+        {%- endif -%}
+      </span>
+    </p>
   {%- when 'stock_local' -%}
     <p class="da-stock da-stock--local" data-statut="stock_local">
       {%- render 'da-icone', nom: 'local', taille: 16 -%}

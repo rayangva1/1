@@ -1,0 +1,93 @@
+{%- comment -%}
+  Encart « Réservation garantie » d'un pré-drop (décision de la propriétaire du 6.10.2026 ; docs/SPEC.md §2.11).
+  Paramètre : product (obligatoire) — la fiche de réservation (type « Réservation garantie ») ou la fiche normale.
+  Sources : métachamps boutique.reservation_statut (prioritaire | ouvertes | fermees), boutique.date_drop,
+  boutique.fiche_liee (handle de la fiche jumelle) et boutique.quantite_max, écrits par la publication du moteur
+  (engine/pokeshop/publish.py, build_predrop_publication) ; prix = champs natifs des deux fiches (aucun prix en dur).
+  Textes de garantie identiques à engine/pokeshop/predrop.py (GUARANTEE_TEXT_FR, NO_DIFFERENCE_REFUND_FR), contrôlés
+  par les tests : le supplément paie la garantie d'être servi en premier, pas le produit ; aucun remboursement de la
+  différence. Aucune fausse urgence : un statut et une date ; jamais une heure de fermeture, un compte à rebours, un
+  nombre d'unités restantes, un coût ni une marge.
+  Rien n'est affiché sans métachamps de pré-drop, ni sur la fiche normale une fois les réservations fermées.
+{%- endcomment -%}
+{%- liquid
+  assign resa_statut = product.metafields.boutique.reservation_statut.value
+  assign date_drop = product.metafields.boutique.date_drop.value
+  assign fiche_liee = product.metafields.boutique.fiche_liee.value
+  assign est_reservation = false
+  if product.type == 'Réservation garantie'
+    assign est_reservation = true
+  endif
+  assign ouvertes = false
+  if resa_statut == 'ouvertes' or resa_statut == 'prioritaire'
+    assign ouvertes = true
+  endif
+  if est_reservation and product.available != true
+    assign ouvertes = false
+  endif
+  assign drop_a_venir = false
+  if date_drop and date_drop != ''
+    assign jour = 'now' | date: '%Y%m%d' | plus: 0
+    assign jour_drop = date_drop | date: '%Y%m%d' | plus: 0
+    if jour_drop >= jour
+      assign drop_a_venir = true
+    endif
+  endif
+  assign afficher = false
+  if resa_statut and resa_statut != '' and drop_a_venir
+    if est_reservation or ouvertes
+      assign afficher = true
+    endif
+  endif
+  assign jumelle = nil
+  if fiche_liee and fiche_liee != ''
+    assign jumelle = all_products[fiche_liee]
+  endif
+  if est_reservation
+    assign fiche_resa = product
+    assign fiche_drop = jumelle
+    assign qmax = product.metafields.boutique.quantite_max.value
+  else
+    assign fiche_resa = jumelle
+    assign fiche_drop = product
+    assign qmax = jumelle.metafields.boutique.quantite_max.value
+  endif
+-%}
+{%- if afficher -%}
+<section class="da-panel da-reservation" aria-labelledby="reservation-{{ product.id }}" data-reservation="{{ resa_statut | escape }}">
+  <h2 class="da-title" id="reservation-{{ product.id }}">{% render 'da-icone', nom: 'garantie', taille: 18 %} Réservation garantie</h2>
+  <dl class="da-facts">
+    <dt>Réservations</dt>
+    <dd>
+      {%- if ouvertes and resa_statut == 'prioritaire' -%}Réservations ouvertes, d'abord aux inscrits aux alertes de ce produit, puis à tous.
+      {%- elsif ouvertes -%}Réservations ouvertes.
+      {%- else -%}Réservations fermées.
+      {%- endif -%}
+    </dd>
+    <dt>Drop</dt>
+    <dd>{{ date_drop | date: '%d.%m.%Y' }}</dd>
+    {%- if fiche_resa and fiche_resa.price -%}
+      <dt>Réservation garantie</dt>
+      <dd class="da-price">{{ fiche_resa.price | money }}</dd>
+    {%- endif -%}
+    {%- if fiche_drop and fiche_drop.price -%}
+      <dt>Au drop</dt>
+      <dd class="da-price">{{ fiche_drop.price | money }}</dd>
+    {%- endif -%}
+    {%- if qmax and qmax != '' -%}
+      <dt>Limite</dt>
+      <dd>{{ qmax }} réservation{% if qmax > 1 %}s{% endif %} garantie{% if qmax > 1 %}s{% endif %} par foyer (toutes commandes confondues).</dd>
+    {%- endif -%}
+  </dl>
+  <p class="da-note">Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.</p>
+  <p class="da-note">Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.</p>
+  <p class="da-muted">Si nous ne pouvons pas vous servir (par exemple si nous recevons moins d'unités que prévu), nous vous remboursons intégralement, supplément compris, et nous vous prévenons par email.</p>
+  {%- if jumelle and jumelle.url -%}
+    {%- if est_reservation -%}
+      <p><a href="{{ jumelle.url }}">Voir le produit au prix du drop</a></p>
+    {%- elsif ouvertes -%}
+      <p><a href="{{ jumelle.url }}">Réserver avec garantie</a></p>
+    {%- endif -%}
+  {%- endif -%}
+</section>
+{%- endif -%}

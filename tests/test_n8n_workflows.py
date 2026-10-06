@@ -318,7 +318,7 @@ def test_human_forms_are_protected_and_time_limited() -> None:
         for n in wf["nodes"]
         if n["type"] == "n8n-nodes-base.wait" and n["parameters"].get("resume") == "form"
     ]
-    assert len(forms) == 3
+    assert len(forms) == 4  # 03 : facture et, pré-drop (6.10.2026), confirmation d'allocation ou de réduction ; 04 ; 08
     for name, node in forms:
         params = node["parameters"]
         assert params["incomingAuthentication"] == "basicAuth" and "httpBasicAuth" in node["credentials"], name

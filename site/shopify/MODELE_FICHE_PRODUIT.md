@@ -41,6 +41,9 @@ Ne figurent **jamais** dans Shopify (ni champ, ni métachamp, ni tag, ni note) :
 | Plus rien de vendable, alerte ouverte | `rupture` | **Rupture – alerte** | « Plus d'unité disponible. Demandez une alerte : nous vous écrivons dès le retour en stock local, sans date promise. » | Formulaire d'alerte |
 | Plus rien, fin de série | `rupture` + `fin_de_serie` | **Rupture** | « Fin de série : pas de réassort prévu. » | Aucun |
 | Stock seulement chez un tiers, non alloué | `rupture` | Rupture – alerte | (idem) | Formulaire d'alerte |
+| Pré-drop ouvert (fiche jumelle « Réservation garantie », allocation ferme, paramètres signés) | `precommande` + `reservation_statut` = `ouvertes` | **Réservations ouvertes** (badge « Réservation garantie », « Drop le JJ.MM ») | « Drop le … · servie en premier, expédiée dès réception du stock. » + encart : le supplément paie la garantie, pas le produit ; aucun remboursement de la différence | Réserver (prix pré-drop) |
+| Pré-drop, fenêtre prioritaire | `reservation_statut` = `prioritaire` | **Réservations ouvertes aux inscrits aux alertes** | idem ; d'abord aux inscrits aux alertes de ce produit, puis à tous | Réserver (client connecté inscrit) ; sinon formulaire d'alerte |
+| Pré-drop complet ou fermé avant le drop | `reservation_statut` = `fermees` | **Réservations fermées** | « Drop le … » — jamais « plus que N » ni compte à rebours | Aucun |
 
 ## 4. Structure de la description (agent 08)
 

@@ -80,6 +80,7 @@ A-01 valide le tracker et les brouillons à envoyer (RACI L12, L13). La proprié
 | Claude Code : Read, Grep, Glob, Write, Edit, WebSearch, WebFetch | Tracker, dossier, rapports ; vérification publique | **Pas de Bash** : aucun script, aucun envoi |
 | WebSearch, WebFetch | Vérification publique, URL + date | Pas de portail authentifié, pas de contournement |
 | Boîte dédiée | Via A-01 uniquement | — |
+| Passerelle 03 `pokeshop-allocation` (son secret seul) | Pré-drop : transmettre une confirmation d'**allocation ferme** ou une **réduction** annoncée par le fournisseur, avec le justificatif (`kind`, `product_key`, `supplier_id`, `qty` ou `new_qty`, `supplier_confirmation_ref`, `document`, `reason`) | Jamais une décision : la propriétaire valide le justificatif (formulaire du workflow 03), `n8n-03-factures` l'enregistre ; une réduction ferme aussitôt les réservations (acte protecteur) ; l'agent 02 n'ouvre jamais de pré-drop |
 
 ## 11. Routines et tâches du backlog
 

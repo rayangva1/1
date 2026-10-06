@@ -31,12 +31,17 @@ Ces champs sont **les seuls** que le thème lit en plus des champs natifs (titre
 | `boutique.quantite_max` | Entier | ≥ 1 | Règle de limite (`LIMITE_PAR_CLIENT`) | Bloc délai ; contrôle panier (§7) |
 | `boutique.alerte_reassort` | Booléen | vrai si l'inscription à l'alerte est ouverte | Catalogue | Badge « Alerte réassort », libellé « Rupture – alerte », formulaire |
 | `boutique.fin_de_serie` | Booléen | vrai si aucun réassort possible | Catalogue | Libellé « Rupture » + « Fin de série » |
+| `boutique.date_drop` | Date | AAAA-MM-JJ | Pré-drop du registre du moteur (`engine/pokeshop/predrop.py`), sur la fiche de réservation **et** sur la fiche normale | Badge « Drop le JJ.MM » (jusqu'au jour du drop), encart de réservation, bloc délai |
+| `boutique.reservation_statut` | Texte sur une ligne | `prioritaire` · `ouvertes` · `fermees` | **Calculé par le moteur** (paramètres signés, quota, gel, quarantaine, fenêtre prioritaire) : jamais une heure de fermeture ni un nombre d'unités | Badge « Réservation garantie », statut « Réservations ouvertes / fermées », accès au bouton d'achat |
+| `boutique.fiche_liee` | Texte sur une ligne | handle de la fiche jumelle | Fiche normale ↔ fiche de réservation (publication du moteur) | Liens et prix natifs de l'encart (`all_products[handle]`), étiquette d'accès prioritaire `alerte-produit:<handle>` |
 
-**Tags miroirs**, écrits **dans le même appel** `productSet` que les métachamps (donc jamais désynchronisés) : `statut:stock-local` · `statut:precommande` · `statut:rupture` ; `ext:<slug-extension>` ; `nouveaute` (posé à la mise en vente, retiré après {{N_JOURS_NOUVEAUTE}} jours par le workflow quotidien) ; `cadeau` (sélection éditoriale) ; `petit-produit` (petit produit prixé sans les frais par commande, seulement quand la règle petits produits est active : lu par la validation de panier du §7, point 8). Ils servent aux collections automatiques, aux notifications email et aux filtres si un métachamp n'y est pas utilisable.
+**Tags miroirs**, écrits **dans le même appel** `productSet` que les métachamps (donc jamais désynchronisés) : `statut:stock-local` · `statut:precommande` · `statut:rupture` ; `ext:<slug-extension>` ; `reservation-garantie` (fiche de réservation dont les réservations sont ouvertes) ; `nouveaute` (posé à la mise en vente, retiré après {{N_JOURS_NOUVEAUTE}} jours par le workflow quotidien) ; `cadeau` (sélection éditoriale) ; `petit-produit` (petit produit prixé sans les frais par commande, seulement quand la règle petits produits est active : lu par la validation de panier du §7, point 8). Ils servent aux collections automatiques, aux notifications email et aux filtres si un métachamp n'y est pas utilisable.
 
 **Règle d'autorité** : Shopify décide si un produit **peut être acheté** (inventaire ; BP §6 « ne pas maintenir deux autorités concurrentes du stock local »). Le thème affiche donc « Rupture » dès que `product.available` est faux, quel que soit le métachamp. Un produit achetable dont le statut public est absent ou incohérent s'affiche « Disponibilité à confirmer » avec `data-statut="inconnu"` : la recette le détecte et la fiche repasse en brouillon.
 
 **Précommande** : une fiche (ou une variante) **distincte** de la version en stock local, dont le titre de variante contient « Précommande » ; inventaire Shopify = quota calculé par `stock.preorder_quota` (allocation ferme − précommandes engagées − réserve). Jamais de vente sur stock négatif (« continuer à vendre en rupture » désactivé sur **toutes** les variantes).
+
+**Pré-drop (réservation garantie, décision du 6.10.2026, `docs/SPEC.md` §2.11)** : une **fiche jumelle** « Réservation garantie — <titre> » (type de produit « Réservation garantie », handle `<handle>-reservation-garantie`, SKU `<SKU>-RESA-<AAAAMMJJ>` de la date du drop, une seule variante, `DENY`) construite par le moteur (`publish.build_predrop_publication`, route `POST /predrop/{predrop_id}/publish`, workflow 01) : prix = **prix pré-drop figé** du moteur (prix drop × (1 + supplément), arrondi et revérifié, ≤ prix drop × 1,10 et ≤ référence marché) ; **inventaire = réservations encore ouvertes** du registre (diminuées des commandes Shopify pas encore relevées, jamais écrit en texte) ; statut public `precommande` (allocation ferme) tant que les réservations sont ouvertes, sinon `rupture` ; **retirée au drop** (brouillon), à la fermeture, sur paramètres non signés, gel, stop-loss non évaluable ou quarantaine. Pourquoi une fiche et pas une variante : `productSet` a une sémantique « ensemble » ; ajouter puis retirer une variante changerait les options de la fiche normale et pourrait recréer sa variante (et son article d'inventaire) le jour même où elle reçoit le stock. La **fiche normale** garde sa structure (même variante, même SKU) et **reçoit le stock à réception** comme d'habitude ; pendant le pré-drop elle porte seulement `boutique.date_drop`, `boutique.reservation_statut` et `boutique.fiche_liee`. Le supplément paie la **garantie** d'être servi en premier et expédié dès réception, **pas le produit** ; **aucun remboursement de la différence** si des unités restent au drop (textes de l'encart `da-reservation-garantie`, identiques à `predrop.GUARANTEE_TEXT_FR` et `predrop.NO_DIFFERENCE_REFUND_FR`). Jamais de compte à rebours, de « plus que N », de coût ni de marge.
 
 ## 3. Collections
 
@@ -56,7 +61,8 @@ Ces champs sont **les seuls** que le thème lit en plus des champs natifs (titre
 | Collection | Condition | Remarque |
 |---|---|---|
 | Disponible maintenant | tag `statut:stock-local` | Section d'accueil « produits réellement disponibles » |
-| Précommandes | tag `statut:precommande` | Lien vers la page Précommandes en tête de collection |
+| Précommandes | tag `statut:precommande` | Lien vers la page Précommandes en tête de collection ; contient aussi les fiches de réservation ouvertes |
+| Réservations garanties | tag `reservation-garantie` | Pré-drops ouverts (fiches « Réservation garantie ») ; masquée si vide ; encart de garantie en tête |
 | Nouveautés | tag `nouveaute` | Le tag n'est posé que sur un produit achetable (DA : « Nouveauté ne sert pas d'appât ») |
 | Idées cadeaux — moins de 30 CHF | prix < 30 **et** tag `cadeau` | Bornes = tranches de budget de la landing (préférences déclarées), à ajuster selon l'assortiment réel |
 | Idées cadeaux — 30 à 60 CHF | 30 ≤ prix < 60 **et** tag `cadeau` | idem |
@@ -111,6 +117,7 @@ Chaque URL réellement créée est reportée dans le registre légal (`URL_CGV`,
 | 2 | Disponible maintenant (collection §3.2) | Masquée si vide |
 | 3 | Nouveautés | Masquée si vide ; produits achetables uniquement |
 | 4 | Précommandes ouvertes | Masquée si vide ; lien vers la page Précommandes |
+| 4 bis | Réservations garanties (collection §3.2, pré-drops ouverts) | Masquée si vide ; statut et date du drop seulement, jamais de compte à rebours |
 | 5 | Idées cadeaux par budget (4 tuiles vers les collections §3.2) | Une tuile vide est masquée |
 | 6 | Trois statuts, pas de flou (reprise de la landing) | Toujours |
 | 7 | Guides (3 derniers articles) | Dès le premier article |
@@ -130,7 +137,9 @@ Thème proposé : thème gratuit « Online Store 2.0 » de Shopify (ex. Dawn), �
 
 8. Petits produits (BP §5 « plancher dur 8 CHF par commande ; règles adaptées aux petits produits ») : tant que `small_product_min_order_ttc` et `small_product_max_shipping_ttc` sont nuls dans `config/pricing_rules.v1.yaml` (valeur livrée), la règle est **inactive** : chaque petit produit est prixé avec les frais par commande et respecte seul le plancher (un booster coûtant 3,79 CHF est affiché 23,90 CHF), aucune validation de panier n'est requise. Pour l'activer : mettre en place une **validation de panier côté serveur** (fonction de validation du panier et du paiement Shopify, ou application équivalente) qui refuse tout panier composé **uniquement** de produits étiquetés `petit-produit` dont le sous-total (après remises) est inférieur au minimum, la recetter (§8), puis renseigner ce minimum et le port maximal facturé dans le fichier de règles et le signer de nouveau. Le moteur n'active la règle que si ce minimum couvre son minimum calculé (`pricing.small_product_min_order_required` : 127,00 CHF en assujetti avec port offert, davantage si un port est facturé) ; sinon les frais par commande restent inclus (fermé par défaut).
 
-Les snippets n'affichent **aucun prix** : le prix vient du champ natif, alimenté par le moteur (`pricing.decide_price`, statut `OK` ou `REVIEW` validé).
+9. Pré-drop (fiche de réservation **et** fiche normale) : `{% render 'da-reservation-garantie', product: product %}` sous le prix (n'affiche rien hors pré-drop) ; bouton d'ajout au panier conditionné par `{% capture acces_reservation %}{% render 'da-reservation-acces', product: product, customer: customer %}{% endcapture %}` — si `acces_reservation` ≠ `oui` (réservations fermées, ou fenêtre prioritaire et client non connecté ou non inscrit aux alertes de la fiche normale), pas de bouton : l'encart et, sur la fiche normale, `da-formulaire-alertes` (contexte `reassort`) le remplacent. Fenêtre prioritaire : comptes clients **sans mot de passe** (nouveaux comptes clients Shopify) pour que les inscrits se connectent avec l'adresse de leur inscription ; le workflow 02 atteste le même critère à chaque paiement (étiquette `alerte-produit:<handle>` et consentement confirmé).
+
+Les snippets n'affichent **aucun prix en dur** : le prix vient du champ natif, alimenté par le moteur (`pricing.decide_price`, statut `OK` ou `REVIEW` validé) ; l'encart de réservation lit les prix natifs des deux fiches (`| money`), prix pré-drop et prix drop figés par le moteur à l'ouverture du pré-drop.
 
 ## 8. Recette de la structure (agent 12, avant l'ouverture)
 
@@ -141,6 +150,7 @@ Les snippets n'affichent **aucun prix** : le prix vient du champ natif, aliment�
 - [ ] Le filtre « Disponibilité » sépare stock local et précommande ; le filtre « Budget » fonctionne en CHF.
 - [ ] La quantité maximale est refusée au-delà de la limite, y compris par un panier modifié à la main.
 - [ ] Un produit sans stock réel au registre du moteur n'est jamais publié avec `statut:stock-local`, et une fiche de précommande sans allocation ferme reste `statut:rupture`.
+- [ ] Pré-drop FICTIF : la fiche « Réservation garantie » apparaît (prix pré-drop, badge « Réservation garantie », « Drop le JJ.MM », encart de garantie avec les deux prix natifs) ; pendant la fenêtre prioritaire, pas de bouton pour un visiteur non connecté ; quota épuisé : « Réservations fermées » sans nombre d'unités ; au drop, la fiche repasse en brouillon et la fiche normale reçoit le stock ; aucune heure, aucun compte à rebours, aucun « plus que N ».
 - [ ] Si la règle petits produits est activée (§7, point 8) : une commande d'un seul produit `petit-produit` sous le minimum est refusée au paiement, y compris par un panier modifié à la main ; un panier mixte (petit produit + produit principal) passe.
 - [ ] Le code source public ne contient aucun terme interne (coût, marge, fournisseur, B2B) ni métachamp autre que `boutique.*` (lecture de la page et de `/products/<handle>.json`).
 - [ ] Parcours BP §7 complet sur mobile et ordinateur (`docs/07-ops/RECETTE_AVANT_OUVERTURE.md`).
@@ -154,3 +164,4 @@ Les snippets n'affichent **aucun prix** : le prix vient du champ natif, aliment�
 - [ ] Choisir le mécanisme serveur de la quantité maximale (§7, point 7).
 - [ ] Décider d'activer ou non la règle petits produits (§7, point 8) : validation de panier recettée, puis minimum de commande et port maximal renseignés dans les règles signées.
 - [ ] Agent integrations : confirmer que `publish.py` écrit exactement les métachamps et tags du §2, et rien d'autre.
+- [ ] Pré-drop : valider la fiche jumelle « Réservation garantie » (plutôt qu'une variante), la collection « Réservations garanties », les textes de l'encart et l'accès prioritaire par comptes clients sans mot de passe (§7, point 9) ; vérifier sur la version de Shopify en service le comportement de `productSet` et de `all_products`.

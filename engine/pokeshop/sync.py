@@ -1611,11 +1611,15 @@ class SyncService:
         inventory_reasons: list[str] = []
         target: int | None = None
         inventory_written = False
-        stays_active = plan.outcome is PlanOutcome.SEND_ACTIVE and gate is not None and gate.allowed and verified
-        if stays_active:
+        written_ok = gate is not None and gate.allowed and bool(verified)
+        # Fiche déjà en ligne dont la mise à jour est refusée (niveau, gel) : l'inventaire suit quand même le registre —
+        # une baisse est protectrice (permise à tout niveau), une hausse reste soumise à la porte (niveau 2).
+        live_unchanged = gate is not None and not gate.allowed and published is not None \
+            and published.status is ShopStatus.ACTIVE
+        if plan.outcome is PlanOutcome.SEND_ACTIVE and (written_ok or live_unchanged):
             (inventory_action, target, inventory_written) = self._set_reservation_inventory(
                 predrop, listing, variant_item, location_id, remote_level, dry_run, at, rid, critical, incidents,
-                inventory_reasons,
+                inventory_reasons, handle=plan.handle,
             )  # fmt: skip
         elif plan.outcome is PlanOutcome.UNPUBLISH:
             inventory_reasons.append("fiche de réservation retirée (brouillon) : plus aucune réservation achetable")
@@ -1754,9 +1758,24 @@ class SyncService:
         critical: list[str],
         incidents: list[str],
         reasons: list[str],
+        *,
+        handle: str | None = None,
     ) -> tuple[Literal["SET", "NONE", "REFUSED", "CONFLICT", "ERROR", "SKIPPED"], int | None, bool]:
-        """Inventaire de la fiche de réservation en compare-and-swap ; (action, cible, écrit ?)."""
+        """Inventaire de la fiche de réservation en compare-and-swap ; (action, cible, écrit ?).
+
+        Article d'inventaire : celui relu à la vérification, sinon celui de la fiche en ligne (lecture par handle,
+        variante au SKU de la réservation). Inconnu en écriture réelle : rien n'est écrit (erreur critique).
+        """
         item = item_id or (remote_level.inventory_item_id if remote_level is not None else None)
+        if item is None and handle is not None and not dry_run and self.client.configured:
+            sku = predrop_reservation_sku(listing.public_sku, predrop.drop_date)
+            try:
+                remote_product = self.client.product_by_handle(handle)
+            except ShopifyError as exc:
+                reasons.append(f"lecture de la fiche de réservation impossible : {exc}")
+                remote_product = None
+            if remote_product is not None:
+                item = next((v.inventory_item_id for v in remote_product.variants if v.sku == sku), None)
         if location_id is None:
             reasons.append("emplacement Shopify non configuré (POKESHOP_SHOPIFY_LOCATION_ID) : inventaire non fixé")
             if not dry_run:
