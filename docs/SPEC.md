@@ -10,7 +10,8 @@
    L'IA extrait/rédige, elle ne décide jamais d'une TVA, d'un taux de change ou d'un montant.
 2. **Aucun coût interne, prix B2B, marge ou donnée personnelle** dans le HTML public, les payloads
    Shopify publics, les prompts marketing ou les visuels.
-3. **Aucun faux stock**. Stock fournisseur ≠ stock boutique. Pas de précommande sans allocation ferme.
+3. **Aucun faux stock**. Stock fournisseur ≠ stock boutique. Pas de précommande sans allocation ferme (pré-drop :
+   §2.11 ; l'argent encaissé avant réception est une **dette** jusqu'à l'expédition).
 4. Donnée amont > 24 h ⇒ bloque achats et nouvelles promesses de dispo, **n'empêche pas** de vendre le stock local réel.
 5. Champ inconnu (frais, taxe, langue, conditionnement) ⇒ fiche en **brouillon**, aucun nouveau prix public.
 6. Tout tourne en **mode simulation (dry-run) par défaut**. Les écritures réelles exigent un flag explicite
@@ -141,7 +142,7 @@ Jetons (empreintes sha256 seulement dans l'environnement ; acteur journalisé **
 | `POST /incidents/{incident_id}/test` | tous les rôles nommés | `passed:true` : `qa-conformite` (≠ ouvreur) ou PROPRIO ; `test_ref` = `run_id` d'un cycle PROPRE en simulation, catalogue du registre, postérieur à l'ouverture, lancé par un autre principal, sur le fournisseur et la référence de l'incident, sans source FICTIVE — sauf incident sur données FICTIVES, ou déclaré `simulation: true` et ouvert moteur en simulation (un incident sur données réelles ouvert sans ce drapeau exige un cycle réel) |
 | `POST /incidents/{incident_id}/resume`, `POST /incidents/{incident_id}/close` | `qa-conformite`, `chef-de-projet`, `n8n-04-incidents` | incident critique : PROPRIO |
 | `POST /autonomy` | tous les rôles nommés | hausse de niveau : PROPRIO |
-| `POST /stoploss/state/refresh` | `n8n-07-stoploss` | photo construite par le moteur, datée par le plus ancien relevé de cash ; source manquante ou périmée (soldes, apports, déclaration des dettes de plus de 24 h) : 409 nommant la source ; dettes = déclarées + factures enregistrées non payées ; créances : relevé PROPRIO seulement ; `sources.complete` / `sources.incomplete` (coût des ventes en attente) ; publicité = MAX(déclaration, paiements pub **engagés** — approuvés ou exécutés — du mandat) |
+| `POST /stoploss/state/refresh` | `n8n-07-stoploss` | photo construite par le moteur, datée par le plus ancien relevé de cash ; source manquante ou périmée (soldes, apports, déclaration des dettes de plus de 24 h) : 409 nommant la source ; dettes = déclarées + factures enregistrées non payées + **réservations pré-drop encaissées ni expédiées ni remboursées** (dérivées du registre du pré-drop, déduites du cash disponible, `sources.precommandes`) ; créances : relevé PROPRIO seulement ; `sources.complete` / `sources.incomplete` (coût des ventes en attente) ; publicité = MAX(déclaration, paiements pub **engagés** — approuvés ou exécutés — du mandat) |
 | `POST /stoploss/state` | PROPRIO seul | photo déposée (relevé de la propriétaire) : cash ≠ relevés du connecteur de trésorerie : 409 ; `capital_movements` du corps : 422 |
 | `POST /stoploss/freeze` | tous les rôles nommés | acte protecteur |
 | `POST /stoploss/rearm` | PROPRIO seul | `reference_chf` attestée (C18) |
@@ -151,17 +152,27 @@ Jetons (empreintes sha256 seulement dans l'environnement ; acteur journalisé **
 | `POST /mandate/human-decision` | PROPRIO seul | `APPROVE` / `REFUSE` d'une dépense `PENDING_HUMAN` (24 h, sinon expirée : 409) : seule voie de `HUMAN_APPROVED`, comptée au stop-loss pub à sa date (revue R5, R4-DOC-03) |
 | `POST /mandate/revoke` | tous les rôles nommés | acte protecteur |
 | `POST /treasury/paypal-balance`, `POST /treasury/bank-balance` | `connecteur-tresorerie` | connecteurs en lecture seule (B26) |
-| `POST /treasury/balance-items` | `finance-pricing`, `connecteur-tresorerie` | deux registres **séparés et persistés** (revue R5) : dettes (`preorders_collected_chf` + `debts`, âge accepté 24 h) et créances (`receivables` : PROPRIO seule, rôle : 403 ; jamais effacées par une déclaration de dettes) ; `finance-pricing` ne baisse jamais dettes ni précommandes (403), même après un redémarrage |
+| `POST /treasury/balance-items` | `finance-pricing`, `connecteur-tresorerie` | deux registres **séparés et persistés** (revue R5) : dettes (`preorders_collected_chf` = précommandes **hors pré-drop** — les réservations pré-drop sont dérivées par le moteur et ajoutées — + `debts`, âge accepté 24 h) et créances (`receivables` : PROPRIO seule, rôle : 403 ; jamais effacées par une déclaration de dettes) ; `finance-pricing` ne baisse jamais dettes ni précommandes (403), même après un redémarrage |
 | `POST /capital/movements` | PROPRIO seul | seule source des apports et retraits (B25) |
 | `POST /ads/activity` | `connecteur-publicite` (jamais `acquisition`) | registre en ajout seul (baisse : 409) ; commandes attribuées : existantes au registre des commandes — sinon écartées seules (`attributed_orders_set_aside`), les dépenses du lot sont enregistrées (revue R5, R4-NEW-01) |
 | `POST /fx/rates` | PROPRIO seul | seule source des taux (C23) |
-| `POST /orders/shipped` | `n8n-02-commandes` | coût transporteur réel > 0 et référence d'étiquette ; **lignes** (SKU × quantité) obligatoires, rattachées à la clé produit par le SKU actuel ou un **ancien SKU** de la même clé (historique du catalogue, revue R6, R5-NEW-02) ; **jamais refusée pour un SKU** : SKU inconnu ou porté par plusieurs clés = ligne **non rattachée** (`unresolved_lines`, coût des ventes en attente, `incomplete: true`) ; écrit ventes, frais (complément des frais externes de la commande), logistique, et la sortie au CMP (coût des ventes) ; conflit d'écriture dérivée : 409, rien d'écrit ; **jamais refusée faute de stock valorisé** (revue R5, R4-NEW-01) : coût des ventes **en attente** (`cost_of_sales_pending`), dérivé dès l'inscription du coût et au démarrage ; étoile polaire et photo incomplètes, dépenses en validation humaine d'ici là |
+| `POST /orders/shipped` | `n8n-02-commandes` | commande d'une réservation pré-drop : ventes et sortie au CMP **datées de l'expédition** par le moteur (`recognized_at`), jamais du paiement, et fin de la dette ; coût transporteur réel > 0 et référence d'étiquette ; **lignes** (SKU × quantité) obligatoires, rattachées à la clé produit par le SKU actuel ou un **ancien SKU** de la même clé (historique du catalogue, revue R6, R5-NEW-02) ; **jamais refusée pour un SKU** : SKU inconnu ou porté par plusieurs clés = ligne **non rattachée** (`unresolved_lines`, coût des ventes en attente, `incomplete: true`) ; écrit ventes, frais (complément des frais externes de la commande), logistique, et la sortie au CMP (coût des ventes) ; conflit d'écriture dérivée : 409, rien d'écrit ; **jamais refusée faute de stock valorisé** (revue R5, R4-NEW-01) : coût des ventes **en attente** (`cost_of_sales_pending`), dérivé dès l'inscription du coût et au démarrage ; étoile polaire et photo incomplètes, dépenses en validation humaine d'ici là |
 | `POST /orders/{order_id}/refunds` | `n8n-02-commandes`, `operations-sav` | avoir cumulé ≤ ventes de la commande enregistrée ; `lines` = unités retournées (≤ vendues − déjà retournées), vide pour un geste commercial (rien ne revient en stock au coût) |
 | `POST /orders/{order_id}/lines/resolve` | PROPRIO seul | rattache une ligne non rattachée (`public_sku`) à une fiche canonique (`product_key`) ; sortie au CMP dérivée ensuite ; journalisé, rejoué au démarrage (revue R6, R5-NEW-02) |
 | `POST /northstar/entries` | `n8n-02-commandes`, `finance-pricing` | rôle : montants positifs sur paiement, SAV, acquisition, frais fixes ; ventes, avoirs et montants négatifs (référencés) : PROPRIO ; identifiants `order:`, `refund:`, `cost:`, `expense:`, `fixed:` réservés au moteur (422) ; PAYMENT portant l'`order_id` d'une commande enregistrée : 422 |
 | `POST /costs/movements` | `finance-pricing` | réception adossée à `POST /stock/receive` (autre jeton), une fois par réception, une fois par réception physique (SKU **à la réception**, bon), coût unitaire à ± 2 % de la ligne de facture enregistrée (référence prioritaire ; unités reçues au coût ≤ quantité facturée, fournisseur connu du moteur pour la référence — lien du catalogue ou offre rapprochée sur le catalogue du registre — : sinon 409 ; `return:` réservé aux retours) ou du coût rendu de l'offre évaluée avec des frais posés par PROPRIO — jamais des frais posés par `finance-pricing` (sinon, ou sans référence : PROPRIO) ; TVA d'import de la ligne comptée selon le profil TVA du moteur ; sortie de vente (ISSUE) : dérivée des commandes (rôle : 403) ; retour (RETURN) : commande enregistrée, avoir **à lignes** (unités retournées) d'un montant ≥ coût des unités retournées et retour physique `return:<avoir>` déclaré par un autre jeton (`operations-sav`), sinon 403 (coût des ventes encore en attente : 409) ; écart de facture > 2 % : PROPRIO |
 | `POST /costs/invoices` | `n8n-03-factures` | facture validée par la propriétaire (workflow 03) : lignes au coût rendu ventilé sur clés canoniques (TVA d'import à part, `import_vat_unit_chf`) ; Σ quantité × coût des lignes ≤ montant dû (sinon 409) ; dette de la photo jusqu'au paiement ; idempotente (autre contenu : 409) |
 | `POST /costs/invoices/{invoice_ref}/payments` | `connecteur-tresorerie` | paiement relevé (cumul ≤ montant) : seule baisse de la dette d'une facture |
+| `POST /predrop/allocations` | `n8n-03-factures` | allocation **ferme** (confirmation fournisseur validée par PROPRIO dans le workflow 03), jamais par l'agent qui bénéficie du pré-drop ; fiche canonique du catalogue (409) ; fournisseur connu du moteur pour la référence (sinon 409, PROPRIO seule) ; même confirmation : idempotente (autre contenu : 409) ; baisse : 409 (réduction) |
+| `POST /predrop/allocations/{product_key}/reduce` | `n8n-03-factures`, `operations-sav` | acte protecteur, baisse seulement (hausse : 409) ; pré-drop servi **en premier** (ordre de paiement), quota drop réduit d'abord, puis remboursement **intégral** des dernières réservations (préparé + brouillon d'email) ; idempotente par confirmation |
+| `POST /predrop/demand` | `n8n-06-marketing` | compte **agrégé** d'inscrits consentants intéressés (aucune donnée personnelle : tout autre champ ou une adresse dans `source`, 422) ; plus ancien que celui en vigueur ou daté du futur : 409 |
+| `GET /predrop/eligibility/{product_key}`, `GET /predrop/offers`, `GET /predrop/reservations`, `GET /predrop/refunds` | COMMUN (lecture) | éligibilité évaluée sur les registres (deux prix, sans coût ni marge) ; offres publiques en liste blanche (« Réservations ouvertes / fermées », date du drop, deux prix, garantie, aucune différence remboursée ; ni compte à rebours ni « plus que N ») et lecture interne (quotas) ; réservations **sans** identifiant client ; remboursements préparés et brouillons d'email |
+| `POST /predrop/open` | `chef-de-projet`, `finance-pricing` | toutes les conditions du §2.11 (sinon 409 avec la liste) ; `market_ref_chf` : PROPRIO seule (rôle : 403) ; référence inconnue ou prix drop REVIEW : **en attente** de PROPRIO (aucune réservation) ; prix et paramètres figés |
+| `POST /predrop/{predrop_id}/approve` | PROPRIO seul | validation d'un pré-drop en attente : conditions réévaluées, référence marché attestée (ou inconnue assumée) |
+| `POST /predrop/{predrop_id}/close` | `chef-de-projet`, `finance-pricing`, `qa-conformite` | acte protecteur ; unités non réservées au drop |
+| `POST /predrop/reservations` | `n8n-02-commandes` | réservation **payée** (commande Shopify, `customer_ref` = sha256 de l'identifiant client, jamais l'email) ; idempotente par commande (autre contenu : 409) ; jamais refusée pour un motif métier : hors quota, limite par client, fenêtre prioritaire, montant ≠ prix pré-drop × quantité, pré-drop fermé à la date du paiement, désactivé, gel ou quarantaine => **non servie** et remboursement intégral préparé ; dette jusqu'à l'expédition |
+| `POST /predrop/refunds/{refund_id}/approve` | PROPRIO seul | validation en **un clic** (corps vide admis) d'un remboursement préparé (niveaux d'autonomie 1 et 2 ; à partir du niveau 3, approuvé par le moteur) |
+| `POST /predrop/refunds/{refund_id}/executed` | `n8n-02-commandes` | remboursement PSP relevé : approuvé seulement (sinon 409) ; seule sortie de la dette d'une réservation remboursée ; même référence : idempotent |
 
 Tout refus est journalisé (jamais le jeton). Écritures propres à chaque rôle : section « Écritures par rôle » de
 `docs/08-agents/MATRICE_API.md` (générée) ; qui détient quel jeton (17 rôles émis : 10 connecteurs n8n, 7 agents ayant
@@ -186,6 +197,53 @@ actes de la propriétaire : `docs/00-pilotage/INTERVENTIONS_HUMAINES.md` (B25, C
   `POKESHOP_MANDATE_FINGERPRINT`), registre `SpendLedger`, registres des taux de change et des révocations.
 - `northstar.py` : registre de l'étoile polaire (contribution nette cumulée). `autonomy.py` : niveaux 1 à 4 et porte de
   gouvernance (niveau + mandat + stop-loss) devant toute écriture réelle.
+
+### 2.11 `pokeshop/predrop.py` (gouvernance) — pré-drop
+Décision de la propriétaire du 6.10.2026 : **réservation GARANTIE avant réception** du stock. Le supplément paie la
+**garantie** d'être servi en premier et expédié dès réception, **pas le produit** ; **aucun remboursement de la
+différence** si des unités restent au drop (textes `GUARANTEE_TEXT_FR` et `NO_DIFFERENCE_REFUND_FR`, repris sur chaque
+offre publique).
+
+- **Deux prix** par produit éligible : prix **DROP** = `decide_price` du moteur, inchangé (coût rendu du moteur :
+  max(offre de moins de 24 h du fournisseur de l'allocation, CMP du stock), jamais déclaré) ; prix **PRÉ-DROP** =
+  prix drop × (1 + `premium_pct`), arrondi retail **vers le haut** sur la grille des règles, puis marge **revérifiée**
+  (planchers durs et marge cible). Plafonds du code : supplément configuré **et** effectif ≤ 10 % (au-delà après
+  arrondi : plus grand point de grille ≤ drop × 1,10) ; prix pré-drop ≤ référence marché connue (sinon plus grand point
+  de grille ≤ référence ; prix drop au-dessus du marché : pas de pré-drop) ; référence inconnue ou prix drop REVIEW :
+  validation de la propriétaire.
+- **Paramètres signés** `config/predrop.v1.yaml` (même mécanisme d'empreinte que les seuils du stop-loss :
+  `python -m pokeshop.predrop fingerprint`, `POKESHOP_PREDROP_FINGERPRINT` au coffre) : `premium_pct` 0.08 (borne 0..0.10),
+  `predrop_share_of_allocation` 0.5, réserve de sécurité ≥ 1 unité et ≥ 10 % de l'allocation, `per_customer_limit` 1
+  (2 au plus), `priority_window_hours` 24, `demand_threshold` 0.5. Sans empreinte, empreinte différente ou valeur hors
+  bornes : pré-drop **désactivé** (fermé par défaut ; `/health` : `signatures.predrop`).
+- **Éligibilité** (toutes requises, `evaluate_eligibility`) : paramètres signés ; un seul pré-drop en cours par
+  référence ; allocation **ferme** enregistrée (`POST /predrop/allocations`, propriétaire ou workflow 03, jamais
+  l'agent bénéficiaire) ; quota pré-drop ≥ 1 = allocation ferme − réservations engagées − réserve
+  (`stock.preorder_quota`) ; score de demande = inscrits consentants intéressés (compte **agrégé** de moins de 7 jours,
+  `POST /predrop/demand`, aucune donnée personnelle) / allocation ≥ seuil ; fiche validée par la propriétaire (contenu
+  en vigueur, `POST /catalog/approvals`) ; coût connu ; prix drop sans blocage ni passage sous les planchers ; marge
+  pré-drop revérifiée ; prix pré-drop ≤ référence marché ; stop-loss évalué sans gel ni blocage de la référence
+  (état inconnu : refus) ; aucune quarantaine.
+- **Quotas** (`split_quota`) : vendable = allocation − réserve ; part pré-drop = ⌊part × vendable⌋ ; le reste au drop
+  (les unités non réservées d'un pré-drop fermé reviennent au drop). Un verrou unique : deux paiements simultanés sur
+  la dernière unité n'en confirment jamais qu'un.
+- **Réservations payées** (`PredropRegistry`, journal d'état `predrop`, ajout seul, relu au démarrage ; illisible :
+  service gelé) : idempotentes par commande ; limite par client sur l'identifiant client **haché** fourni par la
+  boutique ; fenêtre prioritaire des inscrits aux alertes (accès attesté par la boutique) ; une commande payée n'est
+  jamais perdue : non servie => remboursement intégral préparé.
+- **Réduction d'allocation** (`plan_service`) : pré-drop servi en premier (ordre de paiement strict), quota drop réduit
+  d'abord, puis remboursement intégral des **dernières** réservations + brouillon d'email (sans donnée personnelle ;
+  `{{NOM_BOUTIQUE}}`). Exécution selon le niveau d'autonomie : niveaux 1 et 2, validation de la propriétaire en un
+  clic ; à partir du niveau 3, approuvé par le moteur ; le remboursement PSP est relevé par le workflow 02 (le moteur
+  n'écrit jamais vers un service tiers).
+- **Dette jusqu'à livraison** : `outstanding_debt` (payé à la date de la photo, ni expédié — commande enregistrée par
+  `POST /orders/shipped` — ni remboursé) entre dans les dettes de la photo du stop-loss et est déduit du cash
+  disponible ; `preorders_collected_chf` déclaré ne compte que les précommandes **hors** pré-drop. **Étoile polaire** :
+  chiffre d'affaires reconnu **à l'expédition** (`ShippedOrder.recognized_at`, posée par le moteur), jamais à
+  l'encaissement ; aucune écriture de l'étoile polaire n'est dérivée d'une réservation.
+- **Aucune fausse urgence** : offre publique en liste blanche (`PUBLIC_OFFER_FIELDS`) : statut « Réservations ouvertes
+  / fermées », date du drop, deux prix, limite par client, accès prioritaire, garantie ; ni compte à rebours, ni heure
+  de fermeture, ni « plus que N », ni coût, ni marge.
 
 ## 3. Base de données (agent `data-pipeline` écrit `db/migrations/`)
 Tables minimum : `suppliers`, `supplier_contacts`, `raw_snapshots`, `supplier_offers`, `products`, `product_supplier_links`,

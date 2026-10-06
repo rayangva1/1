@@ -837,20 +837,22 @@ def plan_service(
     reserve_min_units: int,
     reserve_share: Decimal,
     drop_quota_before: int = 0,
+    already_served: frozenset[str] = frozenset(),
 ) -> ServicePlan:
     """Réservations servies en **ordre de paiement** sur l'allocation réduite (réserve de sécurité conservée).
 
     La réduction prend d'abord sur le quota drop ; s'il manque encore des unités, la première réservation qui ne tient
     plus et **toutes les suivantes** (ordre de paiement) sont remboursées intégralement — jamais une réservation payée
-    avant une autre servie.
+    avant une autre servie. ``already_served`` : commandes déjà expédiées (servies, jamais remboursées par un plan).
     """
     alloc = max(0, int(new_allocation))
     reserve = reserve_units(alloc, min_units=reserve_min_units, share=reserve_share)
     servable = preorder_quota(alloc, 0, reserve)
-    ordered = sorted(confirmed, key=lambda r: (r.paid_at, r.seq))
-    kept: list[str] = []
+    served = [r for r in confirmed if r.order_id in already_served]
+    ordered = sorted((r for r in confirmed if r.order_id not in already_served), key=lambda r: (r.paid_at, r.seq))
+    kept: list[str] = [r.order_id for r in sorted(served, key=lambda r: (r.paid_at, r.seq))]
     refunded: list[str] = []
-    used = 0
+    used = sum(r.qty for r in served)
     for r in ordered:
         if not refunded and used + r.qty <= servable:
             kept.append(r.order_id)
@@ -867,6 +869,10 @@ def plan_service(
         drop_quota_before=max(0, drop_quota_before),
         drop_quota_after=max(0, servable - used),
     )
+
+
+def _no_shipment(_: str) -> bool:
+    return False
 
 
 class ReductionResult(FrozenModel):
@@ -972,7 +978,8 @@ def evaluate_eligibility(
     add("CONFIG_SIGNED", config is not None,
         "paramètres signés par la propriétaire" if config is not None else config_status.reason)  # fmt: skip
     add("SINGLE_PREDROP", open_predrop is None,
-        "aucun autre pré-drop ouvert ou en attente" if open_predrop is None else f"pré-drop {open_predrop} déjà en cours")  # fmt: skip
+        "aucun autre pré-drop en cours ni à solder sur la référence" if open_predrop is None
+        else f"pré-drop {open_predrop} en cours, à solder ou déjà sur cette allocation ferme")  # fmt: skip
     add("LISTING_APPROVED", listing_known and listing_approved,
         "fiche validée par la propriétaire (contenu en vigueur)" if listing_known and listing_approved
         else ("fiche absente du catalogue validé" if not listing_known
@@ -1215,11 +1222,12 @@ class PredropRegistry:
         recorded_by: str,
         at: datetime,
         autonomy_level: int,
+        shipped: Callable[[str], bool] = _no_shipment,
     ) -> ReductionResult:
         """Réduction annoncée par le fournisseur : plan de service, quota drop réduit d'abord, remboursements préparés.
 
         Idempotente par référence de confirmation (même nouvelle quantité : sans effet ; autre : refus). Une hausse
-        n'est jamais une réduction (refus).
+        n'est jamais une réduction (refus). ``shipped`` : commandes déjà expédiées (servies, jamais remboursées).
         """
         _aware(at, "at")
         with self._lock:
@@ -1246,7 +1254,7 @@ class PredropRegistry:
                 supplier_confirmation_ref=supplier_confirmation_ref, reason=reason, recorded_by=recorded_by,
                 recorded_at=at,
             )  # fmt: skip
-            plan = self._plan(product_key, new_qty)
+            plan = self._plan(product_key, new_qty, shipped)
             refunds = []
             for order_id in plan.refunded:
                 res = self._reservations[order_id]
@@ -1264,7 +1272,7 @@ class PredropRegistry:
             })  # fmt: skip
             return ReductionResult(allocation=updated, reduction=reduction, plan=plan, refunds=tuple(refunds))
 
-    def _plan(self, product_key: str, new_qty: int) -> ServicePlan:
+    def _plan(self, product_key: str, new_qty: int, shipped: Callable[[str], bool] = _no_shipment) -> ServicePlan:
         predrop = self._predrop_on_allocation(product_key)
         if predrop is None:
             reserve = reserve_units(new_qty, min_units=MIN_RESERVE_UNITS, share=MIN_RESERVE_SHARE)
@@ -1278,8 +1286,10 @@ class PredropRegistry:
                                drop_quota_before=before, drop_quota_after=servable)  # fmt: skip
         confirmed = self._committed_reservations(predrop.predrop_id)
         before = self._quota_locked(predrop).drop_quota
+        served = frozenset(r.order_id for r in confirmed if shipped(r.order_id))
         return plan_service(confirmed, new_qty, reserve_min_units=predrop.reserve_min_units,
-                            reserve_share=predrop.reserve_share, drop_quota_before=before)  # fmt: skip
+                            reserve_share=predrop.reserve_share, drop_quota_before=before,
+                            already_served=served)  # fmt: skip
 
     # -- demande agrégée -------------------------------------------------------------
     def demand(self, product_key: str) -> DemandSignal | None:
@@ -1337,8 +1347,34 @@ class PredropRegistry:
             active = self.active_for(predrop.product_key)
             if active is not None:
                 raise PredropError(f"{predrop.product_key} : pré-drop {active.predrop_id} déjà en cours ({active.status})")
+            same = next((p for p in self._predrops.values() if p.product_key == predrop.product_key
+                         and p.allocation_ref == predrop.allocation_ref), None)  # fmt: skip
+            if same is not None:
+                raise PredropError(
+                    f"allocation {predrop.allocation_ref} déjà engagée par le pré-drop {same.predrop_id} : un seul "
+                    "pré-drop par allocation ferme (nouvelle confirmation fournisseur requise)"
+                )
             self._commit({"op": "predrop", "predrop": predrop.model_dump(mode="json")})
             return predrop, True
+
+    def unsettled(self, product_key: str, shipped: Callable[[str], bool], *, ignore: str | None = None) -> str | None:
+        """Pré-drop de la référence encore en cours (ouvert ou en attente) ou dont des réservations confirmées ne sont
+        ni expédiées ni remboursées, ou qui a déjà engagé l'allocation ferme en vigueur (None : aucun).
+
+        Un nouveau pré-drop n'est ouvert qu'une fois le précédent soldé : jamais deux quotas sur les mêmes unités.
+        """
+        with self._lock:
+            allocation = self._allocations.get(product_key)
+            for p in sorted(self._predrops.values(), key=lambda x: x.requested_at):
+                if p.product_key != product_key or p.predrop_id == ignore:
+                    continue
+                if p.status != "CLOSED":
+                    return p.predrop_id
+                if allocation is not None and p.allocation_ref == allocation.supplier_confirmation_ref:
+                    return p.predrop_id
+                if any(not shipped(r.order_id) for r in self._committed_reservations(p.predrop_id)):
+                    return p.predrop_id
+        return None
 
     def update(self, predrop: Predrop) -> Predrop:
         """Remplace l'état d'un pré-drop existant (validation de la propriétaire, fermeture)."""

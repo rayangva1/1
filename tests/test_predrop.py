@@ -243,16 +243,26 @@ def test_predrop_price_never_exceeds_the_known_market_reference() -> None:
         compute_prices(D("140"), PARAMS, config, market_ref=D("0"))
 
 
-def test_margin_is_rechecked_and_a_blocked_drop_price_means_no_predrop() -> None:
+def test_margin_is_rechecked_and_a_blocked_drop_price_means_no_predrop(monkeypatch: pytest.MonkeyPatch) -> None:
+    import pokeshop.predrop as PD
+
     config = signed_config()
     blocked = compute_prices(D("0"), PARAMS, config, market_ref=D("250"))
     assert blocked.problems == ("DROP_PRICE_BLOCKED",) and blocked.predrop_price is None and not blocked.ok
-    # Règles où le prix drop passe sous les planchers durs (plancher CHF relevé après décision) : refusé.
-    strict = PARAMS.replace(hard_floor_chf_per_order=D("60"))
-    worse = compute_prices(D("140"), strict, config, market_ref=D("400"))
-    assert {"DROP_BELOW_FLOOR"} <= set(worse.problems) or worse.drop_price is None or worse.ok
     for prices in (compute_prices(D(c), PARAMS, config, market_ref=D("100000")) for c in ("15", "91.06", "140")):
         assert price_floor_violations(prices.predrop_price, prices.landed_cost, PARAMS) == []
+    # Revérification effective : un prix drop qui passerait sous les planchers (décision altérée) est refusé, et le
+    # prix pré-drop qui en découle aussi (marge revérifiée après arrondi, jamais supposée).
+    real = PD.decide_price
+    monkeypatch.setattr(PD, "decide_price", lambda c, p, m=None: real(c, p, m).replace(recommended_price=D("150.00")))
+    low = compute_prices(D("140"), PARAMS, config, market_ref=D("400"))
+    assert {"DROP_BELOW_FLOOR", "PREDROP_BELOW_FLOOR"} <= set(low.problems) and not low.ok
+    review = real(D("140"), PARAMS).replace(status=PD.DecisionStatus.REVIEW)
+    monkeypatch.setattr(PD, "decide_price", lambda c, p, m=None: review)
+    assert compute_prices(D("140"), PARAMS, config, market_ref=D("250")).needs_owner == ("DROP_PRICE_REVIEW",)
+    draft = real(D("140"), PARAMS).replace(status=PD.DecisionStatus.DRAFT)
+    monkeypatch.setattr(PD, "decide_price", lambda c, p, m=None: draft)
+    assert "DROP_PRICE" in _eligibility().failed()
 
 
 def test_round_down_retail_is_the_mirror_of_round_up() -> None:
@@ -363,11 +373,10 @@ def test_eligibility_requires_every_condition() -> None:
         "STOPLOSS": {"stoploss_problem": "gel global du stop-loss"},
         "QUARANTINE": {"quarantined": True},
         "SINGLE_PREDROP": {"open_predrop": "PD-AUTRE"},
-        "DROP_PRICE": {"cost": D("0.000001") * 0},  # coût nul : décision bloquée
     }
     for code, change in cases.items():
         result = _eligibility(**change)
-        assert not result.eligible and code in result.failed() or (code == "DROP_PRICE" and not result.eligible), (code, result.failed())
+        assert not result.eligible and code in result.failed(), (code, result.failed())
     assert "DEMAND" in _eligibility(demand=None).failed() and "DEMAND" in _eligibility(demand=stale).failed()
     assert "LISTING_APPROVED" in _eligibility(listing_known=False).failed()
     # Demande exactement au seuil : éligible (5 / 10 = 0.5).
@@ -867,3 +876,42 @@ def test_close_is_protective_and_stops_new_reservations(tmp_path: Path) -> None:
     assert quota.predrop_remaining == 0 and quota.drop_quota == 9 - 2  # unités non réservées : au drop
     assert body(client.get("/predrop/offers", headers=H))["offers"][0]["statut"] == STATUS_CLOSED_FR
     assert body(client.post(f"/predrop/{PID}/close", headers=JR.HCHEF, json={"reason": "deuxième fermeture"}))["changed"] is False
+
+
+def test_one_predrop_per_firm_allocation_and_a_new_one_only_once_the_previous_is_settled(tmp_path: Path) -> None:
+    client, svc, clock = ready(tmp_path)
+    assert open_predrop(client).status_code == 201
+    assert body(reserve(client, "FICTIF-CMD-1", "a"))["reservation"]["status"] == "CONFIRMED"
+    assert client.post(f"/predrop/{PID}/close", headers=JR.HQA, json={"reason": "fermeture FICTIVE avant drop"}).status_code == 200
+    # Même allocation ferme : jamais un second quota sur les mêmes unités.
+    again = client.post("/predrop/open", headers=OWNER, json={"product_key": P1, "drop_date": "2026-10-27", "market_ref_chf": "250"})
+    assert again.status_code == 409 and "SINGLE_PREDROP" in body(again)["erreur"]
+    # Nouvelle allocation ferme, mais réservation précédente ni expédiée ni remboursée : toujours refusé.
+    assert allocation(client, 20, ref="FICTIF-CONF-2").status_code == 201
+    again = client.post("/predrop/open", headers=OWNER, json={"product_key": P1, "drop_date": "2026-10-27", "market_ref_chf": "250"})
+    assert again.status_code == 409 and "SINGLE_PREDROP" in body(again)["erreur"]
+    # Réservation expédiée (précédent soldé) : nouveau pré-drop admis sur la nouvelle allocation.
+    shipped = {"order_id": "FICTIF-CMD-1", "paid_at": NOW.isoformat(), "net_sales_ht": "212.67", "payment_fees": "6.05",
+               "shipping_cost_actual": "7.40", "shipping_label_ref": "FICTIF-ETIQ-1", "source": "webhook Shopify FICTIF",
+               "lines": [{"public_sku": "DSP-FICTIF_ALPHA-FR", "qty": 1}]}
+    assert client.post("/orders/shipped", headers=JR.HORDERS, json=shipped).status_code == 201
+    second = client.post("/predrop/open", headers=OWNER, json={"product_key": P1, "drop_date": "2026-10-27", "market_ref_chf": "250"})
+    assert second.status_code == 201, second.text
+    assert body(second)["predrop"]["quota"]["predrop_remaining"] == 9  # 20 − réserve 2 = 18 vendables, 50 %
+
+
+def test_reduction_never_refunds_an_already_shipped_reservation(tmp_path: Path) -> None:
+    client, svc, clock = ready(tmp_path)
+    assert open_predrop(client).status_code == 201
+    for i in range(3):
+        reserve(client, f"FICTIF-CMD-{i}", f"c{i}", paid_at=NOW + timedelta(minutes=i))
+    clock.now = NOW + timedelta(minutes=10)
+    # La dernière payée a déjà été expédiée (arrivage partiel) : elle est servie, jamais remboursée.
+    shipped = {"order_id": "FICTIF-CMD-2", "paid_at": (NOW + timedelta(minutes=2)).isoformat(), "net_sales_ht": "212.67",
+               "payment_fees": "6.05", "shipping_cost_actual": "7.40", "shipping_label_ref": "FICTIF-ETIQ-2",
+               "source": "webhook Shopify FICTIF", "lines": [{"public_sku": "DSP-FICTIF_ALPHA-FR", "qty": 1}]}
+    assert client.post("/orders/shipped", headers=JR.HORDERS, json=shipped).status_code == 201
+    cut = client.post(f"/predrop/allocations/{P1}/reduce", headers=JR.HOPS,
+                      json={"new_qty": 3, "supplier_confirmation_ref": "FICTIF-REDUC-1", "reason": "livraison partielle FICTIVE"})
+    plan = body(cut)["plan"]
+    assert plan["kept"] == ["FICTIF-CMD-2", "FICTIF-CMD-0"] and plan["refunded"] == ["FICTIF-CMD-1"]

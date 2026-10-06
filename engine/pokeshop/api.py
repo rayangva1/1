@@ -4391,11 +4391,15 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
 
     def _predrop_eligibility(product_key: str, *, market_ref: Decimal | None, ignore: str | None = None) -> Eligibility:
         """Éligibilité évaluée sur les registres du moteur (catalogue, validations, coûts, stop-loss, incidents)."""
+        for stream, what in ((CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation"),
+                             (CatalogApprovalBook.STREAM, "registre des validations de fiches"),
+                             (CostRegister.STREAM, "registre de coûts historiques"),
+                             (OrderRegister.STREAM, "registre des commandes")):  # fmt: skip
+            _persistence_guard(stream, what)
         entry = svc.catalog.entry_for(product_key)
         listing_known = entry is not None and entry.canonical
         approval = svc.catalog_approvals.effective_for(entry.listing, entry.product_id) if entry is not None else None
         allocation = svc.predrop.allocation(product_key)
-        active = svc.predrop.active_for(product_key)
         return evaluate_eligibility(
             product_key=product_key,
             config_status=svc.predrop_config,
@@ -4410,7 +4414,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             stoploss_problem=_predrop_stoploss_problem(entry, product_key),
             quarantined=_predrop_quarantined(entry, product_key),
             committed=0,
-            open_predrop=None if active is None or active.predrop_id == ignore else active.predrop_id,
+            open_predrop=svc.predrop.unsettled(product_key, _shipped, ignore=ignore),
         )
 
     def _predrop_view(predrop: Predrop, now: datetime) -> dict[str, Any]:
@@ -4482,11 +4486,11 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         remboursement intégral des dernières réservations (préparé, avec brouillon d'email ; validation de la
         propriétaire aux niveaux d'autonomie 1 et 2)."""
         principal = require_api(request)
-        _predrop_guard()
+        _predrop_guard((OrderRegister.STREAM, "registre des commandes"))
         body = await _body(request, PredropReduceIn)
         result = svc.predrop.reduce_allocation(
             product_key, body.new_qty, supplier_confirmation_ref=body.supplier_confirmation_ref, reason=body.reason,
-            recorded_by=principal.name, at=svc.clock(), autonomy_level=int(svc.autonomy.level),
+            recorded_by=principal.name, at=svc.clock(), autonomy_level=int(svc.autonomy.level), shipped=_shipped,
         )  # fmt: skip
         if result.created:
             _predrop_audit(principal, "predrop.allocation_reduce", product_key,
