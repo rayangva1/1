@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 import da_sync
+import fictifs
 import markdown_mini
 import publication
 import pytest
@@ -20,8 +21,8 @@ from typo import NBSP, NNBSP, fautes, typographier
 
 REPO = Path(__file__).resolve().parents[2]
 LANDING = REPO / "site" / "landing"
-WEBHOOK_FICTIF = "https://n8n.exemple.invalid/webhook/alertes-inscription"
-URL_FICTIVE = "https://landing.exemple.invalid/"
+WEBHOOK_FICTIF = fictifs.WEBHOOK_FICTIF
+URL_FICTIVE = fictifs.URL_FICTIVE
 
 
 # ----------------------------------------------------------------------------- dépôt
@@ -182,24 +183,7 @@ def test_plan_de_copie_direction_b_et_direction_inconnue() -> None:
 # ----------------------------------------------------------------------------- publication
 def _champs_fictifs(nom: str = publication.NOM_DE_TRAVAIL) -> dict[str, rc.Field]:
     """Tous les champs validés avec des valeurs FICTIVES (jamais publiées)."""
-    champs = publication.charger_champs()
-    valeurs = {
-        "NOM_BOUTIQUE": nom,
-        "WEBHOOK_INSCRIPTION": WEBHOOK_FICTIF,
-        "URL_LANDING": URL_FICTIVE,
-        "EMAIL_SUPPORT": "contact@exemple.invalid",
-        "EMAIL_DONNEES": "donnees@exemple.invalid",
-        "MOIS_OUVERTURE": "novembre 2026",
-        "URL_COOKIES": URL_FICTIVE + "cookies",
-        "ST_POLICES": "Google Fonts (Google)",
-    }
-    sortie = {}
-    for cle, f in champs.items():
-        if f.alias_of:
-            sortie[cle] = f
-            continue
-        sortie[cle] = dataclasses.replace(f, status=rc.Status.VALIDE, value=valeurs.get(cle, f"FICTIF {cle.lower()}"), validated_by="test")
-    return sortie
+    return fictifs.champs_fictifs(nom)
 
 
 def test_webhook_valide() -> None:
@@ -226,32 +210,27 @@ def test_apercu_construit_et_garde_bandeau(tmp_path: Path) -> None:
 
 
 def source_visuels_locaux(tmp_path: Path) -> tuple[Path, dict]:
-    """Copie de la landing dont les visuels sont « rapatriés » (fichiers factices, manifeste en source locale)."""
-    source = tmp_path / "lp"
-    shutil.copytree(LANDING, source)
-    m = json.loads(visuels.CONFIG.read_text(encoding="utf-8"))
-    m["source"] = "local"
-    for ident, v in m["visuels"].items():
-        v["largeur_min"], v["hauteur_min"] = v["largeur"] // 2, v["hauteur"] // 2
-        for variante in visuels.VARIANTES:
-            cible = visuels.chemin_local(m, ident, variante, source)
-            cible.parent.mkdir(parents=True, exist_ok=True)
-            cible.write_bytes(b"FICTIF")
-    visuels.appliquer(m, sorted(source.glob("*.html")), racine=source)
-    return source, m
+    """Copie de la landing dont les visuels sont « rapatriés » (variantes WebP factices, manifeste en source locale)."""
+    return fictifs.landing_aux_visuels(tmp_path, "local")
 
 
 def test_publication_refusee_tant_que_les_visuels_sont_distants(tmp_path: Path) -> None:
     """La page publiée ne charge aucune image d'un tiers (CSP img-src 'self', aucune IP transmise)."""
-    assert visuels.charger()["source"] == "distant"
+    source, m = fictifs.landing_aux_visuels(tmp_path, "distant", nom="distant")
     with pytest.raises(publication.PublicationError) as exc:
-        publication.construire("publication", tmp_path / "pub", champs=_champs_fictifs())
+        publication.construire("publication", tmp_path / "pub", champs=_champs_fictifs(), source=source, visuels_manifeste=m)
     assert any("rapatrier_visuels.py" in e for e in exc.value.erreurs)
     source, m = source_visuels_locaux(tmp_path)
-    (source / m["dossier_local"] / (m["visuels"]["autocollant-lumi"]["fichier"] + ".png")).unlink()
+    visuels.chemin_variante(m, "autocollant-lumi", 256, source).unlink()
     with pytest.raises(publication.PublicationError) as exc:
         publication.construire("publication", tmp_path / "pub2", champs=_champs_fictifs(), source=source, visuels_manifeste=m)
     assert any("autocollant-lumi" in e and "absent" in e for e in exc.value.erreurs)
+    source, m = fictifs.landing_aux_visuels(tmp_path, "local", nom="lourd")
+    lourde = visuels.chemin_variante(m, "quai-nuit", 1280, source)
+    lourde.write_bytes(lourde.read_bytes() + b"\x00" * visuels.plafond_octets(1280))
+    with pytest.raises(publication.PublicationError) as exc:
+        publication.construire("publication", tmp_path / "pub3", champs=_champs_fictifs(), source=source, visuels_manifeste=m)
+    assert any("quai-nuit" in e and "budget" in e for e in exc.value.erreurs)
 
 
 def test_publication_complete_avec_champs_fictifs(tmp_path: Path) -> None:

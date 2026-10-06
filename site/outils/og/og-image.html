@@ -5,7 +5,7 @@
   <!-- Gabarit de l'image de partage (1200 × 630), ambiance « Nuit sur le Léman » — rendu par site/outils/generer_og.py.
        Décor 100 % CSS (aucune image distante, aucun élément sous licence). Nom de travail NON VALIDÉ. -->
   <title>Image de partage — Quai des Cartes</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Fraunces:ital,opsz,wght,SOFT@1,9..144,300..600,100&amp;family=Space+Grotesk:wght@500;700&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Fraunces:ital,opsz,wght,SOFT@1,144,500,100&amp;display=swap">
   <link rel="stylesheet" href="../../landing/assets/da/tokens.css">
   <link rel="stylesheet" href="../../landing/assets/da/components.css">
   <link rel="stylesheet" href="../../landing/assets/da/ambiance.css">
@@ -15,7 +15,7 @@
     .og { position: relative; isolation: isolate; width: 1200px; height: 630px; overflow: hidden; --lp-lune-x: 78%; --lp-lune-y: 18%; }
     .og .lp-hero__scene { inset: 0; }
     .og .lp-hero__voile { background: linear-gradient(90deg, color-mix(in srgb, var(--da-color-nuit-profonde) 88%, transparent) 0%, color-mix(in srgb, var(--da-color-nuit-profonde) 55%, transparent) 50%, transparent 72%); }
-    .og .nt-lune { width: 110px; margin-left: -55px; }
+    .og .lp-hero__lune { width: 110px; margin: -55px 0 0 -55px; }
     .og__texte { position: absolute; left: 72px; top: 64px; width: 700px; }
     .og__texte img { height: 34px; width: auto; display: block; margin-bottom: 40px; }
     .og .lp-hero__titre { margin: 0; font-size: 76px; }
@@ -26,14 +26,13 @@
   <div class="og">
     <div class="lp-hero__scene nt-scene nt-scene--nuit">
       <span class="nt-s nt-s--ciel"></span>
-      <span class="nt-s nt-s--tourbillons"><span></span><span></span><span></span><span></span><span></span></span>
+      <span class="nt-s nt-etoiles"></span>
+      <span class="nt-s lp-hero__lune"><span class="nt-lune"></span></span>
       <span class="nt-s nt-s--relief"></span>
       <span class="nt-s nt-s--lac"></span>
       <span class="nt-s nt-s--quai"><span></span><span></span></span>
     </div>
     <div class="lp-hero__voile"></div>
-    <div class="nt-etoiles"></div>
-    <div class="nt-lune"></div>
     <div class="og__texte">
       <img src="../../landing/assets/da/logo-horizontal-fond-sombre.svg" alt="Quai des Cartes">
       <h1 class="da-title lp-hero__titre"><span class="lp-hero__ligne">Pokémon JCC en français,</span><em class="lp-accent lp-hero__ligne">expédié depuis Genève.</em></h1>

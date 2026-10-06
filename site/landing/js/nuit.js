@@ -1,11 +1,15 @@
 /*
  * Ambiance « Nuit sur le Léman » — effets visuels de la landing et des maquettes (docs/05-da/DIRECTION_NUIT.md).
  *
- * - Images de marque (balises data-visuel) : fondu à l'arrivée ; si une image ne charge pas, elle est masquée et le
- *   décor CSS de secours reste visible (jamais d'icône d'image cassée).
- * - Bouton « Pause des animations » (WCAG 2.2.2) : met en pause toutes les animations, mémorisé si possible.
- * - Apparitions au défilement (IntersectionObserver), parallaxe légère, lueur qui suit le pointeur, survol 3D des
- *   cartes « verre dépoli ». Tout est coupé si le système demande de réduire les animations ou si la pause est active.
+ * - Images de marque (balises data-visuel) : fondu à l'arrivée ; la scène qui les porte reçoit la classe a-visuel
+ *   (le décor CSS/SVG de secours n'est alors plus peint : pas de seconde lune ni d'étoiles par-dessus la peinture).
+ *   Si une image ne charge pas, elle est masquée et le décor de secours reste visible (jamais d'icône cassée).
+ * - Boutons « Pause des animations » (WCAG 2.2.2, en-tête et pied de page) : mettent en pause toutes les
+ *   animations, choix mémorisé si possible.
+ * - Apparitions au défilement (IntersectionObserver), en-tête opaque après défilement, survol 3D des panneaux
+ *   « verre », rail des formats accessible au clavier, question fréquente ouverte quand un lien y mène.
+ *   Les effets liés au défilement (héro, teintes des chapitres) sont en CSS (animation-timeline).
+ *   Tout mouvement est coupé si le système demande de réduire les animations ou si la pause est active.
  *
  * Aucun appel réseau, aucune donnée collectée. Sans JavaScript, la page reste complète (rien n'est masqué).
  */
@@ -23,8 +27,16 @@
   /* ---------------------------------------------------------------- images de marque */
   function suivreImages() {
     Array.prototype.forEach.call(document.querySelectorAll("img[data-visuel]"), function (img) {
-      function chargee() { img.classList.remove("est-indisponible"); img.classList.add("est-chargee"); }
-      function indisponible() { img.classList.add("est-indisponible"); }
+      var scene = img.closest(".nt-scene");
+      function chargee() {
+        img.classList.remove("est-indisponible");
+        img.classList.add("est-chargee");
+        if (scene) { scene.classList.add("a-visuel"); }
+      }
+      function indisponible() {
+        img.classList.add("est-indisponible");
+        if (scene) { scene.classList.remove("a-visuel"); }
+      }
       img.addEventListener("load", chargee);
       img.addEventListener("error", indisponible);
       if (img.complete) {
@@ -34,27 +46,28 @@
   }
 
   /* ---------------------------------------------------------------- pause des animations */
-  function initPause(surChangement) {
-    var bouton = document.getElementById("lp-animations");
-    if (!bouton) { return; }
+  function initPause() {
+    var boutons = Array.prototype.slice.call(document.querySelectorAll("[data-pause-animations]"));
+    if (!boutons.length) { return; }
     /* Libellé constant (« Pause des animations ») : l'état est porté par aria-pressed (bouton bascule). */
     function afficher() {
       var enPause = html.getAttribute("data-animations") === "pause";
-      bouton.setAttribute("aria-pressed", enPause ? "true" : "false");
+      boutons.forEach(function (b) { b.setAttribute("aria-pressed", enPause ? "true" : "false"); });
     }
-    bouton.hidden = false;
-    afficher();
-    bouton.addEventListener("click", function () {
-      var pause = html.getAttribute("data-animations") !== "pause";
-      if (pause) { html.setAttribute("data-animations", "pause"); } else { html.removeAttribute("data-animations"); }
-      try {
-        if (pause) { window.localStorage.setItem("lp-animations", "pause"); } else { window.localStorage.removeItem("lp-animations"); }
-      } catch (e) {
-        /* stockage indisponible : le choix vaut pour cette visite */
-      }
-      afficher();
-      surChangement();
+    boutons.forEach(function (bouton) {
+      bouton.hidden = false;
+      bouton.addEventListener("click", function () {
+        var pause = html.getAttribute("data-animations") !== "pause";
+        if (pause) { html.setAttribute("data-animations", "pause"); } else { html.removeAttribute("data-animations"); }
+        try {
+          if (pause) { window.localStorage.setItem("lp-animations", "pause"); } else { window.localStorage.removeItem("lp-animations"); }
+        } catch (e) {
+          /* stockage indisponible : le choix vaut pour cette visite */
+        }
+        afficher();
+      });
     });
+    afficher();
   }
 
   /* ---------------------------------------------------------------- apparitions */
@@ -85,65 +98,22 @@
     }, 4000);
   }
 
-  /* ---------------------------------------------------------------- parallaxe et en-tête */
-  function initDefilement() {
+  /* ---------------------------------------------------------------- en-tête */
+  function initEntete() {
     var entete = document.getElementById("entete");
-    var couches = Array.prototype.slice.call(document.querySelectorAll("[data-parallaxe]"));
-    var departs = [];
+    if (!entete) { return; }
     var enAttente = false;
-    function defilement() { return window.pageYOffset || document.documentElement.scrollTop || 0; }
-    /* Défilement auquel la couche est « au repos » : zone centrée dans la fenêtre, ou zéro si elle est visible
-       dès l'arrivée (le héro ne bouge pas tant qu'on n'a pas défilé). */
-    function mesurer() {
-      var y = defilement();
-      var hauteur = window.innerHeight;
-      departs = couches.map(function (el) {
-        var zone = el.parentElement.getBoundingClientRect();
-        var depart = zone.top + y + zone.height / 2 - hauteur / 2;
-        return depart < hauteur ? 0 : depart;
-      });
-    }
     function maj() {
       enAttente = false;
-      var y = defilement();
-      if (entete) { entete.classList.toggle("est-defile", y > 24); }
-      var actif = mouvementAutorise();
-      var hauteur = window.innerHeight;
-      couches.forEach(function (el, i) {
-        if (!actif) { el.style.removeProperty("--decalage"); return; }
-        var zone = el.parentElement.getBoundingClientRect();
-        if (zone.bottom < -200 || zone.top > hauteur + 200) { return; }
-        var facteur = parseFloat(el.getAttribute("data-parallaxe")) || 0;
-        var decalage = Math.max(-160, Math.min(160, (y - departs[i]) * facteur));
-        el.style.setProperty("--decalage", decalage.toFixed(1) + "px");
-      });
+      entete.classList.toggle("est-defile", (window.pageYOffset || document.documentElement.scrollTop || 0) > 24);
     }
-    function demander() {
+    window.addEventListener("scroll", function () {
       if (!enAttente) { enAttente = true; window.requestAnimationFrame(maj); }
-    }
-    window.addEventListener("scroll", demander, { passive: true });
-    window.addEventListener("resize", function () { mesurer(); demander(); });
-    window.addEventListener("load", function () { mesurer(); demander(); });
-    mesurer();
+    }, { passive: true });
     maj();
-    return demander;
   }
 
-  /* ---------------------------------------------------------------- lueur du pointeur */
-  function initLueur() {
-    var hero = document.querySelector(".lp-hero");
-    if (!hero || !pointeurFin || !pointeurFin.matches) { return; }
-    hero.addEventListener("pointermove", function (e) {
-      if (!mouvementAutorise()) { return; }
-      var r = hero.getBoundingClientRect();
-      hero.style.setProperty("--px", ((e.clientX - r.left) / r.width * 100).toFixed(1) + "%");
-      hero.style.setProperty("--py", ((e.clientY - r.top) / r.height * 100).toFixed(1) + "%");
-      hero.classList.add("lp-hero--lueur");
-    });
-    hero.addEventListener("pointerleave", function () { hero.classList.remove("lp-hero--lueur"); });
-  }
-
-  /* ---------------------------------------------------------------- cartes « verre dépoli » */
+  /* ---------------------------------------------------------------- panneaux « verre » */
   function initHolo() {
     if (!pointeurFin || !pointeurFin.matches) { return; }
     Array.prototype.forEach.call(document.querySelectorAll(".nt-holo"), function (carte) {
@@ -165,14 +135,49 @@
     });
   }
 
+  /* ---------------------------------------------------------------- rail des formats (mobile) */
+  function initRails() {
+    var rails = Array.prototype.slice.call(document.querySelectorAll("[data-rail]"));
+    if (!rails.length) { return; }
+    /* Un rail qui défile horizontalement doit pouvoir recevoir le focus (flèches du clavier). */
+    function maj() {
+      rails.forEach(function (rail) {
+        if (rail.scrollWidth > rail.clientWidth + 1) {
+          rail.setAttribute("tabindex", "0");
+          rail.setAttribute("role", "region");
+        } else {
+          rail.removeAttribute("tabindex");
+          rail.removeAttribute("role");
+        }
+      });
+    }
+    window.addEventListener("resize", maj);
+    maj();
+  }
+
+  /* ---------------------------------------------------------------- questions fréquentes */
+  function initQuestions() {
+    function ouvrir(hash) {
+      if (!hash || hash.length < 2) { return; }
+      var cible = document.getElementById(decodeURIComponent(hash.slice(1)));
+      if (cible && cible.tagName === "DETAILS") { cible.open = true; }
+    }
+    document.addEventListener("click", function (e) {
+      var lien = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+      if (lien) { ouvrir(lien.getAttribute("href")); }
+    });
+    window.addEventListener("hashchange", function () { ouvrir(window.location.hash); });
+    ouvrir(window.location.hash);
+  }
+
   function init() {
     suivreImages();
     initApparitions();
-    var rafraichir = initDefilement();
-    initPause(rafraichir);
-    initLueur();
+    initEntete();
+    initPause();
     initHolo();
-    if (reduit && reduit.addEventListener) { reduit.addEventListener("change", rafraichir); }
+    initRails();
+    initQuestions();
   }
 
   if (document.readyState === "loading") {

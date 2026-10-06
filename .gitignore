@@ -23,3 +23,6 @@ dashboard/out/*
 *.manifest
 pokeshop-sauvegardes/
 data/imports/
+
+# Visuels : PNG d'origine archivées par site/outils/rapatrier_visuels.py (lourdes, jamais publiées).
+site/visuels-sources/

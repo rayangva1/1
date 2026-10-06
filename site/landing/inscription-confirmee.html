@@ -14,12 +14,13 @@
   <link rel="apple-touch-icon" href="assets/da/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Fraunces:ital,opsz,wght,SOFT@1,9..144,300..600,100&amp;family=Space+Grotesk:wght@500;700&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Fraunces:ital,opsz,wght,SOFT@1,144,500,100&amp;display=swap">
   <link rel="stylesheet" href="assets/da/tokens.css">
   <link rel="stylesheet" href="assets/da/components.css">
   <link rel="stylesheet" href="assets/da/ambiance.css">
   <link rel="stylesheet" href="css/landing.css">
   <script src="js/theme.js"></script>
+  <script src="js/nuit.js" defer></script>
 </head>
 <body class="da-root lp-nuit lp-page-simple">
   <a class="lp-evitement" href="#contenu">Aller au contenu</a>
@@ -33,11 +34,21 @@
     </div>
   </header>
   <main id="contenu" class="lp-page">
+    <span class="nt-s nt-etoiles lp-page__ciel" aria-hidden="true"></span>
     <div class="da-container">
-      <div class="lp-page__carte">
+      <div class="lp-page__carte lp-page__carte--accueil">
+        <figure class="lp-page__lumi lp-page__lumi--arche nt-scene nt-scene--quai">
+          <span class="nt-s nt-s--ciel" aria-hidden="true"></span>
+          <span class="nt-s nt-s--astre" aria-hidden="true"><span class="nt-lune nt-lune--echo"></span></span>
+          <span class="nt-s nt-s--lac" aria-hidden="true"></span>
+          <span class="nt-s nt-s--quai" aria-hidden="true"><span></span><span></span></span>
+          <svg class="nt-s nt-s--lumi" viewBox="0 0 100 120" aria-hidden="true" focusable="false"><path class="nt-l-queue" d="M62 108C84 115 97 104 94 86"/><rect class="nt-l-carte" x="87" y="64" width="13" height="18" rx="2.5" transform="rotate(10 93 73)"/><path class="nt-l-corps" d="M29 113C22 92 25 66 39 56C48 50 61 52 67 60C77 74 77 96 71 113Z"/><ellipse class="nt-l-corps" cx="43" cy="42" rx="16" ry="12"/><ellipse class="nt-l-corps" cx="29" cy="45.5" rx="9.5" ry="6.5"/><circle class="nt-l-corps" cx="51" cy="32.5" r="2.8"/><path class="nt-l-croissant" d="M59.6 85.3A8 8 0 0 1 66.4 70.7A11.6 11.6 0 0 0 59.6 85.3Z"/><path class="nt-l-croissant" d="M34.4 51.3A3.4 3.4 0 0 0 35.6 44.7A4.9 4.9 0 0 1 34.4 51.3Z"/><circle class="nt-l-reflet" cx="34" cy="39.5" r="1.6"/><circle class="nt-l-reflet nt-l-reflet--nez" cx="20.5" cy="44" r="1.2"/></svg>
+          <img class="nt-visuel__img" alt="Illustration : Lumi, notre loutre mascotte, assise sur le quai sous la lune rose." sizes="8.5rem" fetchpriority="high" decoding="async" data-visuel="loutre-quai-lune" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_003425_4f1db69b-7506-485b-82ee-1a696297d929_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_003425_4f1db69b-7506-485b-82ee-1a696297d929_min.webp" width="1520" height="2688">
+        </figure>
       <h1 class="da-title">C'est confirmé</h1>
       <p>Vous recevrez l'alerte d'ouverture, puis les alertes de stock correspondant à vos choix et, au plus, un email récapitulatif par semaine.</p>
       <p>Chaque email contient un lien pour modifier vos préférences ou vous désinscrire en un clic.</p>
+      <p class="lp-signature">— Lumi (nom provisoire) veille sur le quai jusqu'à l'ouverture.</p>
       <p><a class="da-btn da-btn--secondary" href="./">Retour à l'accueil</a></p>
       </div>
     </div>

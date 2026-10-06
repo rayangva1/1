@@ -189,3 +189,100 @@ def test_mouvement_reduit_et_images_indisponibles(navigateur: Any, site: tuple[P
     assert page.evaluate("getComputedStyle(document.querySelector('.lp-hero__img')).visibility") == "hidden"
     assert page.is_visible(".lp-hero .nt-s--ciel")
     contexte.close()
+
+
+# ----------------------------------------------------------------------------- visuels (revue PERF-01) et contrastes (A11Y-01)
+@pytest.fixture(scope="module")
+def site_rapatrie(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
+    """Landing copiée puis « rapatriée » (vraies variantes WebP produites à partir de PNG d'aplat, réseau simulé)."""
+    pytest.importorskip("PIL")
+    import fictifs
+
+    racine, _, rapport = fictifs.depot_rapatrie(tmp_path_factory.mktemp("rapatrie"))
+    assert rapport.bascule, rapport.erreurs
+    serveur, url = _servir(racine.parent)
+    yield url
+    serveur.shutdown()
+
+
+@pytest.mark.parametrize(("largeur", "hauteur", "densite", "attendu"), [(390, 844, 3, "-1520.webp"), (1440, 900, 2, "-2688.webp"), (1280, 720, 1, "-1920.webp")])
+def test_image_principale_en_webp_jamais_en_png(navigateur: Any, site_rapatrie: str, largeur: int, hauteur: int, densite: int, attendu: str) -> None:
+    """Après rapatriement, aucun écran ne charge de PNG : le srcset ne contient que des variantes WebP budgétées."""
+    import visuels
+
+    contexte = navigateur.new_context(viewport={"width": largeur, "height": hauteur}, device_scale_factor=densite)
+    page = contexte.new_page()
+    images: list[str] = []
+    page.on("request", lambda r: images.append(r.url) if r.resource_type == "image" else None)
+    page.goto(site_rapatrie + "landing/index.html", wait_until="networkidle")
+    choisie = page.evaluate("document.querySelector('.lp-hero__img').currentSrc")
+    assert choisie.endswith(attendu), choisie
+    assert not [u for u in images if u.endswith(".png") and "/assets/visuels/" in u], images
+    largeur_variante = int(choisie.rsplit("-", 1)[1].removesuffix(".webp"))
+    corps = page.evaluate("fetch(document.querySelector('.lp-hero__img').currentSrc).then(r => r.arrayBuffer()).then(b => b.byteLength)")
+    assert corps <= visuels.plafond_octets(largeur_variante)
+    contexte.close()
+
+
+def _luminance(rgb: tuple[float, ...]) -> float:
+    def lin(c: float) -> float:
+        c = c / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2])
+
+
+TEXTES_SUR_ILLUSTRATION = (
+    ".lp-hero .lp-surtitre", ".lp-hero__accroche", ".lp-hero__ligne", ".lp-hero__texte", ".lp-nav a",
+    ".lp-alertes__intro .lp-surtitre-section", "#titre-alertes", ".lp-alertes__intro .lp-intro",
+    ".lp-leman__texte .lp-surtitre-section", "#titre-promesse", ".lp-leman__texte .lp-intro",
+)
+
+
+@pytest.mark.parametrize(("largeur", "hauteur"), [(1440, 900), (1024, 768), (390, 844)])
+def test_texte_sur_illustration_contraste_aa_meme_sur_une_image_blanche(navigateur: Any, site: tuple[Path, str], largeur: int, hauteur: int) -> None:
+    """Chaque illustration remplacée par du blanc pur (pire cas) : le texte posé dessus reste AA grâce aux voiles."""
+    import io
+    import re
+
+    image = pytest.importorskip("PIL.Image")
+    _, url = site
+    tampon = io.BytesIO()
+    image.new("RGB", (8, 8), (255, 255, 255)).save(tampon, format="PNG")
+    blanc = tampon.getvalue()
+    contexte = navigateur.new_context(viewport={"width": largeur, "height": hauteur}, reduced_motion="reduce")
+    contexte.route("https://d8j0ntlcm91z4.cloudfront.net/**", lambda route: route.fulfill(status=200, content_type="image/png", body=blanc))
+    page = contexte.new_page()
+    page.goto(url + "index.html", wait_until="networkidle")
+    page.evaluate("document.querySelector('.lp-apercu')?.remove()")
+    insuffisants = []
+    for selecteur in TEXTES_SUR_ILLUSTRATION:
+        for element in page.query_selector_all(selecteur):
+            if not element.is_visible():
+                continue
+            element.scroll_into_view_if_needed()
+            info = element.evaluate(
+                """e => { const r = document.createRange(); r.selectNodeContents(e);
+                const rs = [...r.getClientRects()].filter(x => x.width > 2 && x.height > 2);
+                const x0 = Math.max(0, Math.min(...rs.map(x => x.left))), y0 = Math.max(0, Math.min(...rs.map(x => x.top)));
+                const cs = getComputedStyle(e);
+                return {x: x0, y: y0, w: Math.min(innerWidth, Math.max(...rs.map(x => x.right))) - x0,
+                        h: Math.min(innerHeight, Math.max(...rs.map(x => x.bottom))) - y0, couleur: cs.color,
+                        taille: parseFloat(cs.fontSize), graisse: parseInt(cs.fontWeight), accent: e.matches('.lp-accent'),
+                        texte: e.textContent.trim().slice(0, 30)}; }"""
+            )
+            masque = page.add_style_tag(content="body *, body *::before, body *::after { color: transparent !important; "
+                                        "-webkit-text-fill-color: transparent !important; text-shadow: none !important; } .lp-accent { background: none !important; }")
+            capture = page.screenshot(clip={"x": info["x"], "y": info["y"], "width": info["w"], "height": info["h"]})
+            masque.evaluate("t => t.remove()")
+            octets = image.open(io.BytesIO(capture)).convert("RGB").tobytes()
+            fonds = sorted(_luminance(tuple(octets[i : i + 3])) for i in range(0, len(octets), 3))
+            fond = fonds[int(len(fonds) * 0.99) - 1]  # 99e centile : le fond le plus clair derrière le texte
+            rgb = (0xFF, 0x7A, 0xB8) if info["accent"] else tuple(float(v) for v in re.findall(r"[\d.]+", info["couleur"])[:3])
+            texte = _luminance(rgb)
+            ratio = (max(texte, fond) + 0.05) / (min(texte, fond) + 0.05)
+            seuil = 3.0 if info["taille"] >= 24 or (info["taille"] >= 18.66 and info["graisse"] >= 700) else 4.5
+            if ratio < seuil:
+                insuffisants.append((selecteur, info["texte"], round(ratio, 2), seuil))
+    contexte.close()
+    assert insuffisants == []

@@ -14,12 +14,13 @@
   <link rel="apple-touch-icon" href="assets/da/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Fraunces:ital,opsz,wght,SOFT@1,9..144,300..600,100&amp;family=Space+Grotesk:wght@500;700&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Fraunces:ital,opsz,wght,SOFT@1,144,500,100&amp;display=swap">
   <link rel="stylesheet" href="assets/da/tokens.css">
   <link rel="stylesheet" href="assets/da/components.css">
   <link rel="stylesheet" href="assets/da/ambiance.css">
   <link rel="stylesheet" href="css/landing.css">
   <script src="js/theme.js"></script>
+  <script src="js/nuit.js" defer></script>
 </head>
 <body class="da-root lp-nuit lp-page-simple">
   <a class="lp-evitement" href="#contenu">Aller au contenu</a>
@@ -33,11 +34,17 @@
     </div>
   </header>
   <main id="contenu" class="lp-page">
+    <span class="nt-s nt-etoiles lp-page__ciel" aria-hidden="true"></span>
     <div class="da-container">
-      <div class="lp-page__carte">
+      <div class="lp-page__carte lp-page__carte--accueil">
+        <figure class="lp-page__lumi nt-scene nt-scene--autocollant">
+          <span class="nt-s lp-autocollant__fond" aria-hidden="true"><svg class="nt-lumi nt-lumi--grand nt-lumi--salue" viewBox="-60 -60 120 120" aria-hidden="true" focusable="false"><circle class="nt-l-pelage" cx="-45" cy="-9" r="6"/><circle class="nt-l-pelage" cx="45" cy="-9" r="6"/><circle class="nt-l-oreille" cx="-46.5" cy="-9" r="2.6"/><circle class="nt-l-oreille" cx="46.5" cy="-9" r="2.6"/><path class="nt-l-pelage" d="M-46 6C-46 -24 -26 -36 0 -36C26 -36 46 -24 46 6C46 30 26 40 0 40C-26 40 -46 30 -46 6Z"/><path class="nt-l-front" d="M0 -36C14 -36 24 -31 30 -24C20 -28 10 -29 0 -29C-10 -29 -20 -28 -30 -24C-24 -31 -14 -36 0 -36Z"/><path class="nt-l-croissant" d="M-29.8 15.9A7 7 0 0 0 -32.2 2.1A10.2 10.2 0 0 1 -29.8 15.9Z"/><path class="nt-l-croissant" d="M29.8 15.9A7 7 0 0 1 32.2 2.1A10.2 10.2 0 0 0 29.8 15.9Z"/><ellipse class="nt-l-museau" cx="0" cy="15" rx="22" ry="13"/><path class="nt-l-nez" d="M-6.5 6.5Q0 3 6.5 6.5Q3 12.5 0 12.5Q-3 12.5 -6.5 6.5Z"/><g class="nt-l-moustaches"><circle cx="-9" cy="15" r="1.3"/><circle cx="-14" cy="18" r="1.3"/><circle cx="-9" cy="20.5" r="1.3"/><circle cx="9" cy="15" r="1.3"/><circle cx="14" cy="18" r="1.3"/><circle cx="9" cy="20.5" r="1.3"/></g><ellipse class="nt-l-oeil" cx="-17" cy="-5" rx="7" ry="8.5"/><ellipse class="nt-l-oeil" cx="17" cy="-5" rx="7" ry="8.5"/><circle class="nt-l-eclat" cx="-14.5" cy="-8.5" r="2.6"/><circle class="nt-l-eclat" cx="19.5" cy="-8.5" r="2.6"/><path class="nt-l-trait" d="M-6 15.5Q-3 19.5 0 15.5Q3 19.5 6 15.5"/><g class="nt-l-patte"><ellipse class="nt-l-pelage" cx="43" cy="-28" rx="8" ry="10.5" transform="rotate(18 43 -28)"/><circle class="nt-l-oreille" cx="43.5" cy="-26" r="3.2"/></g><rect class="nt-l-carte" x="-56" y="30" width="15" height="21" rx="3" transform="rotate(-16 -48 40)"/></svg></span>
+          <img class="nt-visuel__img" alt="Autocollant rond de Lumi, notre loutre mascotte, qui salue." sizes="9rem" fetchpriority="high" decoding="async" data-visuel="autocollant-lumi" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_005551_feac2db3-1d1e-4280-b87c-2782c9d27160_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_005551_feac2db3-1d1e-4280-b87c-2782c9d27160_min.webp" width="2048" height="2048">
+        </figure>
       <h1 class="da-title">Merci, vérifiez votre boîte mail</h1>
       <p>Nous venons de vous envoyer un email de confirmation. Cliquez sur son lien pour activer vos alertes : sans confirmation, nous ne vous écrirons pas.</p>
       <p>Rien reçu d'ici quelques minutes ? Regardez dans les courriers indésirables, puis réessayez depuis la <a href="./#alertes">page d'accueil</a>.</p>
+      <p class="lp-signature">— Lumi (nom provisoire) vous salue depuis le quai.</p>
       <p class="lp-note">Cette inscription ne réserve aucun produit et n'engage aucun paiement.</p>
       </div>
     </div>

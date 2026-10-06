@@ -20,7 +20,7 @@
 <link rel="stylesheet" href="assets/da/ambiance.css">   <!-- copie de tokens/tokens-nuit.css (site/outils/da_sync.py) -->
 ```
 
-L'ambiance est **toujours sombre** : elle l'emporte sur le réglage clair/sombre du système (sélecteur `:root[data-ambiance="nuit"][data-da]`, chargé après `tokens.css`). Il n'y a donc plus de bouton de thème sur la landing ; il est remplacé par un bouton **« Animations »** (pause de toutes les animations, voir §5).
+L'ambiance est **toujours sombre** : elle l'emporte sur le réglage clair/sombre du système (sélecteur `:root[data-ambiance="nuit"][data-da]`, chargé après `tokens.css`). Il n'y a donc plus de bouton de thème sur la landing ; il est remplacé par un bouton rond **« Pause des animations »** (icône seule, nom accessible conservé ; repris en texte dans le pied de page, voir §5).
 
 ## 3. Palette
 
@@ -43,7 +43,9 @@ Neutres indigo, encre clair de lune, **un accent rose lune** et deux touches de 
 
 Règles qui en découlent :
 - **Texte blanc sur le rose interdit** : 2.33:1 seulement entre `#F5F2FF` et `#FF6FAE`. Le texte d'un bouton rose est toujours `on-accent` (7.35:1 entre `#1A0826` et `#FF6FAE`).
-- Un panneau de verre posé sur une image garde au moins 82 % d'opacité de `surface` : les ratios ci-dessous restent alors ≥ 4.5:1 pour le texte principal même sur une zone claire de l'image. Le titre du héro est posé sur un voile `nuit-profonde` dégradé (côté gauche, haut sur mobile).
+- Un panneau de verre posé sur une image garde au moins 82 % d'opacité de `surface` (`--lp-verre` 86 %, `--lp-verre-fort` 94 %) : les ratios ci-dessous restent alors ≥ 4.5:1 pour le texte principal même sur une zone claire de l'image.
+- **Texte posé sur une illustration** (héro, bandeaux Léman et Aube) : toujours sur un voile `nuit-profonde` d'au moins 82 % sous le texte courant et 76 % sous un grand titre. Calcul du pire cas (pixel blanc pur sous un voile à 82 %) : fond résultant `#333243`, soit 11.34:1 pour `ink`, 6.55:1 pour `ink-muted`, 8.14:1 pour l'or et 5.20:1 pour le rose `lune` ; à 76 % (`#424151`) : 9.03:1 pour `ink` et 4.14:1 pour `lune` (grand titre, seuil 3:1). Vérifié par `site/tests/test_landing_e2e.py` (images remplacées par du blanc, 1440, 1024 et 390 px). Sur mobile, le texte des bandeaux passe **sous** l'image, jamais dessus.
+- **Une seule lune visible par écran** : la lune en croissant du héro (décor de secours), avec un écho dans le pied de page ; ailleurs, un soleil couchant (Léman) ou la lumière d'une boîte (drop).
 - Les couleurs de décor (`ciel-*`, `lac-*`, `papier`) ne portent jamais de texte, sauf la légende `lac-1` sur `papier` contrôlée ci-dessous.
 
 ### Contrastes WCAG 2.x (calculés, tronqués à 2 décimales)
@@ -98,18 +100,21 @@ Seuils : texte ≥ 4.5:1 (AA), bordures, focus et boutons ≥ 3:1 (WCAG 1.4.11).
 
 | Rôle | Police | Réglages | Repli |
 |---|---|---|---|
-| Grands titres | **Bricolage Grotesque** 800, optique 96 | Bas-de-casse, interlettrage −2,5 %, interligne 0.95 | Trebuchet MS, Arial |
-| Mots d'accent | **Fraunces** italique, SOFT 100, 400–600 | Un à quatre mots par titre, jamais un paragraphe | Georgia |
+| Grands titres | **Bricolage Grotesque** 700–800, optique 96 | Bas-de-casse, interlettrage −2,5 %, interligne 0.95 | Trebuchet MS, Arial |
+| Mots d'accent | **Fraunces** italique 500, SOFT 100, optique 144 (instance fixe, plus légère) | Un à quatre mots par titre, un titre sur deux au plus, jamais un paragraphe | Georgia |
 | Texte | **DM Sans** 400/500/700 | 16 px minimum, interligne 1.6 | Helvetica Neue, Arial |
-| Dates, surtitres, prix | **Space Grotesk** 500/700 | `tabular-nums` ; surtitres en capitales espacées | DM Sans |
+| Dates, surtitres, prix | **DM Sans** 600 | `tabular-nums` ; surtitres en capitales espacées (0.8125 rem, +14 %) | Helvetica Neue, Arial |
 
 URL : `tokens.json > ambiances > nuit > googleFonts` (appliquée à chaque page par `site/outils/da_sync.py`). Sans Google Fonts (`publication.py --sans-google-fonts`), les replis restent lisibles.
 
 ## 5. Mouvement
 
-- **Scène du héro** : étoiles CSS qui scintillent, lune rose qui « respire » (halo, 6 s), ciel qui tourne très lentement (anneaux de pinceau, 140 s le tour), étoile filante rare, parallaxe légère au défilement (transformations seulement).
+- **Récit « la nuit avance »** : un visuel par chapitre — héro (nuit étoilée), Lumi (planche et autocollant), jour du drop, réservation garantie, aube des alertes (aurore), Léman (Alpes au coucher, jet d'eau sur mobile), quai la nuit (pied de page). Mises en page variées : plein écran, alternance gauche/droite, frise typographique, bandeaux plein cadre, manifeste typographique. Mot d'accent italique rose sur un titre sur deux au plus.
+- **Moment signature, piloté par le défilement** (CSS `animation-timeline`, amélioration progressive) : la peinture du héro s'approche, le titre s'élève et s'efface, la lune monte et son reflet s'allonge sur le lac ; chaque chapitre teinte la nuit à son passage (or du drop, rose de la réservation, turquoise de l'aube) ; la bordure du formulaire fait un seul tour en entrant dans l'écran. L'autocollant de Lumi « se décolle » au survol.
+- **Décor de secours** (si une illustration ne charge pas) : ciel tourbillonnant au trait de pinceau (SVG, filtre de turbulence, 180 s le tour), lune en croissant qui « respire » (halo seul, opacité et échelle), étoiles qui scintillent, étoile filante rare, et Lumi dessinée (silhouette assise sur le quai, bustes de la planche). Il disparaît dès que l'illustration est chargée (classe `a-visuel`) : jamais deux lunes ni une trame d'étoiles par-dessus la peinture.
 - **Apparitions** au défilement (IntersectionObserver, 900 ms, courbe `cubic-bezier(0.22, 1, 0.36, 1)`), cartes « verre dépoli » avec **survol 3D léger** et reflet nacré **limité à la palette** (rose, or, turquoise) : jamais un arc-en-ciel imitant une carte réelle.
-- **Accessibilité** : `prefers-reduced-motion: reduce` coupe **toutes** les animations, transitions, parallaxes et la lueur qui suit le pointeur ; un bouton « Animations » (dans l'en-tête, état mémorisé) met tout en pause pour tout le monde (WCAG 2.2.2). Sans JavaScript, tout le contenu est visible (les apparitions ne masquent rien sans script).
+- **Accessibilité** : `prefers-reduced-motion: reduce` coupe **toutes** les animations, transitions et effets de défilement ; le bouton « Pause des animations » (en-tête et pied de page, état mémorisé) met tout en pause pour tout le monde (WCAG 2.2.2). Sans JavaScript, tout le contenu est visible (les apparitions ne masquent rien sans script).
+- **Coût de rendu** : seules l'opacité et les transformations sont animées (aucune ombre animée) ; le flou d'arrière-plan est réservé à l'en-tête défilé et au formulaire ; `will-change` seulement pendant un survol.
 - Aucun mouvement ne porte d'information : une animation n'annonce jamais un stock, une date ou une urgence.
 
 ## 6. Mascotte : Lumi (nom provisoire)
@@ -130,7 +135,8 @@ Loutre **originale** créée pour la boutique : fourrure indigo profond, **marqu
 
 - Douze visuels générés pour la marque avec Higgsfield (fichiers `hf_…` ; bannières 21:9 et 16:9, couvertures 9:16, planche d'expressions, autocollant) listés dans **un seul fichier** : `site/config/visuels.json` (adresse distante, dimensions, usage). Les pages ne contiennent que des balises `data-visuel="…"` synchronisées par `site/outils/visuels.py`.
 - **Aperçu** : images servies par l'adresse distante. **Publication** : refusée tant que les images ne sont pas rapatriées en local (`python site/outils/rapatrier_visuels.py`) ; la politique de sécurité de la page publiée n'autorise que les images du site.
-- Chaque emplacement d'image a un **fond de secours** dessiné en CSS (ciel, lune, lac, montagnes) : la page reste belle si une image ne charge pas.
+- Chaque emplacement d'image a un **fond de secours** dessiné en CSS et SVG (ciel, lune, lac, montagnes, Lumi) : la page reste belle si une image ne charge pas, et ce décor est masqué dès que l'illustration arrive.
+- **Poids** : en aperçu, seule la variante légère `_min.webp` est chargée (jamais la PNG haute définition). Au rapatriement, la PNG d'origine est archivée hors du dossier publié et des variantes WebP sont produites à plusieurs largeurs (`largeurs` du manifeste), dans un budget de 250 Ko jusqu'à 1600 px et 450 Ko au-delà ; le `srcset` ne liste que ces variantes, et `sizes` tient compte du recadrage `object-fit: cover` du héro.
 - Texte alternatif descriptif pour chaque image porteuse de sens ; `alt=""` pour les images purement décoratives.
 
 ## Validation humaine requise

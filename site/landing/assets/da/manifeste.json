@@ -2,11 +2,11 @@
   "avertissement": "Copies générées par site/outils/da_sync.py depuis docs/05-da : ne pas modifier ici.",
   "direction": "b",
   "ambiance": "nuit",
-  "google_fonts": "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=DM+Sans:opsz,wght@9..40,400..700&family=Fraunces:ital,opsz,wght,SOFT@1,9..144,300..600,100&family=Space+Grotesk:wght@500;700&display=swap",
+  "google_fonts": "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700..800&family=DM+Sans:opsz,wght@9..40,400..700&family=Fraunces:ital,opsz,wght,SOFT@1,144,500,100&display=swap",
   "fichiers": {
     "ambiance.css": {
       "source": "docs/05-da/tokens/tokens-nuit.css",
-      "sha256": "4c2988558e329c474a913b51b09fcb6559ae38422bc285db0f49b4c8a66c06fe"
+      "sha256": "ea22366afe1302298ee682e0b320e59b547ec6c25cc0d1378a53ccae7121b7a4"
     },
     "apple-touch-icon.png": {
       "source": "docs/05-da/logo/png/favicon-b-180.png",

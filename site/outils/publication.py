@@ -44,6 +44,7 @@ sys.path.insert(0, str(REPO / "docs" / "04-legal" / "outils"))
 
 import registre_champs as rc  # noqa: E402
 import visuels  # noqa: E402
+from lumi_svg import BUSTE_SALUE, SILHOUETTE_QUAI  # noqa: E402
 from markdown_mini import convertir  # noqa: E402
 from typo import typographier  # noqa: E402
 
@@ -174,6 +175,7 @@ def _tete(titre: str, description: str, indexable: bool) -> str:
   <link rel="stylesheet" href="assets/da/components.css">
   <link rel="stylesheet" href="css/landing.css">
   <script src="js/theme.js"></script>
+  <script src="js/nuit.js" defer></script>
 </head>
 """
 # Direction, ambiance (feuille assets/da/ambiance.css, data-ambiance) et URL Google Fonts sont posées ensuite par
@@ -188,7 +190,37 @@ MENTION_INDEPENDANCE = (
 )
 
 
-def _corps(contenu: str) -> str:
+#: Accueil illustré des pages de remerciement (revue DA-22) : Lumi au-dessus du titre, avec son décor de secours
+#: (dessin SVG) si l'illustration ne charge pas. Balises data-visuel synchronisées par site/outils/visuels.py.
+ACCUEILS: dict[str, str] = {
+    "merci.html": (
+        '        <figure class="lp-page__lumi nt-scene nt-scene--autocollant">\n'
+        f'          <span class="nt-s lp-autocollant__fond" aria-hidden="true">{BUSTE_SALUE}</span>\n'
+        '          <img class="nt-visuel__img" alt="Autocollant rond de Lumi, notre loutre mascotte, qui salue." '
+        'sizes="9rem" fetchpriority="high" decoding="async" data-visuel="autocollant-lumi" src="">\n'
+        "        </figure>\n"
+    ),
+    "inscription-confirmee.html": (
+        '        <figure class="lp-page__lumi lp-page__lumi--arche nt-scene nt-scene--quai">\n'
+        '          <span class="nt-s nt-s--ciel" aria-hidden="true"></span>\n'
+        '          <span class="nt-s nt-s--astre" aria-hidden="true"><span class="nt-lune nt-lune--echo"></span></span>\n'
+        '          <span class="nt-s nt-s--lac" aria-hidden="true"></span>\n'
+        '          <span class="nt-s nt-s--quai" aria-hidden="true"><span></span><span></span></span>\n'
+        f"          {SILHOUETTE_QUAI}\n"
+        '          <img class="nt-visuel__img" alt="Illustration : Lumi, notre loutre mascotte, assise sur le quai sous la lune rose." '
+        'sizes="8.5rem" fetchpriority="high" decoding="async" data-visuel="loutre-quai-lune" src="">\n'
+        "        </figure>\n"
+    ),
+}
+
+
+def _corps(contenu: str, accueil: str | None = None) -> str:
+    carte = (
+        f'      <div class="lp-page__carte lp-page__carte--accueil">\n{accueil}{contenu}\n      </div>'
+        if accueil
+        else f'      <div class="lp-page__carte">\n{contenu}\n      </div>'
+    )
+    ciel = '    <span class="nt-s nt-etoiles lp-page__ciel" aria-hidden="true"></span>\n' if accueil else ""
     return f"""<body class="da-root lp-nuit lp-page-simple">
   <a class="lp-evitement" href="#contenu">Aller au contenu</a>
   <header class="lp-entete">
@@ -201,10 +233,8 @@ def _corps(contenu: str) -> str:
     </div>
   </header>
   <main id="contenu" class="lp-page">
-    <div class="da-container">
-      <div class="lp-page__carte">
-{contenu}
-      </div>
+{ciel}    <div class="da-container">
+{carte}
     </div>
   </main>
   <footer class="lp-pied lp-pied--simple">
@@ -226,6 +256,7 @@ PAGES_SIMPLES: dict[str, tuple[str, str, str]] = {
         """      <h1 class="da-title">Merci, vérifiez votre boîte mail</h1>
       <p>Nous venons de vous envoyer un email de confirmation. Cliquez sur son lien pour activer vos alertes : sans confirmation, nous ne vous écrirons pas.</p>
       <p>Rien reçu d'ici quelques minutes ? Regardez dans les courriers indésirables, puis réessayez depuis la <a href="./#alertes">page d'accueil</a>.</p>
+      <p class="lp-signature">— Lumi (nom provisoire) vous salue depuis le quai.</p>
       <p class="lp-note">Cette inscription ne réserve aucun produit et n'engage aucun paiement.</p>""",
     ),
     "inscription-confirmee.html": (
@@ -234,6 +265,7 @@ PAGES_SIMPLES: dict[str, tuple[str, str, str]] = {
         """      <h1 class="da-title">C'est confirmé</h1>
       <p>Vous recevrez l'alerte d'ouverture, puis les alertes de stock correspondant à vos choix et, au plus, un email récapitulatif par semaine.</p>
       <p>Chaque email contient un lien pour modifier vos préférences ou vous désinscrire en un clic.</p>
+      <p class="lp-signature">— Lumi (nom provisoire) veille sur le quai jusqu'à l'ouverture.</p>
       <p><a class="da-btn da-btn--secondary" href="./">Retour à l'accueil</a></p>""",
     ),
     "desinscription.html": (
@@ -270,7 +302,7 @@ def contenu_confidentialite(texte_md: str) -> str:
 def pages_secondaires(texte_confidentialite: str | None = None) -> dict[str, str]:
     """Contenu source (champs ``{{…}}`` non remplis) de chaque page secondaire."""
     pages = {
-        nom: typographier(_tete(titre, desc, indexable=False) + _corps(contenu))
+        nom: typographier(_tete(titre, desc, indexable=False) + _corps(contenu, ACCUEILS.get(nom)))
         for nom, (titre, desc, contenu) in PAGES_SIMPLES.items()
     }
     md = texte_confidentialite if texte_confidentialite is not None else CONFIDENTIALITE_MD.read_text(encoding="utf-8")
@@ -282,7 +314,8 @@ def pages_secondaires(texte_confidentialite: str | None = None) -> dict[str, str
         )
         + _corps(contenu_confidentialite(md))
     )
-    return pages
+    m = visuels.charger()
+    return {nom: visuels.appliquer_texte(texte, m, LANDING / nom) for nom, texte in pages.items()}
 
 
 def ecrire_pages_source(racine: Path = LANDING) -> list[str]:

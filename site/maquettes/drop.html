@@ -15,7 +15,7 @@
   <link rel="icon" href="../landing/assets/da/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Fraunces:ital,opsz,wght,SOFT@1,9..144,300..600,100&amp;family=Space+Grotesk:wght@500;700&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Fraunces:ital,opsz,wght,SOFT@1,144,500,100&amp;display=swap">
   <link rel="stylesheet" href="../landing/assets/da/tokens.css">
   <link rel="stylesheet" href="../landing/assets/da/components.css">
   <link rel="stylesheet" href="../landing/assets/da/ambiance.css">
@@ -35,29 +35,29 @@
         <img class="lp-logo__img lp-logo__img--sombre" src="../landing/assets/da/logo-horizontal-fond-sombre.svg" alt="Quai des Cartes" width="963" height="132">
       </a>
       <div class="lp-entete__actions">
-        <button type="button" class="lp-animations" id="lp-animations" aria-pressed="false" hidden>
+        <button type="button" class="lp-animations" id="lp-animations" data-pause-animations aria-pressed="false" title="Pause des animations" hidden>
           <svg class="lp-animations__pause" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M9 6v12M15 6v12"/></svg>
           <svg class="lp-animations__lecture" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5.5v13l11-6.5z"/></svg>
           <span class="lp-animations__texte">Pause des animations</span>
         </button>
-        <a class="da-btn lp-btn-verre lp-entete__cta" href="fiche-produit.html">Fiche du produit</a>
+        <a class="da-btn lp-btn-verre lp-entete__cta" href="fiche-produit.html"><span class="lp-cta__long">Fiche du produit</span><span class="lp-cta__court">La fiche</span></a>
       </div>
     </div>
   </header>
 
   <main id="contenu">
     <section class="lp-hero lp-hero--drop" aria-labelledby="titre-drop">
-      <div class="lp-hero__scene nt-scene nt-scene--drop" data-parallaxe="0.2">
+      <div class="lp-hero__scene nt-scene nt-scene--drop">
         <span class="nt-s nt-s--ciel" aria-hidden="true"></span>
-        <span class="nt-s nt-s--astre" aria-hidden="true"></span>
+        <span class="nt-s nt-s--astre" aria-hidden="true"><span class="nt-lune nt-lune--echo"></span></span>
+        <span class="nt-s nt-etoiles" aria-hidden="true"></span>
+        <span class="nt-s nt-filante" aria-hidden="true"></span>
         <span class="nt-s nt-s--lac" aria-hidden="true"></span>
         <span class="nt-s nt-s--rayons" aria-hidden="true"></span>
         <span class="nt-s nt-s--boite" aria-hidden="true"></span>
-        <img class="nt-visuel__img lp-hero__img" alt="Illustration : Lumi ouvre une boîte blanche scellée, sans marque, d'où jaillit une lumière dorée, sur le quai la nuit." sizes="100vw" fetchpriority="high" decoding="async" data-visuel="banniere-jour-de-drop" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_4994a131-f933-4b7c-ae73-70ebc14eda9e_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_4994a131-f933-4b7c-ae73-70ebc14eda9e_min.webp 1344w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_4994a131-f933-4b7c-ae73-70ebc14eda9e.png 2688w" width="2688" height="1520">
+        <img class="nt-visuel__img lp-hero__img" alt="Illustration : Lumi ouvre une boîte blanche scellée, sans marque, d'où jaillit une lumière dorée, sur le quai la nuit." sizes="100vw" fetchpriority="high" decoding="async" data-visuel="banniere-jour-de-drop" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_4994a131-f933-4b7c-ae73-70ebc14eda9e_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_4994a131-f933-4b7c-ae73-70ebc14eda9e_min.webp" width="2688" height="1520">
       </div>
       <div class="lp-hero__voile" aria-hidden="true"></div>
-      <div class="nt-etoiles" aria-hidden="true" data-parallaxe="0.08"></div>
-      <div class="nt-filante" aria-hidden="true"></div>
       <div class="lp-hero__contenu">
         <p class="lp-surtitre">Drop FICTIF · maquette</p>
         <h1 id="titre-drop" class="da-title lp-hero__titre lp-hero__titre--drop">
@@ -110,7 +110,7 @@
             <span class="nt-s nt-s--ciel" aria-hidden="true"></span>
             <span class="nt-s nt-s--fenetre" aria-hidden="true"></span>
             <span class="nt-s nt-s--pile" aria-hidden="true"><span></span><span></span><span></span></span>
-            <img class="nt-visuel__img" alt="Illustration : Lumi monte la garde devant une pile de boîtes blanches scellées à rubans indigo." sizes="(min-width: 900px) 30vw, 80vw" loading="lazy" decoding="async" data-visuel="cover-reservation" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_dfa69bd2-e797-432a-b582-a5aae6c85a95_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_dfa69bd2-e797-432a-b582-a5aae6c85a95_min.webp 760w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_dfa69bd2-e797-432a-b582-a5aae6c85a95.png 1520w" width="1520" height="2688">
+            <img class="nt-visuel__img" alt="Illustration : Lumi monte la garde devant une pile de boîtes blanches scellées à rubans indigo." sizes="(min-width: 900px) 30vw, 80vw" loading="lazy" decoding="async" data-visuel="cover-reservation" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_dfa69bd2-e797-432a-b582-a5aae6c85a95_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_dfa69bd2-e797-432a-b582-a5aae6c85a95_min.webp" width="1520" height="2688">
           </figure>
         </div>
         <div class="lp-reservation__texte" data-apparition>

@@ -5,24 +5,27 @@ Les pages (landing ``site/landing/*.html`` et maquettes ``site/maquettes/*.html`
 marquées ``data-visuel="<identifiant>"`` : ``<img>``, ``<source>`` (dans ``<picture>``) et ``<link rel="preload">``.
 Ce module réécrit leurs attributs gérés à partir du manifeste :
 
-* ``<img>`` : ``src`` (variante légère), ``srcset`` (légère + PNG haute définition), ``width``, ``height`` ;
+* ``<img>`` : ``src``, ``srcset``, ``width``, ``height`` ;
 * ``<source>`` : ``srcset``, ``width``, ``height`` ;
 * ``<link rel="preload">`` : ``href``, ``imagesrcset``.
 
 Le texte alternatif, ``sizes``, ``loading``, ``fetchpriority`` et ``media`` restent écrits dans la page (ils dépendent
 du contexte). Deux sources :
 
-* ``distant`` (aperçu) : adresses du service de génération, telles que la propriétaire les voit ;
-* ``local`` (publication) : fichiers rapatriés dans ``site/landing/assets/visuels/`` par
-  ``site/outils/rapatrier_visuels.py``, qui mesure aussi la largeur réelle des variantes légères.
+* ``distant`` (aperçu) : la variante légère ``<fichier>_min.webp`` du service de génération, **seule** (jamais la PNG
+  haute définition : plusieurs mégaoctets, elle serait choisie par presque tous les écrans) ;
+* ``local`` (publication) : variantes WebP à plusieurs largeurs (``<fichier>-<largeur>.webp``) produites par
+  ``site/outils/rapatrier_visuels.py`` dans ``site/landing/assets/visuels/`` à partir de la PNG d'origine, qui reste
+  une archive hors du dossier publié. Le ``srcset`` ne contient que ces variantes (descripteurs de largeur exacts).
 
 La publication est refusée tant que la source n'est pas ``local`` (``erreurs_publication``) : la page publiée ne
 charge aucune image d'un tiers (politique de sécurité ``img-src 'self'``, aucune adresse IP de visiteur transmise).
+Elle est aussi refusée si une variante dépasse son budget de poids (``plafond_octets``).
 
 Usage :
     python site/outils/visuels.py appliquer   # réécrit les balises data-visuel des pages
     python site/outils/visuels.py verifier    # code 1 si une page est désynchronisée ou un fichier local manque
-    python site/outils/visuels.py liste       # adresses de chaque variante
+    python site/outils/visuels.py liste       # adresses distantes et variantes locales de chaque visuel
 """
 
 from __future__ import annotations
@@ -40,9 +43,11 @@ CONFIG = REPO / "site" / "config" / "visuels.json"
 LANDING = REPO / "site" / "landing"
 MAQUETTES = REPO / "site" / "maquettes"
 SOURCES = ("distant", "local")
-VARIANTES = {"min": "_min.webp", "hd": ".png"}
-#: Largeur supposée de la variante légère tant qu'elle n'a pas été mesurée (fraction de la largeur de la PNG).
-HYPOTHESE_RATIO_MIN = 0.5
+#: Fichiers distants : variante légère (aperçu) et PNG haute définition (source du rapatriement, jamais servie).
+VARIANTES_DISTANTES = {"min": "_min.webp", "hd": ".png"}
+#: Budget de poids d'une variante locale : 250 Ko jusqu'à 1600 px de large (téléphones, cadres), 450 Ko au-delà
+#: (grands écrans). Objectif : image principale ≤ 250 Ko sur mobile, ≤ 450 Ko sur ordinateur.
+PLAFONDS_OCTETS = ((1600, 250 * 1024), (8192, 450 * 1024))
 ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 FICHIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$")
 BALISE_RE = re.compile(r"<(img|source|link)\b([^<>]*?)\s*(/?)>", re.IGNORECASE | re.DOTALL)
@@ -68,6 +73,10 @@ def charger(chemin: Path = CONFIG) -> dict:
     return manifeste
 
 
+def _entier(val: object, maxi: int = 8192) -> bool:
+    return isinstance(val, int) and not isinstance(val, bool) and 0 < val <= maxi
+
+
 def valider(m: dict) -> list[str]:
     """Erreurs de structure du manifeste (fermé par défaut : tout champ douteux est refusé)."""
     err: list[str] = []
@@ -89,61 +98,96 @@ def valider(m: dict) -> list[str]:
         if not FICHIER_RE.match(str(v.get("fichier", ""))):
             err.append(f"{ident} : nom de fichier invalide (lettres, chiffres, « _ » et « - » ; sans extension)")
         for cle in ("largeur", "hauteur"):
-            if not isinstance(v.get(cle), int) or isinstance(v.get(cle), bool) or not 0 < v[cle] <= 8192:
+            if not _entier(v.get(cle)):
                 err.append(f"{ident} : {cle} entière attendue (1 à 8192)")
-        for cle in ("largeur_min", "hauteur_min"):
-            val = v.get(cle)
-            if val is not None and (not isinstance(val, int) or isinstance(val, bool) or not 0 < val <= 8192):
-                err.append(f"{ident} : {cle} entière ou null attendue")
+        largeurs = v.get("largeurs")
+        if (
+            not isinstance(largeurs, list)
+            or not largeurs
+            or not all(_entier(x) for x in largeurs)
+            or largeurs != sorted(set(largeurs))
+            or (_entier(v.get("largeur")) and largeurs[-1] > v["largeur"])
+        ):
+            err.append(f"{ident} : largeurs = liste croissante d'entiers, sans doublon, au plus la largeur de la PNG")
+        variantes = v.get("variantes")
+        if variantes is not None and (
+            not isinstance(variantes, list)
+            or not variantes
+            or not all(_entier(x) for x in variantes)
+            or variantes != sorted(set(variantes))
+            or (isinstance(largeurs, list) and not set(variantes) <= set(largeurs))
+        ):
+            err.append(f"{ident} : variantes = null ou sous-liste croissante de largeurs (écrite par rapatrier_visuels.py)")
         if not str(v.get("description", "")).strip():
             err.append(f"{ident} : description manquante")
+    if m.get("source") == "local" and isinstance(visuels, dict):
+        for ident, v in visuels.items():
+            if not v.get("variantes"):
+                err.append(f"{ident} : source locale sans variantes (relancer rapatrier_visuels.py)")
     return err
 
 
-def nom_fichier(m: dict, ident: str, variante: str) -> str:
-    """Nom du fichier d'une variante (``min`` ou ``hd``)."""
-    return m["visuels"][ident]["fichier"] + VARIANTES[variante]
+def hauteur_variante(v: dict, largeur: int) -> int:
+    """Hauteur d'une variante (proportions de la PNG d'origine)."""
+    return max(1, round(largeur * v["hauteur"] / v["largeur"]))
 
 
-def chemin_local(m: dict, ident: str, variante: str, racine: Path = LANDING) -> Path:
-    """Emplacement du fichier rapatrié d'une variante."""
-    return racine / m["dossier_local"] / nom_fichier(m, ident, variante)
+def plafond_octets(largeur: int) -> int:
+    """Poids maximal d'une variante locale selon sa largeur."""
+    for borne, plafond in PLAFONDS_OCTETS:
+        if largeur <= borne:
+            return plafond
+    return PLAFONDS_OCTETS[-1][1]
+
+
+def nom_variante(m: dict, ident: str, largeur: int) -> str:
+    """Nom du fichier local d'une variante (``<fichier>-<largeur>.webp``)."""
+    return f"{m['visuels'][ident]['fichier']}-{largeur}.webp"
+
+
+def chemin_variante(m: dict, ident: str, largeur: int, racine: Path = LANDING) -> Path:
+    """Emplacement d'une variante locale (dans le dossier publié de la landing)."""
+    return racine / m["dossier_local"] / nom_variante(m, ident, largeur)
 
 
 def url_distante(m: dict, ident: str, variante: str) -> str:
-    """Adresse distante d'une variante."""
-    return m["base_distante"] + nom_fichier(m, ident, variante)
+    """Adresse distante d'un fichier (``min`` : WebP léger de l'aperçu ; ``hd`` : PNG d'origine à rapatrier)."""
+    return m["base_distante"] + m["visuels"][ident]["fichier"] + VARIANTES_DISTANTES[variante]
 
 
-def url(m: dict, ident: str, variante: str, page: Path, racine: Path = LANDING) -> str:
-    """Adresse d'une variante vue depuis une page (distante, ou chemin relatif au fichier local de ``racine``)."""
-    if m["source"] == "distant":
-        return url_distante(m, ident, variante)
-    cible = chemin_local(m, ident, variante, racine)
+def _relatif(cible: Path, page: Path) -> str:
     return Path(os.path.relpath(cible, page.parent)).as_posix()
 
 
-def largeur_min(m: dict, ident: str) -> int:
-    """Largeur de la variante légère : mesurée, sinon hypothèse (moitié de la PNG)."""
-    v = m["visuels"][ident]
-    return int(v.get("largeur_min") or round(v["largeur"] * HYPOTHESE_RATIO_MIN))
+def variante_defaut(m: dict, ident: str) -> int:
+    """Variante de ``src`` (navigateurs sans ``srcset``) : la plus large jusqu'à 1280 px, sinon la plus petite."""
+    variantes = m["visuels"][ident]["variantes"]
+    candidates = [w for w in variantes if w <= 1280]
+    return candidates[-1] if candidates else variantes[0]
+
+
+def src(m: dict, ident: str, page: Path, racine: Path = LANDING) -> str:
+    """Adresse de repli (attribut ``src`` / ``href``)."""
+    if m["source"] == "distant":
+        return url_distante(m, ident, "min")
+    return _relatif(chemin_variante(m, ident, variante_defaut(m, ident), racine), page)
 
 
 def srcset(m: dict, ident: str, page: Path, racine: Path = LANDING) -> str:
-    """Liste ``srcset`` : variante légère puis PNG haute définition (descripteurs de largeur)."""
-    v = m["visuels"][ident]
-    wmin = largeur_min(m, ident)
-    if wmin >= v["largeur"]:
-        return f"{url(m, ident, 'min', page, racine)} {v['largeur']}w"
-    return f"{url(m, ident, 'min', page, racine)} {wmin}w, {url(m, ident, 'hd', page, racine)} {v['largeur']}w"
+    """Liste ``srcset`` : la variante légère distante seule (aperçu), ou les variantes locales avec leur largeur."""
+    if m["source"] == "distant":
+        return url_distante(m, ident, "min")
+    return ", ".join(
+        f"{_relatif(chemin_variante(m, ident, w, racine), page)} {w}w" for w in m["visuels"][ident]["variantes"]
+    )
 
 
 def attributs(m: dict, ident: str, balise: str, page: Path, racine: Path = LANDING) -> dict[str, str]:
     """Valeurs des attributs gérés d'une balise ``data-visuel``."""
     v = m["visuels"][ident]
     tout = {
-        "src": url(m, ident, "min", page, racine),
-        "href": url(m, ident, "min", page, racine),
+        "src": src(m, ident, page, racine),
+        "href": src(m, ident, page, racine),
         "srcset": srcset(m, ident, page, racine),
         "imagesrcset": srcset(m, ident, page, racine),
         "width": str(v["largeur"]),
@@ -220,6 +264,26 @@ def identifiants_utilises(texte: str) -> set[str]:
     return set(re.findall(r'\bdata-visuel="([^"]*)"', texte))
 
 
+def _erreurs_fichiers_locaux(m: dict, racine: Path, *, poids: bool) -> list[str]:
+    err: list[str] = []
+    for ident, v in m["visuels"].items():
+        for largeur in v.get("variantes") or []:
+            cible = chemin_variante(m, ident, largeur, racine)
+            nom = f"{m['dossier_local']}{cible.name}"
+            if not cible.is_file():
+                err.append(f"{ident} : fichier local absent {nom} (lancer python site/outils/rapatrier_visuels.py)")
+                continue
+            if not poids:
+                continue
+            octets = cible.read_bytes()
+            if octets[:4] != b"RIFF" or octets[8:12] != b"WEBP":
+                err.append(f"{ident} : {nom} n'est pas un fichier WebP")
+            elif len(octets) > plafond_octets(largeur):
+                err.append(f"{ident} : {nom} pèse {len(octets) // 1024} Ko, au-delà du budget de "
+                           f"{plafond_octets(largeur) // 1024} Ko (relancer rapatrier_visuels.py)")
+    return err
+
+
 def verifier(m: dict | None = None, liste: list[Path] | None = None, racine: Path = LANDING) -> list[str]:
     """Manifeste valide, pages synchronisées, aucune adresse distante hors balise gérée, fichiers locaux présents."""
     try:
@@ -241,20 +305,19 @@ def verifier(m: dict | None = None, liste: list[Path] | None = None, racine: Pat
         hors_balises = BALISE_RE.sub(lambda x: "" if "data-visuel" in x.group(2) else x.group(0), texte)
         if hote and hote in hors_balises:
             err.append(f"{page.name} : adresse {hote} hors d'une balise data-visuel (une seule source : visuels.json)")
+        for bloc in re.findall(r'\b(?:srcset|imagesrcset)="([^"]*)"', texte):
+            if ".png" in bloc.lower():
+                err.append(f"{page.name} : PNG dans un srcset (seules les variantes WebP sont servies)")
     for css in sorted((racine / "css").glob("*.css")) + sorted((racine / "js").glob("*.js")):
         if hote and hote in css.read_text(encoding="utf-8"):
             err.append(f"{css.relative_to(racine).as_posix()} : adresse {hote} en dur (une seule source : visuels.json)")
     if m["source"] == "local":
-        for ident in m["visuels"]:
-            for variante in VARIANTES:
-                if not chemin_local(m, ident, variante, racine).is_file():
-                    err.append(f"{ident} : fichier local absent {m['dossier_local']}{nom_fichier(m, ident, variante)} "
-                               "(lancer python site/outils/rapatrier_visuels.py)")
+        err += _erreurs_fichiers_locaux(m, racine, poids=False)
     return err
 
 
 def erreurs_publication(m: dict | None = None, racine: Path = LANDING) -> list[str]:
-    """Conditions de publication : images servies en local, mesurées, présentes."""
+    """Conditions de publication : images servies en local, présentes, au format WebP et dans leur budget de poids."""
     try:
         m = charger() if m is None else m
     except (OSError, ValueError) as exc:
@@ -266,14 +329,7 @@ def erreurs_publication(m: dict | None = None, racine: Path = LANDING) -> list[s
                 "avant de publier (la page publiée ne charge aucune image d'un tiers)"
             )
         ]
-    err = []
-    for ident, v in m["visuels"].items():
-        if v.get("largeur_min") is None:
-            err.append(f"{ident} : largeur de la variante légère non mesurée (relancer rapatrier_visuels.py)")
-        for variante in VARIANTES:
-            if not chemin_local(m, ident, variante, racine).is_file():
-                err.append(f"{ident} : fichier local absent {m['dossier_local']}{nom_fichier(m, ident, variante)}")
-    return err
+    return _erreurs_fichiers_locaux(m, racine, poids=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -286,9 +342,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERREUR site/config/visuels.json : {exc}")
         return 1
     if args.action == "liste":
-        for ident in m["visuels"]:
-            for variante in VARIANTES:
-                print(f"{ident:30} {variante:3} {url_distante(m, ident, variante)}")
+        for ident, v in m["visuels"].items():
+            for variante in VARIANTES_DISTANTES:
+                print(f"{ident:30} {variante:5} {url_distante(m, ident, variante)}")
+            for largeur in v.get("variantes") or []:
+                print(f"{ident:30} {largeur:<5} {m['dossier_local']}{nom_variante(m, ident, largeur)}")
         return 0
     if args.action == "appliquer":
         try:
