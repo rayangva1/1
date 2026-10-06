@@ -6,8 +6,9 @@ aucune valeur proposée pour un tarif ou un montant non devisé ; hygiène des t
 (aucune donnée interne, aucun fournisseur, aucune fausse urgence, aucune adresse réelle) ;
 clauses obligatoires des CGV et des autres textes ; checklist LCD ; recette (identifiants,
 aucun résultat pré-rempli, synthèse exacte) ; matrice SAV ; catalogue d'incidents ; renvois
-entre identifiants ; seuils de stop-loss alignés sur la configuration du moteur ; chiffres
-annoncés dans les README ; aperçus à jour.
+entre identifiants ; seuils de stop-loss alignés sur la configuration du moteur ; pré-drop aligné sur le
+moteur (phrases de garantie mot pour mot, plafond du supplément, limite par client et fenêtre prioritaire des
+paramètres signés) ; chiffres annoncés dans les README ; aperçus à jour.
 
 Usage ::
 
@@ -111,6 +112,8 @@ REQUIRED_PUBLIC = {
         "Étapes de la commande",
         "{{MENTION_TVA}}",
         "Annulation de votre part avant préparation",
+        "Pré-drop (réservation garantie)",
+        "supplément compris",
     ),
     "LIVRAISON_RETOURS.md": (
         "Uniquement en Suisse",
@@ -120,7 +123,18 @@ REQUIRED_PUBLIC = {
         "{{DELAI_SIGNALEMENT}}",
         "{{FRAIS_LIVRAISON}}",
     ),
-    "PRECOMMANDES.md": ("par écrit", "date estimée", "dans l'ordre de leur paiement", "remboursé", "débité"),
+    "PRECOMMANDES.md": (
+        "par écrit",
+        "date estimée",
+        "dans l'ordre de leur paiement",
+        "remboursé",
+        "débité",
+        "Pré-drop : la réservation garantie",
+        "servies **en premier**",
+        "supplément compris",
+        "{{LIMITE_RESERVATION_PREDROP}}",
+        "{{FENETRE_PRIORITAIRE_PREDROP}}",
+    ),
     "CONFIDENTIALITE.md": (
         "LPD",
         "{{RAISON_SOCIALE}}",
@@ -270,6 +284,10 @@ class Context:
     @property
     def pricing_config(self) -> Path:
         return self.root / "config" / "pricing_rules.v1.yaml"
+
+    @property
+    def predrop_config(self) -> Path:
+        return self.root / "config" / "predrop.v1.yaml"
 
     def owned_docs(self) -> list[Path]:
         """Documents Markdown du périmètre (aperçus générés exclus)."""
@@ -692,6 +710,72 @@ def check_stoploss_alignment(ctx: Context) -> list[str]:
     return errors
 
 
+#: Textes publics qui expliquent le pré-drop (garantie mot pour mot, plafond du supplément, statuts sans compte à rebours).
+PREDROP_DOCS = ("PRECOMMANDES.md", "CGV.md", "FAQ_CLIENTS.md")
+#: Champs du registre alignés sur les paramètres signés du pré-drop : (champ, clé de ``config/predrop.v1.yaml``, gabarit).
+PREDROP_FIELDS = (
+    ("LIMITE_RESERVATION_PREDROP", "per_customer_limit", "{n} réservation"),
+    ("FENETRE_PRIORITAIRE_PREDROP", "priority_window_hours", "{n} heures"),
+)
+
+
+def predrop_expectations() -> tuple[str, str, str]:
+    """(garantie, absence de remboursement de la différence, plafond du supplément « 10 % ») tirés du moteur."""
+    engine = str(rc.REPO / "engine")
+    if engine not in sys.path:
+        sys.path.insert(0, engine)
+    from pokeshop.predrop import GUARANTEE_TEXT_FR, MAX_PREMIUM_PCT, NO_DIFFERENCE_REFUND_FR
+
+    return GUARANTEE_TEXT_FR, NO_DIFFERENCE_REFUND_FR, _pct(str(MAX_PREMIUM_PCT))
+
+
+def check_predrop_alignment(ctx: Context) -> list[str]:
+    """Pré-drop : phrases de garantie du moteur mot pour mot, plafond du supplément, champs = paramètres signés."""
+    try:
+        guarantee, no_difference, cap = predrop_expectations()
+    except ImportError as exc:  # pragma: no cover - moteur toujours présent dans le dépôt
+        return [f"pré-drop : moteur illisible ({exc})"]
+    errors: list[str] = []
+    by_name = {p.name: p for p in ctx.public_docs()}
+    for name in PREDROP_DOCS:
+        path = by_name.get(name)
+        if path is None or not path.exists():
+            continue
+        try:
+            text = _public_text(ctx, path)
+        except rc.BlockError:
+            continue
+        for phrase, label in ((guarantee, "garantie"), (no_difference, "aucun remboursement de la différence")):
+            if phrase not in text:
+                errors.append(f"{_rel(ctx, path)} : phrase du moteur ({label}) absente ou modifiée : « {phrase} »")
+        if f"{cap} au plus" not in text and f"plus de {cap}" not in text:
+            errors.append(f"{_rel(ctx, path)} : plafond du supplément du moteur ({cap}) absent")
+        if re.search(r"compte à rebours|minuteur (?:de|avant)|plus que \d", text, re.I):
+            errors.append(f"{_rel(ctx, path)} : fausse urgence dans la présentation du pré-drop")
+    precommandes = by_name.get("PRECOMMANDES.md")
+    if precommandes is not None and precommandes.exists():
+        text = _public_text(ctx, precommandes)
+        for status in ("Réservations ouvertes", "Réservations fermées"):
+            if status not in text:
+                errors.append(f"{_rel(ctx, precommandes)} : statut public « {status} » absent")
+    try:
+        with ctx.predrop_config.open(encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh)
+        fields = rc.load_registry(ctx.registry_path)
+    except (OSError, yaml.YAMLError, rc.RegistryError) as exc:
+        return errors + [f"pré-drop : paramètres ou registre illisibles ({exc})"]
+    for field, key, template in PREDROP_FIELDS:
+        spec = fields.get(field)
+        value = spec.value if spec is not None else None
+        expected = template.format(n=cfg.get(key))
+        if not value or not str(value).startswith(expected):
+            errors.append(
+                f"registre : {field} = {value!r} ne commence pas par « {expected} » (config/predrop.v1.yaml {key} = "
+                f"{cfg.get(key)!r}) : aligner puis signer à nouveau les paramètres"
+            )
+    return errors
+
+
 def check_readme_counts(ctx: Context) -> list[str]:
     """Les chiffres annoncés dans les README correspondent aux documents."""
     errors: list[str] = []
@@ -758,6 +842,7 @@ ALL_CHECKS: tuple[Callable[[Context], list[str]], ...] = (
     check_cross_references,
     check_internal_paths,
     check_stoploss_alignment,
+    check_predrop_alignment,
     check_readme_counts,
     check_previews_up_to_date,
 )

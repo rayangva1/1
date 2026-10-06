@@ -16,6 +16,8 @@ Qu'aucune erreur critique n'atteigne un client et qu'aucune perte ne dépasse le
 
 **Inclus** : tests obligatoires du moteur (BP §13, BL-083) ; contrôle des calculs contre devis et facture (BL-082) ; 20 synchronisations (BL-092) ; tests de paiement (BL-098) ; recette du parcours sur mobile et ordinateur (BL-099) ; consentements et désinscription (BL-103) ; journal, idempotence, reprise, sauvegarde et restauration (BL-160) ; surveillance des flux (BL-161) ; due diligence (avis, BL-046) ; brouillons de conformité (BL-033, BL-095, avec `docs/04-legal/`) ; **surveillance des stop-loss et gel** ; rapprochements (registre du mandat ↔ PayPal, prix publié ↔ prix validé, stock publié ↔ stock vendable) ; revue des accès.
 
+**Pré-drop** (`docs/08-agents/PRE_DROP.md`, étape 16) : contrôles du pré-drop (`check_predrop_alignment` du vérificateur légal, contrôle « pré-drop » du vérificateur de contenu, offre publique en liste blanche) ; fermeture protectrice (`POST /predrop/{predrop_id}/close`) en cas d'anomalie, puis escalade.
+
 **Exclu** : correction du code ou des tests (il signale, l'agent propriétaire corrige) ; publication ; paiement ; **réarmement** du stop-loss global ; relèvement d'un niveau d'autonomie.
 
 ## 3. Entrées autorisées

@@ -10,7 +10,7 @@ Votre colis a été remis au transporteur. Voici ce qu'il contient :
 {% endfor %}{% if fulfillment.tracking_numbers.size > 0 %}Suivi : {{ fulfillment.tracking_company }} · n° {{ fulfillment.tracking_numbers | join: ', ' }}
 Suivre mon colis : {{ fulfillment.tracking_urls.first }}{% endif %}
 
-Si votre commande contient une précommande, elle fait l'objet d'un envoi séparé, dès sa réception.
+Si votre commande contient une précommande ou une réservation garantie, elle fait l'objet d'un envoi séparé, dès sa réception.
 
 Le suivi peut mettre quelques heures à s'activer. S'il ne bouge plus depuis {{SEUIL_COLIS_BLOQUE}}, écrivez-nous : nous ouvrons une recherche.
 

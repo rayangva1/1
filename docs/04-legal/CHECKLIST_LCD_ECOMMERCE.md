@@ -45,6 +45,7 @@ Statut : ☐ à faire · ☑ vérifié (date, initiales) · ✗ non conforme (bl
 | L-23 | Aucune précommande encaissée sans allocation ferme | BP §1, §3, §5 | Quota moteur ; checklist d'ouverture | `PRECOMMANDES.md` §2 | R-D01, R-D02 | O | ☐ |
 | L-24 | Aucun coût, marge, prix B2B ni donnée personnelle dans le HTML public | BP §6 ; SPEC §0.2 | Filtre de publication + test | `engine/pokeshop/publish.py` (agent integrations) | R-I01 | O | ☐ |
 | L-25 | Aucune promesse de carte rare ni de valeur financière future | BP §7 | CGV ch. 2.3-2.4 ; contrôle QA | Fiches, contenus | R-A03 | O | ☐ |
+| L-26 | Pré-drop (réservation garantie) : deux prix affichés avant la commande (supplément de 10 % au plus), garantie et absence de remboursement de la différence affichées, aucune fausse urgence (statut et date seulement), limite et accès prioritaire annoncés | LCD art. 3 al. 1 let. b, art. 8 [L3] ; OIP [L9] ; décision de la propriétaire du 6.10.2026 | Offre publique en liste blanche du moteur, encart `da-reservation-garantie`, page Précommandes (partie pré-drop), CGV ch. 7.7 à 7.12, emails 15 à 19 ; contrôle `check_predrop_alignment` | Fiches de réservation, page Précommandes, emails | — (avant le premier pré-drop ; notes P1 à P10) | N | ☐ |
 
 ## 3. Règle d'usage
 
@@ -55,5 +56,6 @@ Statut : ☐ à faire · ☑ vérifié (date, initiales) · ✗ non conforme (bl
 
 - [ ] Propriétaire ou agent avec accès : relire la page S11 à la source et dater la lecture (5 min).
 - [ ] Juriste : valider les lignes marquées « revue juriste » (L-09, L-11, L-13, L-17) et la règle des prix barrés (L-07).
+- [ ] Juriste puis propriétaire : cocher L-26 avant le **premier pré-drop** (pas avant l'ouverture : non bloquante pour G3).
 - [ ] Juriste : trancher l'exigence de langue des avertissements pour les ventes hors Suisse romande (L-21).
 - [ ] Propriétaire : signer la checklist complétée avant l'ouverture (gate G3).

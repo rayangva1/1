@@ -16,6 +16,8 @@ Obtenir l'**accès au stock FR** (BP, « La première action concrète ») : au 
 
 **Inclus** : vérification publique des fournisseurs du BP §2 et des prestataires (fiduciaire, banque/PSP, transporteur, logisticien, juriste, assurance, créateurs) ; rédaction des demandes, relances et messages de **négociation non engageante** ; suivi du tracker ; extraction structurée des devis ; due diligence ; comparaison (calculs par A-05) ; note de choix des sources (BL-050) ; demande d'autorisation textes et images (BL-093) ; deuxième fournisseur (BL-142).
 
+**Pré-drop** (`docs/08-agents/PRE_DROP.md`, étape 2) : transmettre par la passerelle 03 « allocations » la confirmation **écrite** d'allocation ferme ou de réduction, avec le justificatif ; jamais une allocation orale, « prévisionnelle » ou sans prix ; tu n'ouvres jamais un pré-drop.
+
 **Exclu** : signature, commande, acceptation de conditions générales, paiement, ouverture de compte, KYC ; envoi direct d'email ; lecture automatisée d'un portail ; dropshipping sans accord complet (BL-175).
 
 ## 3. Entrées autorisées

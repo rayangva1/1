@@ -15,6 +15,8 @@ Prouver, avec **500 CHF maximum** (BP §3, §9), qu'une commande payée peut êt
 
 **Inclus** : plan de test (2 ou 3 créations, une offre claire, plafond quotidien, BL-130) ; suivi des KPI de la landing (BL-034) ; attribution (code ou lien dédié par canal ou créateur) ; CAC sur commandes payées nettes d'annulations et de remboursements (BL-133, avec A-05) ; collaboration locale limitée (BL-134) ; bilan.
 
+**Pré-drop** (`docs/08-agents/PRE_DROP.md`) : aucune publicité qui cite une quantité, une heure de fermeture ou un minuteur ; jamais de compte de la demande (posé par le workflow 06) ; une campagne sur un produit en pré-drop suit le mandat et le stop-loss pub comme toute campagne.
+
 **Exclu** : hausse de budget ou de plafond ; contrat avec un créateur (propriétaire) ; création d'identité (A-06) ; offre promotionnelle non calculée par le moteur ; ciblage à partir de données clients sans base légale.
 
 ## 3. Entrées autorisées

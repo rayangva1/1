@@ -48,6 +48,7 @@ Mouvements de stock : voir `engine/pokeshop/models.py` (`MovementKind`). « Prop
 | SAV-24 | Erreur de prix manifeste détectée sur une commande | Capture de la fiche au moment de la commande (historique des prix) | Informer sous 2 jours ouvrés ; le client choisit prix correct ou annulation remboursée (CGV ch. 3.5) | `CANCEL` si annulation | **Toujours** avant d'écrire au client (invoquer l'erreur est une décision) | SAV-M14 |
 | SAV-25 | Demande hors périmètre : livraison à l'étranger, cartes à l'unité, rachat de cartes, estimation de valeur, retrait sur place | — | Réponse factuelle selon la FAQ ; aucune estimation de valeur | — | — | SAV-M01 |
 | SAV-26 | Menace juridique, avocat, médias, réclamation d'un titulaire de droits, insulte ou harcèlement | — | Accusé de réception neutre, sans engagement ni reconnaissance | — | **Toujours, le jour même** | — |
+| SAV-27 | Réservation garantie (pré-drop) : demande d'annulation, report, contenu modifié, demande de « remboursement de la différence », réservation non servie | Numéro de commande ; demande **écrite** du client | Annulation libre dans le délai {{DELAI_ANNULATION_PRECOMMANDE}}, report au-delà de {{SEUIL_REPORT_PRECOMMANDE}} ou contenu modifié : `POST /predrop/reservations/{order_id}/cancel` avec le jeton `operations-sav`, le motif (`CUSTOMER_CANCELLATION`, `DATE_POSTPONED`, `PRODUCT_CHANGED`) et la référence de la demande — remboursement **intégral, supplément compris**, préparé par le moteur ; « différence » : refus poli, avec les deux phrases de garantie (`docs/04-legal/PRECOMMANDES.md`, partie « Pré-drop ») ; réservation non servie ou réduction : remboursement déjà préparé par le moteur, email 18 après exécution ; après expédition : retour volontaire (SAV-13) | Aucun (l'unité revient au quota du pré-drop dans le moteur) | Validation du remboursement aux niveaux d'autonomie 1 et 2 (un clic, `POST /predrop/refunds/{refund_id}/approve`) ; contestation écrite de l'absence de remboursement de la différence | SAV-M15, SAV-M10 |
 
 ## 3. Matrice résumée « qui décide »
 
@@ -60,6 +61,7 @@ Mouvements de stock : voir `engine/pokeshop/models.py` (`MovementKind`). « Prop
 | Refus d'une demande de garantie, annulation pour fraude, erreur de prix | | Oui |
 | Contrôle physique d'un retour (scellé, état) | | Oui (physique) |
 | Contestation d'authenticité, litige PSP, menace juridique | | Oui |
+| Préparer l'annulation d'une réservation pré-drop demandée par écrit (remboursement intégral, supplément compris) | Oui | Validation du remboursement en un clic (niveaux 1 et 2) |
 
 ## 4. Modèles de réponses (ton : précis, chaleureux, sans jargon, sans fausse urgence)
 
@@ -122,6 +124,11 @@ Variables propres au cas entre crochets ; champs du registre entre accolades dou
 **SAV-M14 — Erreur de prix manifeste** *(envoi après validation de la propriétaire)*
 > Bonjour [PRENOM],
 > Une erreur s'est glissée dans le prix de [PRODUIT] au moment de votre commande [NUMERO_COMMANDE] : il était affiché à [PRIX_AFFICHE] CHF au lieu de [PRIX_CORRECT] CHF. Nous vous prions de nous en excuser. Vous pouvez soit confirmer la commande au prix correct, soit l'annuler : dans ce cas, nous remboursons intégralement [MONTANT] CHF dans un délai de {{DELAI_REMBOURSEMENT}}. Merci de nous indiquer votre choix.
+
+**SAV-M15 — Réservation garantie (pré-drop) : annulation ou différence**
+> Bonjour [PRENOM],
+> [Annulation :] Votre réservation garantie [NUMERO_COMMANDE] est annulée comme vous l'avez demandé. Nous vous remboursons intégralement [MONTANT] CHF, supplément compris, dans un délai de {{DELAI_REMBOURSEMENT}} ; vous recevrez un email de confirmation du remboursement.
+> [Différence :] Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit. Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop : c'est indiqué sur la fiche et dans nos conditions ({{URL_PRECOMMANDES}}). Vous pouvez demander qu'une personne de notre équipe réexamine cette réponse.
 
 ## 5. Contrôle physique d'un retour (propriétaire, 15 min)
 

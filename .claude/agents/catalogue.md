@@ -24,6 +24,7 @@ Tu garantis que chaque produit vendu par `{{NOM_BOUTIQUE}}` est **exactement** c
 - Produire l'aperçu de publication **en simulation** (`/publish/preview`, filtre de `engine/pokeshop/publish.py`) et vérifier qu'il ne contient aucun champ interne.
 - Tenir le registre des droits d'images (origine, autorisation écrite, date).
 - Niveau 2 : mettre à jour les fiches approuvées. Niveau 3 : publier les nouvelles références conformes à une règle de catégorie validée (écriture par les workflows de `site-integrations`).
+- **Pré-drop** (`docs/08-agents/PRE_DROP.md`, étape 5) : fiche normale prête pour la validation de la propriétaire (C30) ; la fiche « Réservation garantie » est construite par le moteur, jamais à la main.
 
 ## Tu prépares pour validation
 

@@ -4,7 +4,7 @@
 Sorties (FICHIERS GÉNÉRÉS, ne pas modifier à la main) :
 * ``EMAILS/html/<id>.html``   modèle HTML : tableaux, styles en ligne, couleurs de la DA (direction A, clair) ;
 * ``EMAILS/texte/<id>.txt``   version texte ;
-* ``EMAILS/apercu.html``      les 14 emails remplis avec des données FICTIVES, pour relecture ;
+* ``EMAILS/apercu.html``      tous les emails remplis avec des données FICTIVES, pour relecture ;
 * tableau récapitulatif injecté dans ``EMAILS/README.md`` (entre les marqueurs TABLEAU).
 
 Variables : ``[[var]]`` → ``{{ $json.var }}`` (n8n) ou ``{{ var }}`` (Liquid Shopify) ; ``{{CHAMP}}`` = champ
@@ -146,11 +146,21 @@ def _ligne(contenu: str, padding: str = "0 24px 12px 24px") -> str:
     return f'          <tr>\n            <td style="padding:{padding};font-family:{POLICE};">\n{contenu}\n            </td>\n          </tr>'
 
 
+#: Statut d'une ligne produit -> (libellé du badge, paire de couleurs de la DA, contour plein). « Réservation
+#: garantie » (pré-drop) reprend la paire précommande avec un contour plein, comme ``.da-badge--reservation``.
+BADGES: dict[str, tuple[str, str, bool]] = {
+    "stock_local": ("STOCK LOCAL", "status-local", False),
+    "precommande": ("PRÉCOMMANDE", "status-preorder", False),
+    "reservation": ("RÉSERVATION GARANTIE", "status-preorder", True),
+}
+LIBELLES_TEXTE = {"stock_local": "Stock local", "precommande": "Précommande", "reservation": "Réservation garantie"}
+
+
 def _badge(statut: str) -> str:
-    libelles = {"stock_local": ("STOCK LOCAL", "status-local"), "precommande": ("PRÉCOMMANDE", "status-preorder")}
-    texte, cle = libelles[statut]
+    texte, cle, contour = BADGES[statut]
+    bord = f"border:2px solid {C[cle + '-fg']};" if contour else ""
     return (
-        f'<span style="display:inline-block;padding:2px 8px;border-radius:3px;background:{C[cle + "-bg"]};'
+        f'<span style="display:inline-block;padding:2px 8px;border-radius:3px;background:{C[cle + "-bg"]};{bord}'
         f'color:{C[cle + "-fg"]};font-family:{POLICE};font-size:12px;font-weight:bold;">{texte}</span>'
     )
 
@@ -203,8 +213,10 @@ def _commande_shopify(r: Rendu) -> str:
             ("Coffret — Extension Exemple 2 — FR — Précommande (FICTIF)", "precommande", "1", "59.90", "59.90"),
         ]
         lignes = ""
+        infos = {"stock_local": f"Expédition sous {r.champs.get('DELAI_EXPEDITION', '⟦DELAI_EXPEDITION⟧')}",
+                 "precommande": "Expédiée à part, dès réception", "reservation": INFO_RESERVATION}
         for titre, statut, qte, pu, total in exemples:
-            info = f"Expédition sous {r.champs.get('DELAI_EXPEDITION', '⟦DELAI_EXPEDITION⟧')}" if statut == "stock_local" else "Expédiée à part, dès réception"
+            info = infos[statut]
             lignes += (
                 f"<tr><td {td_g}><strong>{titre}</strong><br>{_badge(statut)} <span {detail}>&nbsp;{info}</span></td>"
                 f"<td {td_d}>{qte} × {pu}<br><strong>CHF {total}</strong></td></tr>"
@@ -216,7 +228,9 @@ def _commande_shopify(r: Rendu) -> str:
             "{% assign a_precommande = false %}"
             "{% for line in subtotal_line_items %}"
             f"<tr><td {td_g}><strong>{{{{ line.title }}}}</strong><br>"
-            "{% if line.title contains 'Précommande' %}{% assign a_precommande = true %}"
+            "{% if line.sku contains '-RESA-' %}{% assign a_precommande = true %}"
+            f"{_badge('reservation')} <span {detail}>&nbsp;{INFO_RESERVATION}</span>"
+            "{% elsif line.title contains 'Précommande' %}{% assign a_precommande = true %}"
             f"{_badge('precommande')} <span {detail}>&nbsp;Expédiée à part, dès réception</span>"
             f"{{% else %}}{_badge('stock_local')} <span {detail}>&nbsp;Expédition sous {{{{DELAI_EXPEDITION}}}}</span>{{% endif %}}</td>"
             f"<td {td_d}>{{{{ line.quantity }}}} × {{{{ line.final_price | money }}}}<br><strong>{{{{ line.final_line_price | money }}}}</strong></td></tr>"
@@ -250,8 +264,9 @@ def _commande_shopify(r: Rendu) -> str:
         "</table>"
     )
     note_mixte = (
-        "<strong>Commande mixte :</strong> les articles en stock local partent dès qu'ils sont prêts ; la précommande est "
-        "expédiée séparément, dès sa réception. La livraison n'est facturée qu'une fois. Nous vous écrivons si une date change."
+        "<strong>Commande mixte :</strong> les articles en stock local partent dès qu'ils sont prêts ; la précommande ou la "
+        "réservation garantie est expédiée séparément, dès sa réception. La livraison n'est facturée qu'une fois. Nous vous "
+        "écrivons si une date change."
     )
     encadre = _encadre_html([note_mixte])
     bloc_mixte = encadre if preco else "{% if a_precommande %}" + encadre + "{% endif %}"
@@ -271,7 +286,7 @@ def _suivi_shopify(r: Rendu) -> str:
             + "\n"
             + bouton
             + "\n"
-            + _p("Si votre commande contient une précommande, elle fait l'objet d'un envoi séparé, dès sa réception.", taille=14, couleur=C["ink-muted"])
+            + _p(NOTE_ENVOI_SEPARE, taille=14, couleur=C["ink-muted"])
         )
     articles = "{% for line in fulfillment.fulfillment_line_items %}<li>{{ line.line_item.title }} × {{ line.quantity }}</li>{% endfor %}"
     return (
@@ -281,8 +296,15 @@ def _suivi_shopify(r: Rendu) -> str:
         + "\n"
         + _bouton("Suivre mon colis", "{{ fulfillment.tracking_urls.first }}", "principal")
         + "\n{% endif %}\n"
-        + _p("Si votre commande contient une précommande, elle fait l'objet d'un envoi séparé, dès sa réception.", taille=14, couleur=C["ink-muted"])
+        + _p(NOTE_ENVOI_SEPARE, taille=14, couleur=C["ink-muted"])
     )
+
+
+INFO_RESERVATION = "Servie en premier, expédiée à part dès réception"
+NOTE_ENVOI_SEPARE = (
+    "Si votre commande contient une précommande ou une réservation garantie, elle fait l'objet d'un envoi séparé, dès sa "
+    "réception."
+)
 
 
 def _encadre_html(paragraphes: list[str]) -> str:
@@ -475,7 +497,7 @@ def bloc_texte(bloc: dict[str, Any], r: Rendu) -> list[str]:
     if type_bloc == "bouton":
         return [f"{en_texte(valeur['texte'], r)} : {en_texte(valeur['url'], r)}"]
     if type_bloc == "produit":
-        lignes = [en_texte(valeur["titre"], r), f"{'Stock local' if valeur['statut'] == 'stock_local' else 'Précommande'} · {en_texte(valeur.get('detail', ''), r)}"]
+        lignes = [en_texte(valeur["titre"], r), f"{LIBELLES_TEXTE[valeur['statut']]} · {en_texte(valeur.get('detail', ''), r)}"]
         if valeur.get("prix"):
             lignes.append(f"CHF {en_texte(valeur['prix'], r)}")
         if valeur.get("limite"):
@@ -491,7 +513,8 @@ def bloc_texte(bloc: dict[str, Any], r: Rendu) -> list[str]:
     if type_bloc == "commande_shopify":
         return [
             "{% for line in subtotal_line_items %}- {{ line.title }} × {{ line.quantity }} : {{ line.final_line_price | money }}"
-            "{% if line.title contains 'Précommande' %} (précommande, expédiée à part){% endif %}\n{% endfor %}"
+            "{% if line.sku contains '-RESA-' %} (réservation garantie : servie en premier, expédiée à part dès réception)"
+            "{% elsif line.title contains 'Précommande' %} (précommande, expédiée à part){% endif %}\n{% endfor %}"
             "Sous-total : {{ subtotal_price | money }}\n{% if discounts_amount > 0 %}Réductions : − {{ discounts_amount | money }}\n{% endif %}"
             "Livraison : {{ shipping_price | money }}\nTotal payé : {{ total_price | money }}\n{{MENTION_TVA}}",
             "Livraison (Suisse uniquement) : {{ shipping_address.name }}, {{ shipping_address.address1 }}, {{ shipping_address.zip }} {{ shipping_address.city }}",
@@ -501,7 +524,7 @@ def bloc_texte(bloc: dict[str, Any], r: Rendu) -> list[str]:
             "{% for line in fulfillment.fulfillment_line_items %}- {{ line.line_item.title }} × {{ line.quantity }}\n{% endfor %}"
             "{% if fulfillment.tracking_numbers.size > 0 %}Suivi : {{ fulfillment.tracking_company }} · n° {{ fulfillment.tracking_numbers | join: ', ' }}\n"
             "Suivre mon colis : {{ fulfillment.tracking_urls.first }}{% endif %}",
-            "Si votre commande contient une précommande, elle fait l'objet d'un envoi séparé, dès sa réception.",
+            NOTE_ENVOI_SEPARE,
         ]
     raise EmailError(f"bloc inconnu {type_bloc}")
 
@@ -633,7 +656,7 @@ def page_apercu(source: dict[str, Any]) -> str:
 <body>
   <main>
     <h1>Aperçu des {len(source['emails'])} emails</h1>
-    <p class="avertissement"><strong>Données FICTIVES.</strong> Nom de travail provisoire « {NOM_DE_TRAVAIL} ». Les valeurs marquées ⟦à valider⟧ sont des propositions du registre légal ; ⟦CHAMP⟧ = champ encore à remplir. Les emails Shopify (06, 07) sont montrés avec des lignes d'exemple à la place des boucles Liquid.</p>
+    <p class="avertissement"><strong>Données FICTIVES.</strong> Nom de travail provisoire « {NOM_DE_TRAVAIL} ». Les valeurs marquées ⟦à valider⟧ sont des propositions du registre légal ; ⟦CHAMP⟧ = champ encore à remplir. Les emails Shopify (06, 07) sont montrés avec des lignes d'exemple à la place des boucles Liquid. Emails 15 à 19 : pré-drop (réservation garantie, décision du 6.10.2026).</p>
     <ol>{sommaire}</ol>
     {''.join(sections)}
     <h2>Validation humaine requise</h2>

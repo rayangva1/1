@@ -9,7 +9,7 @@
 |---|---|---|---|
 | `SOP_RECEPTION_STOCK.md` | Contrôle des quantités, scellés, langue FR, authenticité, dommages → stock endommagé, quarantaine, saisie du lot de coût ; bon de réception à imprimer ; modèle de réclamation | Propriétaire (physique), agents 11 et 05 | Chaque livraison fournisseur |
 | `SOP_PREPARATION_COLIS.md` | Bon de préparation, scan GTIN, photo, emballage protégé, étiquette, dépôt, suivi ; fiche de session | Propriétaire (physique), agent 11 | Jours de dépôt |
-| `SOP_SAV_RETOURS.md` | Matrice de 26 cas (colis perdu, endommagé, erreur, retour volontaire, garantie, fraude, litige, données…), qui décide, 14 modèles de réponse, journal SAV | Agent 11 (dans le mandat), propriétaire (escalades) | Quotidien |
+| `SOP_SAV_RETOURS.md` | Matrice de 27 cas (colis perdu, endommagé, erreur, retour volontaire, garantie, fraude, litige, données, réservation garantie du pré-drop…), qui décide, 15 modèles de réponse, journal SAV | Agent 11 (dans le mandat), propriétaire (escalades) | Quotidien |
 | `SOP_INCIDENTS.md` | Gravités S1-S3, workflow BP §12 en 6 étapes, catalogue INC-01 à INC-16, stop-loss, violation de données | Tous les agents, propriétaire | Dès qu'un incident survient |
 | `ROUTINES_PILOTAGE.md` | Étoile polaire, budget temps (6 à 10 h/semaine), digest quotidien, revue hebdomadaire et mensuelle, dictionnaire des indicateurs du tableau de bord | Agent 01, propriétaire, agent 07 (dashboard) | Jour, semaine, mois |
 | `RECETTE_AVANT_OUVERTURE.md` | 76 cas de test (70 bloquants) : parcours mobile/ordinateur, stock simultané, remise, port gratuit, rupture pendant paiement, commande mixte, paiements, versements, emails, conformité | Agent 12 QA, propriétaire | Avant le gate G3 et le niveau 2, puis à chaque changement |

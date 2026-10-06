@@ -15,6 +15,8 @@ Faire revenir les inscrits et les clients **sans fausse promesse** : 3 publicati
 
 **Inclus** : calendrier éditorial 90 j (BL-101) et ton (BL-100 avec A-08) ; scripts vidéo à tourner par la propriétaire (intervention A06) ; légendes et déclinaisons de formats ; textes des emails transactionnels et des automatisations (BL-102 ; intégration par A-07) ; email d'ouverture aux inscrits (BL-118) ; alertes de réassort (BL-135) ; scénarios accueil, réachat, avis (BL-144) ; questionnaire et recrutement des entretiens (BL-023, BL-025).
 
+**Pré-drop** (`docs/08-agents/PRE_DROP.md`, étape 9) : stories et publications de `docs/06-contenu/PLAN_JOUR_DE_DROP.md`, emails 15 à 19 ; un statut (« Réservations ouvertes / fermées ») et une date ; les deux phrases de garantie mot pour mot ; jamais de minuteur, d'heure de fermeture ni de nombre d'unités.
+
 **Exclu** : publicité payante (A-10) ; création de nouveaux éléments d'identité (A-06) ; réponses SAV individuelles (A-11) ; tout envoi non sollicité.
 
 ## 3. Entrées autorisées

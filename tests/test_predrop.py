@@ -41,6 +41,8 @@ from pokeshop.predrop import (
     GUARANTEE_TEXT_FR,
     MAX_PREMIUM_PCT,
     NO_DIFFERENCE_REFUND_FR,
+    NOT_SERVED_REASONS_FR,
+    CANCELLATION_REASONS_FR,
     PREDROP_DEBT_LABEL,
     PUBLIC_OFFER_FIELDS,
     STATUS_CLOSED_FR,
@@ -674,7 +676,9 @@ def test_allocation_reduction_serves_predrop_first_cuts_the_drop_then_refunds_th
     refunds = data["refunds"]
     assert [r["order_id"] for r in refunds] == ["FICTIF-CMD-2", "FICTIF-CMD-3"]
     assert all(r["reason"] == "ALLOCATION_REDUCED" and r["status"] == "PENDING_OWNER" and r["amount_ttc"] == "229.90" for r in refunds)
-    assert "le fournisseur a réduit" in refunds[0]["email_draft"] and "{{NOM_BOUTIQUE}}" in refunds[0]["email_draft"]
+    assert "a été réduite" in refunds[0]["email_draft"] and "{{NOM_BOUTIQUE}}" in refunds[0]["email_draft"]
+    # Motif en français figé (variable de l'email 18) : aucun terme interne (« fournisseur ») envoyé au client.
+    assert refunds[0]["reason_fr"] == NOT_SERVED_REASONS_FR["ALLOCATION_REDUCED"] and "fournisseur" not in refunds[0]["reason_fr"]
     assert svc.predrop.committed_units(PID) == 2
     # Rejeu identique : sans effet ; même référence, autre quantité : 409 ; hausse par réduction : 409.
     replay = client.post(f"/predrop/allocations/{P1}/reduce", headers=JR.headers("n8n-03-factures"),
@@ -822,9 +826,10 @@ def test_revenue_is_recognized_at_shipment_never_at_collection(tmp_path: Path) -
 def test_matrix_roles_and_common_token(tmp_path: Path) -> None:
     client, svc, _ = ready(tmp_path)
     writes = [(m, p) for (m, p), r in authz.ROUTE_MATRIX.items() if p.startswith("/predrop") and r.kind is authz.Kind.WRITE]
-    assert len(writes) == 10  # étape 2 : + POST /predrop/{predrop_id}/publish (fiche de réservation)
+    assert len(writes) == 11  # étape 2 : + publication ; étape 3 : + annulation à la demande du client
     for method, path in writes:
-        concrete = path.replace("{product_key}", P1).replace("{predrop_id}", PID).replace("{refund_id}", "pdr:X")
+        concrete = (path.replace("{product_key}", P1).replace("{predrop_id}", PID).replace("{refund_id}", "pdr:X")
+                    .replace("{order_id}", "FICTIF-CMD-X"))
         assert client.request(method, concrete, headers=H, json={}).status_code == 403, path  # jeton commun
     rule = authz.rule_for("POST", "/predrop/allocations")
     assert rule.roles == {"n8n-03-factures"} and rule.owner  # jamais un agent qui bénéficie du pré-drop
@@ -937,3 +942,84 @@ def test_an_owner_deposited_photo_never_counts_less_than_the_derived_predrop_deb
     accepted = svc.stoploss_state
     assert [(d.label, d.amount) for d in accepted.net_worth.debts] == [(PREDROP_DEBT_LABEL, D("229.90"))]
     assert accepted.cash_available_chf == D("3500.00")
+
+
+# =============================================================================== annulation à la demande du client
+
+
+def test_customer_cancellation_prepares_a_full_refund_in_the_same_circuit(tmp_path: Path) -> None:
+    """Étape 3 (conditions de PRECOMMANDES.md, partie « Pré-drop », et CGV ch. 7.10) : annulation libre avant le drop, report au-delà du
+    seuil, contenu modifié => remboursement intégral, supplément compris, validé par la propriétaire aux niveaux 1-2."""
+    client, svc, clock = ready(tmp_path)
+    assert open_predrop(client).status_code == 201
+    for i in range(3):
+        assert body(reserve(client, f"FICTIF-CMD-{i}", f"c{i}", paid_at=NOW + timedelta(minutes=i)))["reservation"]["status"] == "CONFIRMED"
+    remaining = svc.predrop.quota(PID).predrop_remaining
+    clock.now = NOW + timedelta(hours=2)
+    ask = {"reason": "CUSTOMER_CANCELLATION", "request_ref": "FICTIF-TICKET-1"}
+    # Rôles : service client (et propriétaire) seulement ; jeton commun et workflow des commandes : 403.
+    for headers in (H, JR.HORDERS, JR.headers("acquisition"), JR.headers("finance-pricing")):
+        assert client.post("/predrop/reservations/FICTIF-CMD-1/cancel", headers=headers, json=ask).status_code == 403
+    # Aucune valeur décisive fournie par l'appelant : montant, statut ou quota refusés (422).
+    for extra in ({"amount_ttc": "1.00"}, {"status": "APPROVED"}, {"qty": 1}):
+        assert client.post("/predrop/reservations/FICTIF-CMD-1/cancel", headers=JR.HOPS, json={**ask, **extra}).status_code == 422
+    assert client.post("/predrop/reservations/FICTIF-CMD-1/cancel", headers=JR.HOPS,
+                       json={**ask, "reason": "CHANGEMENT_D_AVIS"}).status_code == 422
+    assert client.post("/predrop/reservations/FICTIF-INCONNUE/cancel", headers=JR.HOPS, json=ask).status_code == 404
+    resp = client.post("/predrop/reservations/FICTIF-CMD-1/cancel", headers=JR.HOPS, json=ask)
+    assert resp.status_code == 201, resp.text
+    refund = body(resp)["refund"]
+    assert refund["refund_id"] == "pdr:FICTIF-CMD-1" and refund["amount_ttc"] == "229.90"  # intégral, supplément compris
+    assert refund["status"] == "PENDING_OWNER" and refund["reason"] == "CUSTOMER_CANCELLATION"
+    assert refund["reason_fr"] == CANCELLATION_REASONS_FR["CUSTOMER_CANCELLATION"] and refund["request_ref"] == "FICTIF-TICKET-1"
+    assert "remboursons intégralement 229.90 CHF, supplément compris" in refund["email_draft"] and "@" not in refund["email_draft"]
+    assert body(resp)["state"] == "REFUND_PENDING"
+    # L'unité revient au quota (pré-drop encore ouvert) ; la dette reste due jusqu'au remboursement exécuté.
+    assert svc.predrop.quota(PID).predrop_remaining == remaining + 1 and svc.predrop.committed_units(PID) == 2
+    assert svc.predrop.outstanding_debt(as_of=clock.now, shipped=lambda _: False).total_chf == D("689.70")
+    # Rejeu (ou autre motif) : sans effet, jamais deux remboursements.
+    again = client.post("/predrop/reservations/FICTIF-CMD-1/cancel", headers=JR.HOPS, json={**ask, "reason": "PRODUCT_CHANGED"})
+    assert again.status_code == 200 and body(again)["changed"] is False and body(again)["refund"]["reason"] == "CUSTOMER_CANCELLATION"
+    # Exécution : validation de la propriétaire en un clic, puis relevé du workflow 02 ; la dette sort.
+    assert client.post("/predrop/refunds/pdr:FICTIF-CMD-1/approve", headers=OWNER).status_code == 200
+    done = client.post("/predrop/refunds/pdr:FICTIF-CMD-1/executed", headers=JR.HORDERS,
+                       json={"executed_at": clock.now.isoformat(), "psp_refund_ref": "FICTIF-PSP-C1"})
+    assert done.status_code == 200 and body(done)["refund"]["status"] == "EXECUTED"
+    assert svc.predrop.outstanding_debt(as_of=clock.now, shipped=lambda _: False).total_chf == D("459.80")
+    # Expédiée : plus d'annulation (retour volontaire après réception).
+    shipped = {"order_id": "FICTIF-CMD-0", "paid_at": NOW.isoformat(), "net_sales_ht": "212.67", "payment_fees": "6.05",
+               "shipping_cost_actual": "7.40", "shipping_label_ref": "FICTIF-ETIQ-C0", "source": "webhook Shopify FICTIF",
+               "lines": [{"public_sku": "DSP-FICTIF_ALPHA-FR", "qty": 1}]}
+    assert client.post("/orders/shipped", headers=JR.HORDERS, json=shipped).status_code == 201
+    late = client.post("/predrop/reservations/FICTIF-CMD-0/cancel", headers=JR.HOPS, json={**ask, "request_ref": "FICTIF-TICKET-0"})
+    assert late.status_code == 409 and "retour volontaire" in body(late)["erreur"]
+    # À partir de la date du drop : l'annulation libre est close ; un report au-delà du seuil reste annulable.
+    clock.now = datetime(DROP.year, DROP.month, DROP.day, 9, 0, tzinfo=TZ)
+    closed = client.post("/predrop/reservations/FICTIF-CMD-2/cancel", headers=JR.HOPS, json={**ask, "request_ref": "FICTIF-TICKET-2"})
+    assert closed.status_code == 409 and "date du drop" in body(closed)["erreur"]
+    postponed = client.post("/predrop/reservations/FICTIF-CMD-2/cancel", headers=JR.HOPS,
+                            json={"reason": "DATE_POSTPONED", "request_ref": "FICTIF-TICKET-2"})
+    assert postponed.status_code == 201 and body(postponed)["refund"]["reason_fr"] == CANCELLATION_REASONS_FR["DATE_POSTPONED"]
+    # Persisté : motif, référence de la demande et état survivent au redémarrage.
+    _, svc2, _ = boot(tmp_path, clock=F.Clock(clock.now))
+    kept = svc2.predrop.refund("pdr:FICTIF-CMD-2")
+    assert kept is not None and kept.reason == "DATE_POSTPONED" and kept.request_ref == "FICTIF-TICKET-2"
+    assert svc2.predrop.refund("pdr:FICTIF-CMD-1").status == "EXECUTED"
+
+
+def test_cancellation_reasons_and_refund_phrases_have_no_internal_terms() -> None:
+    """Les phrases envoyées au client (variable motif_remboursement) suivent les règles des emails : aucun terme interne,
+    aucune quantité, aucune urgence."""
+    import re as _re
+
+    phrases = {**NOT_SERVED_REASONS_FR, **CANCELLATION_REASONS_FR}
+    assert set(CANCELLATION_REASONS_FR) == {"CUSTOMER_CANCELLATION", "DATE_POSTPONED", "PRODUCT_CHANGED"}
+    for code, phrase in phrases.items():
+        assert not _re.search(r"fournisseur|co[uû]t|marge|quota|stock|\d", phrase, _re.I), code
+    registry = PredropRegistry()
+    with pytest.raises(PredropError):
+        registry.cancel_reservation("FICTIF-X", reason="CUSTOMER_CANCELLATION", request_ref="FICTIF-T", by="operations-sav",
+                                    at=NOW, today=NOW.date(), autonomy_level=1)
+    with pytest.raises(PredropError):
+        registry.cancel_reservation("FICTIF-X", reason="AUTRE", request_ref="FICTIF-T", by="operations-sav",
+                                    at=NOW, today=NOW.date(), autonomy_level=1)

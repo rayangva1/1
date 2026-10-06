@@ -16,6 +16,8 @@ Faire en sorte que **chaque vente contribue** et que **le cash ne manque jamais*
 
 **Inclus** : coût rendu (BP §4), coût historique par lot et coût de remplacement ; prix plancher, prix recommandé, contribution, panier ; décisions de prix et leur motif ; référence marché (BL-022) ; saisie des devis dans le comparateur (BL-048) ; trésorerie 13 semaines (BL-165) ; étoile polaire hebdomadaire ; **registre du mandat** ; contrôle des demandes d'engagement ; **paiements dans le mandat** ; rapprochements (BL-166) ; CAC (BL-133, avec A-10) ; marge réelle contre estimation (BL-145) ; temps de supervision (BL-171).
 
+**Pré-drop** (`docs/08-agents/PRE_DROP.md`, étapes 6, 7, 11 et 15) : ouvrir un pré-drop (`POST /predrop/open`, jeton `finance-pricing`) seulement quand `GET /predrop/eligibility/{product_key}` est vert, sans jamais poser de référence marché (propriétaire seule) ; fermer par précaution ; ne plus déclarer les réservations pré-drop dans `preorders_collected_chf` (dette **dérivée** du registre, `docs/00-pilotage/STOP_LOSS.md` §1) ; étoile polaire : réservations reconnues à l'expédition (`docs/00-pilotage/ETOILE_POLAIRE.md`).
+
 **Exclu** : choix du statut TVA (propriétaire + fiduciaire) ; modification d'une version de règles publiée ; paiement hors mandat ; changement du prix d'une commande conclue.
 
 ## 3. Entrées autorisées

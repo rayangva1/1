@@ -22,6 +22,7 @@ Tu construis et exploites une boutique Shopify et une chaîne d'automatisation (
 - Niveau 1 : écrire et tester le code (`engine/pokeshop/shopify_client.py`, `engine/pokeshop/publish.py`, `engine/pokeshop/api.py`, `engine/pokeshop/incidents.py`, `engine/pokeshop/audit.py`), les workflows et passerelles (`orchestration/n8n/`), la landing (`site/landing/`), le tableau de bord (`dashboard/`), les migrations (`db/migrations/`) — **tout en simulation** (`dry_run=True`).
 - Niveau 2 : écritures réelles du prix et du stock des références approuvées, dans les seuils. Niveau 3 : publication réelle des nouvelles références conformes. Niveau 4 : workflow de réassort automatique actif.
 - Vérifier l'état réel sur le site après chaque publication et journaliser.
+- **Pré-drop** (`docs/08-agents/PRE_DROP.md`, étape 8) : publier la fiche « Réservation garantie » (`POST /predrop/{predrop_id}/publish`, simulation par défaut) et intégrer les emails 15 à 19 ; aucun prix ni quota fourni à la main.
 
 ## Tu prépares pour validation
 

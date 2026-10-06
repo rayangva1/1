@@ -5,7 +5,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## 02 — Commande vers livraison (BP §12)\nPaiement confirmé (webhook Shopify **orders/paid**, signature vérifiée) → **contrôle de doublon** (idempotence n8n)\n→ anomalies (CHF, Suisse, payée) → réservation (route moteur attendue) → **bon de préparation**\n→ **tâche colis HUMAINE** : un robot ne prépare pas un colis (picking, emballage, scan, dépôt : la propriétaire).\nSuivi : la propriétaire saisit le numéro dans Shopify, qui envoie l'email 07 ; colis en retard signalés chaque matin.\nRapprochement hebdomadaire : frais PSP réels **sans commande** (abonnement, versement) → étoile polaire\n(`POST /northstar/entries`) ; les frais d'une commande viennent de `POST /orders/shipped` (`payment_fees`, BL-199) :\njamais comptés deux fois (le moteur refuse un PAYMENT portant l'`order_id` d'une commande enregistrée).\nDonnées personnelles : aucune conservée (exécutions réussies non sauvegardées).\n**Pré-drop** : une ligne « Réservation garantie » (SKU `-RESA-<date>`) = réservation **payée** enregistrée au moteur\n(`POST /predrop/reservations`, identifiant client **haché**, accès prioritaire attesté : étiquette `alerte-produit:<handle>`\n+ consentement confirmé) ; jamais refusée : hors quota, limite ou fenêtre => non servie, remboursement intégral préparé.\nRemboursements **approuvés** (propriétaire en un clic aux niveaux 1-2, moteur dès le niveau 3) : exécution chez le\nprestataire (désactivée) puis relevé `POST /predrop/refunds/{id}/executed` ; email au client = brouillon du moteur.\n**Activation** : niveau 2 (l'activation inscrit le webhook chez Shopify) ; remboursements : niveau 2 + recette du PSP.\n**Validation humaine requise** : délai d'expédition (DELAI_EXPEDITION), jours de dépôt, route moteur de réservation,\nmutation de remboursement Shopify (à revérifier sur la version 2026-10).",
+        "content": "## 02 — Commande vers livraison (BP §12)\nPaiement confirmé (webhook Shopify **orders/paid**, signature vérifiée) → **contrôle de doublon** (idempotence n8n)\n→ anomalies (CHF, Suisse, payée) → réservation (route moteur attendue) → **bon de préparation**\n→ **tâche colis HUMAINE** : un robot ne prépare pas un colis (picking, emballage, scan, dépôt : la propriétaire).\nSuivi : la propriétaire saisit le numéro dans Shopify, qui envoie l'email 07 ; colis en retard signalés chaque matin.\nRapprochement hebdomadaire : frais PSP réels **sans commande** (abonnement, versement) → étoile polaire\n(`POST /northstar/entries`) ; les frais d'une commande viennent de `POST /orders/shipped` (`payment_fees`, BL-199) :\njamais comptés deux fois (le moteur refuse un PAYMENT portant l'`order_id` d'une commande enregistrée).\nDonnées personnelles : aucune conservée (exécutions réussies non sauvegardées).\n**Pré-drop** : une ligne « Réservation garantie » (SKU `-RESA-<date>`) = réservation **payée** enregistrée au moteur\n(`POST /predrop/reservations`, identifiant client **haché**, accès prioritaire attesté : étiquette `alerte-produit:<handle>`\n+ consentement confirmé) ; jamais refusée : hors quota, limite ou fenêtre => non servie, remboursement intégral préparé.\nRemboursements **approuvés** (propriétaire en un clic aux niveaux 1-2, moteur dès le niveau 3) : exécution chez le\nprestataire (désactivée) puis relevé `POST /predrop/refunds/{id}/executed` ; emails 15 (réservation confirmée) et 18\n(remboursement : montant et motif du moteur), désactivés.\n**Activation** : niveau 2 (l'activation inscrit le webhook chez Shopify) ; remboursements : niveau 2 + recette du PSP.\n**Validation humaine requise** : délai d'expédition (DELAI_EXPEDITION), jours de dépôt, route moteur de réservation,\nmutation de remboursement Shopify (à revérifier sur la version 2026-10).",
         "height": 520,
         "width": 680,
         "color": 4
@@ -373,7 +373,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Montants décimaux en centimes entiers (aucun float pour un montant ; arrondi interdit).\nfunction cents(value) {\n  const text = String(value === undefined || value === null ? '' : value).trim();\n  if (!/^-?\\d+(\\.\\d{1,2})?$/.test(text)) throw new Error(`montant non décimal ou plus de 2 décimales : ${text}`);\n  const negative = text.startsWith('-');\n  const [intPart, frac = ''] = text.replace('-', '').split('.');\n  const total = Number(intPart) * 100 + Number((frac + '00').slice(0, 2));\n  return negative ? -total : total;\n}\nfunction chf(c) {\n  const sign = c < 0 ? '-' : '';\n  const a = Math.abs(c);\n  return `${sign}${Math.trunc(a / 100)}.${String(a % 100).padStart(2, '0')}`;\n}\n\n// Commande payée qui porte une ou plusieurs fiches « Réservation garantie » (SKU <SKU>-RESA-<AAAAMMJJ>) : une\n// réservation PAR PRÉ-DROP -> POST /predrop/reservations, jamais refusée pour un motif métier (hors quota, limite,\n// fenêtre prioritaire ou montant : « non servie », remboursement intégral préparé). Une commande à plusieurs pré-drops\n// est enregistrée <commande>, <commande>#2… (la dette et l'expédition suivent la commande).\n// Données personnelles : l'identifiant client n'est lu que pour être HACHÉ (SHA-256, nœud suivant) ; l'accès\n// prioritaire est un booléen : étiquette « alerte-produit:<handle> » ET consentement marketing confirmé.\nconst order = $('Contrôle doublon (idempotence)').first().json;\nconst data = $input.first().json || {};\nconst internal = Array.isArray(data.internal) ? data.internal : [];\nconst bySku = {};\nfor (const p of internal) if (p && p.reservation_sku && p.status !== 'PENDING_OWNER') bySku[p.reservation_sku] = p;\nconst customer = order.customer || {};\nconst tags = String(customer.tags || '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);\nconst consent = (customer.email_marketing_consent || {}).state === 'subscribed';\nconst key = customer.id ? `shopify-customer:${customer.id}`\n  : order.email ? `shopify-email:${String(order.email).trim().toLowerCase()}` : `shopify-order:${order.id}`;\nconst groups = {};\nconst unknown = [];\nfor (const line of order.line_items || []) {\n  const sku = String(line.sku || '');\n  if (!/-RESA-\\d{8}$/.test(sku)) continue;\n  const p = bySku[sku];\n  if (!p) { unknown.push(sku); continue; }\n  const qty = Number.isInteger(line.quantity) ? line.quantity : 0;\n  const discount = (line.discount_allocations || []).reduce((sum, d) => sum + cents(d.amount), 0);\n  const g = groups[p.predrop_id] || (groups[p.predrop_id] = { p, qty: 0, amount: 0 });\n  g.qty += qty;\n  g.amount += cents(line.price) * qty - discount;\n}\nconst out = [];\nObject.keys(groups).sort().forEach((id, i) => {\n  const g = groups[id];\n  out.push({ json: {\n    rattachee: true,\n    predrop_id: id,\n    order_id: i === 0 ? String(order.id) : `${order.id}#${i + 1}`,\n    order_name: order.name,\n    customer_key: key,\n    qty: g.qty,\n    amount_paid_ttc: chf(g.amount),\n    paid_at: order.processed_at || order.created_at,\n    priority_access: consent && !!g.p.alert_tag && tags.includes(String(g.p.alert_tag).toLowerCase()),\n  } });\n});\nunknown.forEach((sku) => out.push({ json: { rattachee: false, sku, order_name: order.name, order_id: String(order.id) } }));\nreturn out;\n"
+        "jsCode": "// Montants décimaux en centimes entiers (aucun float pour un montant ; arrondi interdit).\nfunction cents(value) {\n  const text = String(value === undefined || value === null ? '' : value).trim();\n  if (!/^-?\\d+(\\.\\d{1,2})?$/.test(text)) throw new Error(`montant non décimal ou plus de 2 décimales : ${text}`);\n  const negative = text.startsWith('-');\n  const [intPart, frac = ''] = text.replace('-', '').split('.');\n  const total = Number(intPart) * 100 + Number((frac + '00').slice(0, 2));\n  return negative ? -total : total;\n}\nfunction chf(c) {\n  const sign = c < 0 ? '-' : '';\n  const a = Math.abs(c);\n  return `${sign}${Math.trunc(a / 100)}.${String(a % 100).padStart(2, '0')}`;\n}\n\n// Commande payée qui porte une ou plusieurs fiches « Réservation garantie » (SKU <SKU>-RESA-<AAAAMMJJ>) : une\n// réservation PAR PRÉ-DROP -> POST /predrop/reservations, jamais refusée pour un motif métier (hors quota, limite,\n// fenêtre prioritaire ou montant : « non servie », remboursement intégral préparé). Une commande à plusieurs pré-drops\n// est enregistrée <commande>, <commande>#2… (la dette et l'expédition suivent la commande).\n// Données personnelles : l'identifiant client n'est lu que pour être HACHÉ (SHA-256, nœud suivant) ; l'accès\n// prioritaire est un booléen : étiquette « alerte-produit:<handle> » ET consentement marketing confirmé.\nconst order = $('Contrôle doublon (idempotence)').first().json;\nconst data = $input.first().json || {};\nconst internal = Array.isArray(data.internal) ? data.internal : [];\nconst bySku = {};\nfor (const p of internal) if (p && p.reservation_sku && p.status !== 'PENDING_OWNER') bySku[p.reservation_sku] = p;\nconst customer = order.customer || {};\nconst tags = String(customer.tags || '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);\nconst consent = (customer.email_marketing_consent || {}).state === 'subscribed';\nconst key = customer.id ? `shopify-customer:${customer.id}`\n  : order.email ? `shopify-email:${String(order.email).trim().toLowerCase()}` : `shopify-order:${order.id}`;\nconst groups = {};\nconst unknown = [];\nfor (const line of order.line_items || []) {\n  const sku = String(line.sku || '');\n  if (!/-RESA-\\d{8}$/.test(sku)) continue;\n  const p = bySku[sku];\n  if (!p) { unknown.push(sku); continue; }\n  const qty = Number.isInteger(line.quantity) ? line.quantity : 0;\n  const discount = (line.discount_allocations || []).reduce((sum, d) => sum + cents(d.amount), 0);\n  const g = groups[p.predrop_id] || (groups[p.predrop_id] = { p, qty: 0, amount: 0 });\n  g.qty += qty;\n  g.amount += cents(line.price) * qty - discount;\n}\nconst out = [];\nObject.keys(groups).sort().forEach((id, i) => {\n  const g = groups[id];\n  out.push({ json: {\n    rattachee: true,\n    predrop_id: id,\n    order_id: i === 0 ? String(order.id) : `${order.id}#${i + 1}`,\n    order_name: order.name,\n    customer_key: key,\n    qty: g.qty,\n    amount_paid_ttc: chf(g.amount),\n    paid_at: order.processed_at || order.created_at,\n    priority_access: consent && !!g.p.alert_tag && tags.includes(String(g.p.alert_tag).toLowerCase()),\n    date_drop: g.p.drop_date || null, // variable de l'email 15 (aucun prix, aucune quantité restante)\n  } });\n});\nunknown.forEach((sku) => out.push({ json: { rattachee: false, sku, order_name: order.name, order_id: String(order.id) } }));\nreturn out;\n"
       },
       "id": "40f0d341-e5b7-5c90-95c2-a1762a256dd7",
       "name": "Préparer les réservations (une par pré-drop)",
@@ -514,6 +514,85 @@
       "position": [
         3360,
         60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a0f0459e-654f-5a5a-9ab3-b09ff1bd54c6",
+              "leftValue": "={{ $json.created }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "a0e8b53e-21fe-57e4-8c89-8bdc7f1a375c",
+      "name": "Réservation nouvellement enregistrée ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3640,
+        60
+      ],
+      "notes": "Rejeu du webhook (réservation déjà enregistrée) : aucun second email.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ template: '15-pre-drop-reservation-confirmee', shopify_order_id: String($json.reservation.order_id).split('#')[0], variables: { date_drop: $('Préparer les réservations (une par pré-drop)').item.json.date_drop } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "8de17bdd-0dad-51f6-81d7-3bfaad0d284c",
+      "name": "Email au client : réservation garantie confirmée — outil d’emailing (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3920,
+        20
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Email 15 (docs/06-contenu/EMAILS) : en plus de la confirmation de commande Shopify ; garantie, aucune différence remboursée, ordre de service, annulation ; aucun prix ni quantité dans les variables (le montant payé figure dans la confirmation de commande). Destinataire retrouvé par la commande dans l'outil.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "64d09b0f-2d60-5dd0-99bb-45977fcbc77a",
+      "name": "Rejeu : email déjà envoyé",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3920,
+        100
       ]
     },
     {
@@ -1331,7 +1410,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ template: 'pre-drop-remboursement', shopify_order_id: String($json.refund.order_id).split('#')[0], variables: { texte: $json.refund.email_draft } }) }}",
+        "jsonBody": "={{ JSON.stringify({ template: '18-pre-drop-remboursement', shopify_order_id: String($json.refund.order_id).split('#')[0], variables: { montant_rembourse: $json.refund.amount_ttc, motif_remboursement: $json.refund.reason_fr } }) }}",
         "options": {
           "timeout": 30000
         }
@@ -1351,7 +1430,7 @@
         }
       },
       "disabled": true,
-      "notes": "Texte = brouillon du moteur (motif, remboursement intégral supplément compris, aucune donnée interne) ; le destinataire est retrouvé par la commande dans l'outil (aucune adresse ici). Champ {{NOM_BOUTIQUE}} remplacé à l'intégration.",
+      "notes": "Email 18 (docs/06-contenu/EMAILS) : montant intégral (supplément compris) et motif en français lus dans le moteur (reason_fr, sans terme interne), jamais recalculés ; le destinataire est retrouvé par la commande dans l'outil (aucune adresse ici). Le brouillon du moteur (email_draft) reste la référence de la propriétaire.",
       "notesInFlow": true
     },
     {
@@ -1566,6 +1645,35 @@
         [
           {
             "node": "Préparer l’avis : réservation non servie (remboursement préparé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Journal : réservation confirmée (servie en premier)": {
+      "main": [
+        [
+          {
+            "node": "Réservation nouvellement enregistrée ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Réservation nouvellement enregistrée ?": {
+      "main": [
+        [
+          {
+            "node": "Email au client : réservation garantie confirmée — outil d’emailing (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejeu : email déjà envoyé",
             "type": "main",
             "index": 0
           }

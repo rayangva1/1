@@ -12,7 +12,11 @@
 #   alertes = inscrit aux alertes (lien de préférences) ; client = client avec consentement ou non opposé (C2) ;
 #   checkout = consentement coché lors du passage en caisse (C4).
 # Règles : aucune donnée interne (coût, marge, fournisseur, allocation chiffrée) ; aucun prix sauf prix public
-# relu au moment de l'envoi ; aucune fausse urgence ; produits « stock local » ou « précommande » seulement.
+# relu au moment de l'envoi ; aucune fausse urgence ; produits « stock local », « précommande » ou « réservation
+# garantie » (pré-drop) seulement.
+# Pré-drop (emails 15 à 19, décision de la propriétaire du 6.10.2026) : les deux phrases de garantie sont celles du
+# moteur (engine/pokeshop/predrop.py : GUARANTEE_TEXT_FR, NO_DIFFERENCE_REFUND_FR), mot pour mot (contrôlé par les
+# tests) ; ni prix, ni quantité, ni heure de fermeture, ni compte à rebours dans les variables.
 # Tous les exemples sont FICTIFS.
 
 version: "2026-10-04"
@@ -393,6 +397,162 @@ emails:
       - p: "Votre adresse est retirée de nos alertes et de nos récapitulatifs, dans tous nos outils. Nous la conservons uniquement dans une liste d'exclusion, pour ne plus vous écrire."
       - p: "Les emails liés à une commande (confirmation, expédition) restent envoyés si vous commandez."
       - p: "Une erreur ? Vous pouvez vous réinscrire : [page d'inscription]([[url_reinscription]])."
+
+  # ------------------------------------------------------------------ pré-drop (réservation garantie)
+  - id: "15-pre-drop-reservation-confirmee"
+    nom: "Pré-drop : réservation garantie confirmée"
+    canal: n8n
+    categorie: transactionnel
+    declencheur: "Réservation pré-drop payée et confirmée par le moteur (POST /predrop/reservations : CONFIRMED, nouvellement enregistrée), en plus de la confirmation de commande Shopify (06)"
+    segment: "Le client de la commande"
+    base: "Exécution du contrat (PRECOMMANDES : réservation garantie)"
+    frequence: "Une fois par réservation ; rejeu du webhook : aucun envoi"
+    objet: "Réservation garantie confirmée : [[produit_titre]]"
+    pre_entete: "Servi en premier, expédié dès réception : ce que garantit votre réservation."
+    variables:
+      - [salutation, "Salutation calculée par le workflow ou l'outil d'emailing", "Bonjour Léa,"]
+      - [numero_commande, "Numéro de commande (lu par l'outil d'emailing depuis la commande Shopify)", "#1001 (FICTIF)"]
+      - [produit_titre, "Titre exact de la fiche de réservation (lu depuis la commande)", "Réservation garantie — Display 36 boosters — Extension Exemple — FR (FICTIF)"]
+      - [date_drop, "Date du drop du moteur (jj.mm.aaaa), envoyée par le workflow 02", "20.10.2026"]
+      - [url_commande, "Page de suivi de la commande", "https://exemple.invalid/commande-fictive"]
+    blocs:
+      - titre: "Votre réservation garantie est confirmée"
+      - p: "[[salutation]]"
+      - p: "Votre réservation fait partie de la commande [[numero_commande]] ; le paiement est reçu."
+      - produit: {titre: "[[produit_titre]]", statut: reservation, detail: "Drop le [[date_drop]] (date estimée)"}
+      - sous_titre: "Ce que garantit votre réservation"
+      - liste:
+          - "Vous êtes servi en premier : les réservations garanties passent avant toute vente au prix du drop, dans l'ordre de leur paiement."
+          - "Votre commande est expédiée dès réception et contrôle du produit, en principe sous {{DELAI_EXPEDITION}} après réception. Nous ne garantissons pas une livraison le jour du drop."
+          - "Le prix payé est définitif : il ne baisse pas et n'augmente pas."
+      - encadre:
+          - "Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit."
+          - "Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop."
+      - sous_titre: "Si quelque chose change"
+      - liste:
+          - "Si nous recevons moins d'unités que prévu et ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris, et nous vous prévenons par email."
+          - "Si la date change, nous vous écrivons dans un délai de {{DELAI_INFORMATION_REPORT}}. Si le report dépasse {{SEUIL_REPORT_PRECOMMANDE}}, vous pouvez annuler et être remboursé intégralement, supplément compris."
+          - "Annulation gratuite {{DELAI_ANNULATION_PRECOMMANDE}} : répondez à cet email avec votre numéro de commande. Remboursement intégral, supplément compris."
+      - bouton: {texte: "Voir ma commande", url: "[[url_commande]]"}
+      - bouton: {texte: "Nos conditions de réservation garantie", url: "{{URL_PRECOMMANDES}}", style: secondaire}
+
+  - id: "16-pre-drop-acces-prioritaire"
+    nom: "Pré-drop : accès prioritaire des inscrits aux alertes"
+    canal: n8n
+    categorie: marketing
+    motif_pied: alertes
+    declencheur: "Pré-drop ouvert, fenêtre prioritaire (étape « prioritaire » calculée par le moteur, GET /predrop/offers)"
+    segment: "Inscrits confirmés qui suivent ce produit (alerte sur la fiche), non désinscrits"
+    base: "Consentement confirmé (alerte demandée sur ce produit)"
+    frequence: "Une annonce par pré-drop et par personne ; pas de seconde annonce à l'ouverture à tous"
+    objet: "Réservations garanties : [[produit_titre]], d'abord pour vous"
+    pre_entete: "Vous suivez ce produit : vous pouvez réserver avant l'ouverture à tous. Rien ne presse."
+    variables:
+      - [salutation, "Salutation calculée par le workflow", "Bonjour Léa,"]
+      - [produit_titre, "Titre exact de la fiche normale (lu sur la page publique)", "Display 36 boosters — Extension Exemple — FR (FICTIF)"]
+      - [date_drop, "Date du drop du moteur (jj.mm.aaaa)", "20.10.2026"]
+      - [url_reservation, "Chemin de la fiche « Réservation garantie », complété par l'adresse du site", "/products/display-extension-exemple-fr-reservation-garantie"]
+      - [url_preferences, "Page de préférences", "https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF"]
+      - [url_desinscription, "Désinscription en un clic", "https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF"]
+      - [date_consentement, "Date de confirmation", "14.10.2026"]
+    blocs:
+      - titre: "Accès prioritaire aux réservations garanties"
+      - p: "[[salutation]]"
+      - p: "Vous avez demandé une alerte pour [[produit_titre]]. Les réservations garanties sont ouvertes, d'abord aux personnes inscrites aux alertes de ce produit, puis à tous."
+      - produit: {titre: "[[produit_titre]]", statut: reservation, detail: "Drop le [[date_drop]] (date estimée)"}
+      - liste:
+          - "Pour réserver pendant l'accès prioritaire, connectez-vous à votre compte client avec l'adresse de cet email."
+          - "Le prix de la réservation garantie et le prix du drop sont affichés côte à côte sur la fiche ; le prix affiché au moment de votre commande fait foi."
+          - "La limite par foyer, toutes commandes confondues, figure sur la fiche."
+      - encadre:
+          - "Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit."
+          - "Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop."
+      - p: "Rien ne presse : vous pouvez aussi attendre le drop et acheter au prix du drop, s'il reste des unités. Nous n'affichons ni minuteur ni nombre d'unités restantes."
+      - bouton: {texte: "Voir la réservation garantie", url: "{{URL_SITE}}[[url_reservation]]"}
+
+  - id: "17-pre-drop-ouverture"
+    nom: "Pré-drop : annonce du drop, réservations garanties ouvertes à tous"
+    canal: n8n
+    categorie: marketing
+    motif_pied: alertes
+    declencheur: "Fin de la fenêtre prioritaire : réservations ouvertes à tous (étape « ouvertes » calculée par le moteur)"
+    segment: "Inscrits confirmés qui suivent ce produit et n'ont pas reçu l'accès prioritaire (inscrits depuis), non désinscrits"
+    base: "Consentement confirmé (alerte demandée sur ce produit)"
+    frequence: "Une annonce par pré-drop et par personne"
+    objet: "Drop le [[date_drop]] : [[produit_titre]]"
+    pre_entete: "Réserver avec garantie ou attendre le drop : les deux prix, et ce qui les distingue."
+    variables:
+      - [salutation, "Salutation calculée par le workflow", "Bonjour Léa,"]
+      - [produit_titre, "Titre exact de la fiche normale (lu sur la page publique)", "Display 36 boosters — Extension Exemple — FR (FICTIF)"]
+      - [date_drop, "Date du drop du moteur (jj.mm.aaaa)", "20.10.2026"]
+      - [url_reservation, "Chemin de la fiche « Réservation garantie », complété par l'adresse du site", "/products/display-extension-exemple-fr-reservation-garantie"]
+      - [url_preferences, "Page de préférences", "https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF"]
+      - [url_desinscription, "Désinscription en un clic", "https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF"]
+      - [date_consentement, "Date de confirmation", "14.10.2026"]
+    blocs:
+      - titre: "Le drop est annoncé"
+      - p: "[[salutation]]"
+      - p: "Vous avez demandé une alerte pour [[produit_titre]]. Le drop est prévu le [[date_drop]] (date estimée). D'ici là, les réservations garanties sont ouvertes à tous."
+      - produit: {titre: "[[produit_titre]]", statut: reservation, detail: "Drop le [[date_drop]] (date estimée)"}
+      - sous_titre: "Réserver ou attendre le drop : à vous de choisir"
+      - liste:
+          - "**Réservation garantie** : le prix du drop plus un supplément, affichés tous deux sur la fiche. Vous êtes servi en premier et votre commande est expédiée dès réception."
+          - "**Au drop** : le prix du drop, s'il reste des unités. Nous vous prévenons quand le produit est en stock local."
+      - encadre:
+          - "Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit."
+          - "Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop."
+      - p: "La limite par foyer, toutes commandes confondues, figure sur la fiche. Nous n'affichons ni minuteur ni nombre d'unités restantes : la fiche indique seulement « Réservations ouvertes » ou « Réservations fermées »."
+      - bouton: {texte: "Voir la réservation garantie", url: "{{URL_SITE}}[[url_reservation]]"}
+
+  - id: "18-pre-drop-remboursement"
+    nom: "Pré-drop : réservation remboursée intégralement (allocation réduite, non servie ou annulée)"
+    canal: n8n
+    categorie: transactionnel
+    declencheur: "Remboursement pré-drop exécuté chez le prestataire de paiement et relevé au moteur (POST /predrop/refunds/{id}/executed, premier relevé)"
+    segment: "Le client de la réservation remboursée"
+    base: "Exécution du contrat (PRECOMMANDES : remboursement intégral, supplément compris)"
+    frequence: "Une fois par remboursement"
+    objet: "Réservation garantie remboursée : commande [[numero_commande]]"
+    pre_entete: "Remboursement intégral, supplément compris, et son motif."
+    variables:
+      - [salutation, "Salutation calculée par l'outil d'emailing", "Bonjour Léa,"]
+      - [numero_commande, "Numéro de commande (lu par l'outil d'emailing depuis la commande Shopify)", "#1001 (FICTIF)"]
+      - [montant_rembourse, "Montant remboursé du moteur (amount_ttc, CHF, 2 décimales), jamais recalculé", "229.90 (FICTIF)"]
+      - [motif_remboursement, "Motif en français du moteur (reason_fr), sans terme interne", "la quantité qui nous a été attribuée a été réduite et nous ne pourrons pas vous servir"]
+      - [url_alerte_produit, "Formulaire d'alerte de la fiche normale (consentement demandé)", "https://exemple.invalid/products/display-extension-exemple-fr#alerte"]
+    blocs:
+      - titre: "Votre réservation est remboursée"
+      - p: "[[salutation]]"
+      - p: "Votre réservation garantie (commande [[numero_commande]]) est remboursée intégralement. Motif : [[motif_remboursement]]."
+      - encadre:
+          - "**Remboursement intégral, supplément compris** : CHF [[montant_rembourse]], sur votre moyen de paiement d'origine. Le crédit sur votre compte dépend ensuite de votre banque."
+      - p: "Quand nous recevons moins d'unités que prévu, les réservations garanties sont servies en premier, dans l'ordre de leur paiement, avant toute vente au prix du drop ; les dernières qui ne peuvent pas être servies sont remboursées intégralement."
+      - p: "Les autres articles éventuels de votre commande ne sont pas concernés."
+      - p: "Si vous le souhaitez, nous pouvons vous prévenir quand ce produit arrive en stock local :"
+      - bouton: {texte: "Demander une alerte", url: "[[url_alerte_produit]]", style: secondaire}
+
+  - id: "19-pre-drop-expedition-prioritaire"
+    nom: "Pré-drop : réservation garantie expédiée en priorité"
+    canal: n8n
+    categorie: transactionnel
+    declencheur: "Envoi d'une commande qui contient une réservation garantie (Shopify orders/fulfilled, ligne au SKU -RESA-), en plus de l'email 07 de Shopify (suivi)"
+    segment: "Le client de la commande"
+    base: "Exécution du contrat (information sur la réservation garantie)"
+    frequence: "Une fois par envoi contenant une réservation"
+    objet: "Réservation garantie expédiée : commande [[numero_commande]]"
+    pre_entete: "Servie en premier, expédiée dès réception : le suivi suit dans l'email d'expédition."
+    variables:
+      - [salutation, "Salutation calculée par l'outil d'emailing", "Bonjour Léa,"]
+      - [numero_commande, "Numéro de commande (lu par l'outil d'emailing depuis la commande Shopify)", "#1001 (FICTIF)"]
+      - [url_commande, "Page de suivi de la commande", "https://exemple.invalid/commande-fictive"]
+    blocs:
+      - titre: "Votre réservation est en route"
+      - p: "[[salutation]]"
+      - p: "Comme prévu par votre réservation garantie (commande [[numero_commande]]), vous avez été servi en premier : votre colis a été préparé dès réception et contrôle du produit, avant les commandes passées au prix du drop."
+      - p: "Le numéro de suivi figure dans l'email d'expédition, envoyé séparément."
+      - p: "Colis abîmé à la livraison ? Photographiez le colis et les articles, puis écrivez-nous dans un délai de {{DELAI_SIGNALEMENT}}."
+      - p: "Comme pour tout produit scellé, le contenu des boosters est aléatoire : aucune carte précise ni aucun niveau de rareté ne sont garantis."
+      - bouton: {texte: "Voir ma commande", url: "[[url_commande]]", style: secondaire}
 
   # Gabarits partiels utilisés par le workflow pour construire « lignes_produits_html » (un par produit).
 partiels:

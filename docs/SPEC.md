@@ -172,6 +172,7 @@ Jetons (empreintes sha256 seulement dans l'environnement ; acteur journalisé **
 | `POST /predrop/{predrop_id}/close` | `chef-de-projet`, `finance-pricing`, `qa-conformite`, `n8n-03-factures` | acte protecteur ; unités non réservées au drop ; `n8n-03-factures` : dès l'annonce d'une réduction d'allocation, avant sa validation |
 | `POST /predrop/{predrop_id}/publish` | `n8n-01-sync`, `site-integrations` | fiche jumelle « Réservation garantie » construite par le moteur (`publish.build_predrop_publication`) : fiche canonique et validations de la propriétaire, prix pré-drop **figé** (planchers revérifiés au coût rendu connu, ≥ prix drop et ≤ prix drop × 1,10 ; coût inconnu : non publiée), statut `prioritaire` / `ouvertes` / `fermees`, retrait (brouillon) au drop, à la fermeture, sur paramètres non signés, gel, stop-loss non évaluable ou quarantaine ; inventaire = réservations encore ouvertes diminuées des commandes Shopify non relevées (compare-and-swap ; baisse protectrice, appliquée même quand la mise à jour d'une fiche en ligne est refusée par le niveau ou le gel ; hausse : niveau 2) ; simulation par défaut (`dry_run: false` : porte de gouvernance, mise à jour niveau 2, création niveau 3) ; en attente de la propriétaire ou avant l'ouverture : 409 |
 | `POST /predrop/reservations` | `n8n-02-commandes` | réservation **payée** (commande Shopify, `customer_ref` = sha256 de l'identifiant client, jamais l'email) ; idempotente par commande (autre contenu : 409) ; jamais refusée pour un motif métier : hors quota, limite par client, fenêtre prioritaire, montant ≠ prix pré-drop × quantité, pré-drop fermé à la date du paiement, désactivé, gel ou quarantaine => **non servie** et remboursement intégral préparé ; dette jusqu'à l'expédition |
+| `POST /predrop/reservations/{order_id}/cancel` | `operations-sav` | annulation d'une réservation **confirmée** à la demande écrite du client (`reason` : `CUSTOMER_CANCELLATION` — annulation libre, refusée à partir de la date du drop —, `DATE_POSTPONED` — report au-delà du seuil des conditions —, `PRODUCT_CHANGED` — contenu modifié ; `request_ref` = référence de la demande) : remboursement **intégral** préparé, supplément compris, même circuit que les autres (validation de la propriétaire aux niveaux 1 et 2) ; l'unité revient au quota ; déjà remboursée : sans effet ; expédiée : 409 (retour volontaire) ; inconnue : 404 |
 | `POST /predrop/refunds/{refund_id}/approve` | PROPRIO seul | validation en **un clic** (corps vide admis) d'un remboursement préparé (niveaux d'autonomie 1 et 2 ; à partir du niveau 3, approuvé par le moteur) |
 | `POST /predrop/refunds/{refund_id}/executed` | `n8n-02-commandes` | remboursement PSP relevé : approuvé seulement (sinon 409) ; seule sortie de la dette d'une réservation remboursée ; même référence : idempotent |
 
@@ -247,6 +248,18 @@ offre publique).
 - **Aucune fausse urgence** : offre publique en liste blanche (`PUBLIC_OFFER_FIELDS`) : statut « Réservations ouvertes
   / fermées », date du drop, deux prix, limite par client, accès prioritaire, garantie ; ni compte à rebours, ni heure
   de fermeture, ni « plus que N », ni coût, ni marge.
+- **Annulation à la demande du client** (étape 3, `cancel_reservation`, `POST /predrop/reservations/{order_id}/cancel`,
+  agent 11) : sur demande écrite, motif `CUSTOMER_CANCELLATION` (refusé à partir de la date du drop), `DATE_POSTPONED`
+  ou `PRODUCT_CHANGED` et référence de la demande : remboursement **intégral**, supplément compris, préparé dans le même
+  circuit (validation de la propriétaire aux niveaux 1 et 2) ; l'unité revient au quota ; déjà remboursée : sans effet ;
+  expédiée : refus. Chaque remboursement préparé porte son motif en français (`reason_fr`, sans terme interne : variable
+  de l'email 18).
+- **Légal, contenus, pilotage** (étape 3) : conditions client **brouillon** (`docs/04-legal/PRECOMMANDES.md` partie
+  « Pré-drop » et §2.5, CGV ch. 7.7 à 7.12, FAQ, notes P1 à P10 pour le juriste ; champs `LIMITE_RESERVATION_PREDROP` et
+  `FENETRE_PRIORITAIRE_PREDROP` alignés sur les paramètres signés, contrôle `check_predrop_alignment`) ; emails 15 à 19
+  (`docs/06-contenu/EMAILS`) et plan du jour de drop (`docs/06-contenu/PLAN_JOUR_DE_DROP.md`), garantie du moteur mot pour
+  mot (contrôlée) ; actes de la propriétaire C32 à C34 ; qui fait quoi : `docs/08-agents/PRE_DROP.md` ; risques RS-17 à
+  RS-19 (`docs/00-pilotage/REVUE_SECURITE.md`).
 
 ## 3. Base de données (agent `data-pipeline` écrit `db/migrations/`)
 Tables minimum : `suppliers`, `supplier_contacts`, `raw_snapshots`, `supplier_offers`, `products`, `product_supplier_links`,
@@ -263,11 +276,11 @@ docs/00-pilotage/     backlog, plan 90 jours, gates go/no-go, INTERVENTIONS_HUMA
 docs/01-marche/       grille concurrence, guide d'entretiens, questionnaire, protocole landing
 docs/02-sourcing/     dossier B2B, emails fournisseurs, panier pilote, demande technique, tracker CSV
 docs/03-finance/      modèle financier .xlsx, trésorerie 13 semaines .xlsx, note de vérification
-docs/04-legal/        CGV, livraison/retours, confidentialité, mentions légales, précommandes — BROUILLONS à faire revoir
+docs/04-legal/        CGV, livraison/retours, confidentialité, mentions légales, précommandes (dont le pré-drop) — BROUILLONS à faire revoir
 docs/05-da/           naming, 2 directions, logo SVG, mini-charte HTML, composants, templates sociaux, packaging
-docs/06-contenu/      15 sujets, calendrier 90 j, emails transactionnels/automations, scripts vidéo, ton
+docs/06-contenu/      15 sujets, calendrier 90 j, emails transactionnels/automations (dont 15 à 19 du pré-drop), plan du jour de drop, scripts vidéo, ton
 docs/07-ops/          SOP réception, préparation colis, SAV, retours, incidents, dashboard
-docs/08-agents/       12 briefs de mission + brief commun
+docs/08-agents/       12 briefs de mission + brief commun + qui fait quoi pour un pré-drop (PRE_DROP.md)
 .claude/agents/       les 12 agents exécutables en sous-agents Claude Code
 .claude/settings.json permissions du projet : règles deny seulement (secrets illisibles par la flotte)
 site/landing/         page de présentation + inscription alertes (statique, sans faux stock)

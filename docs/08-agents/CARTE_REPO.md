@@ -14,6 +14,7 @@
 | `docs/00-pilotage/DELEGATION_AUTONOMIE.md` | Mandat écrit : plafonds, fournisseurs autorisés, interdits, journal | gouvernance | tous | présent |
 | `config/mandate.v1.yaml` | Mandat lu par la machine (actif seulement si son empreinte est au coffre) | gouvernance | 05, 12 (lecture) | présent |
 | `config/stoploss.v1.yaml` | Seuils des six stop-loss (signés par la propriétaire au coffre) | gouvernance | 12, 05, 10 (lecture) | présent |
+| `config/predrop.v1.yaml` | Paramètres du pré-drop (supplément ≤ 10 %, part, réserve, limite par client, fenêtre prioritaire, seuil de demande) ; actifs seulement si leur empreinte est au coffre (C32) | gouvernance | 05, 12 (lecture) | présent |
 | `.claude/settings.json` | Permissions Claude Code du projet : règles `deny` seulement (secrets illisibles par la flotte) | flotte-agents | Claude Code | présent |
 | `docs/00-pilotage/STOP_LOSS.md` | Définition des six stop-loss | gouvernance | 12, 05, 10, 01 | présent |
 | `docs/00-pilotage/ETOILE_POLAIRE.md` | Définition de la métrique unique | gouvernance | 05, 01 | présent |
@@ -34,6 +35,7 @@
 | `engine/pokeshop/mandate.py` | Contrôle de chaque dépense (`check`), registre du mandat (`SpendLedger`), registres des taux et des révocations | gouvernance | 05, 12 | présent |
 | `engine/pokeshop/northstar.py` | Registre de l'étoile polaire (`NorthStarLedger`) | gouvernance | 05, 01, 12 | présent |
 | `engine/pokeshop/invoices.py` | Registre des factures fournisseur validées par la propriétaire (`SupplierInvoiceBook`, `POST /costs/invoices`) : référence du coût d'une réception (± 2 %), dette jusqu'au paiement relevé | gouvernance | 05, 12 | présent |
+| `engine/pokeshop/predrop.py` | Pré-drop (réservation garantie) : paramètres signés, deux prix, éligibilité, quotas, réservations payées, réductions, annulations, remboursements préparés, dette dérivée ; routes `/predrop/*` | gouvernance | 05, 11, 12, 07 | présent |
 | `engine/pokeshop/autonomy.py` | Niveaux d'autonomie et porte de gouvernance (niveau + mandat + stop-loss) | integrations | 12, 07 | présent |
 | `engine/pokeshop/settings.py` | Variables d'environnement (noms seulement : empreintes, jetons nommés) | integrations | 07, 12 | présent |
 | `engine/pokeshop/sync.py` | Cycles de synchronisation (`/sync/run`, simulation par défaut) | integrations | 07, 12 | présent |
@@ -95,7 +97,7 @@
 | `docs/05-da/packaging/NOTE_CHIFFRAGE.md` | Packaging et devis | da | 06, 11 | présent |
 | `docs/05-da/tools/generer_da.py` | Génération des fichiers DA | da | 06 | présent |
 | `docs/05-da/tools/verifier_da.py` | Contrôles DA (termes internes, contrastes) | da | 06, 12 | présent |
-| `docs/06-contenu/` | Sujets, calendrier, emails, scripts, ton | contenu | 08, 09 | présent |
+| `docs/06-contenu/` | Sujets, calendrier, emails (dont 15 à 19 du pré-drop), scripts, ton, plan du jour de drop (`PLAN_JOUR_DE_DROP.md`) | contenu | 08, 09 | présent |
 | `docs/07-ops/` | SOP réception, colis, SAV, retours, incidents | ops | 11, 12 | présent |
 
 ## 5. Flotte d'agents
@@ -106,6 +108,7 @@
 | `docs/08-agents/ORGANIGRAMME.md` | Dépendances, flux d'exceptions, RACI | flotte-agents | tous | présent |
 | `docs/08-agents/MATRICE_AUTONOMIE.md` | Autonomie par agent et par niveau | flotte-agents | tous | présent |
 | `docs/08-agents/RUNBOOK.md` | Utilisation quotidienne | flotte-agents | propriétaire, 01 | présent |
+| `docs/08-agents/PRE_DROP.md` | Pré-drop : qui fait quoi, étape par étape (routes, validations de la propriétaire, interdits) | flotte-agents | 01, 02, 04, 05, 07, 09, 10, 11, 12 | présent |
 | `docs/08-agents/outils/verifier_agents.py` | Vérificateur de la flotte (frontmatter, outils, permissions, consignes périmées) | flotte-agents | 12 | présent |
 | `docs/08-agents/outils/controle_generateurs.py` | Contrôle en lecture seule des classeurs générés (générateurs exécutés en dossier temporaire) | flotte-agents | 12 | présent |
 | `docs/08-agents/outils/verifier_isolation.py` | Contrôle en lecture seule de l'isolation d'un compte de la flotte (ni root, ni docker, ni sudo ; aucun secret, aucun jeton d'un autre compte lisible), lancé sous ce compte (B28, BL-204) | flotte-agents | 12 | présent |

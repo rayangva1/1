@@ -13,6 +13,7 @@ Dossier de la flotte de 12 agents du BP §11, adaptée au modèle d'opération d
 | `docs/08-agents/MATRICE_AUTONOMIE.md` | Niveaux 1 à 4 (BP §13), ce que chaque agent fait seul, prépare, s'interdit ; connecteurs et plafonds |
 | `docs/08-agents/RUNBOOK.md` | Utilisation quotidienne dans Claude Code : lancer, demander, décider, routines, connecteurs |
 | `docs/08-agents/CARTE_REPO.md` | Fichiers du dépôt utilisés par la flotte, présents ou attendus |
+| `docs/08-agents/PRE_DROP.md` | Pré-drop (réservation garantie, décision du 6.10.2026) : qui fait quoi, étape par étape, routes, validations de la propriétaire (C32 à C34), interdits |
 | `docs/08-agents/01_chef-de-projet.md` … `docs/08-agents/12_qa-conformite.md` | 12 briefs de mission (9 rubriques du BP + outils, routines, modèle de rapport) |
 | `docs/08-agents/modeles/` | Gabarits : rapport, fiche d'exception, plan de dispatch, demande d'engagement, modèles d'emails, registre du mandat |
 | `docs/08-agents/rapports/`, `docs/08-agents/exceptions/` | Sorties des agents en exploitation (vides au 4.10.2026) |
@@ -54,3 +55,4 @@ python -m pytest -q docs/08-agents/outils            # tests du vérificateur et
 - [ ] Signer le mandat (`docs/00-pilotage/DELEGATION_AUTONOMIE.md`) **et reporter son empreinte au coffre** : sans elle, la flotte reste en préparation, à 0 CHF.
 - [ ] Générer un jeton par rôle utilisé (17 : les 10 connecteurs n8n et les 7 agents qui ont `CONN-API-MOTEUR`) et un secret par passerelle n8n (11, un par webhook et par agent appelant : 03 factures (agent 05), 03 allocations du pré-drop (agent 02), 04, 06 et un webhook 08 par agent qui dépense, jamais l'agent 05 ; commande prête : `docs/00-pilotage/DELEGATION_AUTONOMIE.md` §10 étape 6 ; `docs/00-pilotage/INTERVENTIONS_HUMAINES.md`, B22) et garder le jeton de la propriétaire hors de portée de la flotte (B21).
 - [ ] Garder `.claude/settings.json` en règles `deny` seulement ; ne jamais y ajouter de règle `allow` (le vérificateur la refuse).
+- [ ] Relire `docs/08-agents/PRE_DROP.md` (partage des rôles du pré-drop) avant le premier pré-drop.

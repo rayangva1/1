@@ -6,7 +6,7 @@ Bonjour{% if customer.first_name %} {{ customer.first_name }}{% endif %},
 
 Nous avons bien reçu votre paiement. Voici exactement ce que vous avez commandé.
 
-{% for line in subtotal_line_items %}- {{ line.title }} × {{ line.quantity }} : {{ line.final_line_price | money }}{% if line.title contains 'Précommande' %} (précommande, expédiée à part){% endif %}
+{% for line in subtotal_line_items %}- {{ line.title }} × {{ line.quantity }} : {{ line.final_line_price | money }}{% if line.sku contains '-RESA-' %} (réservation garantie : servie en premier, expédiée à part dès réception){% elsif line.title contains 'Précommande' %} (précommande, expédiée à part){% endif %}
 {% endfor %}Sous-total : {{ subtotal_price | money }}
 {% if discounts_amount > 0 %}Réductions : − {{ discounts_amount | money }}
 {% endif %}Livraison : {{ shipping_price | money }}

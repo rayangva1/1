@@ -18,9 +18,9 @@
 </head>
 <body>
   <main>
-    <h1>Aperçu des 14 emails</h1>
-    <p class="avertissement"><strong>Données FICTIVES.</strong> Nom de travail provisoire « Quai des Cartes ». Les valeurs marquées ⟦à valider⟧ sont des propositions du registre légal ; ⟦CHAMP⟧ = champ encore à remplir. Les emails Shopify (06, 07) sont montrés avec des lignes d'exemple à la place des boucles Liquid.</p>
-    <ol><li><a href="#email-01-confirmation-inscription">01-confirmation-inscription — Confirmation d&#x27;inscription (double opt-in)</a></li><li><a href="#email-02-bienvenue-preferences">02-bienvenue-preferences — Bienvenue et préférences</a></li><li><a href="#email-03-ouverture-boutique">03-ouverture-boutique — Ouverture douce (BL-118)</a></li><li><a href="#email-04-alerte-stock-local">04-alerte-stock-local — Alerte : nouveau stock local</a></li><li><a href="#email-05-recapitulatif-hebdo">05-recapitulatif-hebdo — Récapitulatif hebdomadaire</a></li><li><a href="#email-06-confirmation-commande">06-confirmation-commande — Confirmation de commande (notification Shopify)</a></li><li><a href="#email-07-expedition-suivi">07-expedition-suivi — Expédition et suivi (notification Shopify)</a></li><li><a href="#email-08-precommande-confirmee">08-precommande-confirmee — Précommande confirmée</a></li><li><a href="#email-09-precommande-report">09-precommande-report — Précommande : report de date</a></li><li><a href="#email-10-precommande-annulee">10-precommande-annulee — Précommande annulée et remboursée (quantité réduite ou annulée)</a></li><li><a href="#email-11-demande-avis">11-demande-avis — Demande d&#x27;avis après livraison</a></li><li><a href="#email-12-reachat">12-reachat — Réachat : suggestion sur extension ou format déjà acheté</a></li><li><a href="#email-13-panier-abandonne">13-panier-abandonne — Panier abandonné (seulement avec consentement marketing)</a></li><li><a href="#email-14-desinscription-confirmee">14-desinscription-confirmee — Désinscription confirmée (facultatif)</a></li></ol>
+    <h1>Aperçu des 19 emails</h1>
+    <p class="avertissement"><strong>Données FICTIVES.</strong> Nom de travail provisoire « Quai des Cartes ». Les valeurs marquées ⟦à valider⟧ sont des propositions du registre légal ; ⟦CHAMP⟧ = champ encore à remplir. Les emails Shopify (06, 07) sont montrés avec des lignes d'exemple à la place des boucles Liquid. Emails 15 à 19 : pré-drop (réservation garantie, décision du 6.10.2026).</p>
+    <ol><li><a href="#email-01-confirmation-inscription">01-confirmation-inscription — Confirmation d&#x27;inscription (double opt-in)</a></li><li><a href="#email-02-bienvenue-preferences">02-bienvenue-preferences — Bienvenue et préférences</a></li><li><a href="#email-03-ouverture-boutique">03-ouverture-boutique — Ouverture douce (BL-118)</a></li><li><a href="#email-04-alerte-stock-local">04-alerte-stock-local — Alerte : nouveau stock local</a></li><li><a href="#email-05-recapitulatif-hebdo">05-recapitulatif-hebdo — Récapitulatif hebdomadaire</a></li><li><a href="#email-06-confirmation-commande">06-confirmation-commande — Confirmation de commande (notification Shopify)</a></li><li><a href="#email-07-expedition-suivi">07-expedition-suivi — Expédition et suivi (notification Shopify)</a></li><li><a href="#email-08-precommande-confirmee">08-precommande-confirmee — Précommande confirmée</a></li><li><a href="#email-09-precommande-report">09-precommande-report — Précommande : report de date</a></li><li><a href="#email-10-precommande-annulee">10-precommande-annulee — Précommande annulée et remboursée (quantité réduite ou annulée)</a></li><li><a href="#email-11-demande-avis">11-demande-avis — Demande d&#x27;avis après livraison</a></li><li><a href="#email-12-reachat">12-reachat — Réachat : suggestion sur extension ou format déjà acheté</a></li><li><a href="#email-13-panier-abandonne">13-panier-abandonne — Panier abandonné (seulement avec consentement marketing)</a></li><li><a href="#email-14-desinscription-confirmee">14-desinscription-confirmee — Désinscription confirmée (facultatif)</a></li><li><a href="#email-15-pre-drop-reservation-confirmee">15-pre-drop-reservation-confirmee — Pré-drop : réservation garantie confirmée</a></li><li><a href="#email-16-pre-drop-acces-prioritaire">16-pre-drop-acces-prioritaire — Pré-drop : accès prioritaire des inscrits aux alertes</a></li><li><a href="#email-17-pre-drop-ouverture">17-pre-drop-ouverture — Pré-drop : annonce du drop, réservations garanties ouvertes à tous</a></li><li><a href="#email-18-pre-drop-remboursement">18-pre-drop-remboursement — Pré-drop : réservation remboursée intégralement (allocation réduite, non servie ou annulée)</a></li><li><a href="#email-19-pre-drop-expedition-prioritaire">19-pre-drop-expedition-prioritaire — Pré-drop : réservation garantie expédiée en priorité</a></li></ol>
     <section id="email-01-confirmation-inscription"><h2>01-confirmation-inscription — Confirmation d&#x27;inscription (double opt-in)</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Formulaire d&#x27;inscription reçu (landing ou formulaire Shopify), adresse non encore confirmée</td></tr><tr><th scope="row">Segment</th><td>La seule personne inscrite, statut en_attente</td></tr><tr><th scope="row">Base</th><td>Demande explicite de la personne ; email unique, sans contenu promotionnel</td></tr><tr><th scope="row">Fréquence</th><td>Une fois par inscription ; pas de relance automatique</td></tr><tr><th scope="row">Objet</th><td>Confirmez votre alerte Quai des Cartes (nom provisoire)</td></tr><tr><th scope="row">Pré-en-tête</th><td>Un clic pour activer vos alertes. Sans confirmation, nous ne vous écrirons pas.</td></tr></table><div class="email">
   <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Un clic pour activer vos alertes. Sans confirmation, nous ne vous écrirons pas.</div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
@@ -323,7 +323,7 @@
           <tr>
             <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:14px 0;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:15px;line-height:21px;color:#111111;word-break:break-word;"><strong>Display 36 boosters — Extension Exemple — FR (FICTIF)</strong><br><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E3F4E8;color:#0F5A2A;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">STOCK LOCAL</span> <span style="font-size:13px;color:#55534E;">&nbsp;Expédition sous 3 jours ouvrés ⟦à valider⟧</span></td><td align="right" valign="top" style="padding:14px 0 14px 12px;border-top:1px solid #D9D6CF;font-family:'Courier New', Courier, monospace;font-size:15px;line-height:21px;color:#111111;white-space:nowrap;">1 × 209.90<br><strong>CHF 209.90</strong></td></tr><tr><td style="padding:14px 0;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:15px;line-height:21px;color:#111111;word-break:break-word;"><strong>Protège-cartes ×100 — exemple (FICTIF)</strong><br><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E3F4E8;color:#0F5A2A;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">STOCK LOCAL</span> <span style="font-size:13px;color:#55534E;">&nbsp;Expédition sous 3 jours ouvrés ⟦à valider⟧</span></td><td align="right" valign="top" style="padding:14px 0 14px 12px;border-top:1px solid #D9D6CF;font-family:'Courier New', Courier, monospace;font-size:15px;line-height:21px;color:#111111;white-space:nowrap;">2 × 9.90<br><strong>CHF 19.80</strong></td></tr><tr><td style="padding:14px 0;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:15px;line-height:21px;color:#111111;word-break:break-word;"><strong>Coffret — Extension Exemple 2 — FR — Précommande (FICTIF)</strong><br><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E6E9FB;color:#2B3990;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">PRÉCOMMANDE</span> <span style="font-size:13px;color:#55534E;">&nbsp;Expédiée à part, dès réception</span></td><td align="right" valign="top" style="padding:14px 0 14px 12px;border-top:1px solid #D9D6CF;font-family:'Courier New', Courier, monospace;font-size:15px;line-height:21px;color:#111111;white-space:nowrap;">1 × 59.90<br><strong>CHF 59.90</strong></td></tr><tr><td style="padding:12px 0 4px 0;border-top:2px solid #111111;font-family:Arial, Helvetica, sans-serif;font-size:15px;color:#111111;">Sous-total articles</td><td align="right" style="padding:12px 0 4px 0;border-top:2px solid #111111;font-family:'Courier New', Courier, monospace;font-size:15px;color:#111111;white-space:nowrap;">CHF 289.60</td></tr><tr><td style="padding:4px 0;font-family:Arial, Helvetica, sans-serif;font-size:15px;color:#111111;">Livraison</td><td align="right" style="padding:4px 0;font-family:'Courier New', Courier, monospace;font-size:15px;color:#111111;white-space:nowrap;">CHF 9.00</td></tr><tr><td style="padding:8px 0 4px 0;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">Total payé</td><td align="right" style="padding:8px 0 4px 0;font-family:'Courier New', Courier, monospace;font-size:18px;font-weight:bold;color:#111111;white-space:nowrap;">CHF 298.60</td></tr><tr><td colspan="2" style="padding:0 0 4px 0;font-family:Arial, Helvetica, sans-serif;font-size:13px;color:#55534E;">⟦MENTION_TVA⟧</td></tr></table>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;"><strong>Commande mixte :</strong> les articles en stock local partent dès qu'ils sont prêts ; la précommande est expédiée séparément, dès sa réception. La livraison n'est facturée qu'une fois. Nous vous écrivons si une date change.</td></tr></table>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;"><strong>Commande mixte :</strong> les articles en stock local partent dès qu'ils sont prêts ; la précommande ou la réservation garantie est expédiée séparément, dès sa réception. La livraison n'est facturée qu'une fois. Nous vous écrivons si une date change.</td></tr></table>
               <p style="margin:12px 0 12px 0;font-size:14px;line-height:21px;color:#111111;word-break:break-word;"><strong>Livraison</strong> (Suisse uniquement) :<br>Léa Exemple<br>Rue Fictive 1<br>1200 Genève</p>
             </td>
           </tr>
@@ -373,7 +373,7 @@
               <ul style="margin:0 0 12px 20px;padding:0;font-size:15px;line-height:22px;color:#111111;"><li>Display 36 boosters — Extension Exemple — FR (FICTIF) × 1</li><li>Protège-cartes ×100 — exemple (FICTIF) × 2</li></ul>
               <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;"><strong>Suivi :</strong> Transporteur (FICTIF) · n° 99.00.000000.00000000 (FICTIF)</p>
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="https://exemple.invalid/suivi-fictif" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Suivre mon colis</a></td></tr></table>
-              <p style="margin:0 0 12px 0;font-size:14px;line-height:21px;color:#55534E;word-break:break-word;">Si votre commande contient une précommande, elle fait l'objet d'un envoi séparé, dès sa réception.</p>
+              <p style="margin:0 0 12px 0;font-size:14px;line-height:21px;color:#55534E;word-break:break-word;">Si votre commande contient une précommande ou une réservation garantie, elle fait l'objet d'un envoi séparé, dès sa réception.</p>
             </td>
           </tr>
           <tr>
@@ -767,6 +767,326 @@
           <tr>
             <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
               ⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Confidentialité : ⟦URL_CONFIDENTIALITE⟧
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-15-pre-drop-reservation-confirmee"><h2>15-pre-drop-reservation-confirmee — Pré-drop : réservation garantie confirmée</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Réservation pré-drop payée et confirmée par le moteur (POST /predrop/reservations : CONFIRMED, nouvellement enregistrée), en plus de la confirmation de commande Shopify (06)</td></tr><tr><th scope="row">Segment</th><td>Le client de la commande</td></tr><tr><th scope="row">Base</th><td>Exécution du contrat (PRECOMMANDES : réservation garantie)</td></tr><tr><th scope="row">Fréquence</th><td>Une fois par réservation ; rejeu du webhook : aucun envoi</td></tr><tr><th scope="row">Objet</th><td>Réservation garantie confirmée : Réservation garantie — Display 36 boosters — Extension Exemple — FR (FICTIF)</td></tr><tr><th scope="row">Pré-en-tête</th><td>Servi en premier, expédié dès réception : ce que garantit votre réservation.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Servi en premier, expédié dès réception : ce que garantit votre réservation.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Votre réservation garantie est confirmée</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Votre réservation fait partie de la commande #1001 (FICTIF) ; le paiement est reçu.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;">Réservation garantie — Display 36 boosters — Extension Exemple — FR (FICTIF)</strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E6E9FB;border:2px solid #2B3990;color:#2B3990;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">RÉSERVATION GARANTIE</span> <span style="font-size:13px;color:#55534E;">Drop le 20.10.2026 (date estimée)</span></div></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h2 style="margin:8px 0 8px 0;font-size:17px;line-height:23px;font-weight:bold;color:#111111;">Ce que garantit votre réservation</h2>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <ul style="margin:0 0 12px 20px;padding:0;font-size:15px;line-height:22px;color:#111111;"><li style="margin:0 0 6px 0;">Vous êtes servi en premier : les réservations garanties passent avant toute vente au prix du drop, dans l'ordre de leur paiement.</li><li style="margin:0 0 6px 0;">Votre commande est expédiée dès réception et contrôle du produit, en principe sous 3 jours ouvrés ⟦à valider⟧ après réception. Nous ne garantissons pas une livraison le jour du drop.</li><li style="margin:0 0 6px 0;">Le prix payé est définitif : il ne baisse pas et n'augmente pas.</li></ul>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;">Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.<br><br>Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.</td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h2 style="margin:8px 0 8px 0;font-size:17px;line-height:23px;font-weight:bold;color:#111111;">Si quelque chose change</h2>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <ul style="margin:0 0 12px 20px;padding:0;font-size:15px;line-height:22px;color:#111111;"><li style="margin:0 0 6px 0;">Si nous recevons moins d'unités que prévu et ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris, et nous vous prévenons par email.</li><li style="margin:0 0 6px 0;">Si la date change, nous vous écrivons dans un délai de 2 jours ouvrés après l'information du fournisseur ⟦à valider⟧. Si le report dépasse 30 jours ⟦à valider⟧, vous pouvez annuler et être remboursé intégralement, supplément compris.</li><li style="margin:0 0 6px 0;">Annulation gratuite jusqu'à 7 jours avant la date de sortie annoncée ⟦à valider⟧ : répondez à cet email avec votre numéro de commande. Remboursement intégral, supplément compris.</li></ul>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="https://exemple.invalid/commande-fictive" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Voir ma commande</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="border:2px solid #111111;border-radius:4px;"><a href="⟦URL_PRECOMMANDES⟧" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#111111;text-decoration:none;">Nos conditions de réservation garantie</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>Conditions de vente : ⟦URL_CGV⟧ · Livraison et retours : ⟦URL_RETOURS⟧<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-16-pre-drop-acces-prioritaire"><h2>16-pre-drop-acces-prioritaire — Pré-drop : accès prioritaire des inscrits aux alertes</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Pré-drop ouvert, fenêtre prioritaire (étape « prioritaire » calculée par le moteur, GET /predrop/offers)</td></tr><tr><th scope="row">Segment</th><td>Inscrits confirmés qui suivent ce produit (alerte sur la fiche), non désinscrits</td></tr><tr><th scope="row">Base</th><td>Consentement confirmé (alerte demandée sur ce produit)</td></tr><tr><th scope="row">Fréquence</th><td>Une annonce par pré-drop et par personne ; pas de seconde annonce à l&#x27;ouverture à tous</td></tr><tr><th scope="row">Objet</th><td>Réservations garanties : Display 36 boosters — Extension Exemple — FR (FICTIF), d&#x27;abord pour vous</td></tr><tr><th scope="row">Pré-en-tête</th><td>Vous suivez ce produit : vous pouvez réserver avant l&#x27;ouverture à tous. Rien ne presse.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Vous suivez ce produit : vous pouvez réserver avant l&#x27;ouverture à tous. Rien ne presse.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Accès prioritaire aux réservations garanties</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Vous avez demandé une alerte pour Display 36 boosters — Extension Exemple — FR (FICTIF). Les réservations garanties sont ouvertes, d'abord aux personnes inscrites aux alertes de ce produit, puis à tous.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;">Display 36 boosters — Extension Exemple — FR (FICTIF)</strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E6E9FB;border:2px solid #2B3990;color:#2B3990;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">RÉSERVATION GARANTIE</span> <span style="font-size:13px;color:#55534E;">Drop le 20.10.2026 (date estimée)</span></div></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <ul style="margin:0 0 12px 20px;padding:0;font-size:15px;line-height:22px;color:#111111;"><li style="margin:0 0 6px 0;">Pour réserver pendant l'accès prioritaire, connectez-vous à votre compte client avec l'adresse de cet email.</li><li style="margin:0 0 6px 0;">Le prix de la réservation garantie et le prix du drop sont affichés côte à côte sur la fiche ; le prix affiché au moment de votre commande fait foi.</li><li style="margin:0 0 6px 0;">La limite par foyer, toutes commandes confondues, figure sur la fiche.</li></ul>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;">Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.<br><br>Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.</td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Rien ne presse : vous pouvez aussi attendre le drop et acheter au prix du drop, s'il reste des unités. Nous n'affichons ni minuteur ni nombre d'unités restantes.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="⟦URL_SITE⟧/products/display-extension-exemple-fr-reservation-garantie" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Voir la réservation garantie</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que cette adresse est inscrite à nos alertes (inscription confirmée le 14.10.2026).<br><a href="https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF" style="color:#B33F00;">Modifier mes préférences</a> · <a href="https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF" style="color:#B33F00;">Me désinscrire en un clic</a><br>Confidentialité : ⟦URL_CONFIDENTIALITE⟧
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-17-pre-drop-ouverture"><h2>17-pre-drop-ouverture — Pré-drop : annonce du drop, réservations garanties ouvertes à tous</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Fin de la fenêtre prioritaire : réservations ouvertes à tous (étape « ouvertes » calculée par le moteur)</td></tr><tr><th scope="row">Segment</th><td>Inscrits confirmés qui suivent ce produit et n&#x27;ont pas reçu l&#x27;accès prioritaire (inscrits depuis), non désinscrits</td></tr><tr><th scope="row">Base</th><td>Consentement confirmé (alerte demandée sur ce produit)</td></tr><tr><th scope="row">Fréquence</th><td>Une annonce par pré-drop et par personne</td></tr><tr><th scope="row">Objet</th><td>Drop le 20.10.2026 : Display 36 boosters — Extension Exemple — FR (FICTIF)</td></tr><tr><th scope="row">Pré-en-tête</th><td>Réserver avec garantie ou attendre le drop : les deux prix, et ce qui les distingue.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Réserver avec garantie ou attendre le drop : les deux prix, et ce qui les distingue.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Le drop est annoncé</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Vous avez demandé une alerte pour Display 36 boosters — Extension Exemple — FR (FICTIF). Le drop est prévu le 20.10.2026 (date estimée). D'ici là, les réservations garanties sont ouvertes à tous.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;">Display 36 boosters — Extension Exemple — FR (FICTIF)</strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E6E9FB;border:2px solid #2B3990;color:#2B3990;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">RÉSERVATION GARANTIE</span> <span style="font-size:13px;color:#55534E;">Drop le 20.10.2026 (date estimée)</span></div></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h2 style="margin:8px 0 8px 0;font-size:17px;line-height:23px;font-weight:bold;color:#111111;">Réserver ou attendre le drop : à vous de choisir</h2>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <ul style="margin:0 0 12px 20px;padding:0;font-size:15px;line-height:22px;color:#111111;"><li style="margin:0 0 6px 0;"><strong>Réservation garantie</strong> : le prix du drop plus un supplément, affichés tous deux sur la fiche. Vous êtes servi en premier et votre commande est expédiée dès réception.</li><li style="margin:0 0 6px 0;"><strong>Au drop</strong> : le prix du drop, s'il reste des unités. Nous vous prévenons quand le produit est en stock local.</li></ul>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;">Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.<br><br>Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.</td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">La limite par foyer, toutes commandes confondues, figure sur la fiche. Nous n'affichons ni minuteur ni nombre d'unités restantes : la fiche indique seulement « Réservations ouvertes » ou « Réservations fermées ».</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="⟦URL_SITE⟧/products/display-extension-exemple-fr-reservation-garantie" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Voir la réservation garantie</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que cette adresse est inscrite à nos alertes (inscription confirmée le 14.10.2026).<br><a href="https://n8n.exemple.invalid/webhook/alertes-preferences?jeton=FICTIF" style="color:#B33F00;">Modifier mes préférences</a> · <a href="https://n8n.exemple.invalid/webhook/alertes-desinscrire?jeton=FICTIF" style="color:#B33F00;">Me désinscrire en un clic</a><br>Confidentialité : ⟦URL_CONFIDENTIALITE⟧
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-18-pre-drop-remboursement"><h2>18-pre-drop-remboursement — Pré-drop : réservation remboursée intégralement (allocation réduite, non servie ou annulée)</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Remboursement pré-drop exécuté chez le prestataire de paiement et relevé au moteur (POST /predrop/refunds/{id}/executed, premier relevé)</td></tr><tr><th scope="row">Segment</th><td>Le client de la réservation remboursée</td></tr><tr><th scope="row">Base</th><td>Exécution du contrat (PRECOMMANDES : remboursement intégral, supplément compris)</td></tr><tr><th scope="row">Fréquence</th><td>Une fois par remboursement</td></tr><tr><th scope="row">Objet</th><td>Réservation garantie remboursée : commande #1001 (FICTIF)</td></tr><tr><th scope="row">Pré-en-tête</th><td>Remboursement intégral, supplément compris, et son motif.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Remboursement intégral, supplément compris, et son motif.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Votre réservation est remboursée</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Votre réservation garantie (commande #1001 (FICTIF)) est remboursée intégralement. Motif : la quantité qui nous a été attribuée a été réduite et nous ne pourrons pas vous servir.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;"><strong>Remboursement intégral, supplément compris</strong> : CHF 229.90 (FICTIF), sur votre moyen de paiement d'origine. Le crédit sur votre compte dépend ensuite de votre banque.</td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Quand nous recevons moins d'unités que prévu, les réservations garanties sont servies en premier, dans l'ordre de leur paiement, avant toute vente au prix du drop ; les dernières qui ne peuvent pas être servies sont remboursées intégralement.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Les autres articles éventuels de votre commande ne sont pas concernés.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Si vous le souhaitez, nous pouvons vous prévenir quand ce produit arrive en stock local :</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="border:2px solid #111111;border-radius:4px;"><a href="https://exemple.invalid/products/display-extension-exemple-fr#alerte" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#111111;text-decoration:none;">Demander une alerte</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>Conditions de vente : ⟦URL_CGV⟧ · Livraison et retours : ⟦URL_RETOURS⟧<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div></section><section id="email-19-pre-drop-expedition-prioritaire"><h2>19-pre-drop-expedition-prioritaire — Pré-drop : réservation garantie expédiée en priorité</h2><table class="meta"><tr><th scope="row">Canal</th><td>n8n</td></tr><tr><th scope="row">Déclencheur</th><td>Envoi d&#x27;une commande qui contient une réservation garantie (Shopify orders/fulfilled, ligne au SKU -RESA-), en plus de l&#x27;email 07 de Shopify (suivi)</td></tr><tr><th scope="row">Segment</th><td>Le client de la commande</td></tr><tr><th scope="row">Base</th><td>Exécution du contrat (information sur la réservation garantie)</td></tr><tr><th scope="row">Fréquence</th><td>Une fois par envoi contenant une réservation</td></tr><tr><th scope="row">Objet</th><td>Réservation garantie expédiée : commande #1001 (FICTIF)</td></tr><tr><th scope="row">Pré-en-tête</th><td>Servie en premier, expédiée dès réception : le suivi suit dans l&#x27;email d&#x27;expédition.</td></tr></table><div class="email">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Servie en premier, expédiée dès réception : le suivi suit dans l&#x27;email d&#x27;expédition.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="../../05-da/logo/png/logo-a-email.png" width="200" alt="Quai des Cartes (nom provisoire)" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Votre réservation est en route</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour Léa,</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Comme prévu par votre réservation garantie (commande #1001 (FICTIF)), vous avez été servi en premier : votre colis a été préparé dès réception et contrôle du produit, avant les commandes passées au prix du drop.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Le numéro de suivi figure dans l'email d'expédition, envoyé séparément.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Colis abîmé à la livraison ? Photographiez le colis et les articles, puis écrivez-nous dans un délai de 5 jours après réception ⟦à valider⟧.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Comme pour tout produit scellé, le contenu des boosters est aléatoire : aucune carte précise ni aucun niveau de rareté ne sont garantis.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="border:2px solid #111111;border-radius:4px;"><a href="https://exemple.invalid/commande-fictive" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#111111;text-decoration:none;">Voir ma commande</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à ⟦EMAIL_SUPPORT⟧.<br>Conditions de vente : ⟦URL_CGV⟧ · Livraison et retours : ⟦URL_RETOURS⟧<br>⟦RAISON_SOCIALE⟧ · ⟦ADRESSE_POSTALE⟧<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.
             </td>
           </tr>
         </table>

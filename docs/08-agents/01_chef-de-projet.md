@@ -16,6 +16,8 @@ Faire avancer le plan 90 jours sur le **chemin critique** (mandat → demandes f
 
 **Inclus** : backlog et échéances ; plan de dispatch quotidien ; consolidation des rapports ; boîte dédiée (tri, brouillons, envois de modèles approuvés, relances) ; triage des exceptions et arbitrage E1 ; dossiers E2 ; fiches de gate (G1, G2 et G6 conclus seul s'ils sont sans ROUGE ; G0, G3, G4, G5, G7 préparés pour la propriétaire) ; revue hebdomadaire des exceptions (BL-162) ; registres des risques et des écarts (propositions) ; dossier du stop-loss « temps » (BL-169).
 
+**Pré-drop** (`docs/08-agents/PRE_DROP.md`) : coordonner chaque pré-drop (étapes, actes C32 à C34 de la propriétaire, plan du jour de drop `docs/06-contenu/PLAN_JOUR_DE_DROP.md`) ; lire l'éligibilité ; fermer par précaution quand ton jeton est émis ; jamais d'ouverture sans les conditions évaluées par le moteur.
+
 **Exclu** : toute décision de budget, de plafond ou de règle de prix ; tout engagement ; tout paiement ; la levée d'un stop-loss ; le travail de fond des autres agents (il dispatche, il ne fait pas à leur place).
 
 ## 3. Entrées autorisées

@@ -163,7 +163,7 @@ def test_source_refuse_variable_non_declaree(tmp_path: Path) -> None:
 def test_quatorze_emails_et_generation_deterministe() -> None:
     source = ge.charger_source()
     ids = [e["id"] for e in source["emails"]]
-    assert len(ids) == 14 and ids == sorted(ids)
+    assert len(ids) == 19 and ids == sorted(ids)  # 14 + 5 emails du pré-drop (15 à 19)
     for attendu in ("bienvenue", "alerte-stock-local", "confirmation-commande", "expedition-suivi", "demande-avis",
                     "reachat", "desinscription", "precommande-confirmee", "precommande-report"):
         assert any(attendu in i for i in ids), attendu
@@ -217,13 +217,13 @@ def test_integration_refuse_puis_remplit(tmp_path: Path) -> None:
 def test_apercu_rempli_avec_donnees_fictives() -> None:
     apercu = (ge.EMAILS / "apercu.html").read_text(encoding="utf-8")
     assert "FICTIF" in apercu and "{{ $json" not in apercu and "{%" not in apercu
-    assert apercu.count('<section id="email-') == 14
+    assert apercu.count('<section id="email-') == 19
     assert "Validation humaine requise" in apercu
 
 
 def test_readme_contient_le_tableau_genere() -> None:
     readme = (ge.EMAILS / "README.md").read_text(encoding="utf-8")
-    assert "| 01 | [Confirmation d'inscription (double opt-in)]" in readme and "| 14 |" in readme
+    assert "| 01 | [Confirmation d'inscription (double opt-in)]" in readme and "| 14 |" in readme and "| 19 |" in readme
 
 
 def test_notifications_shopify_rendues_en_liquid() -> None:
@@ -352,3 +352,69 @@ def test_textes_reutilisables_sans_champ_hors_registre(tmp_path: Path) -> None:
     )
     erreurs = " ".join(vc.verifier_textes_reutilisables(copie))
     assert "{{LIMITE_PAR_COMMANDE}} absent du registre" in erreurs and "par commande" in erreurs
+
+
+# ----------------------------------------------------------------------------- pré-drop (étape 3, 6.10.2026)
+def test_emails_du_pre_drop_reprennent_la_garantie_du_moteur_mot_pour_mot() -> None:
+    garantie, difference = vc.textes_garantie()
+    assert "pas le produit" in garantie and "Aucun remboursement de la différence" in difference
+    source = {e["id"]: e for e in ge.charger_source()["emails"]}
+    for ident in vc.EMAILS_GARANTIE:
+        texte = (ge.EMAILS / "texte" / f"{ident}.txt").read_text(encoding="utf-8")
+        assert garantie in texte and difference in texte, ident
+    # Annonces (16, 17) : emails marketing aux inscrits des alertes ; 15, 18, 19 : transactionnels.
+    assert {source[i]["categorie"] for i in ("16-pre-drop-acces-prioritaire", "17-pre-drop-ouverture")} == {"marketing"}
+    assert {source[i]["motif_pied"] for i in ("16-pre-drop-acces-prioritaire", "17-pre-drop-ouverture")} == {"alertes"}
+    for ident in ("15-pre-drop-reservation-confirmee", "18-pre-drop-remboursement", "19-pre-drop-expedition-prioritaire"):
+        assert source[ident]["categorie"] == "transactionnel", ident
+    # 18 : montant et motif du moteur, jamais un prix en dur ; supplément compris.
+    rembourse = (ge.EMAILS / "html" / "18-pre-drop-remboursement.html").read_text(encoding="utf-8")
+    assert "{{ $json.montant_rembourse }}" in rembourse and "{{ $json.motif_remboursement }}" in rembourse
+    assert "supplément compris" in rembourse
+    # Aucune variable de prix, de quantité ni d'heure de fermeture dans les annonces.
+    for ident in ("16-pre-drop-acces-prioritaire", "17-pre-drop-ouverture"):
+        noms = {v[0] for v in source[ident]["variables"]}
+        assert not {n for n in noms if any(m in n for m in ("prix", "quantite", "restant", "heure", "quota"))}, ident
+
+
+def test_verifier_predrop_detecte_garantie_absente_et_urgence(tmp_path: Path) -> None:
+    import shutil
+
+    assert vc.verifier_predrop() == []
+    racine = tmp_path / "06-contenu"
+    racine.mkdir()
+    plan = (vc.RACINE / vc.PLAN_DROP).read_text(encoding="utf-8")
+    garantie, _ = vc.textes_garantie()
+    (racine / vc.PLAN_DROP).write_text(plan.replace(garantie, "Le supplément paie le produit."), encoding="utf-8")
+    assert any("phrase de garantie" in e for e in vc.verifier_predrop(racine))
+    for injecte, attendu in (("> Plus que 3 réservations, dépêchez-vous !", "fausse urgence"),
+                             ("> Il reste 12 unités au prix du drop.", "chiffre de stock"),
+                             ("> Réservation garantie à CHF 229.90.", "prix en dur"),
+                             ("> Prix fixé selon notre marge.", "terme interne")):
+        (racine / vc.PLAN_DROP).write_text(plan.replace("## 4. Live", f"{injecte}\n\n## 4. Live"), encoding="utf-8")
+        assert any(attendu in e for e in vc.verifier_predrop(racine)), attendu
+    (racine / vc.PLAN_DROP).unlink()
+    assert any("absent" in e for e in vc.verifier_predrop(racine))
+    shutil.rmtree(racine)
+
+
+def test_confirmation_shopify_signale_une_ligne_de_reservation_garantie() -> None:
+    liquid = pytest.importorskip("liquid")
+    env = liquid.Environment()
+    env.filters["money"] = lambda v: f"CHF {float(v):.2f}"
+    gabarit = env.from_string((ge.EMAILS / "html" / "06-confirmation-commande.html").read_text(encoding="utf-8"))
+    rendu = gabarit.render(
+        order_name="#1001", customer={}, subtotal_price=229.9, shipping_price=9, total_price=238.9, discounts_amount=0,
+        shipping_address={"name": "L", "address1": "R", "zip": "1200", "city": "Genève"}, order_status_url="https://x.invalid",
+        subtotal_line_items=[{"title": "Réservation garantie — Display (FICTIF)", "sku": "DSP-FICTIF-FR-RESA-20261020",
+                              "quantity": 1, "final_price": 229.9, "final_line_price": 229.9}],
+    )
+    assert "RÉSERVATION GARANTIE" in rendu and "Servie en premier" in rendu and "STOCK LOCAL" not in rendu
+    assert "Commande mixte" in rendu  # envoi séparé, dès réception
+    texte = env.from_string((ge.EMAILS / "texte" / "06-confirmation-commande.txt").read_text(encoding="utf-8")).render(
+        order_name="#1001", customer={"first_name": "Léa"}, subtotal_price=229.9, shipping_price=9, total_price=238.9,
+        discounts_amount=0, shipping_address={"name": "L", "address1": "R", "zip": "1200", "city": "Genève"},
+        subtotal_line_items=[{"title": "Réservation garantie — Display (FICTIF)", "sku": "DSP-FICTIF-FR-RESA-20261020",
+                              "quantity": 1, "final_line_price": 229.9}],
+    )
+    assert "(réservation garantie : servie en premier, expédiée à part dès réception)" in texte

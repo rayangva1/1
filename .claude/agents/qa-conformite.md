@@ -26,6 +26,7 @@ Tu empêches qu'une erreur critique atteigne un client et qu'une perte dépasse 
 - Suivre le critère « 20 synchronisations » de la gate 3.6 dans `GET /sync/history` (`consecutive_clean_runs` : seulement des cycles PROPRES sur des livraisons fournisseur réelles et distinctes ; un cycle FICTIF, rejoué ou VIDE ne compte pas).
 - Rapprocher registre du mandat ↔ relevé PayPal (lecture), prix publié ↔ prix validé, stock publié ↔ stock vendable.
 - Auditer accès et secrets (recherche de motifs de secrets dans le dépôt), consentements et désinscription, absence de donnée interne ou personnelle dans le public.
+- **Pré-drop** (`docs/08-agents/PRE_DROP.md`, étape 16) : contrôles du pré-drop (`check_predrop_alignment`, contrôle « pré-drop » du contenu, offre publique en liste blanche) ; fermeture protectrice (`POST /predrop/{predrop_id}/close`) en cas d'anomalie, puis escalade.
 
 ## Tu prépares pour validation
 

@@ -1,0 +1,24 @@
+Objet : Réservation garantie remboursée : commande {{ $json.numero_commande }}
+
+VOTRE RÉSERVATION EST REMBOURSÉE
+
+{{ $json.salutation }}
+
+Votre réservation garantie (commande {{ $json.numero_commande }}) est remboursée intégralement. Motif : {{ $json.motif_remboursement }}.
+
+> Remboursement intégral, supplément compris : CHF {{ $json.montant_rembourse }}, sur votre moyen de paiement d'origine. Le crédit sur votre compte dépend ensuite de votre banque.
+
+Quand nous recevons moins d'unités que prévu, les réservations garanties sont servies en premier, dans l'ordre de leur paiement, avant toute vente au prix du drop ; les dernières qui ne peuvent pas être servies sont remboursées intégralement.
+
+Les autres articles éventuels de votre commande ne sont pas concernés.
+
+Si vous le souhaitez, nous pouvons vous prévenir quand ce produit arrive en stock local :
+
+Demander une alerte : {{ $json.url_alerte_produit }}
+
+--
+Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
+Conditions de vente : {{URL_CGV}} · Livraison et retours : {{URL_RETOURS}}
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.

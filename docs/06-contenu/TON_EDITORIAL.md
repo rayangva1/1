@@ -33,6 +33,7 @@ Voix : on vouvoie, on parle au nom de la boutique (« nous »), phrases courtes 
 | « Une personne vous répond », « un humain lit chaque message » | Faux : les réponses courantes partent sans relecture humaine (LCD art. 3 al. 1 let. b) | « Nous vous répondons ; une personne reprend votre demande si vous le souhaitez » |
 | « Le contenu de chaque boîte est vérifié » | Faux : les produits scellés ne sont jamais ouverts | « Langue, scellé et contenu annoncé sur l'emballage vérifiés à réception, sans ouvrir » |
 | « Limite par commande » | Les CGV fixent une limite par référence et par foyer, toutes commandes confondues | « Limite : {{LIMITE_PAR_CLIENT}} » |
+| Pré-drop : « plus que N réservations », « fermeture dans 2 h », « dernier jour pour réserver », « X % déjà réservés », « économisez en réservant » | Fausse urgence, quantité interne, promotion déguisée (le supplément paie une garantie) | « Réservations ouvertes » / « Réservations fermées » ; « Drop le {{DATE_DROP}} » ; les deux phrases de garantie (`PLAN_JOUR_DE_DROP.md` §1) |
 
 ## 3. Exemples avant / après
 
@@ -65,6 +66,7 @@ Voix : on vouvoie, on parle au nom de la boutique (« nous »), phrases courtes 
 - Limite : « Limite : {{LIMITE_PAR_CLIENT}}, toutes commandes confondues, pour que chacun puisse en profiter. » (la valeur validée dit déjà « par référence et par foyer » : CGV ch. 4.4 ; jamais « par commande »)
 - Contenu : « Contenu : {{CONTENU_VALIDE}}. Le contenu des boosters est aléatoire. »
 - Livraison : « Livraison en Suisse uniquement ; frais affichés avant le paiement. »
+- Pré-drop : « Réservation garantie : le prix du drop plus un supplément. Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit. Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop. » Statut : « Réservations ouvertes » ou « Réservations fermées », et « Drop le {{DATE_DROP}} » ; jamais d'heure de fermeture ni de nombre d'unités (`PLAN_JOUR_DE_DROP.md`).
 - Clôture d'un guide : « Une question ? Répondez à ce message ou écrivez-nous : nous vous répondons. »
 - Service client : « Les réponses courantes sont préparées et envoyées par des outils automatisés, à partir de modèles que nous validons ; une personne reprend votre demande si vous le souhaitez. » Ne jamais affirmer qu'un humain lit et traite chaque message : c'est faux dans notre modèle d'opération (SOP SAV, principe 4 bis).
 

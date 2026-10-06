@@ -12,10 +12,11 @@
 | `15_SUJETS.md` | 15 sujets éducatifs (8 du BP + 7) : angle, hook, plan, format, visuels réels, faits à sourcer, CTA | BL-100 |
 | `CALENDRIER_90J.csv` | Calendrier importable dans Notion : 3 publications par semaine dès l'ouverture (1 guide, 1 nouveauté réellement accessible, 1 preuve de service), email hebdomadaire, jalons de production et de publicité | BL-101, BL-119 |
 | `SCRIPTS_VIDEO.md` | 8 scripts de 20 à 45 s, plan par plan, à tourner en session groupée | A06 |
-| `EMAILS/` | 14 emails (HTML + texte) générés depuis `EMAILS/source/emails.yaml`, aperçu FICTIF, règles du workflow | BL-102, BL-118, BL-135, BL-144 |
+| `EMAILS/` | 19 emails (HTML + texte) générés depuis `EMAILS/source/emails.yaml`, dont 5 pour le pré-drop (15 à 19), aperçu FICTIF, règles du workflow | BL-102, BL-118, BL-135, BL-144, BL-208 |
 | `PUBLICITE_TEST.md` | Test publicitaire : 3 créations, offre claire, 500 CHF, plafond quotidien, règles d'arrêt, mesure sur commandes payées nettes | BL-130, BL-133 |
 | `BRIEF_CREATEURS.md` | Collaboration avec un créateur TCG suisse : critères, preuves, coût dans le CAC, contrat minimal | BL-134 |
 | `SEO.md` | Pages d'extension, mots-clés (sans volume), modèles de métadonnées, règles techniques | BL-143 |
+| `PLAN_JOUR_DE_DROP.md` | Pré-drop et jour de drop : principes (un statut et une date, garantie expliquée, aucun chiffre ni minuteur), chronologie, textes prêts (stories S-PD1 à S-PD8), live « ouverture des cartons » sans ouvrir de produit scellé, réponses types | BL-208 |
 | `outils/` | `generer_calendrier.py`, `generer_emails.py`, `verifier_contenu.py`, tests | — |
 
 ## Importer le calendrier dans Notion
@@ -44,6 +45,7 @@ python -m pytest docs/06-contenu/outils -q                     # tests
 4. **Consentement** : aucun email promotionnel sans double opt-in ou consentement au checkout ; désinscription propagée à tous les outils.
 5. **Aucune donnée interne** (coût, marge, fournisseur, allocation chiffrée) dans un texte, un visuel ou un prompt.
 6. **Stop-loss** : aucune promotion d'une référence sous stop-loss produit ; publicité coupée par le stop-loss pub ; rien pendant un gel global.
+7. **Pré-drop** : un statut (« Réservations ouvertes / fermées ») et une date (« Drop le … ») ; les deux phrases de garantie du moteur mot pour mot ; jamais de minuteur, d'heure de fermeture ni de nombre d'unités (`PLAN_JOUR_DE_DROP.md`, contrôlé par `verifier_contenu.py`).
 
 ## Validation humaine requise
 
@@ -52,3 +54,4 @@ python -m pytest docs/06-contenu/outils -q                     # tests
 - [ ] Valider les textes des emails (`EMAILS/apercu.html`) et trancher les points juridiques C2 à C4.
 - [ ] Planifier la session photos et vidéos (A06) après réception du stock.
 - [ ] Décider le plan publicitaire (G4) et une éventuelle collaboration (C15).
+- [ ] Valider le plan du jour de drop (`PLAN_JOUR_DE_DROP.md`) et les emails 15 à 19 avant le premier pré-drop (BL-208).

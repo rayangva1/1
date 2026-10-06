@@ -1,8 +1,8 @@
 # FAQ clients — {{NOM_BOUTIQUE}}
 
 > **À FAIRE REVOIR PAR UN JURISTE AVANT PUBLICATION** (réponses sur les retours, la garantie, les précommandes et les données) ; validation finale par la propriétaire.
-> Version v0.1 du 4.10.2026, rédigée par l'agent legal-ops. Prête à publier une fois les champs `{{…}}` validés (`docs/04-legal/champs_a_remplir.yaml`) et les textes légaux relus : les réponses résument les CGV, qui font foi.
-> Sources : BP §1 (publics : collectionneurs, parents, joueurs), §7 (fiche produit, paiement, conformité), §8 (ton : précis, accessible, sans jargon inutile, sans fausse urgence) ; `docs/04-legal/CGV.md`, `LIVRAISON_RETOURS.md`, `PRECOMMANDES.md`, `CONFIDENTIALITE.md`.
+> Version v0.2 du 6.10.2026 (v0.1 du 4.10.2026 + questions sur le pré-drop), rédigée par l'agent legal-ops. Prête à publier une fois les champs `{{…}}` validés (`docs/04-legal/champs_a_remplir.yaml`) et les textes légaux relus : les réponses résument les CGV, qui font foi.
+> Sources : BP §1 (publics : collectionneurs, parents, joueurs), §7 (fiche produit, paiement, conformité), §8 (ton : précis, accessible, sans jargon inutile, sans fausse urgence) ; `docs/04-legal/CGV.md`, `LIVRAISON_RETOURS.md`, `PRECOMMANDES.md` (dont la partie « Pré-drop »), `CONFIDENTIALITE.md` ; décision de la propriétaire du 6.10.2026 (pré-drop) : les deux phrases de garantie sont celles du moteur, mot pour mot.
 > Aucun fait produit n'est inventé : les contenus exacts renvoient à la fiche de chaque produit.
 
 <!-- TEXTE_PUBLIC:DEBUT -->
@@ -82,6 +82,32 @@ Oui, gratuitement {{DELAI_ANNULATION_PRECOMMANDE}}.
 **Ma commande contient des articles en stock et une précommande.**
 Les articles en stock partent tout de suite ; la précommande suit dès sa réception. Vous ne payez la livraison qu'une fois.
 
+### Pré-drop (réservation garantie)
+
+**Qu'est-ce qu'une réservation garantie (pré-drop) ?**
+Pour certains produits, vous pouvez réserver avant leur réception. Vous êtes servi en premier, avant toute vente au prix du drop, et votre commande est expédiée dès que nous avons reçu et contrôlé le produit. Tout est expliqué sur la page Précommandes : {{URL_PRECOMMANDES}}.
+
+**Pourquoi deux prix ?**
+La fiche affiche le prix de la réservation garantie et le prix du drop. Le premier est le prix du drop augmenté d'un supplément de 10 % au plus. Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.
+
+**S'il reste des unités au drop, suis-je remboursé de la différence ?**
+Non. Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop. Si vous n'avez pas besoin de la garantie, vous pouvez attendre le drop et acheter au prix du drop, s'il reste des unités.
+
+**Combien de réservations reste-t-il ?**
+Nous n'affichons pas de nombre d'unités. La fiche indique seulement « Réservations ouvertes » ou « Réservations fermées », et la date du drop.
+
+**Pourquoi ne puis-je pas réserver tout de suite ?**
+Pendant les {{FENETRE_PRIORITAIRE_PREDROP}} qui suivent l'ouverture, les réservations sont réservées aux personnes inscrites aux alertes de ce produit, connectées à leur compte client avec la même adresse email. Elles s'ouvrent ensuite à tous.
+
+**Combien de réservations puis-je faire ?**
+La limite est de {{LIMITE_RESERVATION_PREDROP}}, toutes commandes confondues. Une réservation au-delà de la limite n'est pas servie : elle est remboursée intégralement, supplément compris.
+
+**Et si vous recevez moins que prévu ?**
+Les réservations garanties sont servies en premier, dans l'ordre de leur paiement : nous réduisons d'abord la quantité prévue pour le drop. Si nous ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris, et nous vous prévenons par email.
+
+**Puis-je annuler ma réservation garantie ?**
+Oui, gratuitement {{DELAI_ANNULATION_PRECOMMANDE}}, avec un remboursement intégral, supplément compris. Si la date du drop est reportée de plus de {{SEUIL_REPORT_PRECOMMANDE}}, vous pouvez aussi annuler avec un remboursement intégral.
+
 ### Livraison
 
 **Livrez-vous hors de Suisse ?**
@@ -130,6 +156,7 @@ Par email à {{EMAIL_SUPPORT}}, avec votre numéro de commande si vous en avez u
 ## Notes internes (ne pas publier)
 
 - La réponse « Puis-je modifier ou annuler ma commande ? » suit les CGV ch. 4.7 et la SOP SAV, cas SAV-15.
+- Les réponses du pré-drop suivent `docs/04-legal/PRECOMMANDES.md` (partie « Pré-drop ») et les CGV ch. 7.7 à 7.12 ; les deux phrases de garantie sont celles du moteur (`engine/pokeshop/predrop.py`), contrôlées par `check_predrop_alignment`. Une demande d'annulation de réservation est traitée par l'agent 11 (`POST /predrop/reservations/{order_id}/cancel`, référence de la demande écrite).
 - La réponse sur l'IA suit `docs/04-legal/CONFIDENTIALITE.md` ch. 6 et la SOP SAV (principe « une personne sur demande ») ; à retirer si la propriétaire n'autorise pas le traitement des messages par un fournisseur d'IA. Ne jamais écrire qu'« une personne vous répond » : les réponses courantes partent sans relecture humaine.
 - Toute nouvelle question récurrente du service client (plus de 3 fois par mois) est proposée ici par l'agent 11, puis validée.
 
@@ -137,4 +164,5 @@ Par email à {{EMAIL_SUPPORT}}, avec votre numéro de commande si vous en avez u
 
 - [ ] Propriétaire : relire le ton et valider la FAQ après validation des textes légaux.
 - [ ] Juriste : relire les réponses sur les retours, la garantie, les précommandes et les données.
+- [ ] Juriste : relire les réponses du pré-drop avec les notes P1 à P10 de `docs/04-legal/PRECOMMANDES.md`.
 - [ ] Propriétaire : confirmer l'absence de retrait sur place au lancement.

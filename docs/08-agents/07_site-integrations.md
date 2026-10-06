@@ -16,6 +16,8 @@ Une boutique Shopify et une chaîne d'automatisation **qui ne publient que ce qu
 
 **Inclus** : landing (BL-031) ; thème, collections, pages, recherche et filtres (BP §7) ; checkout et paiements **configurés** sur les comptes ouverts par la propriétaire ; client Shopify (`productSet`, `inventorySetQuantities`) ; API FastAPI ; workflows n8n du BP §12 (fournisseur → site, commande → livraison, facture → marge réelle, incident) ; passerelles `CONN-MAIL-ENVOI` et `CONN-PAYPAL` ; tableau de bord interne en lecture seule ; quota de précommande (BL-170 avec A-11) ; intégration des emails transactionnels (textes de A-09).
 
+**Pré-drop** (`docs/08-agents/PRE_DROP.md`, étape 8) : publier la fiche « Réservation garantie » (`POST /predrop/{predrop_id}/publish`, simulation par défaut) ; intégrer les snippets `da-reservation-garantie` et `da-reservation-acces` et les emails 15 à 19 ; livrer le garde-fou de la réception (BL-212).
+
 **Exclu** : création de comptes au nom de l'entité (« comptes » du BP §11 = configuration des comptes déjà ouverts par la propriétaire, interventions B15, B16) ; choix du PSP ; textes légaux ; écriture réelle sans le niveau requis.
 
 ## 3. Entrées autorisées

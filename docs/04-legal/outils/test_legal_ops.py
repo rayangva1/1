@@ -27,7 +27,7 @@ def ctx(tmp_path: Path) -> v.Context:
     """Copie du périmètre (et des fichiers lus ailleurs) dans un dossier temporaire."""
     for rel in ("docs/04-legal", "docs/07-ops"):
         shutil.copytree(REPO / rel, tmp_path / rel, ignore=shutil.ignore_patterns("__pycache__"))
-    for rel in ("docs/05-da/packaging/NOTE_CHIFFRAGE.md", "config/pricing_rules.v1.yaml"):
+    for rel in ("docs/05-da/packaging/NOTE_CHIFFRAGE.md", "config/pricing_rules.v1.yaml", "config/predrop.v1.yaml"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(REPO / rel, tmp_path / rel)
     return v.Context(tmp_path)
@@ -65,7 +65,7 @@ def test_real_deliverables_pass(check: Callable[[v.Context], list[str]]) -> None
 def test_run_all_and_main(capsys: pytest.CaptureFixture[str]) -> None:
     assert v.run_all() == []
     assert v.main() == 0
-    assert "OK : 20 contrôles passés" in capsys.readouterr().out
+    assert "OK : 21 contrôles passés" in capsys.readouterr().out
 
 
 def test_copy_passes_all_checks(ctx: v.Context) -> None:
@@ -330,8 +330,8 @@ def test_sav_model_missing(ctx: v.Context) -> None:
 def test_sav_model_unused(ctx: v.Context) -> None:
     path = ctx.ops / "SOP_SAV_RETOURS.md"
     anchor = "## 5. Contrôle physique d'un retour"
-    edit(path, anchor, f"**SAV-M15 — Inutilisé**\n> texte\n\n{anchor}")
-    assert_flags(v.check_sav_matrix(ctx), "SAV-M15 jamais utilisé")
+    edit(path, anchor, f"**SAV-M16 — Inutilisé**\n> texte\n\n{anchor}")
+    assert_flags(v.check_sav_matrix(ctx), "SAV-M16 jamais utilisé")
 
 
 def test_sav_cases_gap_and_topic(ctx: v.Context) -> None:
@@ -403,8 +403,8 @@ def test_stoploss_expectations_values() -> None:
 
 def test_readme_counts(ctx: v.Context) -> None:
     edit(ctx.ops / "README.md", "76 cas de test", "75 cas de test")
-    edit(ctx.ops / "README.md", "14 modèles de réponse", "13 modèles de réponse")
-    edit(ctx.legal / "README.md", "25 obligations", "24 obligations")
+    edit(ctx.ops / "README.md", "15 modèles de réponse", "14 modèles de réponse")
+    edit(ctx.legal / "README.md", "26 obligations", "25 obligations")
     errors = v.check_readme_counts(ctx)
     assert_flags(errors, "recette")
     assert_flags(errors, "modèles")
@@ -412,7 +412,7 @@ def test_readme_counts(ctx: v.Context) -> None:
 
 
 def test_readme_counts_sav_and_incidents(ctx: v.Context) -> None:
-    edit(ctx.ops / "README.md", "Matrice de 26 cas", "Matrice de 25 cas")
+    edit(ctx.ops / "README.md", "Matrice de 27 cas", "Matrice de 26 cas")
     edit(ctx.ops / "README.md", "INC-01 à INC-16", "INC-01 à INC-15")
     errors = v.check_readme_counts(ctx)
     assert_flags(errors, "cas SAV")
@@ -564,7 +564,7 @@ def test_previews_on_disk_are_current() -> None:
 
 
 def test_registry_version() -> None:
-    assert rt.registry_version() == "2026-10-04"
+    assert rt.registry_version() == "2026-10-06"  # + champs du pré-drop (LIMITE_RESERVATION_PREDROP, FENETRE_PRIORITAIRE_PREDROP)
 
 
 def test_write_and_check_previews(tmp_path: Path) -> None:
@@ -683,3 +683,52 @@ def test_unusual_clause_not_attributed_to_art_8_lcd() -> None:
     cgv = (rc.LEGAL_DIR / "CGV.md").read_text(encoding="utf-8")
     assert "insolite (art. 8 LCD)" not in cgv
     assert cgv.count("règle jurisprudentielle de l'insolite") >= 2 and "ATF 135 III 1" in cgv
+
+
+# ------------------------------------------------------------------ pré-drop (étape 3, 6.10.2026)
+def test_predrop_texts_follow_the_engine_word_for_word(ctx: v.Context) -> None:
+    guarantee, no_difference, cap = v.predrop_expectations()
+    assert cap == "10 %" and "pas le produit" in guarantee and "Aucun remboursement de la différence" in no_difference
+    assert v.check_predrop_alignment(ctx) == []
+    for doc in v.PREDROP_DOCS:
+        path = next(p for p in ctx.public_docs() if p.name == doc)
+        original = path.read_text(encoding="utf-8")
+        path.write_text(original.replace(guarantee, guarantee.replace("pas le produit", "et le produit")), encoding="utf-8")
+        assert_flags(v.check_predrop_alignment(ctx), "garantie")
+        path.write_text(original.replace(no_difference, "Différence remboursée si le prix baisse."), encoding="utf-8")
+        assert_flags(v.check_predrop_alignment(ctx), "aucun remboursement de la différence")
+        path.write_text(original, encoding="utf-8")
+
+
+def test_predrop_cap_status_and_false_urgency(ctx: v.Context) -> None:
+    edit(ctx.legal / "PRECOMMANDES.md", "de plus de 10 %", "de plus de 15 %")
+    assert_flags(v.check_predrop_alignment(ctx), "plafond du supplément")
+    edit(ctx.legal / "PRECOMMANDES.md", "« Réservations fermées »", "« Complet »")
+    assert_flags(v.check_predrop_alignment(ctx), "Réservations fermées")
+    edit(ctx.legal / "CGV.md", "7.12 **Statut et date.**", "7.12 **Statut et date.** Un compte à rebours indique la fermeture.")
+    assert_flags(v.check_predrop_alignment(ctx), "fausse urgence")
+
+
+def test_predrop_registry_fields_follow_the_signed_parameters(ctx: v.Context) -> None:
+    def mutate(data: dict[str, Any]) -> None:
+        data["champs"]["LIMITE_RESERVATION_PREDROP"]["valeur_proposee"] = "2 réservations garanties par produit et par foyer"
+
+    edit_registry(ctx, mutate)
+    assert_flags(v.check_predrop_alignment(ctx), "LIMITE_RESERVATION_PREDROP")
+    # Paramètres modifiés à leur tour (2 par client) : de nouveau alignés (puis à signer : C32).
+    cfg = ctx.predrop_config.read_text(encoding="utf-8").replace("per_customer_limit: 1", "per_customer_limit: 2")
+    ctx.predrop_config.write_text(cfg, encoding="utf-8")
+    assert v.check_predrop_alignment(ctx) == []
+    window = ctx.predrop_config.read_text(encoding="utf-8").replace("priority_window_hours: 24", "priority_window_hours: 48")
+    ctx.predrop_config.write_text(window, encoding="utf-8")
+    assert_flags(v.check_predrop_alignment(ctx), "FENETRE_PRIORITAIRE_PREDROP")
+
+
+def test_predrop_public_clauses_are_required(ctx: v.Context) -> None:
+    for doc, needle in (("PRECOMMANDES.md", "Pré-drop : la réservation garantie"), ("CGV.md", "Pré-drop (réservation garantie)"),
+                        ("PRECOMMANDES.md", "{{LIMITE_RESERVATION_PREDROP}}")):
+        path = next(p for p in ctx.public_docs() if p.name == doc)
+        text = path.read_text(encoding="utf-8")
+        path.write_text(text.replace(needle, "supprimé"), encoding="utf-8")
+        assert_flags(v.check_required_public_clauses(ctx), needle)
+        path.write_text(text, encoding="utf-8")

@@ -23,6 +23,7 @@ Tu prouves, avec **500 CHF maximum** (BP §3, §9), qu'une commande payée peut 
 - Niveau 3 : lancer les campagnes du **plan validé**, dans le plafond total et jour.
 - **Couper une campagne à tout moment** (pause) ; c'est toujours permis.
 - Calculer le CAC avec le moteur (Bash, `python`) : dépenses d'acquisition (pub + produits offerts + commissions) / commandes **payées** nettes d'annulations et de remboursements, sur 7 jours glissants, comparé à la contribution avant acquisition fournie par `finance-pricing`.
+- **Pré-drop** (`docs/08-agents/PRE_DROP.md`) : aucune publicité qui cite une quantité, une heure de fermeture ou un minuteur ; tu ne poses jamais le compte de la demande.
 
 ## Tu prépares pour validation
 

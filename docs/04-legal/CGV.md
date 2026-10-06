@@ -1,7 +1,7 @@
 # Conditions générales de vente (CGV) — {{NOM_BOUTIQUE}}
 
 > **À FAIRE REVOIR PAR UN JURISTE AVANT PUBLICATION**
-> Brouillon v0.1 du 4.10.2026, rédigé par l'agent legal-ops. Ce texte n'est pas un avis juridique.
+> Brouillon v0.2 du 6.10.2026 (v0.1 du 4.10.2026 + pré-drop, ch. 7.7 à 7.12), rédigé par l'agent legal-ops. Ce texte n'est pas un avis juridique.
 > Sources : BP §1, §3, §5, §7 ; références légales [L1] à [L17] listées dans `README.md` (consultées le 4.10.2026 par index de recherche, pages officielles non ouvertes : accès bloqué par le proxy de l'environnement de build).
 > Champs `{{…}}` : un seul registre, `champs_a_remplir.yaml`. Aperçu avec les valeurs proposées : `apercu/CGV.md` (généré).
 > Seul le bloc entre les balises `TEXTE_PUBLIC` est destiné au site. Les notes et la validation qui suivent restent internes.
@@ -23,7 +23,7 @@ Version en vigueur depuis le {{DATE_VERSION}}.
 
 ### 2. Produits
 
-2.1 Nous vendons des produits officiels du jeu de cartes à collectionner Pokémon en langue française, neufs et scellés, ainsi que des accessoires. Chaque fiche indique le format, l'extension, la langue, le contenu annoncé par le fabricant, l'état du stock (stock local ou précommande) et la quantité autorisée.
+2.1 Nous vendons des produits officiels du jeu de cartes à collectionner Pokémon en langue française, neufs et scellés, ainsi que des accessoires. Chaque fiche indique le format, l'extension, la langue, le contenu annoncé par le fabricant, l'état du stock (stock local, précommande ou réservation garantie) et la quantité autorisée.
 
 2.2 Les photos sont des photos réelles des produits ou des photos dont l'usage nous a été autorisé. L'aspect de l'emballage peut varier légèrement d'une série d'impression à l'autre. Le contenu décrit sur la fiche fait foi.
 
@@ -52,7 +52,7 @@ Version en vigueur depuis le {{DATE_VERSION}}.
 4.1 **Étapes de la commande.**
 
 1. Vous choisissez un produit et l'ajoutez au panier.
-2. Dans le panier, vous vérifiez chaque article, sa quantité et son statut (stock local ou précommande). Vous pouvez modifier les quantités ou supprimer un article.
+2. Dans le panier, vous vérifiez chaque article, sa quantité et son statut (stock local, précommande ou réservation garantie). Vous pouvez modifier les quantités ou supprimer un article.
 3. À la caisse, vous indiquez votre adresse email et votre adresse de livraison en Suisse, puis vous choisissez le mode de livraison.
 4. Un récapitulatif affiche les articles, les prix, les frais de livraison et le total à payer. Vous pouvez à tout moment revenir en arrière pour corriger une saisie.
 5. Vous choisissez le moyen de paiement et confirmez la commande avec le bouton de paiement : ce clic vous engage à payer.
@@ -113,6 +113,18 @@ Version en vigueur depuis le {{DATE_VERSION}}.
 7.5 Vous pouvez annuler gratuitement une précommande {{DELAI_ANNULATION_PRECOMMANDE}}.
 
 7.6 Les règles complètes figurent sur la page Précommandes ({{URL_PRECOMMANDES}}).
+
+7.7 **Pré-drop (réservation garantie).** Pour certains produits, nous ouvrons avant leur réception une réservation garantie. C'est une précommande au sens du présent chapitre, soumise aux règles particulières des ch. 7.8 à 7.12 et de la page Précommandes, qui priment.
+
+7.8 **Deux prix.** La fiche affiche, avant la commande, le prix de la réservation garantie et le prix du drop (prix de vente du produit à partir de la date du drop, s'il en reste). Le prix de la réservation garantie est le prix du drop augmenté d'un supplément de 10 % au plus. Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit. Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.
+
+7.9 **Ordre de service.** Les réservations garanties sont servies avant toute vente au prix du drop, dans l'ordre de leur paiement, et expédiées dès la réception et le contrôle du produit. Si notre fournisseur nous livre moins que la quantité confirmée, la quantité prévue pour la vente au prix du drop est réduite d'abord ; s'il manque encore des unités, les dernières réservations payées sont annulées et remboursées intégralement, supplément compris, dans un délai de {{DELAI_REMBOURSEMENT}}, avec un email d'information.
+
+7.10 **Report et annulation.** Les ch. 7.3 et 7.5 s'appliquent aux réservations garanties ; le remboursement est toujours intégral, supplément compris. Il en va de même si le contenu du produit change de manière importante avant l'expédition.
+
+7.11 **Limite, accès prioritaire, paiement hors règles.** La limite est de {{LIMITE_RESERVATION_PREDROP}}, le foyer étant défini au ch. 4.4. Pendant les {{FENETRE_PRIORITAIRE_PREDROP}} qui suivent l'ouverture, seules les personnes inscrites aux alertes du produit, connectées à leur compte client, peuvent réserver. Une réservation payée au-delà de la limite, hors de ces conditions, lorsque les réservations sont fermées ou pour un autre montant que le prix affiché n'est pas servie et est remboursée intégralement, supplément compris.
+
+7.12 **Statut et date.** La fiche indique « Réservations ouvertes » ou « Réservations fermées » et la date du drop, qui est une date estimée. Nous n'affichons ni minuteur ni nombre d'unités restantes.
 
 ### 8. Contrôle à réception
 
@@ -192,10 +204,11 @@ Nous pouvons modifier les présentes CGV. La nouvelle version s'applique aux com
 | J11 | 2.5 Avertissements | Avertissements lus sur l'emballage et repris sur la fiche. | Produits FR vendus dans toute la Suisse : l'ordonnance sur la sécurité des jouets (OSJo) exige-t-elle les avertissements dans la langue officielle du lieu de vente (allemand, italien) ? Non vérifié (pages officielles inaccessibles) ; les fiches doivent afficher les avertissements avant l'achat en ligne. | OSJo [L13] |
 | J12 | 1.2 et 3.1 Mention TVA | Champ `MENTION_TVA` à deux variantes. | Une entité non inscrite au registre TVA ne doit jamais faire figurer la TVA (art. 27 LTVA). | LTVA art. 27 [L10] |
 | J13 | Mineurs | Pas de clause. | Ajouter « les personnes mineures commandent avec l'accord de leur représentant légal » (art. 19 CC) ? | CC art. 19 |
+| J14 | 7.7 à 7.12 Pré-drop (réservation garantie) | Précommande à supplément : deux prix affichés, supplément ≤ 10 %, servi en premier et expédié dès réception, aucun remboursement de la différence, dernières réservations remboursées intégralement si la quantité livrée baisse, annulation et report comme les précommandes (supplément compris), limite par foyer, accès prioritaire des inscrits | Points sensibles détaillés dans `PRECOMMANDES.md`, notes P1 à P10 : le terme « garantie » (P1), l'absence de remboursement de la différence (P2), l'affichage d'un prix futur (P3), l'accès prioritaire (P4), le supplément en cas d'annulation libre (P5) ou de retour volontaire (P9) | LCD art. 3 al. 1 let. b, art. 8 [L3] ; OIP [L9] ; CO art. 97, 119 [L4] |
 
 ## Validation humaine requise
 
-- [ ] Juriste : relire le texte public et trancher les points J1 à J13 (BL-096).
+- [ ] Juriste : relire le texte public et trancher les points J1 à J14 (BL-096 ; J14, pré-drop : BL-209).
 - [ ] Propriétaire : décider qui supporte le risque de transport (J4) et la politique de retour volontaire (J8) ; ces deux choix ont un coût SAV.
 - [ ] Propriétaire : valider les champs « à valider » de `champs_a_remplir.yaml` (délais, limite par foyer, précommandes).
 - [ ] Fiduciaire : fixer `MENTION_TVA` selon le statut TVA décidé (B10).

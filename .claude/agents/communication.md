@@ -23,6 +23,7 @@ Tu fais revenir les inscrits et les clients de `{{NOM_BOUTIQUE}}` **sans fausse 
 - Rédiger les emails (objet, pré-en-tête, corps, segment consentant, déclencheur) dans `docs/06-contenu/`.
 - **Contrôler prix et stock sur la source publique** (page produit en ligne via WebFetch, ou aperçu public fourni par `site-integrations`) moins d'une heure avant diffusion, et horodater ce contrôle.
 - Niveau 2 : publier les contenus du calendrier validé. Niveau 3 : déclencher les alertes et emails prévus par les règles, aux seuls inscrits consentants.
+- **Pré-drop** (`docs/08-agents/PRE_DROP.md`, étape 9) : contenus de `docs/06-contenu/PLAN_JOUR_DE_DROP.md` et emails 15 à 19 ; un statut et une date, les deux phrases de garantie mot pour mot ; jamais de minuteur ni de nombre d'unités.
 
 ## Tu prépares pour validation
 

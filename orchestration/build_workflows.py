@@ -1383,6 +1383,7 @@ Object.keys(groups).sort().forEach((id, i) => {
     amount_paid_ttc: chf(g.amount),
     paid_at: order.processed_at || order.created_at,
     priority_access: consent && !!g.p.alert_tag && tags.includes(String(g.p.alert_tag).toLowerCase()),
+    date_drop: g.p.drop_date || null, // variable de l'email 15 (aucun prix, aucune quantité restante)
   } });
 });
 unknown.forEach((sku) => out.push({ json: { rattachee: false, sku, order_name: order.name, order_id: String(order.id) } }));
@@ -1481,11 +1482,12 @@ const lines = pending.map((r) => `- ${r.refund_id} : commande ${r.order_id}, ${r
 const cmds = pending.map((r) => `curl -fsS -X POST -H "X-Pokeshop-Owner-Token: $JETON" "$API/predrop/refunds/${encodeURIComponent(r.refund_id)}/approve"`);
 return [{ json: {
   sujet: `[PRÉ-DROP] ${pending.length} remboursement(s) intégral(aux) à valider`,
-  texte: ['Remboursements préparés par le moteur (réservations non servies ou réduction d\'allocation, ordre de paiement) :',
+  texte: ['Remboursements préparés par le moteur (réservations non servies, réduction d\'allocation dans l\'ordre de paiement,',
+    'annulations demandées par écrit par le client) :',
     ...lines, '',
     'Validation en un clic (corps vide), depuis votre terminal, avec VOTRE jeton (API = adresse du moteur) :', ...cmds, '',
-    'Le workflow 02 exécute ensuite le remboursement chez le prestataire et le relève au moteur ; l\'email au client',
-    'reprend le brouillon du moteur (remboursement intégral, supplément compris). Sans validation : rien ne part.',
+    'Le workflow 02 exécute ensuite le remboursement chez le prestataire et le relève au moteur ; l\'email 18 au client',
+    'reprend le montant et le motif du moteur (remboursement intégral, supplément compris). Sans validation : rien ne part.',
     'INTERNE — ne jamais transférer ni publier.'].join('\n'),
 } }];
 """
@@ -1878,7 +1880,8 @@ Données personnelles : aucune conservée (exécutions réussies non sauvegardé
 (`POST /predrop/reservations`, identifiant client **haché**, accès prioritaire attesté : étiquette `alerte-produit:<handle>`
 + consentement confirmé) ; jamais refusée : hors quota, limite ou fenêtre => non servie, remboursement intégral préparé.
 Remboursements **approuvés** (propriétaire en un clic aux niveaux 1-2, moteur dès le niveau 3) : exécution chez le
-prestataire (désactivée) puis relevé `POST /predrop/refunds/{id}/executed` ; email au client = brouillon du moteur.
+prestataire (désactivée) puis relevé `POST /predrop/refunds/{id}/executed` ; emails 15 (réservation confirmée) et 18
+(remboursement : montant et motif du moteur), désactivés.
 **Activation** : niveau 2 (l'activation inscrit le webhook chez Shopify) ; remboursements : niveau 2 + recette du PSP.
 **Validation humaine requise** : délai d'expédition (DELAI_EXPEDITION), jours de dépôt, route moteur de réservation,
 mutation de remboursement Shopify (à revérifier sur la version 2026-10).
@@ -2002,6 +2005,24 @@ mutation de remboursement Shopify (à revérifier sur la version 2026-10).
         [condition("={{ ($json.reservation || {}).status }}", "string", "equals", "CONFIRMED")],
     )  # fmt: skip
     resa_ok = noop(wf, "Journal : réservation confirmée (servie en premier)", (12, 0.3))
+    resa_new = if_node(
+        wf, "Réservation nouvellement enregistrée ?", (13, 0.3), [condition("={{ $json.created }}", "boolean", "true")],
+        notes="Rejeu du webhook (réservation déjà enregistrée) : aucun second email.",
+    )  # fmt: skip
+    resa_mail = external(
+        wf,
+        "Email au client : réservation garantie confirmée — outil d’emailing (désactivé)",
+        "POST",
+        f"{EMAILING_PLACEHOLDER}/send",
+        (14, 0.1),
+        "emailing",
+        body="{ template: '15-pre-drop-reservation-confirmee', shopify_order_id: String($json.reservation.order_id)"
+        ".split('#')[0], variables: { date_drop: $('Préparer les réservations (une par pré-drop)').item.json.date_drop } }",
+        notes="Email 15 (docs/06-contenu/EMAILS) : en plus de la confirmation de commande Shopify ; garantie, aucune "
+        "différence remboursée, ordre de service, annulation ; aucun prix ni quantité dans les variables (le montant payé "
+        "figure dans la confirmation de commande). Destinataire retrouvé par la commande dans l'outil.",
+    )
+    resa_replay = noop(wf, "Rejeu : email déjà envoyé", (14, 0.5))
     resa_ko = set_node(
         wf,
         "Préparer l’avis : réservation non servie (remboursement préparé)",
@@ -2064,6 +2085,9 @@ mutation de remboursement Shopify (à revérifier sur la version 2026-10).
     wf.link(resa_record, resa_fail, 1)
     wf.link(resa_served, resa_ok, 0)
     wf.link(resa_served, resa_ko, 1)
+    wf.link(resa_ok, resa_new)
+    wf.link(resa_new, resa_mail, 0)
+    wf.link(resa_new, resa_replay, 1)
     wf.link(resa_ko, resa_ko_mail)
     # Suivi quotidien des colis.
     t2 = cron(wf, "Chaque jour ouvré 07:30 — colis à remettre", (0, 2), "30 7 * * 1-5")
@@ -2187,11 +2211,11 @@ mutation de remboursement Shopify (à revérifier sur la version 2026-10).
         f"{EMAILING_PLACEHOLDER}/send",
         (11, 4.2),
         "emailing",
-        body="{ template: 'pre-drop-remboursement', shopify_order_id: String($json.refund.order_id).split('#')[0], "
-        "variables: { texte: $json.refund.email_draft } }",
-        notes="Texte = brouillon du moteur (motif, remboursement intégral supplément compris, aucune donnée interne) ; le "
-        "destinataire est retrouvé par la commande dans l'outil (aucune adresse ici). Champ {{NOM_BOUTIQUE}} remplacé à "
-        "l'intégration.",
+        body="{ template: '18-pre-drop-remboursement', shopify_order_id: String($json.refund.order_id).split('#')[0], "
+        "variables: { montant_rembourse: $json.refund.amount_ttc, motif_remboursement: $json.refund.reason_fr } }",
+        notes="Email 18 (docs/06-contenu/EMAILS) : montant intégral (supplément compris) et motif en français lus dans le "
+        "moteur (reason_fr, sans terme interne), jamais recalculés ; le destinataire est retrouvé par la commande dans "
+        "l'outil (aucune adresse ici). Le brouillon du moteur (email_draft) reste la référence de la propriétaire.",
     )
     already = noop(wf, "Déjà relevé : aucun nouvel email", (11, 4.8))
     wf.chain(t4, pr, read_r)
@@ -3006,7 +3030,31 @@ textes des annonces pré-drop (aucune fausse urgence).
     no_track_mail = email(
         wf, "Alerte : expédition sans numéro de suivi (email, désactivé)", (4, 2.4), params="Paramètres — suivi"
     )
+    # Pré-drop : envoi d'une réservation garantie (SKU <SKU>-RESA-<AAAAMMJJ>) => email 19 « expédition prioritaire »,
+    # en plus de l'email 07 de Shopify (suivi) : servie en premier, expédiée dès réception ; aucun prix ni quantité.
+    resa_ship = if_node(
+        wf,
+        "Réservation pré-drop dans l’envoi ?",
+        (3, 1.6),
+        [condition("={{ ($json.line_items || []).some(l => /-RESA-\\d{8}$/.test(String(l.sku || ''))) }}", "boolean", "true")],
+        notes="Fiche « Réservation garantie » dans la commande expédiée : email 19 (le suivi reste celui de l'email 07).",
+    )
+    resa_ship_mail = external(
+        wf,
+        "Email 19 : réservation garantie expédiée en priorité — outil d’emailing (désactivé)",
+        "POST",
+        f"{EMAILING_PLACEHOLDER}/send",
+        (4, 1.4),
+        "emailing",
+        body="{ template: '19-pre-drop-expedition-prioritaire', shopify_order_id: String($json.id), variables: {} }",
+        notes="Transactionnel (exécution du contrat) : aucune donnée interne ; numéro de commande et prénom lus par l'outil "
+        "depuis la commande ; un envoi par expédition (idempotence de l'outil sur la commande et l'envoi).",
+    )
+    resa_ship_none = noop(wf, "Envoi sans réservation pré-drop", (4, 1.8))
     wf.chain(shipped, tracking)
+    wf.link(shipped, resa_ship)
+    wf.link(resa_ship, resa_ship_mail, 0)
+    wf.link(resa_ship, resa_ship_none, 1)
     wf.link(tracking, tracked, 0)
     wf.link(tracking, pt, 1)
     wf.chain(pt, no_track, no_track_mail)
@@ -3396,7 +3444,7 @@ textes des annonces pré-drop (aucune fausse urgence).
         "Composer l’annonce pré-drop (sans prix ni compte à rebours)",
         (9, 18.2),
         [
-            ("modele", "={{ $json.etape === 'prioritaire' ? 'pre-drop-acces-prioritaire' : 'pre-drop-ouverture' }}", "string"),
+            ("modele", "={{ $json.etape === 'prioritaire' ? '16-pre-drop-acces-prioritaire' : '17-pre-drop-ouverture' }}", "string"),
             ("url_reservation", "={{ $json.url_reservation }}", "string"),
             ("date_drop", "={{ $json.date_drop }}", "string"),
         ],

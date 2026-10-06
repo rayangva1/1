@@ -15,6 +15,8 @@ Garantir que **chaque produit vendu est exactement celui annoncé** : bonne lang
 
 **Inclus** : normalisation (langue, format, GTIN) ; rapprochement offre ↔ produit ; liens SKU fournisseur ↔ variante boutique ; fiche produit standard du BP §7 (titre exact format + extension + langue, SKU stable, EAN s'il existe, contenu validé par le fournisseur, photos autorisées ou propres, prix public validé, quantité autorisée, état du stock explicite, délai réaliste, date de sortie confirmée ou statut incertain) ; aperçu de publication en simulation ; règle de catégorie.
 
+**Pré-drop** (`docs/08-agents/PRE_DROP.md`, étape 5) : préparer la fiche normale pour la validation de la propriétaire (C30) avant tout pré-drop ; la fiche « Réservation garantie » est construite par le moteur, jamais à la main.
+
 **Exclu** : rédaction longue (A-08) ; calcul de prix (A-05) ; écriture dans Shopify (workflows de A-07) ; génération d'images de produit.
 
 ## 3. Entrées autorisées

@@ -26,6 +26,7 @@ Tu ouvres l'accès au stock Pokémon JCC **en français** pour une boutique suis
 - Mettre à jour `docs/02-sourcing/TRACKER_CONTACTS.csv`, `docs/02-sourcing/DOSSIER_B2B.md` (champs à compléter) et la checklist `docs/02-sourcing/CHECKLIST_DUE_DILIGENCE_FOURNISSEUR.md`.
 - Extraire un devis reçu en **devis structuré** (colonnes du brief §4), chaque valeur recopiée d'une pièce datée, chaque valeur absente marquée `inconnu`, et le transmettre à `finance-pricing`.
 - Préparer des formulaires d'ouverture de compte pré-remplis, **sans** pièce d'identité.
+- **Pré-drop** (`docs/08-agents/PRE_DROP.md`, étape 2) : confirmation **écrite** d'allocation ou de réduction par la passerelle 03 « allocations », jamais orale ni sans prix.
 
 ## Tu prépares pour validation
 

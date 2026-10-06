@@ -1527,6 +1527,14 @@ class PredropRefundExecutedIn(_In):
     psp_refund_ref: str = Field(min_length=3, max_length=120)
 
 
+class PredropCancelIn(_In):
+    """Annulation d'une réservation confirmée à la demande **écrite** du client (service client, agent 11) : un motif
+    des conditions et la référence de la demande ; montant, quota et statut viennent du registre du moteur."""
+
+    reason: Literal["CUSTOMER_CANCELLATION", "DATE_POSTPONED", "PRODUCT_CHANGED"]
+    request_ref: str = Field(min_length=3, max_length=120)
+
+
 class PredropPublishIn(_In):
     """Publication de la fiche de réservation d'un pré-drop : simulation par défaut (``dry_run: false`` = écriture
     réelle, porte de gouvernance et ``POKESHOP_DRY_RUN=false`` exigés). Aucune autre valeur : tout vient des registres."""
@@ -4916,6 +4924,29 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         return _ok({"reservation": reservation.public_view(), "refund": refund, "created": created,
                     "state": svc.predrop.reservation_state(reservation.order_id, _shipped)},
                    201 if created else 200)  # fmt: skip
+
+    @app.post("/predrop/reservations/{order_id}/cancel")
+    async def predrop_reservation_cancel(order_id: str, request: Request) -> PokeshopJSONResponse:
+        """Annulation d'une réservation **confirmée** à la demande écrite du client : remboursement **intégral** préparé
+        (supplément compris), validé par la propriétaire en un clic aux niveaux d'autonomie 1 et 2, exécuté par le
+        workflow 02 ; l'unité revient au quota. Annulation libre refusée à partir de la date du drop ; expédiée : refus
+        (retour volontaire après réception). Déjà remboursée : sans effet (jamais deux remboursements)."""
+        principal = require_api(request)
+        _predrop_guard((OrderRegister.STREAM, "registre des commandes"))
+        body = await _body(request, PredropCancelIn)
+        if svc.predrop.reservation(order_id) is None:
+            raise HTTPProblem(404, f"réservation {order_id} inconnue")
+        now = svc.clock()
+        refund, changed = svc.predrop.cancel_reservation(
+            order_id, reason=body.reason, request_ref=body.request_ref, by=principal.name, at=now,
+            today=now.astimezone(ZoneInfo(cfg.timezone)).date(), autonomy_level=int(svc.autonomy.level), shipped=_shipped,
+        )  # fmt: skip
+        if changed:
+            _predrop_audit(principal, "predrop.reservation_cancel", order_id,
+                           {"reason": body.reason, "request_ref": body.request_ref, "refund_id": refund.refund_id,
+                            "amount_ttc": refund.amount_ttc, "refund_status": refund.status})  # fmt: skip
+        return _ok({"refund": refund, "changed": changed, "state": svc.predrop.reservation_state(order_id, _shipped)},
+                   201 if changed else 200)  # fmt: skip
 
     @app.get("/predrop/reservations")
     def predrop_reservations(request: Request, predrop_id: str | None = None) -> PokeshopJSONResponse:

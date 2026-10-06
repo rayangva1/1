@@ -64,7 +64,7 @@ __all__ = [
     "matrix_markdown",
 ]
 
-AUTHZ_VERSION = "2026-10-06.predrop-boutique"
+AUTHZ_VERSION = "2026-10-06.predrop-annulation"
 """Version de la matrice (à changer à chaque modification ; citée par ``/health`` et la doc générée)."""
 
 OWNER = "propriétaire"
@@ -325,6 +325,11 @@ ROUTE_MATRIX: dict[tuple[str, str], RouteRule] = {
         "predrop.reservation", {"n8n-02-commandes"},
         note="réservation payée (commande Shopify, identifiant client haché) : jamais refusée pour un motif métier — "
         "hors quota, limite, fenêtre ou prix : non servie et remboursement intégral préparé ; dette jusqu'à expédition"),
+    ("POST", "/predrop/reservations/{order_id}/cancel"): _write(
+        "predrop.reservation_cancel", {"operations-sav"},
+        note="annulation à la demande écrite du client (annulation libre avant le drop, report au-delà du seuil, contenu "
+        "modifié ; référence de la demande) : remboursement intégral préparé, supplément compris (validation de la "
+        "propriétaire aux niveaux 1 et 2) ; expédiée : refus (retour volontaire)"),
     ("GET", "/predrop/reservations"): _read("predrop.reservations", "sans identifiant client"),
     ("GET", "/predrop/refunds"): _read("predrop.refunds", "remboursements préparés et brouillons d'email"),
     ("POST", "/predrop/refunds/{refund_id}/approve"): _owner(

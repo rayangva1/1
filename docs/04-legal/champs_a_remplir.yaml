@@ -8,7 +8,7 @@
 #   valide     : valeur validée (indiquer qui et quand dans « valide_par »).
 # Une publication réelle (--publication) refuse tout champ qui n'est pas « valide ».
 # Aucune valeur ci-dessous n'est un tarif, un contrat ou un fait confirmé.
-version: "2026-10-04"
+version: "2026-10-06"
 auteur: "agent legal-ops"
 
 champs:
@@ -228,6 +228,23 @@ champs:
     statut: a_valider
     decideur: "Propriétaire"
     source: "hypothèse agent legal-ops"
+
+  # ------------------------------------------------- pré-drop (réservation garantie)
+  # Valeurs proposées ALIGNÉES sur les paramètres signés du moteur (config/predrop.v1.yaml : per_customer_limit,
+  # priority_window_hours) : contrôle check_predrop_alignment de outils/verifier_legal_ops.py. Changer l'un impose de
+  # changer l'autre, puis de signer à nouveau les paramètres (C32).
+  LIMITE_RESERVATION_PREDROP:
+    description: "Nombre maximal de réservations garanties par pré-drop et par foyer, toutes commandes confondues (limite par client du moteur : 1 à 2)"
+    valeur_proposee: "1 réservation garantie par produit et par foyer"
+    statut: a_valider
+    decideur: "Propriétaire (signature des paramètres du pré-drop, C32)"
+    source: "config/predrop.v1.yaml per_customer_limit ; décision de la propriétaire du 6.10.2026"
+  FENETRE_PRIORITAIRE_PREDROP:
+    description: "Durée de l'accès prioritaire des inscrits aux alertes du produit après l'ouverture des réservations garanties"
+    valeur_proposee: "24 heures"
+    statut: a_valider
+    decideur: "Propriétaire (signature des paramètres du pré-drop, C32)"
+    source: "config/predrop.v1.yaml priority_window_hours ; décision de la propriétaire du 6.10.2026"
 
   # ------------------------------------------------------- données personnelles
   DUREE_CONSERVATION_SAV:

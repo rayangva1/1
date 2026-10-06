@@ -36,6 +36,10 @@ Principes appliqués (fermé par défaut, aucune valeur décisive fournie par so
   la propriétaire en un clic aux niveaux 1 et 2, approuvé par le moteur à partir du niveau
   :data:`AUTO_REFUND_MIN_LEVEL` ; l'exécution (remboursement PSP) est relevée par le workflow 02 ; le moteur
   n'écrit jamais vers un service tiers.
+* **Annulation à la demande du client** (:meth:`PredropRegistry.cancel_reservation`, service client) : annulation libre
+  avant la date du drop, report au-delà du seuil des conditions ou contenu modifié => remboursement **intégral**,
+  supplément compris, préparé dans le même circuit (validation de la propriétaire aux niveaux 1 et 2) ; l'unité revient
+  au quota.
 * **Dette jusqu'à livraison** : l'argent encaissé en pré-drop est une dette (:meth:`PredropRegistry.outstanding_debt`)
   jusqu'à l'expédition (commande enregistrée par ``POST /orders/shipped``) ou au remboursement exécuté ; la photo
   du stop-loss la **dérive** de ce registre. Étoile polaire : chiffre d'affaires reconnu **à l'expédition**, jamais
@@ -85,6 +89,8 @@ __all__ = [
     "STATUS_CLOSED_FR",
     "PUBLIC_OFFER_FIELDS",
     "NOT_SERVED_REASONS_FR",
+    "CANCELLATION_REASONS_FR",
+    "refund_reason_fr",
     "PredropError",
     "PredropPersistenceError",
     "PredropConfig",
@@ -178,9 +184,27 @@ NOT_SERVED_REASONS_FR: dict[str, str] = {
     "AMOUNT_MISMATCH": "le montant payé ne correspond pas au prix pré-drop",
     "BLOCKED": "les réservations pré-drop ont été suspendues par précaution",
     "DISABLED": "les réservations pré-drop ont été suspendues par précaution",
-    "ALLOCATION_REDUCED": "le fournisseur a réduit la quantité livrée et nous ne pourrons pas vous servir",
+    "ALLOCATION_REDUCED": "la quantité qui nous a été attribuée a été réduite et nous ne pourrons pas vous servir",
 }
-"""Motif (code stable) d'une réservation non servie ou remboursée -> phrase de l'email au client."""
+"""Motif (code stable) d'une réservation non servie ou remboursée -> phrase de l'email au client (sans terme interne :
+ni « fournisseur », ni coût, ni quantité ; mêmes règles que les emails de ``docs/06-contenu/EMAILS``)."""
+
+CANCELLATION_REASONS_FR: dict[str, str] = {
+    "CUSTOMER_CANCELLATION": "vous avez annulé votre réservation dans le délai prévu par nos conditions",
+    "DATE_POSTPONED": "la date du drop a été reportée au-delà du délai prévu par nos conditions et vous avez choisi "
+    "d'annuler",
+    "PRODUCT_CHANGED": "le contenu du produit a changé de manière importante et vous avez choisi d'annuler",
+}
+"""Annulation d'une réservation **confirmée** à la demande écrite du client (``PRECOMMANDES.md``, partie « Pré-drop » ;
+CGV ch. 7.7 à 7.12) : annulation libre dans le délai, report au-delà du seuil, contenu modifié. Toujours un
+remboursement **intégral**, supplément compris (:meth:`PredropRegistry.cancel_reservation`)."""
+
+
+def refund_reason_fr(reason: str) -> str:
+    """Phrase française du motif d'un remboursement (email au client) ; motif inconnu : formule générale."""
+    return NOT_SERVED_REASONS_FR.get(reason) or CANCELLATION_REASONS_FR.get(
+        reason, "nous ne pourrons pas honorer votre réservation pré-drop"
+    )
 
 RESERVATION_LINE_SEPARATOR = "#"
 """Une commande Shopify qui porte des réservations de **plusieurs** pré-drops est enregistrée une fois par pré-drop :
@@ -800,6 +824,10 @@ class PreparedRefund(FrozenModel):
     executed_at: datetime | None = None
     psp_refund_ref: str | None = None
     email_draft: str
+    reason_fr: str = ""
+    """Motif en français (variable ``motif_remboursement`` de l'email 18), figé à la préparation."""
+    request_ref: str | None = None
+    """Annulation demandée par le client : référence de sa demande écrite (ticket du service client)."""
 
     @field_validator("prepared_at", "approved_at", "executed_at")
     @classmethod
@@ -827,12 +855,13 @@ def reservation_phase(predrop: Predrop, *, accepting: bool, at: datetime) -> Lit
 
 def refund_email_draft(*, order_id: str, amount: Decimal, reason: str, public_sku: str | None) -> str:
     """Brouillon d'email au client (français, sans donnée personnelle : n8n retrouve le destinataire par la commande)."""
-    why = NOT_SERVED_REASONS_FR.get(reason, "nous ne pourrons pas honorer votre réservation pré-drop")
+    why = refund_reason_fr(reason)
     product = f" ({public_sku})" if public_sku else ""
     return (
         "Bonjour,\n\n"
         f"Votre réservation pré-drop{product}, commande {order_id} : {why}.\n"
-        f"Conformément à notre garantie, nous vous remboursons intégralement {q2(amount)} CHF, supplément compris, "
+        f"Conformément à nos conditions de réservation garantie, nous vous remboursons intégralement {q2(amount)} CHF, "
+        "supplément compris, "
         "sur votre moyen de paiement d'origine.\n\n"
         "Nous vous présentons nos excuses pour ce désagrément.\n\n"
         "{{NOM_BOUTIQUE}}"
@@ -1496,7 +1525,8 @@ class PredropRegistry:
         return tuple(r for r in items if predrop_id is None or r.predrop_id == predrop_id)
 
     def _new_refund(
-        self, res: PredropReservation, reason: str, *, at: datetime, by: str, autonomy_level: int
+        self, res: PredropReservation, reason: str, *, at: datetime, by: str, autonomy_level: int,
+        request_ref: str | None = None,
     ) -> PreparedRefund:
         level = max(1, min(4, int(autonomy_level)))
         auto = level >= AUTO_REFUND_MIN_LEVEL
@@ -1516,6 +1546,8 @@ class PredropRegistry:
             approved_at=at if auto else None,
             email_draft=refund_email_draft(order_id=res.order_id, amount=res.amount_paid_ttc, reason=reason,
                                            public_sku=predrop.public_sku if predrop is not None else None),  # fmt: skip
+            reason_fr=refund_reason_fr(reason),
+            request_ref=request_ref,
         )
 
     def record_reservation(
@@ -1596,6 +1628,53 @@ class PredropRegistry:
                 "refund": None if refund is None else refund.model_dump(mode="json"),
             })  # fmt: skip
             return reservation, refund, True
+
+    def cancel_reservation(
+        self,
+        order_id: str,
+        *,
+        reason: str,
+        request_ref: str,
+        by: str,
+        at: datetime,
+        today: date,
+        autonomy_level: int,
+        shipped: Callable[[str], bool] = _no_shipment,
+    ) -> tuple[PreparedRefund, bool]:
+        """Annulation d'une réservation **confirmée**, à la demande écrite du client : remboursement **intégral** préparé.
+
+        Motifs (:data:`CANCELLATION_REASONS_FR`) : ``CUSTOMER_CANCELLATION`` (annulation libre, refusée une fois la date
+        du drop atteinte : après réception, c'est le retour volontaire des CGV), ``DATE_POSTPONED`` (report au-delà du
+        seuil des conditions), ``PRODUCT_CHANGED`` (contenu modifié). Même circuit que les autres remboursements :
+        validation de la propriétaire en un clic aux niveaux 1 et 2, exécution relevée par le workflow 02 ; l'unité
+        revient au quota (pré-drop encore ouvert) ou au drop. Déjà remboursée ou en cours de remboursement : sans effet
+        (``(remboursement, False)``, jamais deux remboursements). Expédiée : refus (retour volontaire après réception).
+        """
+        _aware(at, "at")
+        if reason not in CANCELLATION_REASONS_FR:
+            raise PredropError(f"motif d'annulation inconnu : {reason} ({', '.join(sorted(CANCELLATION_REASONS_FR))})")
+        with self._lock:
+            res = self._reservations.get(order_id)
+            if res is None:
+                raise PredropError(f"réservation {order_id} inconnue")
+            existing = self._refunds.get(refund_id_for(order_id))
+            if existing is not None:
+                return existing, False
+            if shipped(order_id):
+                raise PredropError(
+                    f"réservation {order_id} déjà expédiée : plus d'annulation, retour volontaire après réception (CGV ch. 10)"
+                )
+            if res.status != "CONFIRMED":  # pragma: no cover - une réservation non servie a toujours son remboursement
+                raise PredropError(f"réservation {order_id} non servie : remboursement déjà préparé")
+            predrop = self._predrops.get(res.predrop_id)
+            if reason == "CUSTOMER_CANCELLATION" and predrop is not None and today >= predrop.drop_date:
+                raise PredropError(
+                    f"annulation libre close à la date du drop ({predrop.drop_date.isoformat()}) : après réception, "
+                    "retour volontaire (CGV ch. 10) ; report ou contenu modifié : motif DATE_POSTPONED ou PRODUCT_CHANGED"
+                )
+            refund = self._new_refund(res, reason, at=at, by=by, autonomy_level=autonomy_level, request_ref=request_ref)
+            self._commit({"op": "refund", "refund": refund.model_dump(mode="json")})
+            return refund, True
 
     # -- remboursements ---------------------------------------------------------------
     def refund(self, refund_id: str) -> PreparedRefund | None:

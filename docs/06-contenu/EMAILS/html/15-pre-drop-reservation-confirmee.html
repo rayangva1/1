@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="fr-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>Réservation garantie confirmée : {{ $json.produit_titre }}</title>
+  <!--
+    FICHIER GÉNÉRÉ par docs/06-contenu/outils/generer_emails.py depuis EMAILS/source/emails.yaml — ne pas modifier.
+    Email 15-pre-drop-reservation-confirmee — Pré-drop : réservation garantie confirmée — canal : n8n
+    Objet : Réservation garantie confirmée : [[produit_titre]]
+    Pré-en-tête : Servi en premier, expédié dès réception : ce que garantit votre réservation.
+    Déclencheur : Réservation pré-drop payée et confirmée par le moteur (POST /predrop/reservations : CONFIRMED, nouvellement enregistrée), en plus de la confirmation de commande Shopify (06)
+    Segment : Le client de la commande
+    Base : Exécution du contrat (PRECOMMANDES : réservation garantie)
+    Fréquence : Une fois par réservation ; rejeu du webhook : aucun envoi
+    Variables :
+      - salutation : Salutation calculée par le workflow ou l'outil d'emailing
+      - numero_commande : Numéro de commande (lu par l'outil d'emailing depuis la commande Shopify)
+      - produit_titre : Titre exact de la fiche de réservation (lu depuis la commande)
+      - date_drop : Date du drop du moteur (jj.mm.aaaa), envoyée par le workflow 02
+      - url_commande : Page de suivi de la commande
+    Champs fixes (MAJUSCULES entre doubles accolades) : registre docs/04-legal/champs_a_remplir.yaml, plus URL_LOGO_PNG
+    (PNG du logo hébergé, docs/05-da/logo/png/). Pour Shopify, coller la copie produite par --integration, jamais ce fichier.
+    Règles : aucune donnée interne ; prix publics relus à l'envoi ; aucune fausse urgence.
+  -->
+</head>
+<body style="margin:0;padding:0;background:#F6F5F1;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Servi en premier, expédié dès réception : ce que garantit votre réservation.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="{{URL_LOGO_PNG}}" width="200" alt="{{NOM_BOUTIQUE}}" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Votre réservation garantie est confirmée</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">{{ $json.salutation }}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Votre réservation fait partie de la commande {{ $json.numero_commande }} ; le paiement est reçu.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;">{{ $json.produit_titre }}</strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E6E9FB;border:2px solid #2B3990;color:#2B3990;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">RÉSERVATION GARANTIE</span> <span style="font-size:13px;color:#55534E;">Drop le {{ $json.date_drop }} (date estimée)</span></div></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h2 style="margin:8px 0 8px 0;font-size:17px;line-height:23px;font-weight:bold;color:#111111;">Ce que garantit votre réservation</h2>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <ul style="margin:0 0 12px 20px;padding:0;font-size:15px;line-height:22px;color:#111111;"><li style="margin:0 0 6px 0;">Vous êtes servi en premier : les réservations garanties passent avant toute vente au prix du drop, dans l'ordre de leur paiement.</li><li style="margin:0 0 6px 0;">Votre commande est expédiée dès réception et contrôle du produit, en principe sous {{DELAI_EXPEDITION}} après réception. Nous ne garantissons pas une livraison le jour du drop.</li><li style="margin:0 0 6px 0;">Le prix payé est définitif : il ne baisse pas et n'augmente pas.</li></ul>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;">Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.<br><br>Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.</td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h2 style="margin:8px 0 8px 0;font-size:17px;line-height:23px;font-weight:bold;color:#111111;">Si quelque chose change</h2>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <ul style="margin:0 0 12px 20px;padding:0;font-size:15px;line-height:22px;color:#111111;"><li style="margin:0 0 6px 0;">Si nous recevons moins d'unités que prévu et ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris, et nous vous prévenons par email.</li><li style="margin:0 0 6px 0;">Si la date change, nous vous écrivons dans un délai de {{DELAI_INFORMATION_REPORT}}. Si le report dépasse {{SEUIL_REPORT_PRECOMMANDE}}, vous pouvez annuler et être remboursé intégralement, supplément compris.</li><li style="margin:0 0 6px 0;">Annulation gratuite {{DELAI_ANNULATION_PRECOMMANDE}} : répondez à cet email avec votre numéro de commande. Remboursement intégral, supplément compris.</li></ul>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="{{ $json.url_commande }}" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Voir ma commande</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="border:2px solid #111111;border-radius:4px;"><a href="{{URL_PRECOMMANDES}}" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#111111;text-decoration:none;">Nos conditions de réservation garantie</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.<br>Conditions de vente : {{URL_CGV}} · Livraison et retours : {{URL_RETOURS}}<br>{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

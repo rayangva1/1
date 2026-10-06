@@ -44,7 +44,7 @@ La propriétaire intervient seulement pour :
 | Dossier | Contenu |
 |---|---|
 | `engine/pokeshop/` | Moteur Python : coût rendu, prix plancher, contribution, panier, coûts historiques, stock, réservations, réassort, trésorerie 13 semaines, prévisions, stop-loss, mandat, étoile polaire, catalogue, imports fournisseurs, client Shopify, publication, synchronisation, incidents, audit, autonomie, API FastAPI, KPI |
-| `config/` | Règles versionnées : prix (`pricing_rules.v1.yaml`), stop-loss, mandat |
+| `config/` | Règles versionnées : prix (`pricing_rules.v1.yaml`), stop-loss, mandat, pré-drop (`predrop.v1.yaml`) |
 | `db/` | Schéma PostgreSQL 16 (compatible Supabase), journal en ajout seul, vue publique sans coûts, rôle restreint |
 | `data/` | Dictionnaires de champs fournisseurs (gabarits) et échantillons FICTIFS avec anomalies |
 | `orchestration/n8n/` | 8 workflows n8n importables : fournisseur → site, commande → livraison, facture → marge réelle, incident, rapport quotidien, marketing, surveillance stop-loss, contrôle des dépenses |
@@ -60,6 +60,15 @@ La propriétaire intervient seulement pour :
 | `docs/07-ops` | SOP réception, colis, SAV, incidents, routines, recette avant ouverture, FAQ |
 | `docs/08-agents` + `.claude/agents/` | Les 12 agents du BP §11, utilisables directement comme sous-agents Claude Code (un jeton par rôle pour l'API du moteur, matrice `docs/08-agents/MATRICE_API.md`) |
 | `.claude/settings.json` | Permissions du projet : uniquement des règles `deny` qui rendent les secrets illisibles par la flotte |
+
+## Pré-drop (réservation garantie)
+
+Avant la réception du stock, un produit éligible peut s'ouvrir en **réservation garantie** : deux prix sur la fiche, le **prix du drop** (celui du moteur) et le **prix pré-drop** (prix du drop + supplément de 8 %, jamais plus de 10 % ni au-dessus du marché, marge revérifiée). Le supplément paie la **garantie d'être servi en premier et expédié dès réception**, pas le produit ; **aucun remboursement de la différence** s'il reste des unités au drop.
+
+- **Toi** : signer `config/predrop.v1.yaml` (C32, sinon désactivé) après la relecture du juriste ; valider chaque allocation ferme et poser la référence marché (C33) ; valider en un clic les remboursements aux niveaux 1 et 2 (C34) — `docs/00-pilotage/INTERVENTIONS_HUMAINES.md`.
+- **Les agents et n8n** : qui fait quoi dans `docs/08-agents/PRE_DROP.md` ; textes clients **BROUILLON** dans `docs/04-legal/PRECOMMANDES.md` (partie « Pré-drop ») et les CGV ch. 7.7 à 7.12 ; emails 15 à 19 et plan du jour de drop dans `docs/06-contenu/` ; moteur `engine/pokeshop/predrop.py` (routes `/predrop/*`).
+- **Argent** : une réservation payée est une **dette** jusqu'à l'expédition (photo du stop-loss) et n'entre dans l'étoile polaire qu'à l'expédition ; servie en premier, dans l'ordre de paiement ; si le fournisseur livre moins, la quantité du drop baisse d'abord, puis les dernières réservations sont remboursées intégralement.
+- **Avant le premier pré-drop** : relecture du juriste (BL-209), revue limitée au diff du pré-drop (BL-214), garde-fou de la réception (BL-212, sinon étape E4 bis de `docs/07-ops/SOP_RECEPTION_STOCK.md` à la main).
 
 ## Démarrage rapide
 
@@ -112,5 +121,6 @@ scripts/compose.sh ps                   # db-backup « healthy » : restauration
 3. **Point zéro du stop-loss global** : le décider à J3 avec le budget, puis le poser avec ton jeton à J27, après l'enregistrement de tes apports (J26), des soldes (déposés par toi avec ton jeton tant que le connecteur n'est pas recetté) et des dettes de l'agent 05, **avec la première photo** (`POST /stoploss/baseline` et `with_photo:true`, commandes prêtes dans `STOP_LOSS.md` §5), **puis seulement** activer le workflow 07 ; sans lui, le gel tombe avant la première vente (`docs/00-pilotage/STOP_LOSS.md` §5).
 4. **Écarts bloquants du BP** : `docs/00-pilotage/ECARTS_BP.md` (ex. distributeur suisse Carletto AG absent du BP).
 5. **Statut exploitant et TVA** avec la fiduciaire : le moteur a deux profils, il ne choisit pas.
+6. **Pré-drop** : valider les choix (annulation libre supplément compris, retour volontaire, terme « réservation garantie » : notes P1 à P10 de `docs/04-legal/PRECOMMANDES.md`), puis signer `config/predrop.v1.yaml` (C32).
 
 Spécification technique commune : `docs/SPEC.md`.

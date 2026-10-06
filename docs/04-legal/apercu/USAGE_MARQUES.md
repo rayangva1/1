@@ -1,4 +1,4 @@
-<!-- FICHIER GÉNÉRÉ par docs/04-legal/outils/rendre_textes.py à partir de docs/04-legal/USAGE_MARQUES.md et de champs_a_remplir.yaml (version 2026-10-04). Ne pas modifier à la main. -->
+<!-- FICHIER GÉNÉRÉ par docs/04-legal/outils/rendre_textes.py à partir de docs/04-legal/USAGE_MARQUES.md et de champs_a_remplir.yaml (version 2026-10-06). Ne pas modifier à la main. -->
 > **APERÇU — NE PAS PUBLIER.** Texte public de `docs/04-legal/USAGE_MARQUES.md` rendu avec les valeurs du registre. « ⟦à valider⟧ » signale une valeur proposée non validée ; « ⟦À REMPLIR : …⟧ » un champ sans valeur. **À FAIRE REVOIR PAR UN JURISTE AVANT PUBLICATION.**
 
 **Mention courte (pied de page, emails, packaging) :**

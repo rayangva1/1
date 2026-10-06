@@ -160,6 +160,7 @@
 - Contrôler chaque demande d'engagement et **exécuter les paiements dans le mandat** (bénéficiaire autorisé, plafond respecté, stop-loss cash et global inactifs).
 - Rapprocher paiements, remboursements et versements ; saisir les devis structurés dans `docs/02-sourcing/COMPARATEUR_OFFRES.xlsx`.
 - Niveau 2 : laisser synchroniser les décisions `OK`. Niveau 3 : calculer les promotions dans les règles.
+- Pré-drop (`docs/08-agents/PRE_DROP.md`) : ouvrir un pré-drop quand l'éligibilité du moteur est verte (sans référence marché, réservée à la propriétaire), le fermer par précaution ; suivre la dette dérivée et la reconnaissance à l'expédition.
 
 **Prépare pour validation**
 - Toute nouvelle version des règles de prix (C09), tout changement de profil TVA (propriétaire + fiduciaire).
@@ -301,6 +302,7 @@
 - Niveau 1 : SOP, simulations de commandes et de retours.
 - Niveau 2 : traiter les commandes payées (réservation par le moteur, bon de préparation, étiquette, suivi), SAV de niveau 1 avec les modèles approuvés, enregistrement des retours selon les règles, propositions de réassort, demandes d'achat d'emballages.
 - Niveau 4 : réassorts automatiques dans l'enveloppe, auprès d'un fournisseur au mandat.
+- Pré-drop (`docs/08-agents/PRE_DROP.md`) : déclarer une réduction constatée à la réception ; servir les réservations en premier ; préparer l'annulation d'une réservation demandée par écrit (remboursement validé par la propriétaire aux niveaux 1 et 2).
 
 **Prépare pour validation**
 - Litige, suspicion de fraude, geste commercial ou remboursement hors règle.

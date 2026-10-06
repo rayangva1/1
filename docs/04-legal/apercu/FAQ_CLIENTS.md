@@ -1,4 +1,4 @@
-<!-- FICHIER GÉNÉRÉ par docs/04-legal/outils/rendre_textes.py à partir de docs/07-ops/FAQ_CLIENTS.md et de champs_a_remplir.yaml (version 2026-10-04). Ne pas modifier à la main. -->
+<!-- FICHIER GÉNÉRÉ par docs/04-legal/outils/rendre_textes.py à partir de docs/07-ops/FAQ_CLIENTS.md et de champs_a_remplir.yaml (version 2026-10-06). Ne pas modifier à la main. -->
 > **APERÇU — NE PAS PUBLIER.** Texte public de `docs/07-ops/FAQ_CLIENTS.md` rendu avec les valeurs du registre. « ⟦à valider⟧ » signale une valeur proposée non validée ; « ⟦À REMPLIR : …⟧ » un champ sans valeur. **À FAIRE REVOIR PAR UN JURISTE AVANT PUBLICATION.**
 
 ## Questions fréquentes
@@ -76,6 +76,32 @@ Oui, gratuitement jusqu'à 7 jours avant la date de sortie annoncée ⟦à valid
 
 **Ma commande contient des articles en stock et une précommande.**
 Les articles en stock partent tout de suite ; la précommande suit dès sa réception. Vous ne payez la livraison qu'une fois.
+
+### Pré-drop (réservation garantie)
+
+**Qu'est-ce qu'une réservation garantie (pré-drop) ?**
+Pour certains produits, vous pouvez réserver avant leur réception. Vous êtes servi en premier, avant toute vente au prix du drop, et votre commande est expédiée dès que nous avons reçu et contrôlé le produit. Tout est expliqué sur la page Précommandes : ⟦À REMPLIR : URL_PRECOMMANDES⟧.
+
+**Pourquoi deux prix ?**
+La fiche affiche le prix de la réservation garantie et le prix du drop. Le premier est le prix du drop augmenté d'un supplément de 10 % au plus. Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.
+
+**S'il reste des unités au drop, suis-je remboursé de la différence ?**
+Non. Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop. Si vous n'avez pas besoin de la garantie, vous pouvez attendre le drop et acheter au prix du drop, s'il reste des unités.
+
+**Combien de réservations reste-t-il ?**
+Nous n'affichons pas de nombre d'unités. La fiche indique seulement « Réservations ouvertes » ou « Réservations fermées », et la date du drop.
+
+**Pourquoi ne puis-je pas réserver tout de suite ?**
+Pendant les 24 heures ⟦à valider⟧ qui suivent l'ouverture, les réservations sont réservées aux personnes inscrites aux alertes de ce produit, connectées à leur compte client avec la même adresse email. Elles s'ouvrent ensuite à tous.
+
+**Combien de réservations puis-je faire ?**
+La limite est de 1 réservation garantie par produit et par foyer ⟦à valider⟧, toutes commandes confondues. Une réservation au-delà de la limite n'est pas servie : elle est remboursée intégralement, supplément compris.
+
+**Et si vous recevez moins que prévu ?**
+Les réservations garanties sont servies en premier, dans l'ordre de leur paiement : nous réduisons d'abord la quantité prévue pour le drop. Si nous ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris, et nous vous prévenons par email.
+
+**Puis-je annuler ma réservation garantie ?**
+Oui, gratuitement jusqu'à 7 jours avant la date de sortie annoncée ⟦à valider⟧, avec un remboursement intégral, supplément compris. Si la date du drop est reportée de plus de 30 jours ⟦à valider⟧, vous pouvez aussi annuler avec un remboursement intégral.
 
 ### Livraison
 

@@ -1,0 +1,30 @@
+Objet : Drop le {{ $json.date_drop }} : {{ $json.produit_titre }}
+
+LE DROP EST ANNONCÉ
+
+{{ $json.salutation }}
+
+Vous avez demandé une alerte pour {{ $json.produit_titre }}. Le drop est prévu le {{ $json.date_drop }} (date estimée). D'ici là, les réservations garanties sont ouvertes à tous.
+
+{{ $json.produit_titre }}
+Réservation garantie · Drop le {{ $json.date_drop }} (date estimée)
+
+Réserver ou attendre le drop : à vous de choisir
+
+- Réservation garantie : le prix du drop plus un supplément, affichés tous deux sur la fiche. Vous êtes servi en premier et votre commande est expédiée dès réception.
+- Au drop : le prix du drop, s'il reste des unités. Nous vous prévenons quand le produit est en stock local.
+
+> Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.
+> Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.
+
+La limite par foyer, toutes commandes confondues, figure sur la fiche. Nous n'affichons ni minuteur ni nombre d'unités restantes : la fiche indique seulement « Réservations ouvertes » ou « Réservations fermées ».
+
+Voir la réservation garantie : {{URL_SITE}}{{ $json.url_reservation }}
+
+--
+Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que cette adresse est inscrite à nos alertes (inscription confirmée le {{ $json.date_consentement }}).
+Modifier mes préférences : {{ $json.url_preferences }} · Me désinscrire en un clic : {{ $json.url_desinscription }}
+Confidentialité : {{URL_CONFIDENTIALITE}}

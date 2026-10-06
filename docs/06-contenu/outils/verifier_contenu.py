@@ -16,8 +16,13 @@
    expressions n8n intactes (« $json » en minuscules) ; aucune affirmation inexacte (réponse humaine
    systématique, contenu des boîtes vérifié, limite « par commande »).
 6. Publicité, créateurs, SEO : éléments obligatoires présents ; aucun volume de recherche chiffré.
-7. Textes réutilisables (ton, sujets, scripts, créateurs, SEO) : champs {{MAJUSCULES}} déclarés dans le registre
-   légal ou la landing, ou variables produit de VARIABLES_CONTENU ; gabarits du ton sans affirmation inexacte.
+7. Textes réutilisables (ton, sujets, scripts, créateurs, SEO, plan du jour de drop) : champs {{MAJUSCULES}} déclarés
+   dans le registre légal ou la landing, ou variables produit de VARIABLES_CONTENU ; gabarits du ton sans affirmation
+   inexacte.
+8. Pré-drop (décision du 6.10.2026) : les deux phrases de garantie du moteur (``GUARANTEE_TEXT_FR``,
+   ``NO_DIFFERENCE_REFUND_FR``) figurent mot pour mot dans les emails 15, 16 et 17 et dans le plan du jour de drop ;
+   textes publics du plan (lignes citées) sans urgence, prix en dur, promesse, terme interne ni chiffre de stock ;
+   statuts « Réservations ouvertes » / « Réservations fermées » seulement.
 
 Usage : python docs/06-contenu/outils/verifier_contenu.py   (code 1 si erreur)
 """
@@ -51,8 +56,19 @@ CHAMPS_SUJET = ("**Angle**", "**Hook**", "**Plan**", "**Format**", "**Visuels r�
 EXPRESSION_N8N_RE = re.compile(r"\{\{\s*\$[^}]*\}\}")
 EXPRESSION_N8N_VALIDE_RE = re.compile(r"\{\{ \$json\.[a-z_][a-z0-9_]* \}\}")
 #: Variables propres à un produit ou à un message (pas des règles) admises dans les textes réutilisables.
-VARIABLES_CONTENU = frozenset({"EXTENSION", "DATE_SORTIE", "CONTENU_VALIDE", "PRODUIT", "NOUVELLE_DATE", "DATE_ANNONCE"})
-DOCS_REUTILISABLES = ("TON_EDITORIAL.md", "15_SUJETS.md", "SCRIPTS_VIDEO.md", "BRIEF_CREATEURS.md", "SEO.md")
+VARIABLES_CONTENU = frozenset(
+    {"EXTENSION", "DATE_SORTIE", "CONTENU_VALIDE", "PRODUIT", "NOUVELLE_DATE", "DATE_ANNONCE", "DATE_DROP"}
+)
+DOCS_REUTILISABLES = (
+    "TON_EDITORIAL.md", "15_SUJETS.md", "SCRIPTS_VIDEO.md", "BRIEF_CREATEURS.md", "SEO.md", "PLAN_JOUR_DE_DROP.md",
+)
+PLAN_DROP = "PLAN_JOUR_DE_DROP.md"
+#: Emails du pré-drop qui expliquent la garantie (confirmation, accès prioritaire, annonce du drop).
+EMAILS_GARANTIE = ("15-pre-drop-reservation-confirmee", "16-pre-drop-acces-prioritaire", "17-pre-drop-ouverture")
+#: Chiffre de stock ou de réservations dans un texte public (« 12 unités », « plus que 3 », « 40 % réservés »).
+QUANTITE_RE = re.compile(r"\b\d+\s*(?:unités?|exemplaires?|pièces?|cartons?|réservations?|%)", re.IGNORECASE)
+#: Statut public d'un pré-drop : rien d'autre que ces deux libellés (moteur : STATUS_OPEN_FR, STATUS_CLOSED_FR).
+STATUTS_PREDROP = ("Réservations ouvertes", "Réservations fermées")
 VOLUME_RE = re.compile(r"\d[\d'  ]*\s*(recherches|requêtes|searches)\b|volume\s*(mensuel)?\s*:\s*\d", re.IGNORECASE)
 
 
@@ -305,6 +321,60 @@ def verifier_textes_reutilisables(racine: Path = RACINE) -> list[str]:
     return erreurs
 
 
+def textes_garantie() -> tuple[str, str]:
+    """Les deux phrases de garantie du moteur (``engine/pokeshop/predrop.py``), source unique."""
+    engine = str(REPO / "engine")
+    if engine not in sys.path:
+        sys.path.insert(0, engine)
+    from pokeshop.predrop import GUARANTEE_TEXT_FR, NO_DIFFERENCE_REFUND_FR
+
+    return GUARANTEE_TEXT_FR, NO_DIFFERENCE_REFUND_FR
+
+
+def textes_publics_plan(texte: str) -> list[str]:
+    """Lignes citées (``> ``) du plan : les seuls textes destinés au public."""
+    return [ligne[2:] for ligne in texte.splitlines() if ligne.startswith("> ") and not ligne.startswith("> Propri")
+            and not ligne.startswith("> Sources") and not ligne.startswith("> Le calendrier")]
+
+
+def verifier_predrop(racine: Path = RACINE) -> list[str]:
+    """Pré-drop : garantie mot pour mot (emails 15-17, plan), textes publics du plan sans urgence ni chiffre."""
+    erreurs: list[str] = []
+    try:
+        garantie = textes_garantie()
+    except ImportError as exc:  # pragma: no cover - moteur toujours présent dans le dépôt
+        return [f"moteur illisible : {exc}"]
+    for ident in EMAILS_GARANTIE:
+        for chemin in (ge.EMAILS / "html" / f"{ident}.html", ge.EMAILS / "texte" / f"{ident}.txt"):
+            if not chemin.exists():
+                erreurs.append(f"{chemin.name} : email du pré-drop absent")
+                continue
+            contenu = chemin.read_text(encoding="utf-8").replace("&#x27;", "'").replace("&#39;", "'")
+            for phrase in garantie:
+                if phrase not in contenu:
+                    erreurs.append(f"{chemin.name} : phrase de garantie du moteur absente « {phrase[:40]}… »")
+    plan = racine / PLAN_DROP
+    if not plan.exists():
+        return erreurs + [f"{PLAN_DROP} absent"]
+    texte = plan.read_text(encoding="utf-8")
+    for phrase in garantie:
+        if phrase not in texte:
+            erreurs.append(f"{PLAN_DROP} : phrase de garantie du moteur absente « {phrase[:40]}… »")
+    for statut in STATUTS_PREDROP:
+        if statut not in texte:
+            erreurs.append(f"{PLAN_DROP} : statut public « {statut} » absent")
+    publics = textes_publics_plan(texte)
+    if len(publics) < 8:
+        erreurs.append(f"{PLAN_DROP} : {len(publics)} texte(s) public(s) cité(s), 8 attendus au moins")
+    for ligne in publics:
+        for motif, libelle in ((URGENCE_RE, "fausse urgence"), (PRIX_EN_DUR_RE, "prix en dur"), (PROMESSES_RE, "promesse interdite"),
+                               (TERMES_INTERNES, "terme interne"), (QUANTITE_RE, "chiffre de stock"), *AFFIRMATIONS_INEXACTES):
+            m = motif.search(ligne)
+            if m:
+                erreurs.append(f"{PLAN_DROP} : {libelle} dans un texte public « {m.group(0)} »")
+    return erreurs
+
+
 def tout_verifier() -> dict[str, list[str]]:
     return {
         "documents": verifier_docs(),
@@ -314,6 +384,7 @@ def tout_verifier() -> dict[str, list[str]]:
         "emails": verifier_emails(),
         "publicité, créateurs, SEO": verifier_publicite_seo(),
         "textes réutilisables": verifier_textes_reutilisables(),
+        "pré-drop": verifier_predrop(),
     }
 
 

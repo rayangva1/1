@@ -27,6 +27,7 @@ Cette déclaration explique quelles données personnelles nous traitons lorsque 
 | Compte client (facultatif) | Identifiants, historique de commandes, adresses enregistrées | Faciliter vos prochaines commandes | Jusqu'à suppression à votre demande, ou {{DUREE_CONSERVATION_COMPTE}} |
 | Alertes de stock et email récapitulatif | Email, préférences (formats, extensions), date et preuve du consentement, ouvertures et clics | Vous prévenir des produits et réassorts que vous avez choisis ; au maximum un email récapitulatif par semaine | {{DUREE_CONSERVATION_ALERTES}} |
 | Réponses facultatives et origine de l'inscription | Prénom, formats, budget habituel par achat, pour qui vous achetez, canton ; source, support et campagne du lien suivi (paramètres « utm ») | Vous saluer et cibler vos alertes ; de façon agrégée (jamais personne par personne), étudier la demande pour choisir notre assortiment, nos contenus, nos canaux et les régions où faire connaître la boutique | {{DUREE_CONSERVATION_ALERTES}} |
+| Réservation garantie (pré-drop) | Empreinte de votre identifiant client (pseudonyme, calculée par la boutique : ni votre nom ni votre email) ; étiquette « alerte » de ce produit sur votre compte client et état de votre consentement aux alertes | Appliquer la limite de réservations par client et l'accès prioritaire des personnes inscrites aux alertes du produit | Durée de la commande et des éventuelles contestations |
 | Panier non finalisé | Email saisi en caisse, articles du panier, acceptation de nos emails cochée en caisse | Vous envoyer **un seul** rappel, uniquement si vous avez accepté nos emails lors du passage en caisse | {{DUREE_CONSERVATION_PANIER}} |
 | Service client | Vos messages, nos réponses, numéro de commande, photos que vous nous envoyez | Répondre, traiter un retour, une réclamation ou une garantie ; les réponses courantes sont préparées et envoyées par des outils automatisés (ch. 6) | {{DUREE_CONSERVATION_SAV}} |
 | Prévention de la fraude et des abus | Données de la commande, adresse IP et signaux de risque fournis par la boutique et le prestataire de paiement | Protéger nos clients et nous-mêmes ; faire respecter les limites de quantité | Durée de la commande et des éventuelles contestations |
@@ -111,6 +112,7 @@ Nous pouvons adapter cette déclaration. La version en vigueur est publiée sur 
 | C7 | Registre des activités de traitement | Exemption possible pour moins de 250 collaborateurs si le risque est faible (OPDo) ; un registre simplifié est tenu quand même (§B). |
 | C8 | Âge de 16 ans (ch. 9) | Valeur proposée, sans base légale précise en droit suisse (capacité de discernement) : à confirmer ou supprimer. |
 | C9 | Conservation comptable 10 ans | Art. 958f CO : à confirmer par la fiduciaire selon la forme juridique. |
+| C10 | Pré-drop : limite par client et accès prioritaire | Empreinte SHA-256 **sans sel** de l'identifiant client Shopify transmise au moteur (pseudonyme, pas anonyme) ; étiquette `alerte-produit:<produit>` posée sur le compte client d'un inscrit confirmé : information suffisante (ligne « Réservation garantie ») ? Base : exécution du contrat (limite) et consentement (alertes) ? Voir aussi `PRECOMMANDES.md` P4. |
 
 ### B. Registre simplifié des activités de traitement (art. 12 LPD)
 
@@ -119,6 +121,7 @@ Nous pouvons adapter cette déclaration. La version en vigueur est publiée sur 
 | Commandes et livraisons | Clients | Identité, contact, adresse, commande, paiement (statut) | Contrat | Boutique, PSP, transporteur, fiduciaire | Voir champs `ST_*_PAYS` | 10 ans (pièces comptables) | Accès par rôle, 2FA |
 | Service client | Clients, prospects | Messages, photos, n° de commande | Réponse, garantie, retours | Messagerie, IA | Voir champs | {{DUREE_CONSERVATION_SAV}} | Minimisation des données envoyées à l'IA |
 | Alertes et récapitulatif | Inscrits | Email, préférences, réponses facultatives (prénom, budget, pour qui, canton), origine (utm), preuve de consentement | Marketing avec consentement ; étude agrégée de la demande | Emailing, n8n | Voir champs | {{DUREE_CONSERVATION_ALERTES}} | Double opt-in, liste de désinscription conservée, analyses uniquement agrégées |
+| Réservations garanties (pré-drop) | Clients ayant réservé | Empreinte de l'identifiant client, étiquette d'alerte du produit, consentement | Limite par client, accès prioritaire | Boutique, n8n, moteur interne | Voir champs | Durée de la commande et des contestations | Pseudonymisation avant le moteur ; aucun email ni nom dans le moteur |
 | Paniers non finalisés | Visiteurs ayant commencé une commande | Email, articles, consentement coché en caisse | Un seul rappel, avec consentement | Boutique, emailing | Voir champs | {{DUREE_CONSERVATION_PANIER}} | Aucun rappel sans consentement coché ; un seul envoi |
 | Prévention de la fraude | Clients | Commande, IP, signaux de risque | Intérêt prépondérant | Boutique, PSP | Voir champs | Durée des contestations | Revue humaine avant annulation |
 | Preuves de préparation | Aucune personne visible | Photos du contenu des colis, sans étiquette | Preuve SAV | Interne | Suisse | {{DUREE_CONSERVATION_PHOTOS_COLIS}} | Pas d'adresse sur la photo |
@@ -132,7 +135,7 @@ Nous pouvons adapter cette déclaration. La version en vigueur est publiée sur 
 
 ## Validation humaine requise
 
-- [ ] Juriste : relire la déclaration et trancher C1 à C9.
+- [ ] Juriste : relire la déclaration et trancher C1 à C10 (C10 : pré-drop).
 - [ ] Propriétaire : valider les durées de conservation proposées (`DUREE_CONSERVATION_*`).
 - [ ] Agent 12 QA puis juriste : remplir les prestataires, pays et garanties à partir des contrats réellement acceptés ; aucun pays ne doit être supposé.
 - [ ] Propriétaire : accepter (ou non) le traitement des messages du service client par un fournisseur d'IA, après lecture de son contrat (C5).

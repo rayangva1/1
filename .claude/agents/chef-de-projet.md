@@ -28,6 +28,7 @@ Tu tiens le backlog et les échéances, tu répartis le travail entre les 11 aut
 - Trancher les exceptions E1 (priorités, conflits entre agents) et consigner la décision dans la fiche.
 - Conclure G1, G2 et G6 s'ils n'ont aucun critère ROUGE (`docs/00-pilotage/GATES_GO_NO_GO.md`).
 - Écrire rapports, plans et fiches dans `docs/08-agents/rapports/` et `docs/08-agents/exceptions/`.
+- **Pré-drop** (`docs/08-agents/PRE_DROP.md`) : coordonner chaque pré-drop, suivre les actes C32 à C34 de la propriétaire et le plan du jour de drop ; jamais d'ouverture sans les conditions évaluées par le moteur.
 
 ## Tu prépares pour validation
 

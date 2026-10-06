@@ -664,6 +664,85 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0a3751c6-135e-52b8-9f8c-2b9c49188a9f",
+              "leftValue": "={{ ($json.line_items || []).some(l => /-RESA-\\d{8}$/.test(String(l.sku || ''))) }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "4d8e70d1-5d27-54ed-bfb6-bac7a079d393",
+      "name": "Réservation pré-drop dans l’envoi ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        320
+      ],
+      "notes": "Fiche « Réservation garantie » dans la commande expédiée : email 19 (le suivi reste celui de l'email 07).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ template: '19-pre-drop-expedition-prioritaire', shopify_order_id: String($json.id), variables: {} }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "c14c9fbc-990a-5b0b-8bb2-859d48863eb9",
+      "name": "Email 19 : réservation garantie expédiée en priorité — outil d’emailing (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        280
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Transactionnel (exécution du contrat) : aucune donnée interne ; numéro de commande et prénom lus par l'outil depuis la commande ; un envoi par expédition (idempotence de l'outil sur la commande et l'envoi).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "9ddb9ef4-4435-502e-b7d5-666ee3acceb5",
+      "name": "Envoi sans réservation pré-drop",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        360
+      ]
+    },
+    {
+      "parameters": {
         "authentication": "accessToken",
         "topic": "fulfillment_events/create"
       },
@@ -3126,9 +3205,9 @@
         "assignments": {
           "assignments": [
             {
-              "id": "73aae871-33e9-505a-8a1a-1bafe127b3dc",
+              "id": "e488fab9-cdbf-5686-8c13-560330493d90",
               "name": "modele",
-              "value": "={{ $json.etape === 'prioritaire' ? 'pre-drop-acces-prioritaire' : 'pre-drop-ouverture' }}",
+              "value": "={{ $json.etape === 'prioritaire' ? '16-pre-drop-acces-prioritaire' : '17-pre-drop-ouverture' }}",
               "type": "string"
             },
             {
@@ -3431,6 +3510,29 @@
         [
           {
             "node": "Numéro de suivi présent ?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Réservation pré-drop dans l’envoi ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Réservation pré-drop dans l’envoi ?": {
+      "main": [
+        [
+          {
+            "node": "Email 19 : réservation garantie expédiée en priorité — outil d’emailing (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Envoi sans réservation pré-drop",
             "type": "main",
             "index": 0
           }

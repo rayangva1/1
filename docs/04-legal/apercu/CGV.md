@@ -1,4 +1,4 @@
-<!-- FICHIER GÉNÉRÉ par docs/04-legal/outils/rendre_textes.py à partir de docs/04-legal/CGV.md et de champs_a_remplir.yaml (version 2026-10-04). Ne pas modifier à la main. -->
+<!-- FICHIER GÉNÉRÉ par docs/04-legal/outils/rendre_textes.py à partir de docs/04-legal/CGV.md et de champs_a_remplir.yaml (version 2026-10-06). Ne pas modifier à la main. -->
 > **APERÇU — NE PAS PUBLIER.** Texte public de `docs/04-legal/CGV.md` rendu avec les valeurs du registre. « ⟦à valider⟧ » signale une valeur proposée non validée ; « ⟦À REMPLIR : …⟧ » un champ sans valeur. **À FAIRE REVOIR PAR UN JURISTE AVANT PUBLICATION.**
 
 ## Conditions générales de vente
@@ -17,7 +17,7 @@ Version en vigueur depuis le ⟦À REMPLIR : DATE_VERSION⟧.
 
 ### 2. Produits
 
-2.1 Nous vendons des produits officiels du jeu de cartes à collectionner Pokémon en langue française, neufs et scellés, ainsi que des accessoires. Chaque fiche indique le format, l'extension, la langue, le contenu annoncé par le fabricant, l'état du stock (stock local ou précommande) et la quantité autorisée.
+2.1 Nous vendons des produits officiels du jeu de cartes à collectionner Pokémon en langue française, neufs et scellés, ainsi que des accessoires. Chaque fiche indique le format, l'extension, la langue, le contenu annoncé par le fabricant, l'état du stock (stock local, précommande ou réservation garantie) et la quantité autorisée.
 
 2.2 Les photos sont des photos réelles des produits ou des photos dont l'usage nous a été autorisé. L'aspect de l'emballage peut varier légèrement d'une série d'impression à l'autre. Le contenu décrit sur la fiche fait foi.
 
@@ -46,7 +46,7 @@ Version en vigueur depuis le ⟦À REMPLIR : DATE_VERSION⟧.
 4.1 **Étapes de la commande.**
 
 1. Vous choisissez un produit et l'ajoutez au panier.
-2. Dans le panier, vous vérifiez chaque article, sa quantité et son statut (stock local ou précommande). Vous pouvez modifier les quantités ou supprimer un article.
+2. Dans le panier, vous vérifiez chaque article, sa quantité et son statut (stock local, précommande ou réservation garantie). Vous pouvez modifier les quantités ou supprimer un article.
 3. À la caisse, vous indiquez votre adresse email et votre adresse de livraison en Suisse, puis vous choisissez le mode de livraison.
 4. Un récapitulatif affiche les articles, les prix, les frais de livraison et le total à payer. Vous pouvez à tout moment revenir en arrière pour corriger une saisie.
 5. Vous choisissez le moyen de paiement et confirmez la commande avec le bouton de paiement : ce clic vous engage à payer.
@@ -107,6 +107,18 @@ Version en vigueur depuis le ⟦À REMPLIR : DATE_VERSION⟧.
 7.5 Vous pouvez annuler gratuitement une précommande jusqu'à 7 jours avant la date de sortie annoncée ⟦à valider⟧.
 
 7.6 Les règles complètes figurent sur la page Précommandes (⟦À REMPLIR : URL_PRECOMMANDES⟧).
+
+7.7 **Pré-drop (réservation garantie).** Pour certains produits, nous ouvrons avant leur réception une réservation garantie. C'est une précommande au sens du présent chapitre, soumise aux règles particulières des ch. 7.8 à 7.12 et de la page Précommandes, qui priment.
+
+7.8 **Deux prix.** La fiche affiche, avant la commande, le prix de la réservation garantie et le prix du drop (prix de vente du produit à partir de la date du drop, s'il en reste). Le prix de la réservation garantie est le prix du drop augmenté d'un supplément de 10 % au plus. Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit. Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.
+
+7.9 **Ordre de service.** Les réservations garanties sont servies avant toute vente au prix du drop, dans l'ordre de leur paiement, et expédiées dès la réception et le contrôle du produit. Si notre fournisseur nous livre moins que la quantité confirmée, la quantité prévue pour la vente au prix du drop est réduite d'abord ; s'il manque encore des unités, les dernières réservations payées sont annulées et remboursées intégralement, supplément compris, dans un délai de 10 jours ⟦à valider⟧, avec un email d'information.
+
+7.10 **Report et annulation.** Les ch. 7.3 et 7.5 s'appliquent aux réservations garanties ; le remboursement est toujours intégral, supplément compris. Il en va de même si le contenu du produit change de manière importante avant l'expédition.
+
+7.11 **Limite, accès prioritaire, paiement hors règles.** La limite est de 1 réservation garantie par produit et par foyer ⟦à valider⟧, le foyer étant défini au ch. 4.4. Pendant les 24 heures ⟦à valider⟧ qui suivent l'ouverture, seules les personnes inscrites aux alertes du produit, connectées à leur compte client, peuvent réserver. Une réservation payée au-delà de la limite, hors de ces conditions, lorsque les réservations sont fermées ou pour un autre montant que le prix affiché n'est pas servie et est remboursée intégralement, supplément compris.
+
+7.12 **Statut et date.** La fiche indique « Réservations ouvertes » ou « Réservations fermées » et la date du drop, qui est une date estimée. Nous n'affichons ni minuteur ni nombre d'unités restantes.
 
 ### 8. Contrôle à réception
 

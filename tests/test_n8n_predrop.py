@@ -355,3 +355,58 @@ def test_steps_are_announced_once_and_never_for_closed_reservations(tmp_path: Pa
     assert [(o["subscriber_id"], o["shopify_customer_id"]) for o in out] == [("s1", "55")]
     out, _ = run(tmp_path, audience, [step], all_={"Étapes à annoncer (une par pré-drop)": [step]})
     assert out == []  # outil d'emailing non branché : personne
+
+
+# ============================================================================== étape 3 : emails du pré-drop
+
+
+def test_every_email_template_sent_by_n8n_exists_in_the_email_generator() -> None:
+    """Chaque ``template: '<id>'`` (ou modèle composé) des exports n8n est un email de docs/06-contenu (générateur)."""
+    import re
+
+    import yaml
+
+    source = yaml.safe_load((N.ROOT / "docs" / "06-contenu" / "EMAILS" / "source" / "emails.yaml").read_text(encoding="utf-8"))
+    ids = {e["id"] for e in source["emails"]}
+    sent: set[str] = set()
+    for wf in N.WORKFLOWS.values():
+        text = json.dumps(wf, ensure_ascii=False)
+        sent |= set(re.findall(r"template: '([0-9]{2}-[a-z0-9-]+)'", text))
+        sent |= set(re.findall(r"'([0-9]{2}-pre-drop-[a-z-]+)'", text))
+    predrop = {i for i in sent if "-pre-drop-" in i}
+    assert predrop == {"15-pre-drop-reservation-confirmee", "16-pre-drop-acces-prioritaire", "17-pre-drop-ouverture",
+                       "18-pre-drop-remboursement", "19-pre-drop-expedition-prioritaire"}
+    assert sent <= ids, sorted(sent - ids)
+    assert "pre-drop-remboursement'" not in json.dumps(WF02, ensure_ascii=False).replace("18-pre-drop-remboursement'", "")
+
+
+def test_predrop_customer_emails_are_disabled_and_carry_no_price_or_quantity() -> None:
+    confirm = B02["Email au client : réservation garantie confirmée — outil d’emailing (désactivé)"]
+    refund = B02["Email au client : remboursement intégral — outil d’emailing (désactivé)"]
+    shipped = B06["Email 19 : réservation garantie expédiée en priorité — outil d’emailing (désactivé)"]
+    for node in (confirm, refund, shipped):
+        assert node.get("disabled") is True, node["name"]
+    # 15 : seulement pour une réservation confirmée nouvellement enregistrée (rejeu du webhook : aucun second email).
+    assert confirm["name"] in reachable(WF02, "Réservation servie ?")
+    assert confirm["name"] not in reachable(WF02, "Réservation servie ?", without="Journal : réservation confirmée (servie en premier)")
+    outs = WF02["connections"]["Réservation nouvellement enregistrée ?"]["main"]
+    assert [link["node"] for link in outs[0]] == [confirm["name"]]
+    assert [link["node"] for link in outs[1]] == ["Rejeu : email déjà envoyé"]
+    body15 = confirm["parameters"]["jsonBody"]
+    for leak in ("amount", "prix", "price", "qty", "quota", "customer"):
+        assert leak not in body15, leak
+    # 18 : montant intégral et motif en français lus dans le moteur, jamais recalculés.
+    body18 = refund["parameters"]["jsonBody"]
+    assert "montant_rembourse: $json.refund.amount_ttc" in body18 and "motif_remboursement: $json.refund.reason_fr" in body18
+    # 19 : seulement pour un envoi qui contient une ligne de réservation (SKU -RESA-<date>).
+    cond = json.dumps(B06["Réservation pré-drop dans l’envoi ?"]["parameters"], ensure_ascii=False)
+    assert "-RESA-" in cond and shipped["name"] in reachable(WF06, "Shopify : commande expédiée (orders/fulfilled)")
+    assert "variables: {}" in shipped["parameters"]["jsonBody"]
+
+
+@needs_node
+def test_prepared_reservations_carry_the_drop_date_for_email_15(tmp_path: Path) -> None:
+    js = code(B02, "Préparer les réservations (une par pré-drop)", GEN.JS_PREDROP_RESERVATIONS)
+    offers = {"internal": [{**P1, "drop_date": "2026-10-20"}, P2]}
+    out, _ = run(tmp_path, js, [offers], first={DEDUP: ORDER})
+    assert out[0]["date_drop"] == "2026-10-20" and "prix" not in json.dumps(out)
