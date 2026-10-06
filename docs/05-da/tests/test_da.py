@@ -331,3 +331,52 @@ class TestVerificateurNegatif:
 
     def test_tokens_json_valide(self) -> None:
         json.loads((DA / "tokens" / "tokens.json").read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# Ambiance « Nuit sur le Léman » (bâtie sur B, toujours sombre)
+# ---------------------------------------------------------------------------
+class TestAmbianceNuit:
+    def test_structure_et_contrastes(self) -> None:
+        tokens = verifier_da.charger_tokens()
+        assert verifier_da.verifier_ambiances(tokens) == []
+        lignes = verifier_da.lignes_contraste_ambiances(tokens)
+        assert len(lignes) == len(tokens["contrastPairs"]) + len(tokens["ambianceContrastPairs"])
+        assert all(lc["ratio"] >= lc["min"] for lc in lignes)
+
+    def test_couleur_insuffisante_detectee(self) -> None:
+        tokens = copy.deepcopy(verifier_da.charger_tokens())
+        tokens["ambiances"]["nuit"]["color"]["dark"]["or"]["$value"] = "#5A4A20"
+        assert any(e.startswith("nuit/dark or sur") for e in verifier_da.verifier_contrastes(tokens))
+
+    def test_ambiance_jamais_claire_et_complete(self) -> None:
+        tokens = copy.deepcopy(verifier_da.charger_tokens())
+        amb = tokens["ambiances"]["nuit"]
+        amb["color"]["light"] = amb["color"]["dark"]
+        assert any("toujours sombre" in e for e in verifier_da.verifier_ambiances(tokens))
+        tokens = copy.deepcopy(verifier_da.charger_tokens())
+        del tokens["ambiances"]["nuit"]["color"]["dark"]["focus"]
+        assert any("focus" in e for e in verifier_da.verifier_ambiances(tokens))
+        tokens = copy.deepcopy(verifier_da.charger_tokens())
+        tokens["ambiances"]["nuit"]["googleFonts"] = tokens["directions"]["b"]["googleFonts"]
+        assert any("Fraunces" in e for e in verifier_da.verifier_ambiances(tokens))
+
+    def test_regle_texte_fonce_sur_rose(self) -> None:
+        n = generer_da.couleurs_ambiance("nuit")
+        assert contraste.ratio(n["ink"], n["accent"]) < 4.5 <= contraste.ratio(n["on-accent"], n["accent"])
+
+    def test_css_ambiance_genere_et_prioritaire(self) -> None:
+        css = (DA / "tokens" / "tokens-nuit.css").read_text(encoding="utf-8")
+        assert css == generer_da.generer_css_ambiance("nuit")
+        assert ':root[data-ambiance="nuit"][data-da] {' in css and "color-scheme: dark;" in css
+        for k in generer_da.couleurs_ambiance("nuit"):
+            assert css.count(f"--da-color-{k}:") == 1, k
+        assert "--da-font-accent:" in css
+
+    def test_logo_nuit_et_tableau_publie(self) -> None:
+        logo = (DA / "logo" / "b" / "logo-b-nuit.svg").read_text(encoding="utf-8")
+        n = generer_da.couleurs_ambiance("nuit")
+        assert n["ink"] in logo and n["accent-text"] in logo and "<text" not in logo
+        doc = (DA / "DIRECTION_NUIT.md").read_text(encoding="utf-8")
+        assert generer_da.tableau_contrastes_ambiance_md("nuit") in doc
+        assert "Lumi (nom provisoire)" in doc and "Validation humaine requise" in doc

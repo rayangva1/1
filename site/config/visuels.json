@@ -1,0 +1,116 @@
+{
+  "_avertissement": "Source UNIQUE des visuels de la marque (mascotte originale « Lumi », nom provisoire ; aucun élément sous licence). Ne jamais recopier une adresse dans une page : les balises data-visuel sont réécrites par python site/outils/visuels.py appliquer. Avant toute publication : python site/outils/rapatrier_visuels.py (images servies en local ; publication.py refuse sinon). Dimensions de la variante légère (_min.webp) : mesurées au rapatriement ; tant qu'elles sont inconnues, hypothèse = moitié de la largeur de la PNG.",
+  "source": "distant",
+  "base_distante": "https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/",
+  "dossier_local": "assets/visuels/",
+  "visuels": {
+    "heros-nuit-etoilee": {
+      "fichier": "hf_20261006_074039_5d759e26-a3b8-4723-b4ee-a5c95b4bab6b",
+      "largeur": 2688,
+      "hauteur": 1152,
+      "largeur_min": null,
+      "hauteur_min": null,
+      "usage": "Héro de la landing (ordinateur, 21:9)",
+      "description": "Nuit étoilée façon peinture : ciel tourbillonnant bleu nuit, étoiles dorées, lac ; la loutre assise sur le quai en bas à droite ; moitié gauche libre pour le titre."
+    },
+    "heros-nuit-etoilee-portrait": {
+      "fichier": "hf_20261006_074036_25f266c9-4ecb-43f4-aa47-4765d37aafe2",
+      "largeur": 1520,
+      "hauteur": 2688,
+      "largeur_min": null,
+      "hauteur_min": null,
+      "usage": "Héro de la landing (mobile, 9:16)",
+      "description": "Nuit étoilée verticale : la loutre au centre sur un rocher au-dessus de nuages tourbillonnants ; haut plus calme pour le titre."
+    },
+    "banniere-aurore": {
+      "fichier": "hf_20261006_074037_9f7c2b11-d562-47e8-880f-e071ba854c7d",
+      "largeur": 2688,
+      "hauteur": 1152,
+      "largeur_min": null,
+      "hauteur_min": null,
+      "usage": "Bandeau des formats prévus (décor)",
+      "description": "Ciel d'aurore vert-turquoise sur une vieille ville et ses tours ; la loutre sur la tour de droite, liseré rose néon ; gauche libre."
+    },
+    "banniere-alpes": {
+      "fichier": "hf_20261006_074037_4c12c458-e019-423e-b075-cb58903614f1",
+      "largeur": 2688,
+      "hauteur": 1152,
+      "largeur_min": null,
+      "hauteur_min": null,
+      "usage": "Bandeau « Léman » (ordinateur)",
+      "description": "Alpes au coucher en aplats : sommets, nuages roses et dorés, lac turquoise ; la loutre sur un rocher à droite ; gauche libre."
+    },
+    "banniere-jour-de-drop": {
+      "fichier": "hf_20261006_074037_4994a131-f933-4b7c-ae73-70ebc14eda9e",
+      "largeur": 2688,
+      "hauteur": 1520,
+      "largeur_min": null,
+      "hauteur_min": null,
+      "usage": "Section « Le jour du drop » et maquette de page de drop",
+      "description": "La loutre ouvre une boîte blanche scellée, sans marque, d'où jaillit une lumière dorée ; quai la nuit, lune rose ; gauche libre."
+    },
+    "cover-aurore": {
+      "fichier": "hf_20261006_074038_d9db3749-5709-48f2-ba15-b5e9bae81710",
+      "largeur": 1520,
+      "hauteur": 2688,
+      "largeur_min": null,
+      "hauteur_min": null,
+      "usage": "Section des alertes",
+      "description": "Aurore verticale : la loutre debout sur un toit de tour, des cartes lumineuses sans motif flottent autour d'elle."
+    },
+    "cover-reservation": {
+      "fichier": "hf_20261006_074037_dfa69bd2-e797-432a-b582-a5aae6c85a95",
+      "largeur": 1520,
+      "hauteur": 2688,
+      "largeur_min": null,
+      "hauteur_min": null,
+      "usage": "Section « Réservation garantie » et maquette de fiche produit",
+      "description": "La loutre garde une pile de boîtes blanches scellées, sans marque, à rubans indigo ; intérieur chaleureux, fenêtre avec lune rose."
+    },
+    "cover-leman": {
+      "fichier": "hf_20261006_074038_fdb87cb5-7d79-45cf-8fb0-f3ab0e75ba6b",
+      "largeur": 1520,
+      "hauteur": 2688,
+      "largeur_min": null,
+      "hauteur_min": null,
+      "usage": "Bandeau « Léman »",
+      "description": "Jet d'eau rose et doré sous un ciel violet ; la loutre flotte sur le dos dans le lac."
+    },
+    "loutre-quai-lune": {
+      "fichier": "hf_20261006_003425_4f1db69b-7506-485b-82ee-1a696297d929",
+      "largeur": 1520,
+      "hauteur": 2688,
+      "largeur_min": null,
+      "hauteur_min": null,
+      "usage": "Questions fréquentes (référence de la mascotte)",
+      "description": "La loutre originale assise sur le quai sous la lune rose."
+    },
+    "quai-nuit": {
+      "fichier": "hf_20261006_005551_3a877f06-7a68-46a5-8730-274f6571c6d3",
+      "largeur": 2688,
+      "hauteur": 1520,
+      "largeur_min": null,
+      "hauteur_min": null,
+      "usage": "Pied de page (décor)",
+      "description": "Quai la nuit, la loutre petite en bas à droite ; gauche libre."
+    },
+    "planche-expressions": {
+      "fichier": "hf_20261006_005550_f44e6732-9c18-4b97-b2d7-8175e1e59c04",
+      "largeur": 2688,
+      "hauteur": 1520,
+      "largeur_min": null,
+      "hauteur_min": null,
+      "usage": "Section « Rencontrez Lumi »",
+      "description": "Planche d'expressions de la loutre sur fond blanc cassé : contente, surprise, endormie, serre une boîte, salue."
+    },
+    "autocollant-lumi": {
+      "fichier": "hf_20261006_005551_feac2db3-1d1e-4280-b87c-2782c9d27160",
+      "largeur": 2048,
+      "hauteur": 2048,
+      "largeur_min": null,
+      "hauteur_min": null,
+      "usage": "Section « Rencontrez Lumi »",
+      "description": "Autocollant rond de la loutre (fond gris clair)."
+    }
+  }
+}

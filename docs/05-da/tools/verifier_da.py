@@ -6,7 +6,9 @@ Contrôles :
 2. Logos : contours uniquement (pas de <text>, pas de police, pas d'image), aucun terme « Poké ».
 3. Gabarits sociaux aux bonnes dimensions ; packaging en millimètres.
 4. Contrastes WCAG de toutes les paires déclarées (tokens.json) >= seuil, clair ET sombre.
-5. Les ratios annoncés dans DIRECTION_A.md / DIRECTION_B.md sont exacts (recalculés).
+5. Les ratios annoncés dans DIRECTION_A.md / DIRECTION_B.md / DIRECTION_NUIT.md sont exacts (recalculés).
+   Ambiances (tokens.json > ambiances, ex. « nuit ») : toujours sombres, mêmes clés de couleur que les
+   directions (et plus), polices chargées par leur URL, paires communes + paires d'ambiance ≥ seuil.
 6. Fichiers générés synchronisés avec tokens.json et le générateur.
 7. HTML : ressources relatives existantes ; ressources externes limitées à Google Fonts.
 8. Fichiers publics : aucun terme de donnée interne (coût, marge, fournisseur…), aucun EAN.
@@ -149,6 +151,57 @@ def lignes_contraste(tokens: dict) -> list[dict]:
     return lignes
 
 
+def lignes_contraste_ambiances(tokens: dict) -> list[dict]:
+    """Paires de chaque ambiance (mode sombre unique) : paires communes + ``ambianceContrastPairs``."""
+    lignes = []
+    paires = list(tokens["contrastPairs"]) + list(tokens.get("ambianceContrastPairs", []))
+    for nom, amb in tokens.get("ambiances", {}).items():
+        cols = {k: v["$value"] for k, v in amb["color"]["dark"].items()}
+        for paire in paires:
+            if paire["fg"] not in cols or paire["bg"] not in cols:
+                continue  # signalé par verifier_tokens
+            fg, bg = cols[paire["fg"]], cols[paire["bg"]]
+            lignes.append(
+                {
+                    "da": nom, "mode": "dark", "fg": paire["fg"], "bg": paire["bg"],
+                    "fg_hex": fg, "bg_hex": bg, "ratio": ratio(fg, bg),
+                    "affiche": ratio_affiche(fg, bg), "min": paire["min"], "usage": paire["usage"],
+                }
+            )
+    return lignes
+
+
+def verifier_ambiances(tokens: dict) -> list[str]:
+    """Structure des ambiances : base existante, sombre seulement, couleurs complètes et valides, polices chargées."""
+    erreurs: list[str] = []
+    reference = set(next(iter(tokens["directions"].values()))["color"]["light"])
+    paires = list(tokens["contrastPairs"]) + list(tokens.get("ambianceContrastPairs", []))
+    for nom, amb in tokens.get("ambiances", {}).items():
+        if amb.get("base") not in tokens["directions"]:
+            erreurs.append(f"ambiance {nom} : direction de base inconnue {amb.get('base')!r}")
+        if set(amb.get("color", {})) != {"dark"}:
+            erreurs.append(f"ambiance {nom} : une ambiance est toujours sombre (clé color.dark seule attendue)")
+            continue
+        cles = set(amb["color"]["dark"])
+        if not reference <= cles:
+            erreurs.append(f"ambiance {nom} : couleurs manquantes {sorted(reference - cles)}")
+        for k, v in amb["color"]["dark"].items():
+            if not est_hex(v["$value"]):
+                erreurs.append(f"ambiance {nom}/{k} : couleur invalide {v['$value']}")
+        for paire in paires:
+            for cle in (paire["fg"], paire["bg"]):
+                if cle not in cles:
+                    erreurs.append(f"ambiance {nom} : paire de contraste vers un token inconnu {cle}")
+        url = amb.get("googleFonts", "")
+        if not url.startswith("https://fonts.googleapis.com/css2?"):
+            erreurs.append(f"ambiance {nom} : URL Google Fonts manquante")
+        for role, police in amb.get("font", {}).items():
+            famille = police["$value"].split(",")[0].strip().strip('"')
+            if famille.replace(" ", "+") not in url:
+                erreurs.append(f"ambiance {nom} : la police {famille} ({role}) n'est pas chargée par l'URL Google Fonts")
+    return erreurs
+
+
 def verifier_tokens(tokens: dict) -> list[str]:
     """Structure des tokens : mêmes clés partout, couleurs hexadécimales valides."""
     erreurs = []
@@ -184,7 +237,7 @@ def verifier_contrastes(tokens: dict) -> list[str]:
     """Toute paire déclarée doit atteindre son seuil dans les 2 directions et les 2 modes."""
     return [
         f"{lc['da']}/{lc['mode']} {lc['fg']} sur {lc['bg']} : {lc['ratio']:.2f} < {lc['min']}"
-        for lc in lignes_contraste(tokens)
+        for lc in lignes_contraste(tokens) + lignes_contraste_ambiances(tokens)
         if lc["ratio"] < lc["min"]
     ]
 
@@ -233,6 +286,20 @@ def verifier_docs_contrastes(racine: Path, tokens: dict) -> list[str]:
             cle = ("Clair" if lc["mode"] == "light" else "Sombre", lc["fg_hex"].upper(), lc["bg_hex"].upper())
             if cle not in publies:
                 erreurs.append(f"{doc.name} : paire non publiée {lc['mode']} {lc['fg']}/{lc['bg']}")
+    for nom in tokens.get("ambiances", {}):
+        doc = racine / f"DIRECTION_{nom.upper()}.md"
+        if not doc.exists():
+            erreurs.append(f"{doc.name} absent (documentation de l'ambiance {nom})")
+            continue
+        trouves = list(TABLE_RE.finditer(doc.read_text(encoding="utf-8")))
+        for m in trouves:
+            calcule = ratio_affiche(m["fg"], m["bg"])
+            if calcule != m["r"]:
+                erreurs.append(f"{doc.name} : {m['fg']} sur {m['bg']} annoncé {m['r']}:1, calculé {calcule}:1")
+        publies = {(m["fg"].upper(), m["bg"].upper()) for m in trouves}
+        for lc in lignes_contraste_ambiances(tokens):
+            if lc["da"] == nom and (lc["fg_hex"].upper(), lc["bg_hex"].upper()) not in publies:
+                erreurs.append(f"{doc.name} : paire non publiée {lc['fg']}/{lc['bg']}")
     return erreurs
 
 
@@ -253,6 +320,10 @@ def verifier_synchro(racine: Path = RACINE) -> list[str]:
     for da in ("a", "b"):
         doc = racine / f"DIRECTION_{da.upper()}.md"
         if doc.exists() and generer_da.tableau_contrastes_md(da) not in doc.read_text(encoding="utf-8"):
+            erreurs.append(f"{doc.name} : tableau de contrastes désynchronisé (lancer tools/generer_da.py)")
+    for nom in generer_da.AMBIANCES:
+        doc = racine / f"DIRECTION_{nom.upper()}.md"
+        if doc.exists() and generer_da.tableau_contrastes_ambiance_md(nom) not in doc.read_text(encoding="utf-8"):
             erreurs.append(f"{doc.name} : tableau de contrastes désynchronisé (lancer tools/generer_da.py)")
     return erreurs
 
@@ -389,7 +460,7 @@ def tout_verifier(racine: Path = RACINE) -> dict[str, list[str]]:
     tokens = charger_tokens(racine)
     return {
         "svg": verifier_svgs(racine),
-        "tokens": verifier_tokens(tokens),
+        "tokens": verifier_tokens(tokens) + verifier_ambiances(tokens),
         "contrastes": verifier_contrastes(tokens),
         "contrastes_docs": verifier_docs_contrastes(racine, tokens),
         "synchro": verifier_synchro(racine),
@@ -409,7 +480,9 @@ def main() -> int:
         for e in erreurs:
             print(f"    - {e}")
         total += len(erreurs)
-    print(f"{len(fichiers_svg())} SVG analysés, {len(lignes_contraste(charger_tokens()))} paires de contraste calculées.")
+    tokens = charger_tokens()
+    total_paires = len(lignes_contraste(tokens)) + len(lignes_contraste_ambiances(tokens))
+    print(f"{len(fichiers_svg())} SVG analysés, {total_paires} paires de contraste calculées.")
     return 1 if total else 0
 
 

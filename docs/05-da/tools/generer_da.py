@@ -3,6 +3,7 @@
 
 Sorties (toutes dans docs/05-da/) :
 - tokens/tokens.css            variables CSS des 2 directions, clair + sombre
+- tokens/tokens-nuit.css       ambiance « Nuit sur le Léman » (data-ambiance="nuit", bâtie sur B, toujours sombre)
 - logo/{a,b}/*.svg             logos vectoriels (contours pleins, sans police)
 - social/{a,b}/*.svg           templates 9:16, 4:5, 1:1 (zones photo à remplacer)
 - social/guides/*.svg          zones sûres indicatives
@@ -10,7 +11,7 @@ Sorties (toutes dans docs/05-da/) :
 - components/email-transactionnel-{a,b}.html   email HTML « email-safe »
 - components/icones.svg        sprite des pictogrammes
 - CHARTE.html, components/{badges,carte-produit,banniere,page-produit}.html   (tools/pages_html.py)
-- DIRECTION_A.md / DIRECTION_B.md : tableaux de contrastes réinjectés entre marqueurs
+- DIRECTION_A.md / DIRECTION_B.md / DIRECTION_NUIT.md : tableaux de contrastes réinjectés entre marqueurs
 - logo/png/*.png               exports PNG (option --png, nécessite cairosvg)
 
 Usage : python docs/05-da/tools/generer_da.py [--png]
@@ -48,6 +49,7 @@ RACINE = Path(__file__).resolve().parents[1]
 TOKENS: dict = json.loads((RACINE / "tokens" / "tokens.json").read_text(encoding="utf-8"))
 NOM = TOKENS["meta"]["nomDeTravail"]
 DIRECTIONS = ("a", "b")
+AMBIANCES = tuple(TOKENS.get("ambiances", {}))
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +58,11 @@ DIRECTIONS = ("a", "b")
 def couleurs(da: str, mode: str = "light") -> dict[str, str]:
     """Couleurs d'une direction/mode : {nom: '#RRGGBB'}."""
     return {k: v["$value"] for k, v in TOKENS["directions"][da]["color"][mode].items()}
+
+
+def couleurs_ambiance(nom: str) -> dict[str, str]:
+    """Couleurs d'une ambiance (toujours sombre) : {nom: '#RRGGBB'}."""
+    return {k: v["$value"] for k, v in TOKENS["ambiances"][nom]["color"]["dark"].items()}
 
 
 def police(da: str, role: str) -> str:
@@ -116,6 +123,29 @@ def generer_css() -> str:
         _bloc([':root[data-theme="dark"][data-da="b"]', ':root[data-theme="dark"] [data-da="b"]'], _decls_couleurs("b", "dark")),
     ]
     return "".join(parts)
+
+
+def generer_css_ambiance(nom: str) -> str:
+    """Construit tokens-<nom>.css : surcharge des variables de la direction de base, toujours en sombre.
+
+    Sélecteur ``:root[data-ambiance="<nom>"][data-da]`` : même spécificité que les blocs sombres de tokens.css
+    (0,3,0) et chargé après lui, il l'emporte quel que soit le réglage clair/sombre du système.
+    """
+    amb = TOKENS["ambiances"][nom]
+    decls = [("color-scheme", "dark")]
+    decls += [(f"--da-font-{k}", v["$value"]) for k, v in amb["font"].items()]
+    decls += [(f"--da-{k}", v["$value"]) for k, v in amb["style"].items()]
+    decls += [(f"--da-color-{k}", v) for k, v in couleurs_ambiance(nom).items()]
+    return (
+        "/*\n"
+        f" * Ambiance « {amb['nom']} » — {NOM} (nom de travail, non validé)\n"
+        " * FICHIER GÉNÉRÉ par docs/05-da/tools/generer_da.py depuis tokens.json — ne pas éditer à la main.\n"
+        f" * À charger APRÈS tokens.css ; s'active avec data-ambiance=\"{nom}\" et data-da=\"{amb['base']}\" sur <html>.\n"
+        " * Toujours sombre : aucun mode clair (contrastes calculés dans DIRECTION_NUIT.md).\n"
+        " * Polices Google Fonts : URL dans tokens.json > ambiances > googleFonts.\n"
+        " */\n"
+        + _bloc([f':root[data-ambiance="{nom}"][data-da]'], decls)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +365,10 @@ def fichiers_logos() -> dict[str, str]:
         chemins([("#000000", mono_bn.main), ("#FFFFFF", qn.main)]),
     )
     out["logo/b/favicon.svg"] = svg_doc(32, 32, f"{NOM} — favicon, direction B", DESC_LOGO, chemins(dessin_b_favicon(cb["accent"], "#FFFFFF")))
+    # Ambiance Nuit (bâtie sur B) : même lettrage, clair de lune et point du « i » rose lune
+    if "nuit" in AMBIANCES:
+        cn = couleurs_ambiance("nuit")
+        logo("logo/b/logo-b-nuit.svg", dessin_b_mot, cn["ink"], cn["accent-text"], f"{NOM} — logo principal, ambiance Nuit sur le Léman")
     return out
 
 
@@ -977,22 +1011,56 @@ def tableau_contrastes_md(da: str) -> str:
     return "\n".join(lignes)
 
 
+def paires_ambiance() -> list[dict]:
+    """Paires contrôlées pour une ambiance : paires communes + paires propres aux ambiances."""
+    return list(TOKENS["contrastPairs"]) + list(TOKENS.get("ambianceContrastPairs", []))
+
+
+def tableau_contrastes_ambiance_md(nom: str) -> str:
+    """Tableau Markdown des contrastes d'une ambiance (toujours sombre, ratios tronqués)."""
+    from contraste import niveau, ratio, ratio_affiche
+
+    lignes = [
+        "| Mode | Usage | Avant-plan | Arrière-plan | Ratio | Seuil | Niveau |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    cols = couleurs_ambiance(nom)
+    for paire in paires_ambiance():
+        fg, bg = cols[paire["fg"]], cols[paire["bg"]]
+        r = ratio(fg, bg)
+        niv = niveau(r) if paire["min"] >= 4.5 else ("UI ≥ 3:1" if r >= 3 else "insuffisant")
+        lignes.append(
+            f"| Sombre | {paire['usage']} | `{fg}` {paire['fg']} | `{bg}` {paire['bg']} | "
+            f"**{ratio_affiche(fg, bg)}:1** | {paire['min']} | {niv} |"
+        )
+    return "\n".join(lignes)
+
+
+def _injecter(doc: Path, tableau: str) -> bool:
+    if not doc.exists():
+        return False
+    texte_ = doc.read_text(encoding="utf-8")
+    if MARQUE_DEBUT not in texte_ or MARQUE_FIN not in texte_:
+        return False
+    avant = texte_.split(MARQUE_DEBUT)[0]
+    apres = texte_.split(MARQUE_FIN, 1)[1]
+    nouveau = f"{avant}{MARQUE_DEBUT}\n{tableau}\n{MARQUE_FIN}{apres}"
+    if nouveau != texte_:
+        doc.write_text(nouveau, encoding="utf-8")
+    return True
+
+
 def injecter_tableaux() -> list[str]:
     """Remplace le bloc entre marqueurs dans DIRECTION_A/B.md (si présents)."""
     faits = []
     for da in DIRECTIONS:
         doc = RACINE / f"DIRECTION_{da.upper()}.md"
-        if not doc.exists():
-            continue
-        texte_ = doc.read_text(encoding="utf-8")
-        if MARQUE_DEBUT not in texte_ or MARQUE_FIN not in texte_:
-            continue
-        avant = texte_.split(MARQUE_DEBUT)[0]
-        apres = texte_.split(MARQUE_FIN, 1)[1]
-        nouveau = f"{avant}{MARQUE_DEBUT}\n{tableau_contrastes_md(da)}\n{MARQUE_FIN}{apres}"
-        if nouveau != texte_:
-            doc.write_text(nouveau, encoding="utf-8")
-        faits.append(doc.name)
+        if _injecter(doc, tableau_contrastes_md(da)):
+            faits.append(doc.name)
+    for nom in AMBIANCES:
+        doc = RACINE / f"DIRECTION_{nom.upper()}.md"
+        if _injecter(doc, tableau_contrastes_ambiance_md(nom)):
+            faits.append(doc.name)
     return faits
 
 
@@ -1002,6 +1070,8 @@ def injecter_tableaux() -> list[str]:
 def tous_les_fichiers() -> dict[str, str]:
     """Ensemble des fichiers texte générés {chemin relatif à docs/05-da: contenu}."""
     out = {"tokens/tokens.css": generer_css()}
+    for nom in AMBIANCES:
+        out[f"tokens/tokens-{nom}.css"] = generer_css_ambiance(nom)
     out.update(fichiers_logos())
     out.update(fichiers_social())
     out.update(fichiers_packaging())
