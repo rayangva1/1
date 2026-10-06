@@ -2,18 +2,20 @@
 
 > Propriétaire (build) : agent « site-contenu ». Exploitation : agent 07 Site (BL-031), suivi KPI agent 10 (BL-034), contrôle agent 12.
 > Sources : BP §1 (« Tester une page de présentation avec inscription aux alertes. Aucun faux stock et aucune précommande encaissée sans allocation »), §7, §8, §9 (J1-15) ; protocole `docs/01-marche/PROTOCOLE_LANDING_TEST.md` ; DA `docs/05-da/`.
-> Nom de travail **« Quai des Cartes » — provisoire, non validé** (décision C06). Statut : **aperçu prêt ; publication bloquée** tant que les champs ne sont pas validés (voir §6).
+> Nom de travail **« Quai des Cartes » — provisoire, non validé** (décision C06). Statut : **aperçu prêt ; publication bloquée** tant que les champs ne sont pas validés et que les visuels ne sont pas rapatriés en local (voir §6).
+> Ambiance **« Nuit sur le Léman »** (direction B, toujours sombre) : `docs/05-da/DIRECTION_NUIT.md`. Mascotte **Lumi (nom provisoire)**, loutre originale.
 
 ## 1. Ce que la page fait, et ce qu'elle ne fait jamais
 
 | Fait | Ne fait jamais |
 |---|---|
 | Présente la promesse du BP §1 : Pokémon JCC en français, expédié depuis la Suisse, disponibilité lisible, produits correctement identifiés, service fiable | Afficher un stock, un compteur, « dernières pièces », un minuteur |
+| Explique le jour du drop et la **réservation garantie** de la future boutique (badges DA « Réservation garantie » et « Drop le JJ.MM », les deux phrases exactes du moteur : le supplément paie la garantie, pas le produit ; aucun remboursement de la différence) | Ouvrir une réservation, afficher un prix de drop ou de réservation, un supplément en francs |
 | Explique les 3 statuts (Stock local, Précommande sur quantité confirmée, Rupture) avec les badges DA | Afficher un prix, même indicatif (les tranches de budget du formulaire sont des préférences déclarées, pas des prix) |
 | Liste les formats prévus, sans engagement de sélection | Prendre une précommande, un acompte ou une réservation |
 | Recueille l'inscription aux alertes : email, prénom facultatif, formats, budget, pour qui, canton, **consentement non pré-coché** | Envoyer un email sans confirmation (double opt-in fait par n8n) |
 | Affiche la mention d'indépendance (non-affiliation à The Pokémon Company), l'exploitant et le lien confidentialité | Utiliser un logo, un personnage ou une police de la licence ; contenir un coût, une marge ou un nom de fournisseur |
-| Clair / sombre (automatique + bouton), mobile d'abord, accessible (libellés, erreurs annoncées, focus visible, cibles de 44 px) | Charger un script tiers, un pixel publicitaire ou un cookie (seule ressource externe : Google Fonts, retirable) |
+| Ambiance de nuit immersive, toujours sombre (contrastes AA calculés, `DIRECTION_NUIT.md`), mobile d'abord, accessible (libellés, erreurs annoncées, focus visible en or, cibles de 44 px, textes alternatifs) ; animations coupées par `prefers-reduced-motion` et par le bouton « Pause des animations » (WCAG 2.2.2) ; rien n'est masqué sans JavaScript | Charger un script tiers, un pixel publicitaire ou un cookie (ressources externes : Google Fonts, retirable ; en **aperçu seulement**, les visuels de la marque à leur adresse distante — jamais dans le dossier publié) |
 
 ## 2. Fichiers
 
@@ -22,12 +24,15 @@
 | `index.html` | Page principale (source, champs `{{…}}` visibles) | À la main (agent 07) |
 | `merci.html`, `inscription-confirmee.html`, `desinscription.html` | Pages de retour du workflow n8n (sans JavaScript, après confirmation, après désinscription) | **Générées** : `python site/outils/publication.py source` |
 | `confidentialite.html` | Notice de confidentialité **de la landing** = bloc public de `docs/04-legal/CONFIDENTIALITE_LANDING.md` converti en HTML (chaque champ du formulaire y est déclaré : contrôlé par `verifier_site.py`) ; la déclaration complète de la boutique (`CONFIDENTIALITE.md`) la remplace à l'ouverture | **Générée** (même commande) ; le texte se corrige dans `docs/04-legal/` |
-| `css/landing.css` | Mise en page propre à la landing ; uniquement des variables `--da-*` | À la main |
-| `js/theme.js` | Applique le thème mémorisé avant affichage | À la main |
-| `js/landing.js` | Bouton de thème, formulaire (validation, envoi, messages) ; fonctions pures dans `LandingCore` | À la main |
+| `css/landing.css` | Mise en page de la landing **et des maquettes** (`site/maquettes/`) : héro, scènes de secours dessinées en CSS (ciel, lune, lac, montagnes, Lumi), cartes « verre dépoli », formulaire ; uniquement des variables `--da-*` ; mouvement seulement sous `prefers-reduced-motion: no-preference` | À la main |
+| `js/theme.js` | Avant affichage : classe `lp-js` (les apparitions ne masquent rien sans script) et choix « Pause des animations » mémorisé | À la main |
+| `js/landing.js` | Formulaire (validation, envoi, messages) ; fonctions pures dans `LandingCore` | À la main |
+| `js/nuit.js` | Effets : fondu des visuels (et masquage d'une image qui ne charge pas : le décor CSS reste), apparitions au défilement, parallaxe, lueur du pointeur, survol 3D des cartes, bouton « Pause des animations ». Aucun appel réseau | À la main |
+| `assets/visuels/` | Visuels de la marque **rapatriés** (absents tant que `rapatrier_visuels.py` n'a pas tourné) | **Générés** : `python site/outils/rapatrier_visuels.py` |
+| `../config/visuels.json` | **Source unique** des 12 visuels (adresse distante, dimensions, usage) ; les pages n'ont que des balises `data-visuel` | `rapatrier_visuels.py` (bascule `source`), à la main pour ajouter un visuel |
 | `js/config.js` | `webhookUrl` (vide = formulaire désactivé avec message), `mode`, `emailSupport` | `publication.py` (ou à la main, §3.4) |
-| `assets/da/` | Copies des fichiers DA (tokens, composants, logos, favicons) + `manifeste.json` | **Générées** : `python site/outils/da_sync.py` |
-| `assets/og-image.png` | Image de partage 1200 × 630 | `python site/outils/generer_og.py` (outil local facultatif) |
+| `assets/da/` | Copies des fichiers DA (tokens, composants, `ambiance.css` = tokens Nuit, logos, favicons) + `manifeste.json` (direction **b**, ambiance **nuit**) | **Générées** : `python site/outils/da_sync.py` |
+| `assets/og-image.png` | Image de partage 1200 × 630 (ambiance Nuit, décor CSS, sans image distante) | `python site/outils/generer_og.py` (outil local facultatif) |
 | `inscription.schema.json` | Contrat des champs envoyés au webhook n8n | À la main, avec l'agent integrations |
 | `../config/publication_landing.yaml` | `URL_LANDING`, `MOIS_OUVERTURE`, `WEBHOOK_INSCRIPTION` (mêmes statuts que le registre légal) | Agent 07, propriétaire |
 
@@ -35,13 +40,28 @@ Les champs d'identité (`NOM_BOUTIQUE`, `RAISON_SOCIALE`, `ADRESSE_POSTALE`, `EM
 
 ## 3. Déployer sans écrire de code
 
+### 3.0 Rapatrier les visuels (avant toute mise en ligne)
+
+Les 12 visuels de la marque, générés avec Higgsfield (héro « Nuit étoilée », jour de drop, réservation garantie, Léman, aurore, Alpes, planche et autocollant de Lumi…), sont listés dans **un seul fichier**, `site/config/visuels.json`. En aperçu, la page les charge à leur **adresse distante** (celle de l'outil de génération) ; **la page publiée doit les servir elle-même** : la politique de sécurité publiée n'autorise que les images du site (`img-src 'self'`) et aucune adresse IP de visiteur ne doit partir vers un tiers. Sur une machine dont le réseau atteint cette adresse :
+
+```bash
+cd /home/user/1
+python site/outils/rapatrier_visuels.py              # télécharge les 24 fichiers (≈ 12 PNG HD + 12 WebP légers) dans site/landing/assets/visuels/
+python site/outils/rapatrier_visuels.py --verifier   # contrôle format et dimensions, sans réseau
+python site/outils/visuels.py verifier               # pages synchronisées avec le manifeste
+```
+
+Le script contrôle chaque fichier (signature PNG/WebP, taille, dimensions de la PNG identiques au manifeste, proportions de la version légère), mesure la largeur réelle des versions légères (les `srcset` deviennent exacts), passe `source` à `local` et réécrit les balises `data-visuel` de la landing et des maquettes. **Fermé par défaut** : si un fichier manque ou est refusé, rien ne bascule (relancer plus tard ; `--forcer` retélécharge tout). `--distant` revient à l'aperçu distant (la publication est alors refusée). Les PNG pèsent plusieurs mégaoctets : ils ne servent qu'aux grands écrans (`srcset`), la version WebP légère est chargée en priorité. Tant que le réseau ne permet pas le téléchargement, chaque emplacement garde un **décor de secours en CSS** (ciel, lune, lac, montagnes, Lumi dessinée) : la page reste belle sans image.
+
+Ajouter ou remplacer un visuel : l'ajouter dans `visuels.json` (identifiant, nom de fichier sans extension, dimensions, description), écrire la balise `<img data-visuel="…" alt="…" sizes="…" loading="lazy" decoding="async">` dans la page, puis `python site/outils/visuels.py appliquer`. Jamais d'adresse d'image écrite à la main (contrôlé par `verifier_site.py`).
+
 ### 3.1 Préparer le dossier (agent 07, 1 commande)
 
 ```bash
 cd /home/user/1
 python site/outils/publication.py etat          # ce qui manque encore, et qui doit le fournir
 python site/outils/publication.py apercu        # dossier d'aperçu : site/dist/apercu/ (page non indexée)
-python site/outils/publication.py publication   # dossier final : site/dist/landing/ — REFUSE tant que tout n'est pas validé
+python site/outils/publication.py publication   # dossier final : site/dist/landing/ — REFUSE tant que tout n'est pas validé et que les visuels sont distants
 ```
 
 **Publication à J10 (BL-032).** La liste des champs exigés est **fermée** (`CHAMPS_LANDING` dans `publication.py`, affichée par `etat` avec la nature de chaque champ) : identité (B07), emails (B02), webhook et emailing (B04), hébergeur de la page et polices (B08, choix des polices), n8n, messagerie et IA, durées de conservation, plus trois champs **provisoires autorisés** — `URL_LANDING` (adresse de l'hébergeur avant le domaine), `MOIS_OUVERTURE` (mois visé), `DATE_VERSION_LANDING` (version de la notice, remplacée à l'ouverture). Provisoire ne veut pas dire « à valider » : chaque champ doit avoir le statut `valide` ; on republie quand la valeur change. Aucun champ ne dépend de la boutique Shopify, du paiement, du transporteur ni de la relecture complète des textes (J28). Une page qui utiliserait un autre champ fait échouer la publication tant que la liste n'a pas été revue. `ST_POLICES` doit dire « Google » si la page charge Google Fonts, et ne pas le dire avec `--sans-google-fonts` : sinon, refus.
@@ -106,27 +126,32 @@ Le workflow appartient à l'agent integrations (`orchestration/n8n/`). La landin
 ## 6. Avant publication (agent 12, puis GO C07)
 
 ```bash
+python site/outils/rapatrier_visuels.py --verifier  # visuels présents en local (§3.0)
 python site/outils/da_sync.py --verifier
-python site/outils/verifier_site.py                 # HTML, liens, termes interdits, accessibilité de base, typographie
+python site/outils/verifier_site.py                 # HTML, liens, termes interdits, accessibilité de base, typographie, visuels, maquettes
 python site/outils/publication.py publication       # doit réussir (code 0)
 python site/outils/verifier_site.py --dossier site/dist/landing
 python -m pytest site/tests -q
 ```
 
 - [ ] Aucun prix, stock, compteur, bouton d'achat ou de précommande (contrôlé par `verifier_site.py`).
-- [ ] Aucun logo ni personnage Pokémon ; mention d'indépendance présente sur chaque page.
+- [ ] Aucun logo ni personnage Pokémon ; mention d'indépendance présente sur chaque page ; Lumi affichée comme mascotte originale au nom provisoire.
+- [ ] Visuels rapatriés en local (`rapatrier_visuels.py`), aucun visuel distant dans `site/dist/landing/` (contrôlé par `verifier_site.py --dossier`).
+- [ ] Réservation garantie : les deux phrases du moteur reprises mot pour mot (contrôlé) ; aucun prix, aucun bouton de réservation sur la landing.
 - [ ] Exploitant, adresse et email de contact visibles ; lien de confidentialité sur chaque page.
 - [ ] Case de consentement non pré-cochée et obligatoire ; double opt-in et désinscription testés de bout en bout (§4).
 - [ ] n8n hébergé en HTTPS (B27, J8) ; workflow d'inscription recetté sans exécution conservée (BL-187, J9 ; §4 « Effacement de l'IP »).
 - [ ] Page publiée : le message sans JavaScript dit que le formulaire fonctionne aussi sans script (contrôle 13 de `verifier_site.py`).
 - [ ] Aucune donnée interne dans le code source.
 - [ ] Notice de la landing relue par le juriste (relecture express) et datée ; `publication.py etat` : tous les champs de la liste fermée `valide`.
-- [ ] Affichage mobile (390 px) et ordinateur (1280 px), clair et sombre, vérifié.
+- [ ] Affichage mobile (390 px) et ordinateur (1440 px) vérifié avec les visuels réels (l'ambiance est toujours sombre), animations en pause et `prefers-reduced-motion` testés, navigation au clavier testée.
 - [ ] Liens UTM générés pour chaque source.
 
 ## 7. Changer la direction DA ou le nom
 
-- Direction B : `python site/outils/da_sync.py --direction b` (copie les fichiers B, aligne `data-da` et Google Fonts sur toutes les pages), puis `python site/outils/generer_og.py` pour l'image de partage.
+- Direction actuelle : **B + ambiance Nuit** (`python site/outils/da_sync.py --direction b --ambiance nuit` : copie les fichiers B et `tokens-nuit.css`, le logo Nuit, aligne `data-da`, `data-ambiance`, la feuille d'ambiance et Google Fonts sur toutes les pages, maquettes comprises). La feuille `css/landing.css` est dessinée pour l'ambiance Nuit : revenir à A ou à B sans ambiance (`--ambiance aucune`) demande de reprendre la mise en page.
+- Image de partage : `python site/outils/generer_og.py` (gabarit `site/outils/og/og-image.html`, décor CSS).
+- Maquettes de la boutique (jamais publiées) : `site/maquettes/fiche-produit.html` (fiche d'un produit FICTIF en réservation garantie, deux prix FICTIFS) et `site/maquettes/drop.html` (page d'un drop FICTIF) ; mêmes feuilles que la landing ; contrôlées par `verifier_site.py` (FICTIF à côté de chaque prix et date, textes de garantie exacts, aucune urgence).
 - Nom validé différent de « Quai des Cartes » : saisir `NOM_BOUTIQUE` (statut `valide`) dans le registre légal ; la publication remplace le nom partout, mais **refuse** tant que le logo DA n'a pas été refait pour ce nom (le logo est un lettrage du nom de travail) ; régénérer ensuite l'image de partage.
 
 ## Validation humaine requise
@@ -136,4 +161,6 @@ python -m pytest site/tests -q
 - [ ] Valider `MOIS_OUVERTURE` (proposé : « novembre 2026 », sans date ferme) dans `site/config/publication_landing.yaml`.
 - [ ] Valider le texte de consentement (avec le juriste si souhaité) : toute modification crée une nouvelle `consentement_version`.
 - [ ] Choisir : Google Fonts (DA) ou polices système (`--sans-google-fonts`), et renseigner `ST_POLICES` en conséquence ; choisir l'outil de mesure des visiteurs (ou aucun : la notice dit « aucun outil de mesure d'audience », à modifier avant d'en ajouter un).
+- [ ] **C10** : valider l'ambiance « Nuit sur le Léman » (direction B) et la mascotte Lumi (nom provisoire) ; juriste : usage des visuels générés (mascotte originale, boîtes génériques sans marque) et conditions commerciales de l'outil de génération.
+- [ ] Avant la mise en ligne : rapatrier les visuels (§3.0) sur une machine qui atteint leur adresse, vérifier le rendu avec les vraies images (héro 21:9 sur ordinateur, couverture 9:16 sur mobile).
 - [ ] **C07** : donner le GO de publication après la checklist §6 et les tests de recette du contrat n8n (§4).

@@ -11,7 +11,8 @@ La DA sert l'étoile polaire (contribution nette cumulée) : faire acheter en co
 |---|---|---|
 | 1. Naming | `NAMING.md` | 3 pistes + 5 alternatives + noms écartés, prononciation FR/DE, recherche web préliminaire sourcée, recommandation, check-list des vérifications humaines |
 | 2. Deux directions | `DIRECTION_A.md` (Quai, orange) · `DIRECTION_B.md` (Pochette, violet) | Concept, palette clair/sombre avec rôles, **96 contrastes WCAG calculés**, polices, grille, icônes, photo, références, page produit |
-| 3. Tokens | `tokens/tokens.json` (source) · `tokens/tokens.css` (généré) | 2 directions × clair/sombre, espacements, typo, rayons, ombres |
+| 2 bis. Ambiance Nuit | `DIRECTION_NUIT.md` (« Nuit sur le Léman », bâtie sur B, toujours sombre) · `tokens/tokens-nuit.css` · `logo/b/logo-b-nuit.svg` | Palette indigo / rose lune / or, **39 contrastes calculés**, Fraunces en mots d'accent, règles de mouvement, **règles de la mascotte Lumi (nom provisoire)** et des visuels générés |
+| 3. Tokens | `tokens/tokens.json` (source) · `tokens/tokens.css` et `tokens/tokens-nuit.css` (générés) | 2 directions × clair/sombre + ambiance Nuit (bloc `ambiances`), espacements, typo, rayons, ombres, lueurs |
 | 4. Logos | `logo/a/`, `logo/b/`, `logo/png/`, `logo/REGLES_LOGO.md` | Principal, horizontal/empilé, fond sombre, mono noir/blanc, monogramme, favicon ; zone de protection, tailles mini |
 | 5. Mini-charte | `CHARTE.html` | 12 sections, bascule A/B et clair/sombre, contrastes recalculés en direct |
 | 6. Composants | `components/` | `badges.html`, `carte-produit.html`, `banniere.html`, `page-produit.html`, `email-transactionnel-{a,b}.html`, `components.css`, `icones.svg`, `apercu.js` |
@@ -71,6 +72,10 @@ Les HTML (`CHARTE.html`, `components/*.html`), les SVG et `tokens.css` sont **g�
 `{{NOM_BOUTIQUE}}`, `{{SITE}}`, `{{EXTENSION}}`, `{{PRIX_VALIDE}}`, `{{MENTION_TVA}}`, `{{DELAI_EXPEDITION}}`, `{{LIMITE_PAR_CLIENT}}` (limite par référence et par foyer, CGV ch. 4.4 : jamais « par commande »), `{{DATE_SORTIE}}`, `{{CONTENU_VALIDE}}`, `{{SKU}}`, `{{EAN_SI_EXISTANT}}`, `{{EMAIL_SUPPORT}}`, `{{URL_RETOURS}}`, `{{URL_CGV}}`, `{{DELAI_SIGNALEMENT}}`, `{{RAISON_SOCIALE}}`, `{{ADRESSE}}`, `{{NUMERO_IDE}}`, `{{N_COMMANDE}}`. La mention TVA dépend du statut fiscal (décision fiduciaire) : ne rien afficher tant qu'il n'est pas tranché.
 
 Règle « une valeur, un endroit » : tout champ `{{MAJUSCULES}}` d'un fichier public est soit un champ du registre légal (`docs/04-legal/champs_a_remplir.yaml`) ou de la landing (`site/config/publication_landing.yaml`), soit une variable propre à un produit, une commande ou une collection de la liste fermée `VARIABLES_DA` de `tools/verifier_da.py` (jamais une règle : limite, délai, TVA). `verifier_da.py` refuse tout autre champ et toute limite exprimée « par commande ».
+
+## 6. Ambiance « Nuit sur le Léman » et mascotte
+
+La landing et les maquettes de la boutique utilisent l'ambiance **Nuit** (`DIRECTION_NUIT.md`) : `data-da="b"` + `data-ambiance="nuit"` sur `<html>`, `tokens/tokens-nuit.css` chargé après `tokens.css` (copie `site/landing/assets/da/ambiance.css`, `site/outils/da_sync.py`). La mascotte **Lumi** (loutre originale, nom provisoire) et les visuels générés pour la marque suivent les règles du §6 de `DIRECTION_NUIT.md` : jamais un produit, jamais un élément de la licence, photos réelles seules sur les fiches.
 
 ## Validation humaine requise
 

@@ -9,7 +9,9 @@ Modes (SPEC §0.6 : simulation par défaut) :
                   remplies, ``⟦À REMPLIR⟧`` / ``⟦à valider⟧`` sinon ; bandeau d'aperçu et ``noindex`` gardés.
 * ``publication`` construit le dossier à déposer (défaut ``site/dist/landing/``). **Refuse**
                   (code 1) tant qu'un champ utilisé n'est pas ``valide``, que le nom n'est pas validé,
-                  ou que l'URL du webhook ou de la landing est invalide.
+                  que l'URL du webhook ou de la landing est invalide, ou que les visuels de la marque sont
+                  encore servis à distance (``site/outils/rapatrier_visuels.py`` : la page publiée ne charge
+                  aucune image d'un tiers).
 * ``etat``        liste les champs requis, leur statut, leur nature (définitif ou provisoire) et le décideur.
 
 Les champs viennent du registre légal (``docs/04-legal/champs_a_remplir.yaml``, source unique de
@@ -41,6 +43,7 @@ sys.path.insert(0, str(OUTILS))
 sys.path.insert(0, str(REPO / "docs" / "04-legal" / "outils"))
 
 import registre_champs as rc  # noqa: E402
+import visuels  # noqa: E402
 from markdown_mini import convertir  # noqa: E402
 from typo import typographier  # noqa: E402
 
@@ -173,6 +176,8 @@ def _tete(titre: str, description: str, indexable: bool) -> str:
   <script src="js/theme.js"></script>
 </head>
 """
+# Direction, ambiance (feuille assets/da/ambiance.css, data-ambiance) et URL Google Fonts sont posées ensuite par
+# da_sync.aligner_html selon le manifeste de la DA (même transformation pour l'écriture et la vérification).
 
 
 MENTION_INDEPENDANCE = (
@@ -184,23 +189,26 @@ MENTION_INDEPENDANCE = (
 
 
 def _corps(contenu: str) -> str:
-    return f"""<body class="da-root">
+    return f"""<body class="da-root lp-nuit lp-page-simple">
   <a class="lp-evitement" href="#contenu">Aller au contenu</a>
   <header class="lp-entete">
-    <div class="da-container lp-entete__inner">
+    <div class="lp-entete__inner">
       <a class="lp-logo" href="./">
-        <img class="lp-logo__img lp-logo__img--clair" src="assets/da/logo-horizontal.svg" alt="{NOM_DE_TRAVAIL}" width="1083" height="140">
-        <img class="lp-logo__img lp-logo__img--sombre" src="assets/da/logo-horizontal-fond-sombre.svg" alt="{NOM_DE_TRAVAIL}" width="1083" height="140">
+        <img class="lp-logo__img lp-logo__img--clair" src="assets/da/logo-horizontal.svg" alt="{NOM_DE_TRAVAIL}" width="963" height="132" loading="lazy">
+        <img class="lp-logo__img lp-logo__img--sombre" src="assets/da/logo-horizontal-fond-sombre.svg" alt="{NOM_DE_TRAVAIL}" width="963" height="132">
       </a>
+      <a class="da-btn lp-btn-verre lp-entete__cta" href="./">Accueil</a>
     </div>
   </header>
   <main id="contenu" class="lp-page">
     <div class="da-container">
+      <div class="lp-page__carte">
 {contenu}
+      </div>
     </div>
   </main>
-  <footer class="lp-pied">
-    <div class="da-container">
+  <footer class="lp-pied lp-pied--simple">
+    <div class="da-container lp-pied__legal">
       <p class="lp-pied__mention" id="mention-independance">{MENTION_INDEPENDANCE}</p>
       <p>Exploitant : {{{{RAISON_SOCIALE}}}}, {{{{ADRESSE_POSTALE}}}}, Suisse. Contact : <a href="mailto:{{{{EMAIL_SUPPORT}}}}">{{{{EMAIL_SUPPORT}}}}</a></p>
       <p><a href="./">Accueil</a> · <a href="confidentialite.html">Déclaration de confidentialité</a></p>
@@ -278,22 +286,15 @@ def pages_secondaires(texte_confidentialite: str | None = None) -> dict[str, str
 
 
 def ecrire_pages_source(racine: Path = LANDING) -> list[str]:
-    """Écrit les pages secondaires dans le dossier source de la landing (direction DA conservée)."""
-    direction = _direction_source(racine)
+    """Écrit les pages secondaires dans le dossier source de la landing (direction et ambiance DA conservées)."""
+    from da_sync import aligner_html, lire_manifeste  # import tardif : évite une dépendance circulaire
+
+    direction, ambiance = lire_manifeste(racine / "assets" / "da")
     ecrits = []
     for nom, contenu in pages_secondaires().items():
-        contenu = contenu.replace('data-da="a"', f'data-da="{direction}"', 1)
-        (racine / nom).write_text(contenu, encoding="utf-8")
+        (racine / nom).write_text(aligner_html(contenu, direction, ambiance), encoding="utf-8")
         ecrits.append(nom)
-    from da_sync import appliquer_direction_html  # import tardif : évite une dépendance circulaire
-
-    appliquer_direction_html(direction, racine)
     return ecrits
-
-
-def _direction_source(racine: Path) -> str:
-    m = re.search(r'<html\b[^>]*\bdata-da="([ab])"', (racine / "index.html").read_text(encoding="utf-8"))
-    return m.group(1) if m else "a"
 
 
 # --------------------------------------------------------------------------- contrôles
@@ -320,7 +321,12 @@ def champs_utilises(source: Path = LANDING, texte_confidentialite: str | None = 
     return noms
 
 
-def controles_publication(champs: dict[str, rc.Field], sans_google_fonts: bool = False, source: Path = LANDING) -> list[str]:
+def controles_publication(
+    champs: dict[str, rc.Field],
+    sans_google_fonts: bool = False,
+    source: Path = LANDING,
+    visuels_manifeste: dict | None = None,
+) -> list[str]:
     """Préconditions de publication indépendantes du rendu des pages."""
     erreurs: list[str] = [
         f"champ hors de la liste de publication de la landing (CHAMPS_LANDING) : {n} — revoir la liste avant de publier"
@@ -345,6 +351,7 @@ def controles_publication(champs: dict[str, rc.Field], sans_google_fonts: bool =
     url = valeur(champs, "URL_LANDING", True)
     if not url or not url.startswith("https://") or not url.endswith("/") or "{{" in url:
         erreurs.append("URL_LANDING absente, non validée ou invalide (https://…/ attendu)")
+    erreurs += visuels.erreurs_publication(visuels_manifeste, racine=source)
     return erreurs
 
 
@@ -434,13 +441,17 @@ def construire(
     champs: dict[str, rc.Field] | None = None,
     sans_google_fonts: bool = False,
     source: Path = LANDING,
+    visuels_manifeste: dict | None = None,
 ) -> Rapport:
-    """Construit un dossier ``apercu`` ou ``publication`` ; lève ``PublicationError`` si refusé."""
+    """Construit un dossier ``apercu`` ou ``publication`` ; lève ``PublicationError`` si refusé.
+
+    ``visuels_manifeste`` : manifeste des visuels à contrôler (défaut : ``site/config/visuels.json``).
+    """
     if mode not in ("apercu", "publication"):
         raise ValueError(f"mode inconnu : {mode}")
     publication = mode == "publication"
     champs = champs if champs is not None else charger_champs()
-    erreurs = controles_publication(champs, sans_google_fonts, source) if publication else []
+    erreurs = controles_publication(champs, sans_google_fonts, source, visuels_manifeste) if publication else []
     pages: dict[str, str] = {}
     for page in sorted(source.glob("*.html")):
         try:

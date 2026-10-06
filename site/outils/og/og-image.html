@@ -1,32 +1,44 @@
 <!DOCTYPE html>
-<html lang="fr-CH" data-da="a" data-theme="light">
+<html lang="fr-CH" data-da="b" data-ambiance="nuit" data-animations="pause">
 <head>
   <meta charset="utf-8">
-  <!-- Gabarit de l'image de partage (1200 × 630) — rendu par site/outils/generer_og.py. Nom de travail NON VALIDÉ. -->
+  <!-- Gabarit de l'image de partage (1200 × 630), ambiance « Nuit sur le Léman » — rendu par site/outils/generer_og.py.
+       Décor 100 % CSS (aucune image distante, aucun élément sous licence). Nom de travail NON VALIDÉ. -->
   <title>Image de partage — Quai des Cartes</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&amp;family=Inter:opsz,wght@14..32,400..700&amp;family=IBM+Plex+Mono:wght@500;600&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Fraunces:ital,opsz,wght,SOFT@1,9..144,300..600,100&amp;family=Space+Grotesk:wght@500;700&amp;display=swap">
   <link rel="stylesheet" href="../../landing/assets/da/tokens.css">
   <link rel="stylesheet" href="../../landing/assets/da/components.css">
+  <link rel="stylesheet" href="../../landing/assets/da/ambiance.css">
+  <link rel="stylesheet" href="../../landing/css/landing.css">
   <style>
     html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
-    .og { position: relative; box-sizing: border-box; width: 1200px; height: 630px; padding: 64px 72px; background: var(--da-color-surface-alt); border-bottom: 18px solid var(--da-color-accent); display: grid; grid-template-columns: 1.35fr 1fr; align-items: center; }
-    .og img { height: 46px; width: auto; display: block; margin-bottom: 44px; }
-    .og h1 { font-size: 64px; margin: 0 0 28px; }
-    .og p { margin: 0; font-size: 26px; font-weight: 600; color: var(--da-color-ink); }
-    .forme { position: absolute; width: 230px; aspect-ratio: 5 / 7; border: 4px solid var(--da-color-ink); border-radius: 10px; background: var(--da-color-surface); }
-    .f1 { right: 250px; top: 120px; transform: rotate(-8deg); }
-    .f2 { right: 160px; top: 90px; transform: rotate(3deg); background: var(--da-color-accent); }
-    .f3 { right: 70px; top: 135px; transform: rotate(10deg); background: var(--da-color-accent-soft); }
+    .og { position: relative; isolation: isolate; width: 1200px; height: 630px; overflow: hidden; --lp-lune-x: 78%; --lp-lune-y: 18%; }
+    .og .lp-hero__scene { inset: 0; }
+    .og .lp-hero__voile { background: linear-gradient(90deg, color-mix(in srgb, var(--da-color-nuit-profonde) 88%, transparent) 0%, color-mix(in srgb, var(--da-color-nuit-profonde) 55%, transparent) 50%, transparent 72%); }
+    .og .nt-lune { width: 110px; margin-left: -55px; }
+    .og__texte { position: absolute; left: 72px; top: 64px; width: 700px; }
+    .og__texte img { height: 34px; width: auto; display: block; margin-bottom: 40px; }
+    .og .lp-hero__titre { margin: 0; font-size: 76px; }
+    .og__preuves { margin: 30px 0 0; font-family: var(--da-font-price); font-size: 20px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--da-color-or); }
   </style>
 </head>
 <body class="da-root">
   <div class="og">
-    <div>
-      <img src="../../landing/assets/da/logo-horizontal.svg" alt="Quai des Cartes">
-      <h1 class="da-title">Pokémon JCC en français, expédié depuis la Suisse.</h1>
-      <p>Produits neufs et scellés · stock réel · livraison en Suisse</p>
+    <div class="lp-hero__scene nt-scene nt-scene--nuit">
+      <span class="nt-s nt-s--ciel"></span>
+      <span class="nt-s nt-s--tourbillons"><span></span><span></span><span></span><span></span><span></span></span>
+      <span class="nt-s nt-s--relief"></span>
+      <span class="nt-s nt-s--lac"></span>
+      <span class="nt-s nt-s--quai"><span></span><span></span></span>
     </div>
-    <div aria-hidden="true"><span class="forme f1"></span><span class="forme f2"></span><span class="forme f3"></span></div>
+    <div class="lp-hero__voile"></div>
+    <div class="nt-etoiles"></div>
+    <div class="nt-lune"></div>
+    <div class="og__texte">
+      <img src="../../landing/assets/da/logo-horizontal-fond-sombre.svg" alt="Quai des Cartes">
+      <h1 class="da-title lp-hero__titre"><span class="lp-hero__ligne">Pokémon JCC en français,</span><em class="lp-accent lp-hero__ligne">expédié depuis Genève.</em></h1>
+      <p class="og__preuves">Neufs et scellés · stock réel · livraison en Suisse</p>
+    </div>
   </div>
 </body>
 </html>

@@ -115,11 +115,11 @@ def url_distante(m: dict, ident: str, variante: str) -> str:
     return m["base_distante"] + nom_fichier(m, ident, variante)
 
 
-def url(m: dict, ident: str, variante: str, page: Path) -> str:
-    """Adresse d'une variante vue depuis une page (distante, ou chemin relatif au fichier local)."""
+def url(m: dict, ident: str, variante: str, page: Path, racine: Path = LANDING) -> str:
+    """Adresse d'une variante vue depuis une page (distante, ou chemin relatif au fichier local de ``racine``)."""
     if m["source"] == "distant":
         return url_distante(m, ident, variante)
-    cible = chemin_local(m, ident, variante)
+    cible = chemin_local(m, ident, variante, racine)
     return Path(os.path.relpath(cible, page.parent)).as_posix()
 
 
@@ -129,23 +129,23 @@ def largeur_min(m: dict, ident: str) -> int:
     return int(v.get("largeur_min") or round(v["largeur"] * HYPOTHESE_RATIO_MIN))
 
 
-def srcset(m: dict, ident: str, page: Path) -> str:
+def srcset(m: dict, ident: str, page: Path, racine: Path = LANDING) -> str:
     """Liste ``srcset`` : variante légère puis PNG haute définition (descripteurs de largeur)."""
     v = m["visuels"][ident]
     wmin = largeur_min(m, ident)
     if wmin >= v["largeur"]:
-        return f"{url(m, ident, 'min', page)} {v['largeur']}w"
-    return f"{url(m, ident, 'min', page)} {wmin}w, {url(m, ident, 'hd', page)} {v['largeur']}w"
+        return f"{url(m, ident, 'min', page, racine)} {v['largeur']}w"
+    return f"{url(m, ident, 'min', page, racine)} {wmin}w, {url(m, ident, 'hd', page, racine)} {v['largeur']}w"
 
 
-def attributs(m: dict, ident: str, balise: str, page: Path) -> dict[str, str]:
+def attributs(m: dict, ident: str, balise: str, page: Path, racine: Path = LANDING) -> dict[str, str]:
     """Valeurs des attributs gérés d'une balise ``data-visuel``."""
     v = m["visuels"][ident]
     tout = {
-        "src": url(m, ident, "min", page),
-        "href": url(m, ident, "min", page),
-        "srcset": srcset(m, ident, page),
-        "imagesrcset": srcset(m, ident, page),
+        "src": url(m, ident, "min", page, racine),
+        "href": url(m, ident, "min", page, racine),
+        "srcset": srcset(m, ident, page, racine),
+        "imagesrcset": srcset(m, ident, page, racine),
         "width": str(v["largeur"]),
         "height": str(v["hauteur"]),
     }
@@ -162,16 +162,16 @@ def _analyser_attributs(brut: str) -> list[tuple[str, str | None]]:
     return [(nom, val) for nom, val in ATTR_RE.findall(brut)]
 
 
-def _reecrire(m: dict, page: Path, balise: str, brut: str, ferme: str, erreurs: list[str]) -> str | None:
+def _reecrire(m: dict, page: Path, balise: str, brut: str, ferme: str, erreurs: list[str], racine: Path) -> str | None:
     attrs = _analyser_attributs(brut)
     noms = [n.lower() for n, _ in attrs]
     if "data-visuel" not in noms:
         return None
-    ident = dict((n.lower(), v) for n, v in attrs)["data-visuel"] or ""
+    ident = {n.lower(): v for n, v in attrs}["data-visuel"] or ""
     if ident not in m["visuels"]:
         erreurs.append(f"{page.name} : visuel inconnu « {ident} » (absent de site/config/visuels.json)")
         return None
-    valeurs = attributs(m, ident, balise.lower(), page)
+    valeurs = attributs(m, ident, balise.lower(), page, racine)
     sortie: list[str] = []
     vus: set[str] = set()
     for nom, val in attrs:
@@ -185,25 +185,28 @@ def _reecrire(m: dict, page: Path, balise: str, brut: str, ferme: str, erreurs: 
     return f"<{balise} {' '.join(sortie)}{' /' if ferme else ''}>"
 
 
-def appliquer_texte(texte: str, m: dict, page: Path, erreurs: list[str] | None = None) -> str:
+def appliquer_texte(texte: str, m: dict, page: Path, erreurs: list[str] | None = None, racine: Path = LANDING) -> str:
     """Texte de la page avec les attributs gérés réécrits (idempotent)."""
     erreurs = [] if erreurs is None else erreurs
 
     def repl(x: re.Match[str]) -> str:
-        nouveau = _reecrire(m, page, x.group(1), x.group(2), x.group(3), erreurs)
+        nouveau = _reecrire(m, page, x.group(1), x.group(2), x.group(3), erreurs, racine)
         return x.group(0) if nouveau is None else nouveau
 
     return BALISE_RE.sub(repl, texte)
 
 
-def appliquer(m: dict | None = None, liste: list[Path] | None = None) -> list[str]:
-    """Réécrit les pages ; retourne les noms des pages modifiées. Lève ``VisuelsError`` si un visuel est inconnu."""
+def appliquer(m: dict | None = None, liste: list[Path] | None = None, racine: Path = LANDING) -> list[str]:
+    """Réécrit les pages ; retourne les noms des pages modifiées. Lève ``VisuelsError`` si un visuel est inconnu.
+
+    ``racine`` : dossier de la landing qui contient (ou contiendra) ``dossier_local`` (copie de test, aperçu…).
+    """
     m = charger() if m is None else m
     modifiees = []
     for page in pages() if liste is None else liste:
         texte = page.read_text(encoding="utf-8")
         erreurs: list[str] = []
-        nouveau = appliquer_texte(texte, m, page, erreurs)
+        nouveau = appliquer_texte(texte, m, page, erreurs, racine)
         if erreurs:
             raise VisuelsError("; ".join(erreurs))
         if nouveau != texte:
@@ -230,7 +233,7 @@ def verifier(m: dict | None = None, liste: list[Path] | None = None, racine: Pat
     for page in pages() if liste is None else liste:
         texte = page.read_text(encoding="utf-8")
         erreurs: list[str] = []
-        attendu = appliquer_texte(texte, m, page, erreurs)
+        attendu = appliquer_texte(texte, m, page, erreurs, racine)
         err += erreurs
         if attendu != texte:
             err.append(f"{page.name} : balises data-visuel désynchronisées de site/config/visuels.json "
@@ -257,8 +260,12 @@ def erreurs_publication(m: dict | None = None, racine: Path = LANDING) -> list[s
     except (OSError, ValueError) as exc:
         return [f"site/config/visuels.json : {exc}"]
     if m["source"] != "local":
-        return ["visuels servis depuis une adresse distante : lancer python site/outils/rapatrier_visuels.py "
-                "avant de publier (la page publiée ne charge aucune image d'un tiers)"]
+        return [
+            (
+                "visuels servis depuis une adresse distante : lancer python site/outils/rapatrier_visuels.py "
+                "avant de publier (la page publiée ne charge aucune image d'un tiers)"
+            )
+        ]
     err = []
     for ident, v in m["visuels"].items():
         if v.get("largeur_min") is None:

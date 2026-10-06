@@ -164,6 +164,8 @@ def aligner_html(texte: str, direction: str, ambiance: str | None = None) -> str
             nouveau,
             count=1,
         )
+    schema = "dark" if ambiance is not None else "light dark"
+    nouveau = re.sub(r'(<meta name="color-scheme" content=")[^"]*(">)', rf"\g<1>{schema}\g<2>", nouveau, count=1)
     return GOOGLE_FONTS_RE.sub(f'href="{url}"', nouveau)
 
 

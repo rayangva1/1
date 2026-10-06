@@ -4,7 +4,10 @@
 Contrôles :
 1. HTML bien formé (balises équilibrées, identifiants uniques), en-tête complet (langue, titre, description,
    viewport), SEO de base (canonical, Open Graph) sur la page principale.
-2. Ressources : relatives existantes ; externes limitées à Google Fonts ; liens et ancres valides.
+2. Ressources : relatives existantes ; externes limitées à Google Fonts ; liens et ancres valides. Visuels de la
+   marque (balises ``data-visuel``) : adresse distante de ``site/config/visuels.json`` admise en source et en aperçu
+   seulement, jamais dans un dossier de publication ; balises synchronisées avec le manifeste. Images : ``width`` et
+   ``height`` (pas de décalage de mise en page), ``loading="lazy"`` sauf l'image principale (``fetchpriority="high"``).
 3. Contenu public : aucun terme interne (coût, marge, fournisseur…), aucun prix, aucun EAN, aucune fausse
    urgence, aucune promesse de rareté ou de valeur, aucun bouton d'achat ou de précommande.
 4. Formulaire : libellé pour chaque champ, consentement obligatoire et non pré-coché, champ piège, champs
@@ -27,6 +30,11 @@ Contrôles :
 15. Workflow d'inscription (revue NEW-05) : dès que son export existe dans ``orchestration/n8n/``, il ne conserve
     aucune exécution (``saveDataSuccessExecution`` et ``saveDataErrorExecution`` = ``none``), condition de la
     promesse de la notice sur l'adresse IP (« effacées après le contrôle »).
+16. Maquettes (``site/maquettes/``, jamais publiées) : page non indexée et bandeau « Maquette FICTIVE » ; chaque
+    prix et chaque date suivis de la mention FICTIF (ou, pour une date, « date estimée ») ; textes de garantie du
+    pré-drop repris mot pour mot du moteur (``GUARANTEE_TEXT_FR``, ``NO_DIFFERENCE_REFUND_FR``) ; statut limité à
+    « Réservations ouvertes / fermées » ; aucune fausse urgence, promesse interdite, terme interne ni affirmation
+    inexacte ; mention d'indépendance ; aucun formulaire qui envoie ; ressources, liens et typographie contrôlés.
 
 Usage :
     python site/outils/verifier_site.py                         # dépôt
@@ -50,11 +58,14 @@ sys.path.insert(0, str(OUTILS))
 
 import da_sync  # noqa: E402
 import publication  # noqa: E402
+import visuels  # noqa: E402
 from typo import fautes  # noqa: E402
 
 REPO = OUTILS.parents[1]
 SITE = REPO / "site"
 LANDING = SITE / "landing"
+MAQUETTES = SITE / "maquettes"
+PREDROP_MOTEUR = REPO / "engine" / "pokeshop" / "predrop.py"
 SNIPPETS = SITE / "shopify" / "snippets"
 SCHEMA = LANDING / "inscription.schema.json"
 USAGE_MARQUES = REPO / "docs" / "04-legal" / "USAGE_MARQUES.md"
@@ -158,6 +169,8 @@ class Analyse(HTMLParser):
         self._dans_titre = False
         self.formulaires: list[dict[str, str]] = []
         self.imgs_sans_alt = 0
+        self.imgs: list[dict[str, str]] = []
+        self.ressources_visuels: list[tuple[str, str]] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         a = {k: (v or "") for k, v in attrs}
@@ -181,13 +194,27 @@ class Analyse(HTMLParser):
             rel = a.get("rel", "")
             if rel in ("canonical",):
                 self.liens_head[rel] = a.get("href", "")
+            elif a.get("href") and "data-visuel" in a:
+                self.ressources_visuels.append((f"link[{rel}]", a["href"]))
             elif a.get("href"):
                 self.ressources.append((f"link[{rel}]", a["href"]))
+        elif tag in ("img", "source") and "data-visuel" in a:
+            for cle in ("src", "srcset"):
+                for morceau in (a.get(cle) or "").split(","):
+                    if morceau.strip():
+                        self.ressources_visuels.append((tag, morceau.split()[0]))
+            if tag == "img":
+                self.imgs.append(a)
+                if "alt" not in a:
+                    self.imgs_sans_alt += 1
         elif tag in ("img", "script", "source", "iframe", "embed", "audio", "video") and a.get("src"):
             self.ressources.append((tag, a["src"]))
-            if tag == "img" and "alt" not in a:
-                self.imgs_sans_alt += 1
+            if tag == "img":
+                self.imgs.append(a)
+                if "alt" not in a:
+                    self.imgs_sans_alt += 1
         elif tag == "img":
+            self.imgs.append(a)
             if "alt" not in a:
                 self.imgs_sans_alt += 1
         if tag == "a" and a.get("href"):
@@ -331,6 +358,8 @@ def verifier_page(chemin: Path, racine: Path, *, publication_mode: bool = False)
             ids_cible = a.ids if cible.resolve() == chemin.resolve() else analyser(cible.read_text(encoding="utf-8")).ids
             if u.fragment not in ids_cible:
                 err.append(f"{nom} : ancre introuvable {url}")
+    err += [f"{nom} : {e}" for e in verifier_visuels_page(a, chemin, publication_mode=publication_mode)]
+    err += [f"{nom} : {e}" for e in verifier_images(a)]
     if "confidentialite.html" not in a.liens:
         err.append(f"{nom} : lien vers confidentialite.html absent")
     err += [f"{nom} : aria-describedby vers un identifiant absent « {i} »" for i in a.describedby if i not in a.ids]
@@ -356,6 +385,8 @@ def verifier_page(chemin: Path, racine: Path, *, publication_mode: bool = False)
         m = motif.search(visible)
         if m:
             err.append(f"{nom} : {libelle} « {m.group(0)} »")
+    if nom not in PAGES_TEXTE_LEGAL:
+        err += [f"{nom} : {e}" for e in verifier_textes_garantie(visible)]
     for balise, libelle in a.actions:
         if ACHAT_RE.search(libelle):
             err.append(f"{nom} : action d'achat ou de précommande « {libelle} » sur la landing")
@@ -375,6 +406,47 @@ def verifier_page(chemin: Path, racine: Path, *, publication_mode: bool = False)
     if nom == "index.html":
         err += [f"{nom} : {e}" for e in verifier_formulaire(a, publication_mode=publication_mode)]
         err += [f"{nom} : {e}" for e in verifier_noscript(texte, publication_mode=publication_mode)]
+    return err
+
+
+def _hote_visuels() -> str | None:
+    try:
+        return urlparse(visuels.charger()["base_distante"]).hostname
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def verifier_visuels_page(a: Analyse, chemin: Path, *, publication_mode: bool) -> list[str]:
+    """Adresses des balises data-visuel : distantes (hôte du manifeste) en aperçu seulement, locales existantes."""
+    err: list[str] = []
+    hote = _hote_visuels()
+    for balise, url in a.ressources_visuels:
+        if "{{" in url or url.startswith("data:"):
+            continue
+        u = urlparse(url)
+        if u.scheme in ("http", "https"):
+            if publication_mode:
+                err.append(f"visuel distant dans un dossier de publication {balise} {url} "
+                           "(lancer site/outils/rapatrier_visuels.py avant de publier)")
+            elif u.scheme != "https" or u.hostname != hote:
+                err.append(f"ressource externe non autorisée {balise} {url} (hôte hors de site/config/visuels.json)")
+        elif u.scheme == "" and not (chemin.parent / u.path).exists():
+            err.append(f"visuel introuvable {url}")
+    return err
+
+
+def verifier_images(a: Analyse) -> list[str]:
+    """Images : dimensions déclarées ; chargement paresseux sauf l'image principale (au plus une par page)."""
+    err: list[str] = []
+    prioritaires = [i for i in a.imgs if i.get("fetchpriority") == "high"]
+    if len(prioritaires) > 1:
+        err.append(f"{len(prioritaires)} images en fetchpriority=\"high\" (une seule image principale attendue)")
+    for i in a.imgs:
+        nom = i.get("data-visuel") or i.get("src", "?")
+        if not i.get("width") or not i.get("height"):
+            err.append(f"image sans width/height (décalage de mise en page) : {nom}")
+        if "data-visuel" in i and i.get("fetchpriority") != "high" and i.get("loading") != "lazy":
+            err.append(f"visuel sans loading=\"lazy\" (seule l'image principale se charge d'emblée) : {nom}")
     return err
 
 
@@ -542,17 +614,136 @@ def verifier_landing(racine: Path = LANDING, *, publication_mode: bool = False) 
 
 def verifier_generes(racine: Path = LANDING) -> list[str]:
     """Pages secondaires identiques à ce que produit publication.py (mode source)."""
-    direction = json.loads((racine / "assets" / "da" / "manifeste.json").read_text(encoding="utf-8"))["direction"]
-    url_fonts = da_sync.google_fonts(direction).replace("&", "&amp;")
+    direction, ambiance = da_sync.lire_manifeste(racine / "assets" / "da")
     err = []
     for nom, attendu in publication.pages_secondaires().items():
-        attendu = attendu.replace('data-da="a"', f'data-da="{direction}"', 1)
-        attendu = da_sync.GOOGLE_FONTS_RE.sub(f'href="{url_fonts}"', attendu)
+        attendu = da_sync.aligner_html(attendu, direction, ambiance)
         chemin = racine / nom
         if not chemin.exists():
             err.append(f"{nom} absent (lancer publication.py source)")
         elif chemin.read_text(encoding="utf-8") != attendu:
             err.append(f"{nom} désynchronisé du générateur ou de docs/04-legal (lancer publication.py source)")
+    return err
+
+
+# ------------------------------------------------------------------------- maquettes
+DATE_RE = re.compile(r"(?<![\d.])\d{2}\.\d{2}(?:\.\d{4})?(?![\d.])")
+#: Statuts publics du pré-drop : « Réservations ouvertes » ou « Réservations fermées », rien d'autre (moteur,
+#: STATUS_OPEN_FR / STATUS_CLOSED_FR) ; jamais un état qui presse (« bientôt complètes », « dernières »…).
+STATUT_RESA_INTERDIT_RE = re.compile(
+    r"r[ée]servations?[\s\u00a0\u202f]+(?:presque|bient[ôo]t|derni[eè]res?|limit[ée]es?|compl[eè]tes?|[ée]puis[ée]es?|restantes?)",
+    re.IGNORECASE,
+)
+
+
+def textes_garantie_moteur(chemin: Path = PREDROP_MOTEUR) -> tuple[str, str]:
+    """(GUARANTEE_TEXT_FR, NO_DIFFERENCE_REFUND_FR) lus dans le moteur sans l'importer (source unique)."""
+    import ast
+
+    valeurs: dict[str, str] = {}
+    for noeud in ast.parse(chemin.read_text(encoding="utf-8")).body:
+        if isinstance(noeud, ast.Assign) and len(noeud.targets) == 1 and isinstance(noeud.targets[0], ast.Name):
+            nom = noeud.targets[0].id
+            if nom in ("GUARANTEE_TEXT_FR", "NO_DIFFERENCE_REFUND_FR"):
+                valeurs[nom] = str(ast.literal_eval(noeud.value))
+    return valeurs["GUARANTEE_TEXT_FR"], valeurs["NO_DIFFERENCE_REFUND_FR"]
+
+
+def verifier_textes_garantie(visible: str) -> list[str]:
+    """Une page qui parle de réservation garantie reprend mot pour mot les deux phrases du moteur."""
+    if "servation garantie" not in visible:
+        return []
+    garantie, difference = (_normaliser(x) for x in textes_garantie_moteur())
+    return [
+        f"texte de garantie du moteur absent ou modifié ({libelle})"
+        for phrase, libelle in ((garantie, "GUARANTEE_TEXT_FR"), (difference, "NO_DIFFERENCE_REFUND_FR"))
+        if phrase not in visible
+    ]
+
+
+def _sans_fictif_proche(visible: str, motif: re.Pattern[str], autorises: tuple[str, ...], fenetre: int = 48) -> list[str]:
+    manquants = []
+    for m in motif.finditer(visible):
+        apres = visible[m.end() : m.end() + fenetre]
+        if not any(a in apres for a in autorises):
+            manquants.append(m.group(0))
+    return manquants
+
+
+def verifier_maquette(chemin: Path) -> list[str]:
+    """Contrôles d'une maquette (page de démonstration FICTIVE, jamais publiée)."""
+    nom = f"maquettes/{chemin.name}"
+    texte = chemin.read_text(encoding="utf-8")
+    a = analyser(texte)
+    err = [f"{nom} : {e}" for e in a.erreurs]
+    err += [f"{nom} : identifiant en double « {i} »" for i in sorted({i for i in a.ids if a.ids.count(i) > 1})]
+    if a.html_attrs.get("lang") != "fr-CH":
+        err.append(f"{nom} : <html lang=\"fr-CH\"> attendu")
+    for cle in ("charset", "viewport", "description"):
+        if not a.meta.get(cle):
+            err.append(f"{nom} : meta {cle} absente")
+    if a.h1 != 1:
+        err.append(f"{nom} : {a.h1} titre(s) h1 (1 attendu)")
+    if a.imgs_sans_alt:
+        err.append(f"{nom} : {a.imgs_sans_alt} image(s) sans attribut alt")
+    if "noindex" not in a.meta.get("robots", ""):
+        err.append(f"{nom} : maquette sans noindex")
+    for balise, url in a.ressources:
+        u = urlparse(url)
+        if u.scheme in ("http", "https"):
+            if u.hostname not in HOTES_AUTORISES:
+                err.append(f"{nom} : ressource externe non autorisée {balise} {url}")
+        elif u.scheme == "" and not (chemin.parent / u.path).exists():
+            err.append(f"{nom} : ressource introuvable {url}")
+    for url in a.liens:
+        u = urlparse(url)
+        if u.scheme in ("mailto", "https"):
+            continue
+        if u.scheme == "http":
+            err.append(f"{nom} : lien non sécurisé {url}")
+            continue
+        cible = chemin if not u.path else chemin.parent / u.path
+        if not cible.exists():
+            err.append(f"{nom} : lien relatif cassé {url}")
+        elif u.fragment:
+            ids = a.ids if cible.resolve() == chemin.resolve() else analyser(cible.read_text(encoding="utf-8")).ids
+            if u.fragment not in ids:
+                err.append(f"{nom} : ancre introuvable {url}")
+    err += [f"{nom} : {e}" for e in verifier_visuels_page(a, chemin, publication_mode=False)]
+    err += [f"{nom} : {e}" for e in verifier_images(a)]
+    if any(f.get("action") for f in a.formulaires):
+        err.append(f"{nom} : formulaire avec une adresse d'envoi dans une maquette")
+    visible = _texte_visible(texte)
+    if not re.search(r'<aside class="lp-apercu[^"]*"[^>]*>\s*<p><strong>Maquette FICTIVE', texte):
+        err.append(f"{nom} : bandeau « Maquette FICTIVE » absent")
+    err += [f"{nom} : prix sans mention FICTIF « {p} »" for p in _sans_fictif_proche(visible, PRIX_RE, ("FICTIF",), 40)]
+    err += [f"{nom} : date sans mention FICTIF ni « date estimée » « {d} »"
+            for d in _sans_fictif_proche(visible, DATE_RE, ("FICTIF", "date estimée"), 60)]
+    err += [f"{nom} : {e}" for e in verifier_textes_garantie(visible)]
+    m = STATUT_RESA_INTERDIT_RE.search(visible)
+    if m:
+        err.append(f"{nom} : statut de réservation non admis « {m.group(0)} » (ouvertes ou fermées seulement)")
+    for motif, libelle in ((TERMES_INTERNES, "terme interne"), (URGENCE_RE, "fausse urgence"), (PROMESSES_RE, "promesse interdite"),
+                           *AFFIRMATIONS_INEXACTES):
+        m = motif.search(visible)
+        if m:
+            err.append(f"{nom} : {libelle} « {m.group(0)} »")
+    reference = mention_reference()
+    mentions = re.findall(r'id="mention-independance">(.*?)</p>', texte, re.DOTALL)
+    if not mentions or not _normaliser(re.sub(r"<[^>]+>", "", mentions[0])).endswith(reference):
+        err.append(f"{nom} : mention d'indépendance absente ou différente de USAGE_MARQUES.md")
+    err += [f"{nom} : espace insécable manquante « {f} »" for f in fautes(texte)]
+    return err
+
+
+def verifier_maquettes(dossier: Path = MAQUETTES) -> list[str]:
+    """Toutes les maquettes ; aucune ne doit se trouver dans la landing (elle serait publiée)."""
+    err: list[str] = []
+    for chemin in sorted(dossier.glob("*.html")) if dossier.is_dir() else []:
+        err += verifier_maquette(chemin)
+    for page in sorted(LANDING.glob("*.html")):
+        if "Maquette FICTIVE" in page.read_text(encoding="utf-8"):
+            err.append(f"landing/{page.name} : maquette dans le dossier publié (la déplacer dans site/maquettes/)")
     return err
 
 
@@ -705,6 +896,8 @@ def tout_verifier() -> dict[str, list[str]]:
         "landing": verifier_landing(LANDING),
         "pages générées": verifier_generes(LANDING),
         "copies DA": da_sync.verifier(),
+        "visuels (site/config/visuels.json)": visuels.verifier(),
+        "maquettes (site/maquettes)": verifier_maquettes(),
         "snippets Liquid": verifier_liquid(SNIPPETS),
         "nom de travail (Shopify)": verifier_nom_de_travail(SITE / "shopify"),
         "documents": verifier_docs(SITE),

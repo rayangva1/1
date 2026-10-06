@@ -1,13 +1,16 @@
 <!DOCTYPE html>
-<html lang="fr-CH" data-da="a">
+<html lang="fr-CH" data-da="b" data-ambiance="nuit">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <!--
-    Landing de validation (BP §1, §9 J1-15) — source : site/landing/README.md.
+    Landing de validation (BP §1, §9 J1-15) — source : site/landing/README.md. Ambiance « Nuit sur le Léman »
+    (docs/05-da/DIRECTION_NUIT.md), bâtie sur la direction B.
     Nom de travail NON VALIDÉ : « Quai des Cartes » (docs/05-da/NAMING.md). Il est remplacé par le nom
     validé (champ NOM_BOUTIQUE du registre docs/04-legal/champs_a_remplir.yaml) par site/outils/publication.py.
     Règles : aucun prix, aucun stock, aucune précommande, aucune donnée interne (SPEC §0.2-0.3).
+    Visuels : balises data-visuel réécrites depuis site/config/visuels.json (site/outils/visuels.py) ; ne jamais
+    écrire une adresse d'image à la main. Mascotte : Lumi (nom provisoire), création originale.
   -->
   <!-- APERCU:DEBUT -->
   <meta name="robots" content="noindex, nofollow">
@@ -26,146 +29,381 @@
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="Quai des Cartes — Pokémon JCC en français, expédié depuis la Suisse">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#F6F5F1" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0B0A1F">
   <link rel="icon" href="assets/da/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="assets/da/favicon-32.png" sizes="32x32" type="image/png">
   <link rel="apple-touch-icon" href="assets/da/apple-touch-icon.png">
+  <link rel="preload" as="image" media="(max-width: 699px)" imagesizes="100vw" fetchpriority="high" data-visuel="heros-nuit-etoilee-portrait" href="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074036_25f266c9-4ecb-43f4-aa47-4765d37aafe2_min.webp" imagesrcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074036_25f266c9-4ecb-43f4-aa47-4765d37aafe2_min.webp 760w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074036_25f266c9-4ecb-43f4-aa47-4765d37aafe2.png 1520w">
+  <link rel="preload" as="image" media="(min-width: 700px)" imagesizes="100vw" fetchpriority="high" data-visuel="heros-nuit-etoilee" href="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074039_5d759e26-a3b8-4723-b4ee-a5c95b4bab6b_min.webp" imagesrcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074039_5d759e26-a3b8-4723-b4ee-a5c95b4bab6b_min.webp 1344w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074039_5d759e26-a3b8-4723-b4ee-a5c95b4bab6b.png 2688w">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&amp;family=Inter:opsz,wght@14..32,400..700&amp;family=IBM+Plex+Mono:wght@500;600&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Fraunces:ital,opsz,wght,SOFT@1,9..144,300..600,100&amp;family=Space+Grotesk:wght@500;700&amp;display=swap">
   <link rel="stylesheet" href="assets/da/tokens.css">
   <link rel="stylesheet" href="assets/da/components.css">
+  <link rel="stylesheet" href="assets/da/ambiance.css">
   <link rel="stylesheet" href="css/landing.css">
   <script src="js/theme.js"></script>
   <script src="js/config.js" defer></script>
   <script src="js/landing.js" defer></script>
+  <script src="js/nuit.js" defer></script>
 </head>
-<body class="da-root">
+<body class="da-root lp-nuit">
   <a class="lp-evitement" href="#contenu">Aller au contenu</a>
   <!-- APERCU:DEBUT -->
   <aside class="lp-apercu" aria-label="Aperçu interne">
-    <p><strong>Aperçu interne, ne pas diffuser.</strong> Nom de travail provisoire « Quai des Cartes » (non validé). Coordonnées et mois d'ouverture à compléter. Le formulaire reste désactivé tant que l'adresse d'envoi n'est pas configurée.</p>
+    <p><strong>Aperçu interne, ne pas diffuser.</strong> Nom de travail provisoire « Quai des Cartes » (non validé). Coordonnées et mois d'ouverture à compléter. Le formulaire reste désactivé tant que l'adresse d'envoi n'est pas configurée. Visuels servis à distance : à rapatrier avant la mise en ligne.</p>
   </aside>
   <!-- APERCU:FIN -->
-  <header class="lp-entete">
-    <div class="da-container lp-entete__inner">
+  <header class="lp-entete" id="entete">
+    <div class="lp-entete__inner">
       <a class="lp-logo" href="./">
-        <img class="lp-logo__img lp-logo__img--clair" src="assets/da/logo-horizontal.svg" alt="Quai des Cartes" width="1083" height="140">
-        <img class="lp-logo__img lp-logo__img--sombre" src="assets/da/logo-horizontal-fond-sombre.svg" alt="Quai des Cartes" width="1083" height="140">
+        <img class="lp-logo__img lp-logo__img--clair" src="assets/da/logo-horizontal.svg" alt="Quai des Cartes" width="963" height="132" loading="lazy">
+        <img class="lp-logo__img lp-logo__img--sombre" src="assets/da/logo-horizontal-fond-sombre.svg" alt="Quai des Cartes" width="963" height="132">
       </a>
-      <button type="button" class="lp-theme" id="lp-theme" hidden>Thème : automatique</button>
+      <nav class="lp-nav" aria-label="Sections de la page">
+        <ul>
+          <li><a href="#drop">Le drop</a></li>
+          <li><a href="#reservation">Réservation garantie</a></li>
+          <li><a href="#promesse">Notre façon de travailler</a></li>
+          <li><a href="#lumi">Lumi</a></li>
+          <li><a href="#faq">Questions</a></li>
+        </ul>
+      </nav>
+      <div class="lp-entete__actions">
+        <button type="button" class="lp-animations" id="lp-animations" aria-pressed="false" hidden>
+          <svg class="lp-animations__pause" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M9 6v12M15 6v12"/></svg>
+          <svg class="lp-animations__lecture" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5.5v13l11-6.5z"/></svg>
+          <span class="lp-animations__texte">Pause des animations</span>
+        </button>
+        <a class="da-btn da-btn--primary lp-entete__cta" href="#alertes">Alertes</a>
+      </div>
     </div>
   </header>
 
   <main id="contenu">
-    <section class="da-banner lp-hero" aria-labelledby="titre-principal">
-      <div class="lp-hero__texte">
+    <!-- =========================================================== HÉRO -->
+    <section class="lp-hero" aria-labelledby="titre-principal">
+      <div class="lp-hero__scene nt-scene nt-scene--nuit" data-parallaxe="0.22">
+        <span class="nt-s nt-s--ciel" aria-hidden="true"></span>
+        <span class="nt-s nt-s--tourbillons" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></span>
+        <span class="nt-s nt-s--relief" aria-hidden="true"></span>
+        <span class="nt-s nt-s--lac" aria-hidden="true"></span>
+        <span class="nt-s nt-s--quai" aria-hidden="true"><span></span><span></span></span>
+        <picture class="nt-visuel">
+          <source media="(max-width: 699px)" sizes="100vw" data-visuel="heros-nuit-etoilee-portrait" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074036_25f266c9-4ecb-43f4-aa47-4765d37aafe2_min.webp 760w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074036_25f266c9-4ecb-43f4-aa47-4765d37aafe2.png 1520w" width="1520" height="2688">
+          <img class="nt-visuel__img lp-hero__img" alt="Illustration : nuit étoilée sur le Léman, ciel tourbillonnant et étoiles dorées, avec Lumi, notre loutre mascotte, qui veille sur le quai." sizes="100vw" fetchpriority="high" decoding="async" data-visuel="heros-nuit-etoilee" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074039_5d759e26-a3b8-4723-b4ee-a5c95b4bab6b_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074039_5d759e26-a3b8-4723-b4ee-a5c95b4bab6b_min.webp 1344w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074039_5d759e26-a3b8-4723-b4ee-a5c95b4bab6b.png 2688w" width="2688" height="1152">
+        </picture>
+      </div>
+      <div class="lp-hero__voile" aria-hidden="true"></div>
+      <div class="nt-etoiles" aria-hidden="true" data-parallaxe="0.08"></div>
+      <div class="lp-hero__lune nt-lune" aria-hidden="true" data-parallaxe="0.32"></div>
+      <div class="nt-filante" aria-hidden="true"></div>
+      <div class="nt-filante nt-filante--2" aria-hidden="true"></div>
+      <div class="lp-hero__lueur" aria-hidden="true"></div>
+      <div class="lp-hero__contenu">
         <p class="lp-surtitre">Boutique en préparation à Genève · ouverture prévue en {{MOIS_OUVERTURE}}</p>
-        <h1 id="titre-principal" class="da-title da-banner__title">Pokémon JCC en français, expédié depuis la Suisse.</h1>
-        <p class="da-banner__text">Displays, coffrets Dresseur d'élite, bundles, coffrets et accessoires, neufs et scellés. Le stock affiché sera celui que nous avons réellement en main, et nous répondons à vos questions.</p>
-        <div class="da-banner__actions">
-          <a class="da-btn da-btn--primary" href="#alertes">Recevoir l'alerte d'ouverture</a>
-          <a class="da-btn da-btn--secondary" href="#promesse">Notre façon de travailler</a>
+        <h1 id="titre-principal" class="da-title lp-hero__titre">
+          <span class="lp-hero__ligne">Pokémon JCC</span>
+          <span class="lp-hero__ligne">en français,</span>
+          <em class="lp-accent lp-hero__ligne">expédié depuis Genève.</em>
+        </h1>
+        <p class="lp-hero__texte">Displays, coffrets Dresseur d'élite, bundles, coffrets et accessoires, neufs et scellés. Le stock affiché sera celui que nous avons réellement en main, et nous répondons à vos questions.</p>
+        <div class="lp-hero__actions">
+          <a class="da-btn da-btn--primary lp-btn-lune" href="#alertes">Recevoir l'alerte d'ouverture</a>
+          <a class="da-btn lp-btn-verre" href="#drop">Comment se passe un drop</a>
         </div>
         <ul class="lp-preuves">
-          <li>Produits neufs et scellés, en français</li>
+          <li>Neufs et scellés, en français</li>
           <li>Stock réel, aucune fausse urgence</li>
-          <li>Expédition depuis Genève, livraison en Suisse</li>
+          <li>Expédié depuis Genève, livré en Suisse</li>
         </ul>
       </div>
-      <div class="da-banner__media lp-hero__media" aria-hidden="true">
-        <span class="lp-forme lp-forme--1"></span>
-        <span class="lp-forme lp-forme--2"></span>
-        <span class="lp-forme lp-forme--3"></span>
+      <a class="lp-hero__defiler" href="#drop"><span class="da-visually-hidden">Descendre vers </span>Le jour du drop<span class="lp-hero__fleche" aria-hidden="true"></span></a>
+    </section>
+
+    <div class="lp-defile">
+      <ul class="lp-defile__piste">
+        <li>Stock réel</li>
+        <li>Français vérifié à réception</li>
+        <li>Expédié depuis Genève</li>
+        <li>Livraison en Suisse</li>
+        <li>Aucune fausse urgence</li>
+        <li>Réservation garantie au pré-drop</li>
+      </ul>
+      <ul class="lp-defile__piste" aria-hidden="true">
+        <li>Stock réel</li>
+        <li>Français vérifié à réception</li>
+        <li>Expédié depuis Genève</li>
+        <li>Livraison en Suisse</li>
+        <li>Aucune fausse urgence</li>
+        <li>Réservation garantie au pré-drop</li>
+      </ul>
+    </div>
+
+    <!-- =========================================================== LE JOUR DU DROP -->
+    <section class="lp-section lp-drop" id="drop" aria-labelledby="titre-drop">
+      <div class="da-container lp-duo">
+        <figure class="lp-duo__media nt-cadre nt-scene nt-scene--drop" data-apparition>
+          <span class="nt-s nt-s--ciel" aria-hidden="true"></span>
+          <span class="nt-s nt-s--astre" aria-hidden="true"></span>
+          <span class="nt-s nt-s--lac" aria-hidden="true"></span>
+          <span class="nt-s nt-s--rayons" aria-hidden="true"></span>
+          <span class="nt-s nt-s--boite" aria-hidden="true"></span>
+          <img class="nt-visuel__img" alt="Illustration : Lumi, notre loutre mascotte, ouvre une boîte blanche scellée d'où jaillit une lumière dorée, sur le quai, sous une lune rose." sizes="(min-width: 900px) 56vw, 100vw" loading="lazy" decoding="async" data-visuel="banniere-jour-de-drop" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_4994a131-f933-4b7c-ae73-70ebc14eda9e_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_4994a131-f933-4b7c-ae73-70ebc14eda9e_min.webp 1344w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_4994a131-f933-4b7c-ae73-70ebc14eda9e.png 2688w" width="2688" height="1520">
+        </figure>
+        <div class="lp-duo__texte" data-apparition>
+          <p class="lp-surtitre-section">Le jour du drop</p>
+          <h2 id="titre-drop" class="da-title lp-h2">Une date, <em class="lp-accent">un statut</em>, rien d'autre.</h2>
+          <p class="lp-intro">Les nouveautés arriveront par « drops » : une date annoncée, une réservation garantie pour qui veut être servi en premier, puis la vente au prix du drop. Jamais de minuteur, jamais de nombre d'unités restantes.</p>
+          <ol class="lp-etapes">
+            <li class="lp-etapes__item">
+              <span class="lp-etapes__num" aria-hidden="true">01</span>
+              <div>
+                <h3 class="lp-h3">La date est annoncée</h3>
+                <p>Sur la fiche, un badge <span class="da-badge da-badge--drop"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Drop le JJ.MM</span> : toujours une date estimée, jamais une heure.</p>
+              </div>
+            </li>
+            <li class="lp-etapes__item">
+              <span class="lp-etapes__num" aria-hidden="true">02</span>
+              <div>
+                <h3 class="lp-h3">Réservations ouvertes</h3>
+                <p>Pour certains produits, une <span class="da-badge da-badge--reservation"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5L16 9"/></svg>Réservation garantie</span> s'ouvre avant la réception : d'abord pour les personnes inscrites aux alertes de ce produit, puis pour tout le monde.</p>
+              </div>
+            </li>
+            <li class="lp-etapes__item">
+              <span class="lp-etapes__num" aria-hidden="true">03</span>
+              <div>
+                <h3 class="lp-h3">Le jour du drop</h3>
+                <p>Le produit est mis en vente au prix du drop, en « Stock local » à Genève, s'il en reste. Les réservations garanties, elles, sont préparées en premier.</p>
+              </div>
+            </li>
+          </ol>
+        </div>
       </div>
     </section>
 
-    <section class="lp-section" id="promesse" aria-labelledby="titre-promesse">
+    <!-- =========================================================== RÉSERVATION GARANTIE -->
+    <section class="lp-section lp-reservation" id="reservation" aria-labelledby="titre-reservation">
+      <div class="da-container lp-reservation__grille">
+        <div class="lp-reservation__media" data-apparition>
+          <figure class="nt-cadre nt-cadre--arche nt-scene nt-scene--reservation">
+            <span class="nt-s nt-s--ciel" aria-hidden="true"></span>
+            <span class="nt-s nt-s--fenetre" aria-hidden="true"></span>
+            <span class="nt-s nt-s--pile" aria-hidden="true"><span></span><span></span><span></span></span>
+            <img class="nt-visuel__img" alt="Illustration : Lumi monte la garde devant une pile de boîtes blanches scellées à rubans indigo, dans une pièce chaleureuse éclairée par une lune rose." sizes="(min-width: 900px) 34vw, 86vw" loading="lazy" decoding="async" data-visuel="cover-reservation" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_dfa69bd2-e797-432a-b582-a5aae6c85a95_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_dfa69bd2-e797-432a-b582-a5aae6c85a95_min.webp 760w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_dfa69bd2-e797-432a-b582-a5aae6c85a95.png 1520w" width="1520" height="2688">
+          </figure>
+          <p class="lp-reservation__badges">
+            <span class="da-badge da-badge--reservation"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5L16 9"/></svg>Réservation garantie</span>
+            <span class="da-badge da-badge--drop"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Drop le JJ.MM</span>
+          </p>
+        </div>
+        <div class="lp-reservation__texte" data-apparition>
+          <p class="lp-surtitre-section">Le pré-drop</p>
+          <h2 id="titre-reservation" class="da-title lp-h2">La réservation <em class="lp-accent">garantie</em></h2>
+          <p class="lp-intro">Pour certains produits, nous ouvrirons avant leur réception une réservation garantie. La fiche affichera deux prix côte à côte : le prix de la réservation garantie et le prix du drop. Le premier est le second augmenté d'un supplément, qui ne dépasse jamais 10 %.</p>
+          <div class="lp-garantie">
+            <p class="lp-garantie__texte">Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.</p>
+            <p class="lp-garantie__texte lp-garantie__texte--limite">Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.</p>
+          </div>
+          <ul class="lp-garanties">
+            <li class="lp-garanties__item">
+              <svg class="lp-garanties__icone" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg>
+              <h3 class="lp-h3">Servi en premier</h3>
+              <p>Les réservations garanties sont servies avant toute vente au prix du drop, dans l'ordre de leur paiement.</p>
+            </li>
+            <li class="lp-garanties__item">
+              <svg class="lp-garanties__icone" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg>
+              <h3 class="lp-h3">Expédié dès réception</h3>
+              <p>Votre commande est préparée dès la réception et le contrôle du produit, avant les commandes passées au prix du drop.</p>
+            </li>
+            <li class="lp-garanties__item">
+              <svg class="lp-garanties__icone" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v4h4"/><path d="M9 12.5l2 2 4-4"/></svg>
+              <h3 class="lp-h3">Remboursé si nous ne pouvons pas vous servir</h3>
+              <p>Intégralement, supplément compris, avec les frais de livraison payés pour la réservation, et nous vous prévenons par email.</p>
+            </li>
+          </ul>
+          <div class="lp-encadre-doux">
+            <h3 class="lp-h3">Ce que le supplément ne garantit pas</h3>
+            <p>Une livraison à une date précise (la date du drop est une date estimée : pas de garantie de livraison le jour du drop), un contenu, une carte ou une rareté, ni qu'il ne restera aucune unité au drop. Pas besoin de garantie ? Attendez le drop : même produit, au prix du drop, s'il en reste.</p>
+          </div>
+          <p class="lp-note">Rien à réserver ici : cette page ne prend ni réservation, ni précommande, ni paiement. Les réservations garanties s'ouvriront sur la boutique, avec leurs conditions complètes.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================== COMMENT ON TRAVAILLE -->
+    <section class="lp-section lp-promesse" id="promesse" aria-labelledby="titre-promesse">
       <div class="da-container">
-        <h2 id="titre-promesse" class="da-title lp-h2">Notre promesse</h2>
-        <ul class="lp-grille lp-grille--4">
-          <li class="lp-carte">
-            <h3 class="lp-h3">En français, bien identifié</h3>
+        <div class="lp-entete-section" data-apparition>
+          <p class="lp-surtitre-section">Notre façon de travailler</p>
+          <h2 id="titre-promesse" class="da-title lp-h2">Comment on <em class="lp-accent">travaille</em></h2>
+          <p class="lp-intro">Des produits identifiés sans ambiguïté, une disponibilité écrite en toutes lettres, des colis qui partent de Genève.</p>
+        </div>
+        <ul class="lp-piliers">
+          <li class="lp-pilier nt-holo" data-apparition>
+            <span class="lp-pilier__num" aria-hidden="true">I</span>
+            <h3 class="lp-h3">Stock réel</h3>
+            <p>Un produit marqué « Stock local » est chez nous, à Genève, contrôlé et prêt à partir. Rien n'est affiché comme disponible s'il ne l'est pas.</p>
+          </li>
+          <li class="lp-pilier nt-holo" data-apparition>
+            <span class="lp-pilier__num" aria-hidden="true">II</span>
+            <h3 class="lp-h3">Français, vérifié</h3>
             <p>Chaque titre indique le format, l'extension et la langue. À réception, nous vérifions la langue, le scellé et le contenu annoncé sur l'emballage, sans ouvrir le produit. En cas de doute, le produit n'est pas publié.</p>
           </li>
-          <li class="lp-carte">
-            <h3 class="lp-h3">Une disponibilité lisible</h3>
-            <p>Un produit marqué « Stock local » est chez nous, prêt à partir. Rien n'est affiché comme disponible s'il ne l'est pas.</p>
-          </li>
-          <li class="lp-carte">
-            <h3 class="lp-h3">Expédié depuis la Suisse</h3>
+          <li class="lp-pilier nt-holo" data-apparition>
+            <span class="lp-pilier__num" aria-hidden="true">III</span>
+            <h3 class="lp-h3">Expédié depuis Genève</h3>
             <p>Préparé à Genève et livré en Suisse uniquement. Prix en francs suisses ; frais de livraison affichés avant le paiement.</p>
           </li>
-          <li class="lp-carte">
+          <li class="lp-pilier nt-holo" data-apparition>
+            <span class="lp-pilier__num" aria-hidden="true">IV</span>
             <h3 class="lp-h3">Un service qui répond</h3>
             <p>Une adresse email où nous vous répondons : les réponses courantes sont préparées et envoyées par des outils automatisés, à partir de modèles que nous validons, et une personne reprend votre demande dès que vous le souhaitez. Une politique de retour et une garantie écrites noir sur blanc.</p>
           </li>
         </ul>
-      </div>
-    </section>
 
-    <section class="lp-section lp-section--alt" id="statuts" aria-labelledby="titre-statuts">
-      <div class="da-container">
-        <h2 id="titre-statuts" class="da-title lp-h2">Trois statuts, pas de flou</h2>
-        <p class="lp-intro">Sur chaque fiche, la disponibilité est écrite en toutes lettres. Voici ce que chaque mention voudra dire.</p>
-        <dl class="lp-statuts">
-          <div class="lp-statuts__ligne">
-            <dt><span class="da-badge da-badge--local"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 15l2 2 4-4"/></svg>Stock local</span></dt>
-            <dd>Le produit est à Genève, contrôlé, prêt à être expédié.</dd>
+        <div class="lp-statuts-zone" id="statuts">
+          <div class="lp-statuts-zone__texte" data-apparition>
+            <h3 class="da-title lp-h2 lp-h2--petit">Trois statuts, <em class="lp-accent">pas de flou</em></h3>
+            <p class="lp-intro">Sur chaque fiche, la disponibilité est écrite en toutes lettres. Voici ce que chaque mention voudra dire.</p>
           </div>
-          <div class="lp-statuts__ligne">
-            <dt><span class="da-badge da-badge--preorder"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Précommande</span></dt>
-            <dd>Ouverte seulement quand la quantité qui nous est attribuée est confirmée par écrit. La date de sortie est affichée telle qu'elle nous est communiquée : estimée ou confirmée.</dd>
+          <dl class="lp-statuts" data-apparition>
+            <div class="lp-statuts__ligne">
+              <dt><span class="da-badge da-badge--local"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 15l2 2 4-4"/></svg>Stock local</span></dt>
+              <dd>Le produit est à Genève, contrôlé, prêt à être expédié.</dd>
+            </div>
+            <div class="lp-statuts__ligne">
+              <dt><span class="da-badge da-badge--preorder"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Précommande</span></dt>
+              <dd>Ouverte seulement quand la quantité qui nous est attribuée est confirmée par écrit. La date de sortie est affichée telle qu'elle nous est communiquée : estimée ou confirmée.</dd>
+            </div>
+            <div class="lp-statuts__ligne">
+              <dt><span class="da-badge da-badge--out"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M7 17L17 7"/></svg>Rupture</span></dt>
+              <dd>Plus d'unité disponible. Vous pouvez demander une alerte de réassort ; nous n'inventons pas de date de retour.</dd>
+            </div>
+          </dl>
+          <div class="lp-encadre">
+            <h3 class="lp-h3">Ce que vous ne verrez pas chez nous</h3>
+            <ul class="lp-liste">
+              <li>Un compte à rebours ou des « dernières pièces » pour vous presser.</li>
+              <li>Une promesse de carte rare ou de valeur future : le contenu des boosters est aléatoire.</li>
+              <li>Une précommande sans quantité confirmée, ou un acompte demandé sur cette page.</li>
+              <li>Un produit annoncé « en stock » alors qu'il n'est pas encore chez nous.</li>
+            </ul>
           </div>
-          <div class="lp-statuts__ligne">
-            <dt><span class="da-badge da-badge--out"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M7 17L17 7"/></svg>Rupture</span></dt>
-            <dd>Plus d'unité disponible. Vous pouvez demander une alerte de réassort ; nous n'inventons pas de date de retour.</dd>
-          </div>
-        </dl>
-        <div class="lp-encadre">
-          <h3 class="lp-h3">Ce que vous ne verrez pas chez nous</h3>
-          <ul class="lp-liste">
-            <li>Un compte à rebours ou des « dernières pièces » pour vous presser.</li>
-            <li>Une promesse de carte rare ou de valeur future : le contenu des boosters est aléatoire.</li>
-            <li>Une précommande sans quantité confirmée, ou un acompte demandé sur cette page.</li>
-            <li>Un produit annoncé « en stock » alors qu'il n'est pas encore chez nous.</li>
-          </ul>
         </div>
       </div>
     </section>
 
-    <section class="lp-section" id="formats" aria-labelledby="titre-formats">
+    <!-- =========================================================== LUMI -->
+    <section class="lp-section lp-lumi" id="lumi" aria-labelledby="titre-lumi">
+      <div class="da-container lp-lumi__grille">
+        <div class="lp-lumi__texte" data-apparition>
+          <p class="lp-surtitre-section">Notre mascotte</p>
+          <h2 id="titre-lumi" class="da-title lp-h2">Rencontrez <em class="lp-accent">Lumi</em></h2>
+          <p class="lp-etiquette">Nom provisoire</p>
+          <p class="lp-intro">Une loutre au pelage indigo, avec des croissants de lune roses sur les joues et le dos, et une queue plate qui brille comme une carte au clair de lune. La nuit, elle veille sur le quai : elle garde les boîtes scellées jusqu'au jour du drop et salue chaque colis qui part.</p>
+          <ul class="lp-humeurs" aria-label="Ses humeurs">
+            <li>Contente</li>
+            <li>Surprise</li>
+            <li>Endormie</li>
+            <li>Serre une boîte</li>
+            <li>Salue</li>
+          </ul>
+          <p class="lp-note">Lumi est une création originale de la boutique. Ce n'est pas un personnage Pokémon, et elle ne représente aucun produit.</p>
+        </div>
+        <div class="lp-lumi__media" data-apparition>
+          <figure class="nt-cadre nt-scene nt-scene--papier lp-planche">
+            <span class="nt-s nt-s--planche" aria-hidden="true">
+              <span class="nt-planche__case"><span class="nt-lumi"><span class="nt-lumi__oreilles"></span><span class="nt-lumi__tete"></span><span class="nt-lumi__yeux"></span><span class="nt-lumi__joues"></span><span class="nt-lumi__museau"></span></span><span class="nt-planche__legende">contente</span></span>
+              <span class="nt-planche__case"><span class="nt-lumi nt-lumi--surprise"><span class="nt-lumi__oreilles"></span><span class="nt-lumi__tete"></span><span class="nt-lumi__yeux"></span><span class="nt-lumi__joues"></span><span class="nt-lumi__museau"></span></span><span class="nt-planche__legende">surprise</span></span>
+              <span class="nt-planche__case"><span class="nt-lumi nt-lumi--endormie"><span class="nt-lumi__oreilles"></span><span class="nt-lumi__tete"></span><span class="nt-lumi__yeux"></span><span class="nt-lumi__joues"></span><span class="nt-lumi__museau"></span></span><span class="nt-planche__legende">endormie</span></span>
+              <span class="nt-planche__case"><span class="nt-lumi nt-lumi--boite"><span class="nt-lumi__oreilles"></span><span class="nt-lumi__tete"></span><span class="nt-lumi__yeux"></span><span class="nt-lumi__joues"></span><span class="nt-lumi__museau"></span></span><span class="nt-planche__legende">serre une boîte</span></span>
+              <span class="nt-planche__case"><span class="nt-lumi nt-lumi--salue"><span class="nt-lumi__oreilles"></span><span class="nt-lumi__tete"></span><span class="nt-lumi__yeux"></span><span class="nt-lumi__joues"></span><span class="nt-lumi__museau"></span></span><span class="nt-planche__legende">salue</span></span>
+            </span>
+            <img class="nt-visuel__img" alt="Planche d'expressions de Lumi, notre loutre mascotte : contente, surprise, endormie, serrant une boîte blanche, et saluant." sizes="(min-width: 900px) 46vw, 100vw" loading="lazy" decoding="async" data-visuel="planche-expressions" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_005550_f44e6732-9c18-4b97-b2d7-8175e1e59c04_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_005550_f44e6732-9c18-4b97-b2d7-8175e1e59c04_min.webp 1344w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_005550_f44e6732-9c18-4b97-b2d7-8175e1e59c04.png 2688w" width="2688" height="1520">
+          </figure>
+          <figure class="lp-autocollant">
+            <span class="lp-autocollant__fond" aria-hidden="true">
+              <span class="nt-lumi nt-lumi--grand"><span class="nt-lumi__oreilles"></span><span class="nt-lumi__tete"></span><span class="nt-lumi__yeux"></span><span class="nt-lumi__joues"></span><span class="nt-lumi__museau"></span></span>
+            </span>
+            <img class="nt-visuel__img" alt="Autocollant rond de Lumi." sizes="(min-width: 900px) 14rem, 9rem" loading="lazy" decoding="async" data-visuel="autocollant-lumi" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_005551_feac2db3-1d1e-4280-b87c-2782c9d27160_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_005551_feac2db3-1d1e-4280-b87c-2782c9d27160_min.webp 1024w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_005551_feac2db3-1d1e-4280-b87c-2782c9d27160.png 2048w" width="2048" height="2048">
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================== LÉMAN -->
+    <section class="lp-leman" id="leman" aria-labelledby="titre-leman">
+      <div class="lp-leman__fond nt-scene nt-scene--alpes" data-parallaxe="0.12">
+        <span class="nt-s nt-s--ciel" aria-hidden="true"></span>
+        <span class="nt-s nt-s--astre" aria-hidden="true"></span>
+        <span class="nt-s nt-s--relief" aria-hidden="true"></span>
+        <span class="nt-s nt-s--lac" aria-hidden="true"></span>
+        <img class="nt-visuel__img" alt="" sizes="100vw" loading="lazy" decoding="async" data-visuel="banniere-alpes" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_4c12c458-e019-423e-b075-cb58903614f1_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_4c12c458-e019-423e-b075-cb58903614f1_min.webp 1344w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_4c12c458-e019-423e-b075-cb58903614f1.png 2688w" width="2688" height="1152">
+      </div>
+      <div class="lp-leman__voile" aria-hidden="true"></div>
+      <div class="da-container lp-leman__grille">
+        <div class="lp-leman__texte" data-apparition>
+          <p class="lp-surtitre-section">Au bord du Léman</p>
+          <h2 id="titre-leman" class="da-title lp-h2">Préparé à Genève, <em class="lp-accent">livré en Suisse.</em></h2>
+          <p class="lp-intro">Chaque colis part de Genève. Nous livrons uniquement en Suisse, en francs suisses, avec les frais de livraison affichés avant le paiement.</p>
+        </div>
+        <figure class="lp-leman__media nt-cadre nt-cadre--arche nt-scene nt-scene--leman" data-apparition>
+          <span class="nt-s nt-s--ciel" aria-hidden="true"></span>
+          <span class="nt-s nt-s--astre" aria-hidden="true"></span>
+          <span class="nt-s nt-s--jet" aria-hidden="true"></span>
+          <span class="nt-s nt-s--lac" aria-hidden="true"></span>
+          <img class="nt-visuel__img" alt="Illustration : Lumi flotte sur le dos dans le Léman, devant le jet d'eau éclairé en rose et or sous un ciel violet." sizes="(min-width: 900px) 30vw, 80vw" loading="lazy" decoding="async" data-visuel="cover-leman" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074038_fdb87cb5-7d79-45cf-8fb0-f3ab0e75ba6b_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074038_fdb87cb5-7d79-45cf-8fb0-f3ab0e75ba6b_min.webp 760w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074038_fdb87cb5-7d79-45cf-8fb0-f3ab0e75ba6b.png 1520w" width="1520" height="2688">
+        </figure>
+      </div>
+    </section>
+
+    <!-- =========================================================== FORMATS -->
+    <section class="lp-section lp-formats" id="formats" aria-labelledby="titre-formats">
+      <div class="lp-formats__ciel nt-scene nt-scene--aurore" aria-hidden="true">
+        <span class="nt-s nt-s--ciel"></span>
+        <span class="nt-s nt-s--aurore"></span>
+        <img class="nt-visuel__img" alt="" sizes="100vw" loading="lazy" decoding="async" data-visuel="banniere-aurore" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_9f7c2b11-d562-47e8-880f-e071ba854c7d_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_9f7c2b11-d562-47e8-880f-e071ba854c7d_min.webp 1344w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074037_9f7c2b11-d562-47e8-880f-e071ba854c7d.png 2688w" width="2688" height="1152">
+      </div>
       <div class="da-container">
-        <h2 id="titre-formats" class="da-title lp-h2">Les formats prévus à l'ouverture</h2>
-        <p class="lp-intro">La sélection exacte dépendra des produits réellement reçus et sera annoncée aux inscrits. Aucun prix n'est encore fixé.</p>
-        <ul class="lp-grille lp-grille--3">
-          <li class="lp-carte">
-            <p class="lp-carte__badge"><span class="da-badge da-badge--fr">FR</span></p>
+        <div class="lp-entete-section" data-apparition>
+          <p class="lp-surtitre-section">À l'ouverture</p>
+          <h2 id="titre-formats" class="da-title lp-h2">Les formats <em class="lp-accent">prévus</em></h2>
+          <p class="lp-intro">La sélection exacte dépendra des produits réellement reçus et sera annoncée aux inscrits. Aucun prix n'est encore fixé.</p>
+        </div>
+        <ul class="lp-cartes">
+          <li class="lp-carte-holo nt-holo" data-apparition>
+            <svg class="lp-carte-holo__icone" width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 14l14-7 14 7v14l-14 7-14-7z"/><path d="M6 14l14 7 14-7M20 21v14"/><path d="M13 10.5l14 7"/></svg>
+            <p class="lp-carte-holo__badge"><span class="da-badge da-badge--fr">FR</span></p>
             <h3 class="lp-h3">Displays</h3>
             <p>Une boîte de boosters d'une même extension.</p>
           </li>
-          <li class="lp-carte">
-            <p class="lp-carte__badge"><span class="da-badge da-badge--fr">FR</span></p>
+          <li class="lp-carte-holo nt-holo" data-apparition>
+            <svg class="lp-carte-holo__icone" width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="6" y="12" width="28" height="22" rx="3"/><path d="M6 19h28M17 12v7M23 12v7"/><path d="M14 12l6-6 6 6"/></svg>
+            <p class="lp-carte-holo__badge"><span class="da-badge da-badge--fr">FR</span></p>
             <h3 class="lp-h3">Coffrets Dresseur d'élite (ETB)</h3>
             <p>Des boosters et des accessoires de jeu réunis dans un coffret.</p>
           </li>
-          <li class="lp-carte">
-            <p class="lp-carte__badge"><span class="da-badge da-badge--fr">FR</span></p>
+          <li class="lp-carte-holo nt-holo" data-apparition>
+            <svg class="lp-carte-holo__icone" width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="9" width="12" height="22" rx="2" transform="rotate(-8 13 20)"/><rect x="15" y="8" width="12" height="23" rx="2"/><rect x="22" y="9" width="12" height="22" rx="2" transform="rotate(8 28 20)"/></svg>
+            <p class="lp-carte-holo__badge"><span class="da-badge da-badge--fr">FR</span></p>
             <h3 class="lp-h3">Bundles et tripacks</h3>
             <p>Quelques boosters, parfois avec un bonus. Le contenu exact figure sur chaque fiche.</p>
           </li>
-          <li class="lp-carte">
-            <p class="lp-carte__badge"><span class="da-badge da-badge--fr">FR</span></p>
+          <li class="lp-carte-holo nt-holo" data-apparition>
+            <svg class="lp-carte-holo__icone" width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="16" width="26" height="18" rx="2"/><path d="M5 11h30v5H5zM20 11v23"/><path d="M20 11c-3-5-9-5-8-1 1 2 5 1 8 1 3 0 7 1 8-1 1-4-5-4-8 1"/></svg>
+            <p class="lp-carte-holo__badge"><span class="da-badge da-badge--fr">FR</span></p>
             <h3 class="lp-h3">Coffrets</h3>
             <p>Des boosters accompagnés d'objets de collection, souvent choisis pour offrir.</p>
           </li>
-          <li class="lp-carte">
+          <li class="lp-carte-holo nt-holo" data-apparition>
+            <svg class="lp-carte-holo__icone" width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="9" y="6" width="22" height="30" rx="3"/><rect x="13" y="10" width="14" height="20" rx="1.5"/><path d="M9 12h-3M9 20h-3M9 28h-3"/></svg>
             <h3 class="lp-h3">Accessoires</h3>
             <p>Protège-cartes, classeurs et boîtes de rangement pour protéger et ranger vos cartes.</p>
           </li>
-          <li class="lp-carte lp-carte--note">
+          <li class="lp-carte-holo lp-carte-holo--note nt-holo" data-apparition>
+            <svg class="lp-carte-holo__icone" width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" focusable="false"><circle cx="20" cy="20" r="13"/><path d="M11 29L29 11"/></svg>
             <h3 class="lp-h3">Pas au lancement</h3>
             <p>Cartes à l'unité, cartes gradées, rachat de cartes et autres langues que le français.</p>
           </li>
@@ -173,12 +411,21 @@
       </div>
     </section>
 
-    <section class="lp-section lp-section--alt" id="alertes" aria-labelledby="titre-alertes">
+    <!-- =========================================================== ALERTES -->
+    <section class="lp-section lp-alertes" id="alertes" aria-labelledby="titre-alertes">
       <div class="da-container lp-formulaire-zone">
-        <div class="lp-formulaire-intro">
+        <div class="lp-formulaire-intro" data-apparition>
+          <p class="lp-surtitre-section">Alerte d'ouverture</p>
           <h2 id="titre-alertes" class="da-title lp-h2">Recevoir l'alerte d'ouverture</h2>
-          <p>Un email quand la boutique ouvre, puis, si vous le souhaitez, les alertes de stock qui correspondent à vos choix.</p>
+          <p class="lp-intro">Un email quand la boutique ouvre, puis, si vous le souhaitez, les alertes de stock qui correspondent à vos choix.</p>
           <p class="lp-note">Aucun paiement, aucune réservation : cette inscription ne réserve aucun produit.</p>
+          <figure class="lp-alertes__visuel nt-cadre nt-cadre--arche nt-scene nt-scene--aurore">
+            <span class="nt-s nt-s--ciel" aria-hidden="true"></span>
+            <span class="nt-s nt-s--aurore" aria-hidden="true"></span>
+            <span class="nt-s nt-s--tours" aria-hidden="true"></span>
+            <span class="nt-s nt-s--cartes" aria-hidden="true"><span></span><span></span><span></span></span>
+            <img class="nt-visuel__img" alt="Illustration : Lumi debout sur le toit d'une tour sous une aurore turquoise, entourée de cartes lumineuses sans motif." sizes="(min-width: 900px) 24rem, 70vw" loading="lazy" decoding="async" data-visuel="cover-aurore" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074038_d9db3749-5709-48f2-ba15-b5e9bae81710_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074038_d9db3749-5709-48f2-ba15-b5e9bae81710_min.webp 760w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_074038_d9db3749-5709-48f2-ba15-b5e9bae81710.png 1520w" width="1520" height="2688">
+          </figure>
         </div>
         <form class="lp-formulaire" id="lp-formulaire" method="post" action="" novalidate>
           <div class="lp-champ">
@@ -272,7 +519,7 @@
           <input type="hidden" name="utm_medium" value="">
           <input type="hidden" name="utm_campaign" value="">
           <div class="lp-actions">
-            <button class="da-btn da-btn--primary" type="submit" id="lp-envoyer" disabled>M'inscrire aux alertes</button>
+            <button class="da-btn da-btn--primary lp-btn-lune" type="submit" id="lp-envoyer" disabled>M'inscrire aux alertes</button>
           </div>
           <p class="lp-statut" id="lp-statut" role="status" aria-live="polite"></p>
           <!-- APERCU:DEBUT -->
@@ -284,46 +531,87 @@
       </div>
     </section>
 
-    <section class="lp-section" id="faq" aria-labelledby="titre-faq">
-      <div class="da-container lp-faq">
-        <h2 id="titre-faq" class="da-title lp-h2">Questions fréquentes</h2>
-        <details>
-          <summary>Quand la boutique ouvre-t-elle ?</summary>
-          <p>L'ouverture est prévue en {{MOIS_OUVERTURE}}. Nous l'annoncerons aux inscrits lorsque les produits seront reçus et contrôlés, pas avant.</p>
-        </details>
-        <details>
-          <summary>Puis-je précommander ou réserver dès maintenant ?</summary>
-          <p>Non. Cette page ne permet aucune précommande, réservation ou paiement. Une précommande ne sera ouverte que lorsque la quantité qui nous est attribuée sera confirmée par écrit.</p>
-        </details>
-        <details>
-          <summary>Êtes-vous une boutique officielle Pokémon ?</summary>
-          <p>Non. Quai des Cartes est une boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus. Nous utilisons le nom « Pokémon » uniquement pour désigner les produits que nous revendons.</p>
-        </details>
-        <details>
-          <summary>Les produits seront-ils authentiques et en français ?</summary>
-          <p>Oui : des produits neufs et scellés, en langue française. Chaque livraison est contrôlée à réception (langue, emballage, scellé) avant la mise en vente.</p>
-        </details>
-        <details>
-          <summary>Pouvez-vous garantir une carte rare ?</summary>
-          <p>Non. Le contenu des boosters est aléatoire et décidé par le fabricant. Personne ne peut garantir une carte précise, une rareté ou une valeur future.</p>
-        </details>
-        <details>
-          <summary>Livrez-vous hors de Suisse ?</summary>
-          <p>Non. Nous livrons uniquement en Suisse.</p>
-        </details>
-        <details>
-          <summary>Que faites-vous de mon adresse email ?</summary>
-          <p>Nous l'utilisons pour les envois que vous avez choisis, après votre confirmation ; si vous vous désinscrivez, nous la gardons seulement dans une liste d'exclusion pour ne plus vous écrire. Vos réponses facultatives (prénom, formats, budget, pour qui, canton) et l'origine de votre visite servent aussi, de façon agrégée, à choisir notre assortiment, nos contenus et nos canaux. Nous ne vendons jamais vos données. Chaque email contient un lien de désinscription en un clic. Détails : <a href="confidentialite.html">déclaration de confidentialité</a>.</p>
-        </details>
+    <!-- =========================================================== FAQ -->
+    <section class="lp-section lp-faq-zone" id="faq" aria-labelledby="titre-faq">
+      <div class="da-container lp-faq-grille">
+        <div class="lp-faq-intro" data-apparition>
+          <p class="lp-surtitre-section">Questions</p>
+          <h2 id="titre-faq" class="da-title lp-h2">Questions <em class="lp-accent">fréquentes</em></h2>
+          <figure class="lp-faq-visuel nt-cadre nt-cadre--arche nt-scene nt-scene--nuit">
+            <span class="nt-s nt-s--ciel" aria-hidden="true"></span>
+            <span class="nt-s nt-s--astre" aria-hidden="true"></span>
+            <span class="nt-s nt-s--lac" aria-hidden="true"></span>
+            <span class="nt-s nt-s--quai" aria-hidden="true"><span></span><span></span></span>
+            <img class="nt-visuel__img" alt="Illustration : Lumi assise sur le quai sous la lune rose." sizes="(min-width: 900px) 20rem, 60vw" loading="lazy" decoding="async" data-visuel="loutre-quai-lune" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_003425_4f1db69b-7506-485b-82ee-1a696297d929_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_003425_4f1db69b-7506-485b-82ee-1a696297d929_min.webp 760w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_003425_4f1db69b-7506-485b-82ee-1a696297d929.png 1520w" width="1520" height="2688">
+          </figure>
+        </div>
+        <div class="lp-faq" data-apparition>
+          <details>
+            <summary>Quand la boutique ouvre-t-elle ?</summary>
+            <p>L'ouverture est prévue en {{MOIS_OUVERTURE}}. Nous l'annoncerons aux inscrits lorsque les produits seront reçus et contrôlés, pas avant.</p>
+          </details>
+          <details>
+            <summary>Puis-je précommander ou réserver dès maintenant ?</summary>
+            <p>Non. Cette page ne permet aucune précommande, réservation ou paiement. Une précommande ne sera ouverte que lorsque la quantité qui nous est attribuée sera confirmée par écrit.</p>
+          </details>
+          <details>
+            <summary>Qu'est-ce que la réservation garantie ?</summary>
+            <p>Pour certains produits, une réservation ouverte avant leur réception, au prix du drop augmenté d'un supplément (au plus 10 %). Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit. Si nous ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris.</p>
+          </details>
+          <details>
+            <summary>S'il reste des unités au drop, la différence est-elle remboursée ?</summary>
+            <p>Non. Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop. Si vous n'avez pas besoin de la garantie, attendez le drop : même produit, au prix du drop, s'il en reste.</p>
+          </details>
+          <details>
+            <summary>Êtes-vous une boutique officielle Pokémon ?</summary>
+            <p>Non. Quai des Cartes est une boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus. Nous utilisons le nom « Pokémon » uniquement pour désigner les produits que nous revendons.</p>
+          </details>
+          <details>
+            <summary>Les produits seront-ils authentiques et en français ?</summary>
+            <p>Oui : des produits neufs et scellés, en langue française. Chaque livraison est contrôlée à réception (langue, emballage, scellé) avant la mise en vente.</p>
+          </details>
+          <details>
+            <summary>Pouvez-vous garantir une carte rare ?</summary>
+            <p>Non. Le contenu des boosters est aléatoire et décidé par le fabricant. Personne ne peut garantir une carte précise, une rareté ou une valeur future.</p>
+          </details>
+          <details>
+            <summary>Livrez-vous hors de Suisse ?</summary>
+            <p>Non. Nous livrons uniquement en Suisse.</p>
+          </details>
+          <details>
+            <summary>Qui est Lumi ?</summary>
+            <p>Notre mascotte, une loutre (nom provisoire) créée pour la boutique. Ce n'est pas un personnage Pokémon : c'est une illustration originale, qui ne représente aucun produit.</p>
+          </details>
+          <details>
+            <summary>Que faites-vous de mon adresse email ?</summary>
+            <p>Nous l'utilisons pour les envois que vous avez choisis, après votre confirmation ; si vous vous désinscrivez, nous la gardons seulement dans une liste d'exclusion pour ne plus vous écrire. Vos réponses facultatives (prénom, formats, budget, pour qui, canton) et l'origine de votre visite servent aussi, de façon agrégée, à choisir notre assortiment, nos contenus et nos canaux. Nous ne vendons jamais vos données. Chaque email contient un lien de désinscription en un clic. Détails : <a href="confidentialite.html">déclaration de confidentialité</a>.</p>
+          </details>
+        </div>
       </div>
     </section>
   </main>
 
   <footer class="lp-pied">
-    <div class="da-container">
-      <p class="lp-pied__mention" id="mention-independance">Quai des Cartes est une boutique indépendante. Elle n'est ni affiliée, ni sponsorisée, ni approuvée par The Pokémon Company, Nintendo, Creatures Inc. ou GAME FREAK inc. Pokémon et les noms associés sont des marques de leurs titulaires respectifs ; nous les utilisons uniquement pour désigner les produits authentiques que nous revendons.</p>
-      <p>Exploitant : {{RAISON_SOCIALE}}, {{ADRESSE_POSTALE}}, Suisse. Contact : <a href="mailto:{{EMAIL_SUPPORT}}">{{EMAIL_SUPPORT}}</a></p>
-      <p><a href="confidentialite.html">Déclaration de confidentialité</a></p>
+    <div class="lp-pied__ciel nt-scene nt-scene--quai" aria-hidden="true">
+      <span class="nt-s nt-s--ciel"></span>
+      <span class="nt-s nt-s--astre"></span>
+      <span class="nt-s nt-s--relief"></span>
+      <span class="nt-s nt-s--lac"></span>
+      <span class="nt-s nt-s--quai"><span></span><span></span></span>
+      <img class="nt-visuel__img" alt="" sizes="100vw" loading="lazy" decoding="async" data-visuel="quai-nuit" src="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_005551_3a877f06-7a68-46a5-8730-274f6571c6d3_min.webp" srcset="https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_005551_3a877f06-7a68-46a5-8730-274f6571c6d3_min.webp 1344w, https://d8j0ntlcm91z4.cloudfront.net/user_38ChCusosbTr5ivkaGQnGHTFFHg/hf_20261006_005551_3a877f06-7a68-46a5-8730-274f6571c6d3.png 2688w" width="2688" height="1520">
+    </div>
+    <div class="da-container lp-pied__grille">
+      <div class="lp-pied__marque">
+        <img class="lp-pied__logo" src="assets/da/logo-horizontal-fond-sombre.svg" alt="Quai des Cartes" width="963" height="132" loading="lazy">
+        <p class="lp-pied__devise">Pokémon JCC en français, expédié depuis Genève.</p>
+        <a class="da-btn lp-btn-verre" href="#alertes">Recevoir l'alerte d'ouverture</a>
+      </div>
+      <div class="lp-pied__legal">
+        <p class="lp-pied__mention" id="mention-independance">Quai des Cartes est une boutique indépendante. Elle n'est ni affiliée, ni sponsorisée, ni approuvée par The Pokémon Company, Nintendo, Creatures Inc. ou GAME FREAK inc. Pokémon et les noms associés sont des marques de leurs titulaires respectifs ; nous les utilisons uniquement pour désigner les produits authentiques que nous revendons.</p>
+        <p>Exploitant : {{RAISON_SOCIALE}}, {{ADRESSE_POSTALE}}, Suisse. Contact : <a href="mailto:{{EMAIL_SUPPORT}}">{{EMAIL_SUPPORT}}</a></p>
+        <p><a href="confidentialite.html">Déclaration de confidentialité</a></p>
+        <p class="lp-pied__credits">Illustrations : créations originales de la boutique, sans élément sous licence. Lumi, notre mascotte : nom provisoire.</p>
+      </div>
     </div>
   </footer>
 </body>

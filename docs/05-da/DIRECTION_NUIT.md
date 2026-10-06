@@ -128,7 +128,7 @@ Loutre **originale** créée pour la boutique : fourrure indigo profond, **marqu
 
 ## 7. Visuels générés pour la marque
 
-- Douze visuels (bannières 21:9 et 16:9, couvertures 9:16, planche, autocollant) listés dans **un seul fichier** : `site/config/visuels.json` (adresse distante, dimensions, usage). Les pages ne contiennent que des balises `data-visuel="…"` synchronisées par `site/outils/visuels.py`.
+- Douze visuels générés pour la marque avec Higgsfield (fichiers `hf_…` ; bannières 21:9 et 16:9, couvertures 9:16, planche d'expressions, autocollant) listés dans **un seul fichier** : `site/config/visuels.json` (adresse distante, dimensions, usage). Les pages ne contiennent que des balises `data-visuel="…"` synchronisées par `site/outils/visuels.py`.
 - **Aperçu** : images servies par l'adresse distante. **Publication** : refusée tant que les images ne sont pas rapatriées en local (`python site/outils/rapatrier_visuels.py`) ; la politique de sécurité de la page publiée n'autorise que les images du site.
 - Chaque emplacement d'image a un **fond de secours** dessiné en CSS (ciel, lune, lac, montagnes) : la page reste belle si une image ne charge pas.
 - Texte alternatif descriptif pour chaque image porteuse de sens ; `alt=""` pour les images purement décoratives.

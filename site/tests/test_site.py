@@ -9,13 +9,13 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import pytest
-
 import da_sync
 import markdown_mini
 import publication
+import pytest
 import registre_champs as rc
 import verifier_site as vs
+import visuels
 from typo import NBSP, NNBSP, fautes, typographier
 
 REPO = Path(__file__).resolve().parents[2]
@@ -225,9 +225,39 @@ def test_apercu_construit_et_garde_bandeau(tmp_path: Path) -> None:
     assert vs.verifier_landing(tmp_path / "ap") == []
 
 
+def source_visuels_locaux(tmp_path: Path) -> tuple[Path, dict]:
+    """Copie de la landing dont les visuels sont « rapatriés » (fichiers factices, manifeste en source locale)."""
+    source = tmp_path / "lp"
+    shutil.copytree(LANDING, source)
+    m = json.loads(visuels.CONFIG.read_text(encoding="utf-8"))
+    m["source"] = "local"
+    for ident, v in m["visuels"].items():
+        v["largeur_min"], v["hauteur_min"] = v["largeur"] // 2, v["hauteur"] // 2
+        for variante in visuels.VARIANTES:
+            cible = visuels.chemin_local(m, ident, variante, source)
+            cible.parent.mkdir(parents=True, exist_ok=True)
+            cible.write_bytes(b"FICTIF")
+    visuels.appliquer(m, sorted(source.glob("*.html")), racine=source)
+    return source, m
+
+
+def test_publication_refusee_tant_que_les_visuels_sont_distants(tmp_path: Path) -> None:
+    """La page publiée ne charge aucune image d'un tiers (CSP img-src 'self', aucune IP transmise)."""
+    assert visuels.charger()["source"] == "distant"
+    with pytest.raises(publication.PublicationError) as exc:
+        publication.construire("publication", tmp_path / "pub", champs=_champs_fictifs())
+    assert any("rapatrier_visuels.py" in e for e in exc.value.erreurs)
+    source, m = source_visuels_locaux(tmp_path)
+    (source / m["dossier_local"] / (m["visuels"]["autocollant-lumi"]["fichier"] + ".png")).unlink()
+    with pytest.raises(publication.PublicationError) as exc:
+        publication.construire("publication", tmp_path / "pub2", champs=_champs_fictifs(), source=source, visuels_manifeste=m)
+    assert any("autocollant-lumi" in e and "absent" in e for e in exc.value.erreurs)
+
+
 def test_publication_complete_avec_champs_fictifs(tmp_path: Path) -> None:
     sortie = tmp_path / "pub"
-    rapport = publication.construire("publication", sortie, champs=_champs_fictifs())
+    source, m = source_visuels_locaux(tmp_path)
+    rapport = publication.construire("publication", sortie, champs=_champs_fictifs(), source=source, visuels_manifeste=m)
     assert {"_headers", "robots.txt", "sitemap.xml", "index.html", "confidentialite.html"} <= set(rapport.fichiers)
     index = (sortie / "index.html").read_text(encoding="utf-8")
     assert "{{" not in index and "⟦" not in index and "APERCU" not in index and "noindex" not in index
@@ -239,14 +269,22 @@ def test_publication_complete_avec_champs_fictifs(tmp_path: Path) -> None:
     entetes = (sortie / "_headers").read_text(encoding="utf-8")
     assert "connect-src https://n8n.exemple.invalid;" in entetes and "fonts.googleapis.com" in entetes
     assert (sortie / "merci.html").read_text(encoding="utf-8").count("noindex") == 1
+    assert "img-src 'self' data:;" in entetes
+    assert "cloudfront" not in index and 'src="assets/visuels/' in index
+    assert any(f.startswith("assets/visuels/") for f in rapport.fichiers)
     assert vs.verifier_landing(sortie, publication_mode=True) == []
+    # Un visuel distant resté dans un dossier de publication est refusé par le contrôle
+    distant = index.replace('src="assets/visuels/', 'src="' + visuels.charger()["base_distante"], 1)
+    (sortie / "index.html").write_text(distant, encoding="utf-8")
+    assert any("visuel distant dans un dossier de publication" in e for e in vs.verifier_landing(sortie, publication_mode=True))
 
 
 def test_publication_sans_google_fonts(tmp_path: Path) -> None:
     sortie = tmp_path / "pub"
     champs = _champs_fictifs()
     champs["ST_POLICES"] = dataclasses.replace(champs["ST_POLICES"], value="aucun : polices du système")
-    publication.construire("publication", sortie, champs=champs, sans_google_fonts=True)
+    source, m = source_visuels_locaux(tmp_path)
+    publication.construire("publication", sortie, champs=champs, sans_google_fonts=True, source=source, visuels_manifeste=m)
     for page in sortie.glob("*.html"):
         assert "fonts.googleapis.com" not in page.read_text(encoding="utf-8")
     assert "fonts.g" not in (sortie / "_headers").read_text(encoding="utf-8")

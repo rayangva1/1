@@ -1,21 +1,88 @@
 /*
- * Landing de validation — complète assets/da/tokens.css et assets/da/components.css (DA, docs/05-da).
- * Aucune couleur en dur : uniquement les variables --da-* (contrastes vérifiés par la DA, clair et sombre).
- * Préfixe lp- : propre à la landing. Mobile d'abord.
+ * Landing et maquettes — ambiance « Nuit sur le Léman » (docs/05-da/DIRECTION_NUIT.md), bâtie sur la direction B.
+ * Complète assets/da/tokens.css, assets/da/components.css et assets/da/ambiance.css (DA, docs/05-da).
+ * Aucune couleur en dur : uniquement les variables --da-* (contrastes calculés dans DIRECTION_NUIT.md).
+ * Préfixes : lp- (pages), nt- (décor de nuit réutilisable : scènes, étoiles, lune, cartes « verre dépoli »).
+ * Mobile d'abord. Mouvement : seulement si prefers-reduced-motion le permet ET que la pause n'est pas demandée.
+ * Les décors .nt-scene sont dessinés en CSS : ils restent visibles si une image de marque ne charge pas.
  */
 
-html { scroll-behavior: smooth; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-body.da-root { min-height: 100vh; }
-.da-root :target { scroll-margin-top: var(--da-space-5); }
+/* =========================================================================== 1. Variables et base */
+:root {
+  --lp-verre: color-mix(in srgb, var(--da-color-surface) 74%, transparent);
+  --lp-verre-fort: color-mix(in srgb, var(--da-color-surface) 88%, transparent);
+  --lp-bord-verre: color-mix(in srgb, var(--da-color-ink) 14%, transparent);
+  --lp-bord-verre-fort: color-mix(in srgb, var(--da-color-ink) 24%, transparent);
+  --lp-reflet: color-mix(in srgb, var(--da-color-ink) 7%, transparent);
+  --lp-pelage: color-mix(in srgb, var(--da-color-ciel-1) 70%, var(--da-color-ciel-2));
+  --lp-gouttiere: clamp(16px, 4.5vw, 56px);
+  --lp-section-y: clamp(72px, 8.5vw, 132px);
+  --lp-entete-h: 68px;
+  --lp-lune-x: 76%;
+  --lp-lune-y: 16%;
+}
+@supports not (color: color-mix(in srgb, currentColor 50%, transparent)) {
+  :root {
+    --lp-verre: var(--da-color-surface);
+    --lp-verre-fort: var(--da-color-surface);
+    --lp-bord-verre: var(--da-color-line);
+    --lp-bord-verre-fort: var(--da-color-line-strong);
+    --lp-reflet: transparent;
+    --lp-pelage: var(--da-color-ciel-1);
+  }
+}
 
-/* ---------- Lien d'évitement ---------- */
+html { scroll-behavior: smooth; scroll-padding-top: calc(var(--lp-entete-h) + 12px); }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body.da-root {
+  min-height: 100vh;
+  overflow-x: clip;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  background: var(--da-color-bg);
+}
+.da-root ::selection { background: var(--da-color-accent); color: var(--da-color-on-accent); }
+.da-root :focus-visible { outline: 3px solid var(--da-color-focus); outline-offset: 3px; border-radius: 4px; }
+.da-root .da-container { padding-inline: var(--lp-gouttiere); max-width: 1280px; }
+.da-root img { color: transparent; }
+
+/* Ciel étoilé derrière toute la page (deux trames d'étoiles décalées, aucune image ; défile avec la page). */
+body.lp-nuit { position: relative; }
+.lp-nuit::before,
+.lp-nuit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.lp-nuit::before {
+  background:
+    radial-gradient(ellipse 70% 1400px at 85% 0%, color-mix(in srgb, var(--da-color-ciel-2) 26%, transparent), transparent 70%),
+    radial-gradient(ellipse 60% 1600px at 0% 55%, color-mix(in srgb, var(--da-color-lune) 7%, transparent), transparent 70%),
+    radial-gradient(ellipse 60% 1600px at 100% 85%, color-mix(in srgb, var(--da-color-ciel-2) 14%, transparent), transparent 70%),
+    var(--da-color-bg);
+}
+.lp-nuit::after {
+  background-image:
+    radial-gradient(1.4px 1.4px at 23px 41px, var(--da-color-or-doux), transparent 70%),
+    radial-gradient(1px 1px at 97px 13px, var(--da-color-ink), transparent 70%),
+    radial-gradient(1.2px 1.2px at 151px 119px, var(--da-color-ink), transparent 70%),
+    radial-gradient(1px 1px at 61px 167px, var(--da-color-ink-muted), transparent 70%),
+    radial-gradient(1.6px 1.6px at 199px 71px, var(--da-color-or), transparent 70%),
+    radial-gradient(1px 1px at 233px 211px, var(--da-color-ink), transparent 70%);
+  background-size: 257px 241px;
+  opacity: 0.55;
+}
+
+/* =========================================================================== 2. Évitement et aperçu */
 .lp-evitement {
   position: absolute;
   left: var(--da-space-2);
   top: -100px;
-  z-index: 20;
+  z-index: 60;
   padding: var(--da-space-2) var(--da-space-4);
+  border-radius: var(--da-radius-pill);
   background: var(--da-color-ink);
   color: var(--da-color-on-ink);
   font-weight: 700;
@@ -23,8 +90,9 @@ body.da-root { min-height: 100vh; }
 .da-root .lp-evitement { color: var(--da-color-on-ink); }
 .lp-evitement:focus { top: var(--da-space-2); }
 
-/* ---------- Bandeau d'aperçu (retiré à la publication) ---------- */
 .lp-apercu {
+  position: relative;
+  z-index: 55;
   padding: var(--da-space-2) var(--da-space-4);
   background: var(--da-color-status-restock-bg);
   color: var(--da-color-status-restock-fg);
@@ -33,225 +101,1615 @@ body.da-root { min-height: 100vh; }
 }
 .lp-apercu p { margin: 0; }
 
-/* ---------- En-tête ---------- */
-.lp-entete { border-bottom: var(--da-border-width) solid var(--da-color-line); background: var(--da-color-bg); }
+/* =========================================================================== 3. En-tête */
+.lp-entete {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  margin-bottom: calc(-1 * var(--lp-entete-h));
+  transition: background-color 0.4s ease, box-shadow 0.4s ease, backdrop-filter 0.4s ease;
+}
+.lp-entete.est-defile,
+.lp-page-simple .lp-entete {
+  background: color-mix(in srgb, var(--da-color-nuit-profonde) 78%, transparent);
+  box-shadow: 0 1px 0 var(--lp-bord-verre);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+}
 .lp-entete__inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--da-space-3);
-  min-height: 64px;
+  min-height: var(--lp-entete-h);
+  max-width: 1440px;
+  margin-inline: auto;
+  padding-inline: var(--lp-gouttiere);
 }
-.lp-logo { display: inline-flex; align-items: center; min-height: var(--da-touch-target); }
-.da-root .lp-logo__img { height: 22px; width: auto; }
-@media (min-width: 600px) { .da-root .lp-logo__img { height: 30px; } }
-.da-root .lp-logo__img--sombre { display: none; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .da-root .lp-logo__img--clair { display: none; }
-  :root:not([data-theme="light"]) .da-root .lp-logo__img--sombre { display: block; }
+.lp-logo { display: inline-flex; align-items: center; min-height: var(--da-touch-target); flex: none; }
+.da-root .lp-logo__img { height: 20px; width: auto; }
+@media (min-width: 600px) { .da-root .lp-logo__img { height: 26px; } }
+.da-root .lp-logo__img--clair { display: none; }
+.lp-nav { display: none; }
+@media (min-width: 1100px) {
+  .lp-nav { display: block; }
+  .lp-nav ul { display: flex; gap: var(--da-space-1); margin: 0; padding: 0; list-style: none; }
+  .lp-nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--da-touch-target);
+    padding: 0 var(--da-space-3);
+    border-radius: var(--da-radius-pill);
+    color: var(--da-color-ink);
+    font-size: var(--da-text-sm);
+    font-weight: 500;
+    text-decoration: none;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+  .lp-nav a:hover { background: var(--lp-reflet); color: var(--da-color-or-doux); }
 }
-:root[data-theme="dark"] .da-root .lp-logo__img--clair { display: none; }
-:root[data-theme="dark"] .da-root .lp-logo__img--sombre { display: block; }
-
-.lp-theme {
+.lp-entete__actions { display: flex; align-items: center; gap: var(--da-space-2); }
+.lp-animations {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--da-space-2);
+  min-width: var(--da-touch-target);
   min-height: var(--da-touch-target);
-  padding: 6px 12px;
-  border: 1px solid var(--da-color-line-strong);
-  border-radius: var(--da-radius-md);
-  background: var(--da-color-surface);
+  padding: 0 var(--da-space-3);
+  border: 1px solid var(--lp-bord-verre-fort);
+  border-radius: var(--da-radius-pill);
+  background: color-mix(in srgb, var(--da-color-nuit-profonde) 45%, transparent);
   color: var(--da-color-ink);
   font: inherit;
   font-size: var(--da-text-sm);
   cursor: pointer;
-  white-space: nowrap;
+}
+.lp-animations[hidden] { display: none; }
+.lp-animations:hover { border-color: var(--da-color-or); }
+.lp-animations[aria-pressed="true"] { border-color: var(--da-color-or); color: var(--da-color-or-doux); }
+.lp-animations__lecture,
+.lp-animations[aria-pressed="true"] .lp-animations__pause { display: none; }
+.lp-animations[aria-pressed="true"] .lp-animations__lecture { display: block; }
+@media (max-width: 767px) {
+  .lp-animations { padding: 0; }
+  .lp-animations__texte {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
+}
+.da-root .lp-entete__cta { min-height: var(--da-touch-target); padding-inline: 18px; font-size: var(--da-text-sm); }
+
+/* =========================================================================== 4. Boutons */
+.da-root .da-btn { font-size: 1rem; letter-spacing: 0.005em; }
+.da-root .lp-btn-lune {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 52px;
+  padding: 14px 26px;
+  background: var(--da-color-accent);
+  color: var(--da-color-on-accent);
+  box-shadow: var(--da-glow-accent);
+  transition: transform 0.35s var(--da-courbe-douce), box-shadow 0.35s ease;
+}
+.da-root .lp-btn-lune::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(110deg, transparent 30%, color-mix(in srgb, var(--da-color-or-doux) 55%, transparent) 50%, transparent 70%);
+  transform: translateX(-120%);
+  transition: transform 0.8s var(--da-courbe-douce);
+}
+.da-root .lp-btn-lune:hover::after { transform: translateX(120%); }
+.da-root .lp-btn-lune:hover { transform: translateY(-2px); }
+.da-root .lp-btn-lune[disabled] { transform: none; box-shadow: none; }
+.da-root .lp-btn-lune[disabled]::after { display: none; }
+.da-root .lp-btn-verre {
+  min-height: 52px;
+  padding: 14px 24px;
+  border: 1px solid var(--lp-bord-verre-fort);
+  background: color-mix(in srgb, var(--da-color-surface) 72%, transparent);
+  color: var(--da-color-ink);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  transition: border-color 0.3s ease, background-color 0.3s ease, transform 0.35s var(--da-courbe-douce);
+}
+.da-root .lp-btn-verre:hover { border-color: var(--da-color-or); background: color-mix(in srgb, var(--da-color-surface) 70%, transparent); transform: translateY(-2px); }
+
+/* =========================================================================== 5. Typographie */
+.lp-surtitre,
+.lp-surtitre-section {
+  margin: 0;
+  font-family: var(--da-font-price);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--da-color-or);
+}
+.lp-surtitre-section { display: inline-flex; align-items: center; gap: 0.6em; }
+.lp-surtitre-section::before {
+  content: "";
+  width: 0.95em;
+  height: 0.95em;
+  flex: none;
+  background: var(--da-color-or);
+  clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
+  filter: drop-shadow(0 0 6px var(--da-color-or));
+}
+.lp-h2 {
+  margin: var(--da-space-3) 0 0;
+  font-size: clamp(2.15rem, 1.15rem + 3.9vw, 4.6rem);
+  line-height: 0.98;
+  font-variation-settings: "opsz" 96;
+  text-wrap: balance;
+}
+.lp-h2--petit { font-size: clamp(1.8rem, 1.1rem + 2.4vw, 3rem); margin-top: 0; }
+.lp-h3 {
+  margin: 0 0 var(--da-space-2);
+  font-family: var(--da-font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  font-variation-settings: "opsz" 32;
+}
+.lp-intro {
+  margin: var(--da-space-4) 0 0;
+  max-width: 40rem;
+  font-size: clamp(1.0625rem, 1rem + 0.35vw, 1.25rem);
+  line-height: 1.6;
+  color: var(--da-color-ink-muted);
+  text-wrap: pretty;
+}
+.lp-note { margin: var(--da-space-4) 0 0; font-size: var(--da-text-sm); color: var(--da-color-ink-muted); }
+.lp-accent {
+  font-family: var(--da-font-accent);
+  font-style: italic;
+  font-weight: 500;
+  font-variation-settings: "SOFT" 100, "opsz" 144;
+  letter-spacing: -0.01em;
+  color: var(--da-color-lune);
+  padding-right: 0.06em;
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .lp-accent {
+    background: linear-gradient(100deg, var(--da-color-lune) 10%, var(--da-color-accent-text) 45%, var(--da-color-or) 95%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+.lp-etiquette {
+  display: inline-flex;
+  margin: var(--da-space-4) 0 0;
+  padding: 4px 12px;
+  border: 1px dashed var(--da-color-or);
+  border-radius: var(--da-radius-pill);
+  font-family: var(--da-font-price);
+  font-size: var(--da-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--da-color-or-doux);
 }
 
-/* ---------- Bannière d'accroche ---------- */
-.lp-hero { padding-inline: var(--da-margin-mobile); }
-@media (min-width: 600px) { .lp-hero { padding-inline: var(--da-margin-tablet); } }
-@media (min-width: 900px) { .lp-hero { padding: var(--da-space-8) var(--da-space-7); } }
-.lp-hero__texte { display: grid; gap: var(--da-space-4); max-width: 44rem; }
-.lp-surtitre {
+/* =========================================================================== 6. Sections */
+.lp-section { position: relative; padding-block: var(--lp-section-y); }
+.lp-entete-section { max-width: 52rem; margin-bottom: clamp(40px, 6vw, 72px); }
+.lp-duo { display: grid; gap: clamp(32px, 5vw, 72px); align-items: center; }
+@media (min-width: 900px) { .lp-duo { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); } }
+
+/* =========================================================================== 7. Scènes de secours (décor CSS) */
+.nt-scene { position: relative; overflow: hidden; background: var(--da-color-ciel-1); }
+.nt-s { position: absolute; pointer-events: none; display: block; }
+.nt-s--ciel { inset: 0; }
+.nt-cadre {
+  position: relative;
   margin: 0;
-  font-size: var(--da-text-sm);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--da-color-ink-muted);
+  overflow: hidden;
+  border-radius: var(--da-radius-lg);
+  box-shadow: var(--da-shadow-raised), 0 0 0 1px var(--lp-bord-verre);
+  isolation: isolate;
 }
-.lp-preuves {
+.nt-cadre--arche { border-radius: 999px 999px var(--da-radius-lg) var(--da-radius-lg); aspect-ratio: 1520 / 2688; }
+.nt-cadre::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--lp-bord-verre), inset 0 1px 0 var(--lp-bord-verre-fort);
+  pointer-events: none;
+}
+.nt-visuel { display: contents; }
+.nt-visuel__img {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  font-size: 0;
+}
+.da-root .nt-visuel__img { height: 100%; }
+.nt-visuel__img.est-indisponible { visibility: hidden; }
+.lp-js .nt-visuel__img[loading="lazy"]:not(.est-chargee) { opacity: 0; }
+.lp-js .nt-visuel__img.est-chargee { opacity: 1; transition: opacity 0.9s ease; }
+
+/* Nuit étoilée (héro, questions) */
+.nt-scene--nuit .nt-s--ciel {
+  background:
+    radial-gradient(ellipse 55% 42% at 70% 28%, color-mix(in srgb, var(--da-color-ciel-2) 85%, transparent), transparent 70%),
+    radial-gradient(ellipse 45% 35% at 22% 18%, color-mix(in srgb, var(--da-color-ciel-2) 60%, transparent), transparent 70%),
+    radial-gradient(ellipse 30% 22% at var(--lp-lune-x) var(--lp-lune-y), color-mix(in srgb, var(--da-color-lune) 26%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--da-color-nuit-profonde) 0%, var(--da-color-ciel-1) 34%, color-mix(in srgb, var(--da-color-ciel-2) 70%, var(--da-color-ciel-1)) 66%, var(--da-color-lac-1) 70%);
+}
+.nt-s--tourbillons { left: 34%; top: 4%; width: min(78vmin, 820px); aspect-ratio: 1; }
+.nt-s--tourbillons > span { position: absolute; border-radius: 50%; }
+.nt-s--tourbillons > span:nth-child(1) { inset: 0; border: 3px dashed color-mix(in srgb, var(--da-color-ciel-3) 24%, transparent); }
+.nt-s--tourbillons > span:nth-child(2) { inset: 6% 14% 16% 4%; border: 7px solid transparent; border-top-color: color-mix(in srgb, var(--da-color-ciel-3) 34%, transparent); border-left-color: color-mix(in srgb, var(--da-color-or-doux) 22%, transparent); transform: rotate(24deg); filter: blur(1px); }
+.nt-s--tourbillons > span:nth-child(3) { inset: 20% 12% 22% 26%; border: 5px dashed color-mix(in srgb, var(--da-color-ciel-3) 40%, transparent); border-bottom-color: transparent; transform: rotate(-12deg); }
+.nt-s--tourbillons > span:nth-child(4) { inset: 30% 30% 34% 30%; border: 9px solid transparent; border-bottom-color: color-mix(in srgb, var(--da-color-ciel-3) 46%, transparent); border-right-color: color-mix(in srgb, var(--da-color-or-doux) 30%, transparent); transform: rotate(-40deg); filter: blur(1.5px); }
+.nt-s--tourbillons > span:nth-child(5) { inset: 40% 38% 44% 44%; border: 4px dashed color-mix(in srgb, var(--da-color-or-doux) 40%, transparent); border-left-color: transparent; }
+.nt-s--relief {
+  left: 0;
+  right: 0;
+  bottom: 27%;
+  height: 24%;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--da-color-ciel-2) 55%, var(--da-color-nuit-profonde)), var(--da-color-nuit-profonde) 90%);
+  clip-path: polygon(0 100%, 0 64%, 7% 52%, 13% 60%, 22% 34%, 30% 54%, 38% 42%, 47% 63%, 55% 38%, 63% 52%, 71% 24%, 80% 47%, 88% 37%, 95% 50%, 100% 44%, 100% 100%);
+}
+.nt-s--lac {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 30%;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 13px, color-mix(in srgb, var(--da-color-ciel-3) 12%, transparent) 13px 14px, transparent 14px 31px),
+    linear-gradient(180deg, color-mix(in srgb, var(--da-color-lac-2) 85%, var(--da-color-ciel-2)), var(--da-color-lac-1) 45%, var(--da-color-nuit-profonde));
+}
+.nt-s--lac::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 12%;
+  left: calc(var(--lp-lune-x) - 50px);
+  width: 100px;
+  background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--da-color-lune) 70%, transparent) 0 2px, transparent 2px 10px);
+  -webkit-mask: linear-gradient(180deg, var(--da-color-bg), transparent), radial-gradient(ellipse 50% 100% at 50% 0, var(--da-color-bg), transparent);
+  -webkit-mask-composite: source-in;
+  mask: linear-gradient(180deg, var(--da-color-bg), transparent) intersect, radial-gradient(ellipse 50% 100% at 50% 0, var(--da-color-bg), transparent);
+  opacity: 0.85;
+}
+.nt-s--quai {
+  right: 0;
+  bottom: 0;
+  width: 52%;
+  height: 12%;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 46px, color-mix(in srgb, var(--da-color-ciel-1) 80%, transparent) 46px 48px),
+    linear-gradient(180deg, color-mix(in srgb, var(--da-color-ciel-1) 55%, var(--da-color-nuit-profonde)), var(--da-color-nuit-profonde));
+  clip-path: polygon(7% 0, 100% 0, 100% 100%, 0 100%);
+}
+.nt-s--quai > span {
+  position: absolute;
+  bottom: 100%;
+  width: 4px;
+  height: 160%;
+  background: var(--da-color-nuit-profonde);
+}
+.nt-s--quai > span::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  border-radius: 50%;
+  background: var(--da-color-or-doux);
+  box-shadow: 0 0 18px 6px color-mix(in srgb, var(--da-color-or) 60%, transparent), 0 0 60px 20px color-mix(in srgb, var(--da-color-or) 22%, transparent);
+}
+.nt-s--quai > span:nth-child(1) { left: 22%; }
+.nt-s--quai > span:nth-child(2) { left: 68%; }
+
+/* Petite lune générique (cadres) */
+.nt-s--astre {
+  top: 9%;
+  right: 12%;
+  width: 16%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 36% 34%, var(--da-color-or-doux), var(--da-color-lune) 58%, color-mix(in srgb, var(--da-color-lune) 70%, var(--da-color-accent-soft)));
+  box-shadow: 0 0 30px 8px color-mix(in srgb, var(--da-color-lune) 45%, transparent), 0 0 90px 30px color-mix(in srgb, var(--da-color-lune) 18%, transparent);
+}
+
+/* Jour de drop */
+.nt-scene--drop { aspect-ratio: 2688 / 1520; --drop-x: 38%; }
+.nt-scene--drop .nt-s--ciel {
+  background:
+    radial-gradient(ellipse 40% 48% at var(--drop-x) 70%, color-mix(in srgb, var(--da-color-or) 38%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--da-color-nuit-profonde), var(--da-color-ciel-1) 55%, var(--da-color-lac-1) 72%);
+}
+.nt-scene--drop .nt-s--lac { height: 28%; }
+.nt-s--rayons {
+  inset: 0;
+  background: repeating-conic-gradient(from 0deg at var(--drop-x) 70%, color-mix(in srgb, var(--da-color-or-doux) 30%, transparent) 0deg 3deg, transparent 3deg 14deg);
+  -webkit-mask: radial-gradient(circle at var(--drop-x) 70%, var(--da-color-bg) 0, transparent 46%);
+  mask: radial-gradient(circle at var(--drop-x) 70%, var(--da-color-bg) 0, transparent 46%);
+}
+.nt-s--boite {
+  left: calc(var(--drop-x) - 7.5%);
+  bottom: 22%;
+  width: 15%;
+  aspect-ratio: 1.25;
+  border-radius: 6px;
+  background:
+    linear-gradient(90deg, transparent 44%, var(--da-color-ciel-2) 44% 56%, transparent 56%),
+    linear-gradient(180deg, var(--da-color-papier), color-mix(in srgb, var(--da-color-papier) 78%, var(--da-color-ciel-3)));
+  box-shadow: 0 0 40px 8px color-mix(in srgb, var(--da-color-or) 45%, transparent), 0 18px 30px color-mix(in srgb, var(--da-color-nuit-profonde) 80%, transparent);
+}
+.nt-s--boite::before {
+  content: "";
+  position: absolute;
+  left: -6%;
+  right: -6%;
+  top: -22%;
+  height: 26%;
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--da-color-papier), color-mix(in srgb, var(--da-color-papier) 85%, var(--da-color-ciel-3)));
+  transform: rotate(-14deg);
+  transform-origin: 0 100%;
+}
+.nt-s--boite::after {
+  content: "";
+  position: absolute;
+  left: 20%;
+  right: 20%;
+  bottom: 100%;
+  height: 160%;
+  background: linear-gradient(0deg, color-mix(in srgb, var(--da-color-or-doux) 80%, transparent), transparent);
+  filter: blur(8px);
+  clip-path: polygon(15% 100%, 85% 100%, 100% 0, 0 0);
+}
+
+/* Réservation garantie : intérieur chaleureux, fenêtre et pile de boîtes */
+.nt-scene--reservation .nt-s--ciel {
+  background:
+    radial-gradient(ellipse 70% 40% at 50% 30%, color-mix(in srgb, var(--da-color-lune) 20%, transparent), transparent 70%),
+    linear-gradient(180deg, color-mix(in srgb, var(--da-color-accent-soft) 70%, var(--da-color-nuit-profonde)), var(--da-color-accent-soft) 62%, color-mix(in srgb, var(--da-color-accent-soft) 80%, var(--da-color-or)));
+}
+.nt-s--fenetre {
+  top: 11%;
+  left: 21%;
+  width: 58%;
+  height: 33%;
+  border: 7px solid color-mix(in srgb, var(--da-color-nuit-profonde) 75%, var(--da-color-accent-soft));
+  border-radius: 999px 999px 10px 10px;
+  background:
+    linear-gradient(90deg, transparent calc(50% - 3px), color-mix(in srgb, var(--da-color-nuit-profonde) 75%, var(--da-color-accent-soft)) calc(50% - 3px) calc(50% + 3px), transparent calc(50% + 3px)),
+    radial-gradient(circle at 64% 34%, var(--da-color-or-doux) 0 3%, var(--da-color-lune) 9%, transparent 16%),
+    radial-gradient(1px 1px at 22% 30%, var(--da-color-ink), transparent),
+    radial-gradient(1px 1px at 38% 58%, var(--da-color-or-doux), transparent),
+    linear-gradient(180deg, var(--da-color-ciel-1), var(--da-color-ciel-2));
+  box-shadow: 0 0 60px 10px color-mix(in srgb, var(--da-color-lune) 20%, transparent);
+}
+.nt-s--pile { left: 50%; bottom: 8%; width: 62%; height: 42%; transform: translateX(-50%); }
+.nt-s--pile > span {
+  position: absolute;
+  left: 50%;
+  border-radius: 6px;
+  background:
+    linear-gradient(90deg, transparent 45%, var(--da-color-ciel-2) 45% 55%, transparent 55%),
+    linear-gradient(180deg, transparent 40%, var(--da-color-ciel-2) 40% 50%, transparent 50%),
+    linear-gradient(180deg, var(--da-color-papier), color-mix(in srgb, var(--da-color-papier) 80%, var(--da-color-ciel-3)));
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--da-color-nuit-profonde) 55%, transparent);
+}
+.nt-s--pile > span:nth-child(1) { bottom: 0; width: 92%; height: 36%; transform: translateX(-50%); }
+.nt-s--pile > span:nth-child(2) { bottom: 36%; width: 74%; height: 32%; transform: translateX(-48%) rotate(-3deg); }
+.nt-s--pile > span:nth-child(3) { bottom: 67%; width: 54%; height: 30%; transform: translateX(-52%) rotate(4deg); }
+
+/* Léman : jet d'eau rose et or */
+.nt-scene--leman .nt-s--ciel {
+  background:
+    radial-gradient(ellipse 60% 30% at 50% 58%, color-mix(in srgb, var(--da-color-lune) 30%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--da-color-nuit-profonde), var(--da-color-ciel-1) 40%, color-mix(in srgb, var(--da-color-ciel-1) 60%, var(--da-color-lune) 30%) 68%);
+}
+.nt-scene--leman .nt-s--astre { top: 8%; right: auto; left: 14%; width: 22%; }
+.nt-s--jet {
+  left: 50%;
+  bottom: 30%;
+  width: 3.2%;
+  height: 50%;
+  transform: translateX(-50%);
+  border-radius: 40% 40% 0 0 / 6% 6% 0 0;
+  background: linear-gradient(0deg, var(--da-color-or-doux), var(--da-color-lune) 45%, color-mix(in srgb, var(--da-color-lune) 55%, transparent) 85%, transparent);
+  filter: blur(1.5px);
+  box-shadow: 0 0 30px 8px color-mix(in srgb, var(--da-color-lune) 35%, transparent);
+}
+.nt-s--jet::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 900%;
+  height: 70%;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse 50% 100% at 50% 100%, color-mix(in srgb, var(--da-color-lune) 22%, transparent), transparent 70%);
+  filter: blur(8px);
+}
+.nt-s--jet::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -4%;
+  width: 700%;
+  height: 16%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse, color-mix(in srgb, var(--da-color-or-doux) 55%, transparent), color-mix(in srgb, var(--da-color-lune) 20%, transparent) 50%, transparent 72%);
+  filter: blur(5px);
+}
+.nt-scene--leman .nt-s--lac { height: 31%; --lp-lune-x: 50%; }
+
+/* Aurore : rubans turquoise, tours, cartes lumineuses sans motif */
+.nt-scene--aurore .nt-s--ciel {
+  background: linear-gradient(180deg, var(--da-color-nuit-profonde), var(--da-color-ciel-1) 55%, color-mix(in srgb, var(--da-color-ciel-1) 75%, var(--da-color-aurore)));
+}
+.nt-s--aurore {
+  inset: -10% -20% 30% -20%;
+  background:
+    radial-gradient(ellipse 30% 60% at 30% 40%, color-mix(in srgb, var(--da-color-aurore) 55%, transparent), transparent 70%),
+    radial-gradient(ellipse 25% 70% at 58% 30%, color-mix(in srgb, var(--da-color-aurore) 40%, transparent), transparent 70%),
+    radial-gradient(ellipse 22% 55% at 80% 45%, color-mix(in srgb, var(--da-color-ciel-3) 45%, transparent), transparent 70%);
+  filter: blur(14px);
+  transform: skewX(-18deg);
+}
+.nt-s--tours {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 34%;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--da-color-ciel-1) 50%, var(--da-color-nuit-profonde)), var(--da-color-nuit-profonde));
+  clip-path: polygon(0 100%, 0 58%, 6% 58%, 6% 40%, 9% 40%, 9% 46%, 14% 46%, 14% 30%, 16% 22%, 18% 30%, 18% 52%, 26% 52%, 26% 44%, 31% 44%, 31% 60%, 40% 60%, 40% 36%, 43% 36%, 43% 28%, 46% 28%, 46% 36%, 49% 36%, 49% 56%, 58% 56%, 58% 48%, 64% 48%, 64% 62%, 72% 62%, 72% 26%, 74% 14%, 76% 4%, 78% 14%, 80% 26%, 80% 50%, 88% 50%, 88% 42%, 94% 42%, 94% 58%, 100% 58%, 100% 100%);
+}
+.nt-s--cartes { inset: 0; }
+.nt-s--cartes > span {
+  position: absolute;
+  width: 14%;
+  aspect-ratio: 63 / 88;
+  border-radius: 6px;
+  border: 2px solid color-mix(in srgb, var(--da-color-lune) 80%, transparent);
+  background: linear-gradient(150deg, color-mix(in srgb, var(--da-color-lune) 35%, transparent), color-mix(in srgb, var(--da-color-aurore) 25%, transparent));
+  box-shadow: 0 0 22px 4px color-mix(in srgb, var(--da-color-lune) 45%, transparent);
+}
+.nt-s--cartes > span:nth-child(1) { left: 16%; top: 38%; transform: rotate(-14deg); }
+.nt-s--cartes > span:nth-child(2) { left: 66%; top: 30%; transform: rotate(10deg); }
+.nt-s--cartes > span:nth-child(3) { left: 42%; top: 18%; transform: rotate(-4deg); width: 11%; }
+
+/* Alpes au coucher (bandeau Léman) */
+.nt-scene--alpes .nt-s--ciel {
+  background:
+    radial-gradient(ellipse 50% 40% at 72% 48%, color-mix(in srgb, var(--da-color-or) 30%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--da-color-nuit-profonde), var(--da-color-ciel-1) 30%, color-mix(in srgb, var(--da-color-accent-soft) 80%, var(--da-color-lune)) 60%, color-mix(in srgb, var(--da-color-lune) 55%, var(--da-color-or)) 72%);
+}
+.nt-scene--alpes .nt-s--astre { top: 34%; right: 22%; width: 9%; min-width: 60px; }
+.nt-scene--alpes .nt-s--relief {
+  bottom: 22%;
+  height: 40%;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--da-color-lune) 30%, var(--da-color-ciel-1)), var(--da-color-ciel-1) 70%);
+  clip-path: polygon(0 100%, 0 70%, 9% 46%, 14% 54%, 24% 18%, 31% 36%, 37% 28%, 46% 58%, 54% 32%, 61% 44%, 70% 8%, 78% 38%, 86% 26%, 94% 52%, 100% 40%, 100% 100%);
+}
+.nt-scene--alpes .nt-s--relief::after {
+  content: "";
+  position: absolute;
+  inset: 40% 0 0;
+  background: var(--da-color-nuit-profonde);
+  clip-path: polygon(0 100%, 0 46%, 12% 30%, 22% 48%, 35% 20%, 47% 42%, 60% 26%, 72% 50%, 84% 24%, 100% 44%, 100% 100%);
+}
+.nt-scene--alpes .nt-s--lac {
+  height: 23%;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 11px, color-mix(in srgb, var(--da-color-or-doux) 16%, transparent) 11px 12px, transparent 12px 27px),
+    linear-gradient(180deg, color-mix(in srgb, var(--da-color-aurore) 45%, var(--da-color-lac-2)), var(--da-color-lac-1) 60%, var(--da-color-nuit-profonde));
+}
+
+/* Quai la nuit (pied de page) */
+.nt-scene--quai { --lp-lune-x: 30%; }
+.nt-scene--quai .nt-s--ciel {
+  background:
+    radial-gradient(ellipse 26% 40% at 30% 40%, color-mix(in srgb, var(--da-color-lune) 22%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--da-color-bg), var(--da-color-ciel-1) 50%, color-mix(in srgb, var(--da-color-ciel-2) 60%, var(--da-color-ciel-1)) 66%);
+}
+.nt-scene--quai .nt-s--astre { top: 18%; left: calc(30% - 3vw); right: auto; width: 6vw; min-width: 44px; }
+.nt-scene--quai .nt-s--relief { bottom: 30%; height: 26%; }
+.nt-scene--quai .nt-s--lac { height: 32%; }
+.nt-scene--quai .nt-s--quai { height: 16%; }
+
+/* Planche blanc cassé (mascotte) */
+.nt-scene--papier {
+  aspect-ratio: 2688 / 1520;
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--da-color-lac-1) 12%, transparent) 1px, transparent 1.5px) 0 0 / 22px 22px,
+    var(--da-color-papier);
+}
+.nt-s--planche {
+  inset: 10% 4% 14%;
   display: grid;
-  gap: var(--da-space-2);
-  margin: 0;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: center;
+  justify-items: center;
+}
+.nt-planche__case { display: grid; justify-items: center; gap: 18px; }
+.nt-planche__legende {
+  font-family: var(--da-font-price);
+  font-size: clamp(0.5625rem, 0.45rem + 0.4vw, 0.75rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--da-color-lac-1);
+}
+
+/* =========================================================================== 8. Lumi en CSS (secours) */
+.nt-lumi { --t: clamp(52px, 8vw, 104px); position: relative; display: block; width: var(--t); height: var(--t); }
+.nt-lumi > span { position: absolute; display: block; }
+.nt-lumi__oreilles {
+  inset: 0;
+  background:
+    radial-gradient(circle at 24% 21%, color-mix(in srgb, var(--da-color-lune) 70%, var(--lp-pelage)) 0 2.5%, var(--lp-pelage) 3% 7.5%, transparent 8%),
+    radial-gradient(circle at 76% 21%, color-mix(in srgb, var(--da-color-lune) 70%, var(--lp-pelage)) 0 2.5%, var(--lp-pelage) 3% 7.5%, transparent 8%);
+}
+.nt-lumi__tete {
+  inset: 13% 7% 5%;
+  border-radius: 50% 50% 46% 46% / 56% 56% 44% 44%;
+  background:
+    radial-gradient(circle at 42% 70%, var(--da-color-ciel-1) 0 1.6%, transparent 2%),
+    radial-gradient(circle at 37% 74%, var(--da-color-ciel-1) 0 1.6%, transparent 2%),
+    radial-gradient(circle at 58% 70%, var(--da-color-ciel-1) 0 1.6%, transparent 2%),
+    radial-gradient(circle at 63% 74%, var(--da-color-ciel-1) 0 1.6%, transparent 2%),
+    radial-gradient(ellipse 30% 24% at 50% 72%, color-mix(in srgb, var(--da-color-ink-muted) 75%, var(--da-color-papier)) 0 97%, transparent 100%),
+    var(--lp-pelage);
+  box-shadow: inset 0 -4px 0 color-mix(in srgb, var(--da-color-nuit-profonde) 30%, transparent);
+}
+.nt-lumi__yeux {
+  inset: 0;
+  background:
+    radial-gradient(circle at 34% 44.5%, var(--da-color-ink) 0 3%, transparent 3.5%),
+    radial-gradient(circle at 62% 44.5%, var(--da-color-ink) 0 3%, transparent 3.5%),
+    radial-gradient(ellipse 8.5% 10.5% at 36% 49%, var(--da-color-nuit-profonde) 0 92%, transparent 100%),
+    radial-gradient(ellipse 8.5% 10.5% at 64% 49%, var(--da-color-nuit-profonde) 0 92%, transparent 100%);
+}
+.nt-lumi__joues {
+  inset: 0;
+  background:
+    radial-gradient(circle at 25% 57%, var(--lp-pelage) 0 5.4%, transparent 5.8%),
+    radial-gradient(circle at 22% 60%, var(--da-color-lune) 0 6.2%, transparent 6.6%),
+    radial-gradient(circle at 75% 57%, var(--lp-pelage) 0 5.4%, transparent 5.8%),
+    radial-gradient(circle at 78% 60%, var(--da-color-lune) 0 6.2%, transparent 6.6%);
+}
+.nt-lumi__museau {
+  left: 44%;
+  top: 60%;
+  width: 12%;
+  height: 8%;
+  border-radius: 45% 45% 60% 60%;
+  background: var(--da-color-nuit-profonde);
+}
+.nt-lumi__museau::after {
+  content: "";
+  position: absolute;
+  left: -40%;
+  top: 120%;
+  width: 180%;
+  height: 90%;
+  border: 2px solid var(--da-color-nuit-profonde);
+  border-top: 0;
+  border-radius: 0 0 50% 50%;
+}
+.nt-lumi--surprise .nt-lumi__museau::after { left: 25%; width: 50%; height: 120%; border: 2px solid var(--da-color-nuit-profonde); border-radius: 50%; }
+.nt-lumi--endormie .nt-lumi__yeux {
+  background:
+    radial-gradient(ellipse 10% 6% at 36% 48%, transparent 0 55%, var(--da-color-nuit-profonde) 60% 85%, transparent 90%),
+    radial-gradient(ellipse 10% 6% at 64% 48%, transparent 0 55%, var(--da-color-nuit-profonde) 60% 85%, transparent 90%);
+  -webkit-mask: linear-gradient(180deg, transparent 48%, var(--da-color-bg) 48%);
+  mask: linear-gradient(180deg, transparent 48%, var(--da-color-bg) 48%);
+}
+.nt-lumi--endormie::after {
+  content: "z z";
+  position: absolute;
+  right: -14%;
+  top: -6%;
+  font: 700 calc(var(--t) * 0.2) / 1 var(--da-font-price);
+  color: var(--da-color-ciel-2);
+}
+.nt-lumi--boite::after {
+  content: "";
+  position: absolute;
+  left: 30%;
+  bottom: -6%;
+  width: 40%;
+  height: 30%;
+  border-radius: 4px;
+  background:
+    linear-gradient(90deg, transparent 42%, var(--da-color-ciel-2) 42% 58%, transparent 58%),
+    var(--da-color-ink);
+  box-shadow: 0 0 0 2px var(--da-color-ciel-1);
+}
+.nt-lumi--salue::after {
+  content: "";
+  position: absolute;
+  right: -12%;
+  top: 46%;
+  width: 26%;
+  height: 26%;
+  border-radius: 50% 50% 45% 45%;
+  background: radial-gradient(circle at 50% 60%, var(--da-color-lune) 0 18%, transparent 20%), var(--lp-pelage);
+  transform: rotate(-20deg);
+}
+.nt-lumi--grand { --t: 62%; width: var(--t); height: var(--t); }
+
+/* =========================================================================== 9. Héro */
+.lp-hero {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  align-items: center;
+  min-height: 100vh;
+  min-height: 100svh;
+  padding: calc(var(--lp-entete-h) + 28px) var(--lp-gouttiere) 120px;
+  overflow: hidden;
+  --lp-lune-x: 80%;
+  --lp-lune-y: 14%;
+}
+@media (max-width: 699px) {
+  .lp-hero { --lp-lune-x: 84%; --lp-lune-y: calc(var(--lp-entete-h) + 14px); padding-top: calc(var(--lp-entete-h) + 92px); }
+  .lp-hero .nt-lune { width: 54px; margin-left: -27px; }
+}
+@media (min-width: 900px) { .lp-hero { --lp-lune-x: 74%; --lp-lune-y: 20%; } }
+.lp-hero__scene {
+  position: absolute;
+  inset: -6% 0 -10%;
+  z-index: -4;
+  translate: 0 var(--decalage, 0px);
+}
+.lp-hero__img { object-position: 72% 50%; }
+.lp-hero__voile {
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--da-color-nuit-profonde) 85%, transparent) 0%, color-mix(in srgb, var(--da-color-nuit-profonde) 66%, transparent) 45%, color-mix(in srgb, var(--da-color-nuit-profonde) 50%, transparent) 70%, color-mix(in srgb, var(--da-color-nuit-profonde) 72%, transparent) 88%),
+    linear-gradient(0deg, var(--da-color-bg) 0%, transparent 18%);
+}
+@media (min-width: 700px) {
+  .lp-hero__voile {
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--da-color-nuit-profonde) 88%, transparent) 0%, color-mix(in srgb, var(--da-color-nuit-profonde) 70%, transparent) 40%, color-mix(in srgb, var(--da-color-nuit-profonde) 30%, transparent) 58%, transparent 72%),
+      linear-gradient(0deg, var(--da-color-bg) 0%, transparent 22%),
+      linear-gradient(180deg, color-mix(in srgb, var(--da-color-nuit-profonde) 55%, transparent) 0%, transparent 16%);
+  }
+}
+.lp-hero__contenu { position: relative; max-width: 48rem; width: 100%; }
+@media (min-width: 1400px) { .lp-hero { padding-left: calc((100vw - 1280px) / 2 + var(--lp-gouttiere)); } }
+.lp-hero .lp-surtitre { display: inline-flex; flex-wrap: wrap; padding: 6px 14px; border: 1px solid var(--lp-bord-verre-fort); border-radius: var(--da-radius-pill); background: color-mix(in srgb, var(--da-color-nuit-profonde) 78%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); letter-spacing: 0.12em; font-size: 0.75rem; }
+.lp-hero__titre {
+  margin: var(--da-space-5) 0 0;
+  font-size: clamp(2.7rem, 1.1rem + 6.6vw, 7.4rem);
+  line-height: 0.93;
+  letter-spacing: -0.035em;
+  font-variation-settings: "opsz" 96;
+  text-shadow: 0 2px 30px color-mix(in srgb, var(--da-color-nuit-profonde) 70%, transparent);
+}
+.lp-hero__ligne { display: block; }
+.lp-hero__titre .lp-accent { margin-top: 0.06em; font-size: 0.86em; letter-spacing: -0.02em; text-shadow: none; }
+.lp-hero__texte {
+  margin: var(--da-space-5) 0 0;
+  max-width: 36rem;
+  font-size: clamp(1.0625rem, 1rem + 0.45vw, 1.3rem);
+  line-height: 1.55;
+  color: var(--da-color-ink);
+  text-shadow: 0 1px 12px var(--da-color-nuit-profonde);
+}
+.lp-hero__actions { display: flex; flex-wrap: wrap; gap: var(--da-space-3); margin-top: var(--da-space-6); }
+.lp-preuves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--da-space-2) var(--da-space-5);
+  margin: var(--da-space-6) 0 0;
   padding: 0;
   list-style: none;
   font-size: var(--da-text-sm);
-  font-weight: 600;
+  font-weight: 500;
 }
-.lp-preuves li { display: flex; gap: var(--da-space-2); align-items: baseline; }
+.lp-preuves li { position: relative; padding-left: 28px; text-shadow: 0 1px 10px var(--da-color-nuit-profonde), 0 0 2px var(--da-color-nuit-profonde); }
 .lp-preuves li::before {
   content: "";
-  flex: none;
-  width: 10px;
-  height: 10px;
-  background: var(--da-color-accent);
-  border-radius: var(--da-radius-sm);
-  transform: translateY(1px);
-}
-.lp-hero__media { position: relative; min-height: 280px; }
-.lp-forme {
   position: absolute;
-  width: 46%;
-  aspect-ratio: 5 / 7;
-  border: 3px solid var(--da-color-ink);
-  border-radius: var(--da-radius-lg);
-  background: var(--da-color-surface);
+  left: 0;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--da-color-aurore) 18%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--da-color-aurore);
 }
-.lp-forme--1 { left: 8%; top: 12%; transform: rotate(-8deg); }
-.lp-forme--2 { left: 30%; top: 4%; transform: rotate(3deg); background: var(--da-color-accent); }
-.lp-forme--3 { left: 50%; top: 16%; transform: rotate(10deg); background: var(--da-color-accent-soft); }
-
-/* ---------- Sections ---------- */
-.lp-section { padding-block: var(--da-space-7); }
-.lp-section--alt { background: var(--da-color-surface-alt); }
-.lp-h2 { font-size: var(--da-text-xl); margin-bottom: var(--da-space-4); }
-@media (min-width: 900px) { .lp-h2 { font-size: var(--da-text-2xl); } }
-.lp-h3 { margin: 0 0 var(--da-space-2); font-size: var(--da-text-md); font-weight: 700; line-height: var(--da-leading-snug); }
-.lp-intro { margin: 0 0 var(--da-space-5); max-width: 44rem; font-size: var(--da-text-md); }
-.lp-note { margin: var(--da-space-3) 0 0; font-size: var(--da-text-sm); color: var(--da-color-ink-muted); }
-
-.lp-grille { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--da-space-4); margin: 0; padding: 0; list-style: none; }
-@media (min-width: 600px) { .lp-grille--3, .lp-grille--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (min-width: 900px) {
-  .lp-grille--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .lp-grille--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.lp-preuves li::after {
+  content: "";
+  position: absolute;
+  left: 6.5px;
+  top: 50%;
+  width: 5px;
+  height: 9px;
+  margin-top: -6px;
+  border: solid var(--da-color-aurore);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
-.lp-carte {
-  padding: var(--da-space-4);
-  background: var(--da-color-surface);
-  border: var(--da-border-width) solid var(--da-color-line);
-  border-top: 4px solid var(--da-color-ink);
+.lp-hero__defiler {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transform: translateX(-50%);
+  font-family: var(--da-font-price);
+  font-size: var(--da-text-xs);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--da-color-ink-muted);
+}
+.da-root .lp-hero__defiler { color: var(--da-color-ink-muted); }
+@media (min-width: 900px) and (min-height: 700px) { .lp-hero__defiler { display: inline-flex; } }
+.lp-hero__fleche {
+  width: 22px;
+  height: 36px;
+  border: 1.5px solid currentColor;
+  border-radius: 12px;
+  position: relative;
+}
+.lp-hero__fleche::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 7px;
+  width: 4px;
+  height: 7px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: var(--da-color-or);
+}
+
+/* Étoiles qui scintillent, lune qui respire, étoiles filantes, lueur du pointeur */
+.nt-etoiles {
+  position: absolute;
+  inset: 0 0 25%;
+  z-index: -2;
+  translate: 0 var(--decalage, 0px);
+  pointer-events: none;
+}
+.nt-etoiles::before,
+.nt-etoiles::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat;
+}
+.nt-etoiles::before {
+  background-image:
+    radial-gradient(2px 2px at 30px 50px, var(--da-color-or-doux), transparent 70%),
+    radial-gradient(1.5px 1.5px at 140px 120px, var(--da-color-ink), transparent 70%),
+    radial-gradient(2.4px 2.4px at 220px 30px, var(--da-color-or), transparent 70%),
+    radial-gradient(1.2px 1.2px at 90px 190px, var(--da-color-ink), transparent 70%);
+  background-size: 263px 223px;
+}
+.nt-etoiles::after {
+  background-image:
+    radial-gradient(1.8px 1.8px at 60px 90px, var(--da-color-ink), transparent 70%),
+    radial-gradient(2.6px 2.6px at 300px 160px, var(--da-color-or-doux), transparent 70%),
+    radial-gradient(1.3px 1.3px at 190px 260px, var(--da-color-ciel-3), transparent 70%);
+  background-size: 359px 307px;
+  opacity: 0.7;
+}
+.nt-lune {
+  position: absolute;
+  z-index: -2;
+  left: var(--lp-lune-x);
+  top: var(--lp-lune-y);
+  width: clamp(56px, 7.5vw, 124px);
+  aspect-ratio: 1;
+  margin-left: calc(clamp(56px, 7.5vw, 124px) / -2);
+  border-radius: 50%;
+  translate: 0 var(--decalage, 0px);
+  background:
+    radial-gradient(ellipse 30% 22% at 64% 62%, color-mix(in srgb, var(--da-color-accent-soft) 12%, transparent), transparent 100%),
+    radial-gradient(ellipse 22% 26% at 40% 70%, color-mix(in srgb, var(--da-color-lune) 30%, transparent), transparent 100%),
+    radial-gradient(circle at 34% 32%, var(--da-color-or-doux), var(--da-color-lune) 60%, color-mix(in srgb, var(--da-color-lune) 72%, var(--da-color-accent-soft)));
+  box-shadow:
+    0 0 24px 6px color-mix(in srgb, var(--da-color-lune) 55%, transparent),
+    0 0 90px 30px color-mix(in srgb, var(--da-color-lune) 22%, transparent);
+}
+.nt-lune::after {
+  content: "";
+  position: absolute;
+  inset: -70%;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--da-color-lune) 24%, transparent) 0, transparent 62%);
+  pointer-events: none;
+}
+.nt-filante {
+  position: absolute;
+  z-index: -2;
+  top: 12%;
+  left: 18%;
+  width: 180px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--da-color-or-doux));
+  opacity: 0;
+  transform: rotate(-24deg);
+  pointer-events: none;
+}
+.nt-filante--2 { top: 6%; left: 52%; width: 120px; }
+.lp-hero__lueur {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  background: radial-gradient(520px circle at var(--px, 50%) var(--py, 50%), color-mix(in srgb, var(--da-color-lune) 12%, transparent), transparent 62%);
+  transition: opacity 0.6s ease;
+  pointer-events: none;
+}
+.lp-hero--lueur .lp-hero__lueur { opacity: 1; }
+
+/* =========================================================================== 10. Bandeau qui défile */
+.lp-defile {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  border-block: 1px solid var(--lp-bord-verre);
+  background: color-mix(in srgb, var(--da-color-surface) 55%, transparent);
+  -webkit-mask: linear-gradient(90deg, transparent, var(--da-color-bg) 8%, var(--da-color-bg) 92%, transparent);
+  mask: linear-gradient(90deg, transparent, var(--da-color-bg) 8%, var(--da-color-bg) 92%, transparent);
+}
+.lp-defile__piste {
+  display: flex;
+  flex: none;
+  gap: 2.5rem;
+  margin: 0;
+  padding: 18px 1.25rem;
+  list-style: none;
+  font-family: var(--da-font-display);
+  font-size: clamp(1rem, 0.9rem + 0.6vw, 1.375rem);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.lp-defile__piste li { display: inline-flex; align-items: center; gap: 2.5rem; }
+.lp-defile__piste li::after {
+  content: "";
+  width: 0.7em;
+  height: 0.7em;
+  background: var(--da-color-lune);
+  clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
+}
+
+/* =========================================================================== 11. Le jour du drop */
+.lp-drop::before {
+  content: "";
+  position: absolute;
+  inset: 6% 0 auto auto;
+  width: 60vw;
+  height: 60vw;
+  max-width: 900px;
+  max-height: 900px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--da-color-or) 9%, transparent), transparent 65%);
+  pointer-events: none;
+  z-index: -1;
+}
+.lp-duo__media { aspect-ratio: 2688 / 1520; }
+@media (min-width: 900px) { .lp-duo__media { position: sticky; top: calc(var(--lp-entete-h) + 40px); align-self: start; } }
+.lp-etapes { display: grid; gap: var(--da-space-4); margin: var(--da-space-6) 0 0; padding: 0; list-style: none; counter-reset: none; }
+.lp-etapes__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--da-space-4);
+  padding: var(--da-space-4) var(--da-space-5);
+  border: 1px solid var(--lp-bord-verre);
   border-radius: var(--da-radius-md);
-  box-shadow: var(--da-shadow-card);
+  background: var(--lp-verre);
 }
-[data-da="b"] .lp-carte { border: var(--da-border-width) solid transparent; border-radius: var(--da-radius-lg); }
-.lp-carte p { margin: 0; }
-.lp-carte__badge { margin-bottom: var(--da-space-2) !important; }
-.lp-carte--note { background: transparent; border-style: dashed; border-top-width: var(--da-border-width); border-color: var(--da-color-line-strong); }
-[data-da="b"] .lp-carte--note { border: var(--da-border-width) dashed var(--da-color-line-strong); }
+.lp-etapes__item p { margin: 0; color: var(--da-color-ink-muted); }
+.lp-etapes__item .da-badge { vertical-align: 0.1em; margin-inline: 2px; }
+.lp-etapes__num {
+  font-family: var(--da-font-accent);
+  font-style: italic;
+  font-size: 2.25rem;
+  line-height: 1;
+  font-variation-settings: "SOFT" 100, "opsz" 144;
+  color: var(--da-color-or);
+}
 
-/* ---------- Statuts ---------- */
-.lp-statuts { display: grid; gap: var(--da-space-3); margin: 0 0 var(--da-space-6); }
+/* =========================================================================== 12. Réservation garantie */
+.lp-reservation { background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--da-color-accent-soft) 32%, transparent) 30%, color-mix(in srgb, var(--da-color-accent-soft) 32%, transparent) 70%, transparent); }
+.lp-reservation__grille { display: grid; gap: clamp(40px, 6vw, 88px); align-items: start; }
+@media (min-width: 900px) { .lp-reservation__grille { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); } }
+.lp-reservation__media { position: relative; max-width: 26rem; width: 86%; margin-inline: auto; }
+@media (min-width: 900px) { .lp-reservation__media { position: sticky; top: calc(var(--lp-entete-h) + 32px); width: 100%; } }
+.lp-reservation__badges {
+  position: absolute;
+  left: -6%;
+  bottom: 9%;
+  z-index: 4;
+  display: grid;
+  gap: var(--da-space-2);
+  justify-items: start;
+  margin: 0;
+}
+.lp-reservation__badges .da-badge { padding: 8px 14px; font-size: var(--da-text-sm); box-shadow: var(--da-shadow-card); }
+.lp-reservation__badges .da-badge--reservation { box-shadow: inset 0 0 0 2px var(--da-color-status-preorder-fg), var(--da-shadow-card); }
+.lp-reservation__badges .da-badge--drop { box-shadow: inset 0 0 0 1px var(--da-color-line-strong), var(--da-shadow-card); }
+.lp-garantie {
+  position: relative;
+  margin-top: var(--da-space-6);
+  padding: var(--da-space-5) var(--da-space-5) var(--da-space-5) calc(var(--da-space-5) + 6px);
+  border: 1px solid color-mix(in srgb, var(--da-color-or) 45%, transparent);
+  border-radius: var(--da-radius-md);
+  background: var(--lp-verre-fort);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--da-color-or) 10%, transparent), 0 20px 60px color-mix(in srgb, var(--da-color-or) 10%, transparent);
+}
+.lp-garantie::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 18px;
+  bottom: 18px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(180deg, var(--da-color-or), var(--da-color-lune));
+}
+.lp-garantie__texte { margin: 0; font-size: clamp(1.125rem, 1rem + 0.5vw, 1.35rem); font-weight: 500; line-height: 1.45; }
+.lp-garantie__texte + .lp-garantie__texte { margin-top: var(--da-space-3); }
+.lp-garantie__texte--limite { font-size: 1rem; font-weight: 700; color: var(--da-color-or-doux); }
+.lp-garanties { display: grid; gap: var(--da-space-4); margin: var(--da-space-6) 0 0; padding: 0; list-style: none; }
+.lp-garanties__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--da-space-4);
+  align-items: start;
+  padding: var(--da-space-4) var(--da-space-5);
+  border: 1px solid var(--lp-bord-verre);
+  border-radius: var(--da-radius-md);
+  background: var(--lp-verre);
+}
+.lp-garanties__item p { grid-column: 2; margin: 0; color: var(--da-color-ink-muted); }
+.lp-garanties__item .lp-h3 { grid-column: 2; margin-bottom: var(--da-space-1); }
+.lp-garanties__icone {
+  grid-row: 1 / span 2;
+  box-sizing: content-box;
+  padding: 10px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--da-color-lune) 14%, transparent);
+  color: var(--da-color-lune);
+}
+.lp-encadre-doux {
+  margin-top: var(--da-space-5);
+  padding: var(--da-space-4) var(--da-space-5);
+  border-radius: var(--da-radius-md);
+  border: 1px dashed var(--da-color-line-strong);
+}
+.lp-encadre-doux p { margin: 0; color: var(--da-color-ink-muted); }
+
+/* =========================================================================== 13. Comment on travaille */
+.lp-piliers { display: grid; gap: var(--da-space-4); margin: 0; padding: 0; list-style: none; }
+@media (min-width: 640px) { .lp-piliers { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1100px) { .lp-piliers { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.lp-pilier { padding: var(--da-space-6) var(--da-space-5) var(--da-space-5); }
+.lp-pilier p { margin: 0; color: var(--da-color-ink-muted); font-size: 0.975rem; }
+.lp-pilier__num {
+  display: block;
+  margin-bottom: var(--da-space-5);
+  font-family: var(--da-font-accent);
+  font-style: italic;
+  font-size: 2.75rem;
+  line-height: 1;
+  font-variation-settings: "SOFT" 100, "opsz" 144;
+  color: var(--da-color-lune);
+}
+.lp-statuts-zone {
+  display: grid;
+  gap: var(--da-space-6);
+  margin-top: clamp(56px, 8vw, 112px);
+}
+@media (min-width: 1000px) {
+  .lp-statuts-zone { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); align-items: start; }
+  .lp-statuts-zone .lp-encadre { grid-column: 1 / -1; }
+}
+.lp-statuts { display: grid; gap: var(--da-space-3); margin: 0; }
 .lp-statuts__ligne {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--da-space-2);
-  padding: var(--da-space-4);
-  background: var(--da-color-surface);
-  border: var(--da-border-width) solid var(--da-color-line);
-  border-radius: var(--da-radius-md);
-}
-@media (min-width: 600px) { .lp-statuts__ligne { grid-template-columns: 12rem minmax(0, 1fr); align-items: start; } }
-.lp-statuts dd { margin: 0; }
-.lp-encadre {
+  gap: var(--da-space-2) var(--da-space-4);
   padding: var(--da-space-4) var(--da-space-5);
-  border-left: 6px solid var(--da-color-accent);
-  background: var(--da-color-surface);
-}
-.lp-liste { margin: 0; padding-left: 1.2em; display: grid; gap: var(--da-space-2); }
-
-/* ---------- Formulaire ---------- */
-.lp-formulaire-zone { display: grid; gap: var(--da-space-5); }
-@media (min-width: 900px) { .lp-formulaire-zone { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--da-space-7); align-items: start; } }
-.lp-formulaire-intro p { margin: 0 0 var(--da-space-3); max-width: 34rem; }
-.lp-formulaire {
-  display: grid;
-  gap: var(--da-space-4);
-  padding: var(--da-space-5) var(--da-space-4);
-  background: var(--da-color-surface);
-  border: var(--da-border-width) solid var(--da-color-line);
+  border: 1px solid var(--lp-bord-verre);
   border-radius: var(--da-radius-md);
+  background: var(--lp-verre);
 }
-@media (min-width: 600px) { .lp-formulaire { padding: var(--da-space-6); } }
-.lp-champ { display: grid; gap: var(--da-space-1); }
+@media (min-width: 600px) { .lp-statuts__ligne { grid-template-columns: 11rem minmax(0, 1fr); align-items: center; } }
+.lp-statuts dt, .lp-statuts dd { margin: 0; }
+.lp-statuts dd { color: var(--da-color-ink-muted); }
+.lp-statuts .da-badge { padding: 6px 12px; font-size: var(--da-text-sm); }
+.lp-encadre {
+  padding: var(--da-space-5) var(--da-space-6);
+  border-radius: var(--da-radius-md);
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--da-color-accent-soft) 85%, transparent), color-mix(in srgb, var(--da-color-surface) 80%, transparent));
+  border: 1px solid color-mix(in srgb, var(--da-color-lune) 30%, transparent);
+}
+.lp-liste { display: grid; gap: var(--da-space-2); margin: 0; padding: 0; list-style: none; }
+@media (min-width: 900px) { .lp-liste { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--da-space-3) var(--da-space-6); } }
+.lp-liste li { position: relative; padding-left: 1.75rem; }
+.lp-liste li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.45em;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--da-color-lune);
+  background: linear-gradient(135deg, transparent calc(50% - 1px), var(--da-color-lune) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px));
+}
+
+/* =========================================================================== 14. Cartes « verre dépoli » (survol 3D, reflet nacré) */
+.nt-holo {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid var(--lp-bord-verre);
+  border-radius: var(--da-radius-lg);
+  background:
+    linear-gradient(160deg, var(--lp-reflet), transparent 40%),
+    var(--lp-verre);
+  -webkit-backdrop-filter: blur(var(--da-blur-verre)) saturate(130%);
+  backdrop-filter: blur(var(--da-blur-verre)) saturate(130%);
+  box-shadow: var(--da-shadow-card);
+  transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform 0.6s var(--da-courbe-douce), border-color 0.4s ease, box-shadow 0.4s ease;
+}
+.nt-holo::before,
+.nt-holo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+.nt-holo::before {
+  background: linear-gradient(115deg,
+    transparent 22%,
+    color-mix(in srgb, var(--da-color-lune) 22%, transparent) 38%,
+    color-mix(in srgb, var(--da-color-or) 18%, transparent) 50%,
+    color-mix(in srgb, var(--da-color-aurore) 16%, transparent) 62%,
+    transparent 78%);
+  background-size: 260% 260%;
+  background-position: var(--mx, 50%) var(--my, 50%);
+}
+.nt-holo::after {
+  background: radial-gradient(circle at var(--mx, 50%) var(--my, 50%), color-mix(in srgb, var(--da-color-ink) 16%, transparent), transparent 46%);
+}
+.nt-holo.est-survolee,
+.nt-holo:focus-within { border-color: color-mix(in srgb, var(--da-color-lune) 45%, transparent); box-shadow: var(--da-shadow-raised), 0 0 40px color-mix(in srgb, var(--da-color-lune) 14%, transparent); }
+.nt-holo.est-survolee::before,
+.nt-holo.est-survolee::after { opacity: 1; }
+.nt-holo.est-survolee { transition: transform 0.12s linear, border-color 0.4s ease, box-shadow 0.4s ease; }
+
+/* =========================================================================== 15. Lumi */
+.lp-lumi::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(ellipse 60% 50% at 70% 50%, color-mix(in srgb, var(--da-color-ciel-2) 22%, transparent), transparent 70%);
+  pointer-events: none;
+}
+.lp-lumi__grille { display: grid; gap: clamp(40px, 6vw, 80px); align-items: center; }
+@media (min-width: 900px) { .lp-lumi__grille { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); } }
+.lp-humeurs { display: flex; flex-wrap: wrap; gap: var(--da-space-2); margin: var(--da-space-5) 0 0; padding: 0; list-style: none; }
+.lp-humeurs li {
+  padding: 6px 14px;
+  border: 1px solid var(--lp-bord-verre-fort);
+  border-radius: var(--da-radius-pill);
+  background: var(--lp-verre);
+  font-size: var(--da-text-sm);
+}
+.lp-lumi__media { position: relative; padding-bottom: clamp(48px, 7vw, 96px); }
+.lp-planche { transform: rotate(-1.5deg); }
+.lp-autocollant {
+  position: absolute;
+  right: -2%;
+  bottom: 0;
+  z-index: 5;
+  width: clamp(8.5rem, 15vw, 14rem);
+  aspect-ratio: 1;
+  margin: 0;
+  border-radius: 50%;
+  transform: rotate(8deg);
+  transition: transform 0.8s var(--da-courbe-douce);
+  filter: drop-shadow(0 18px 30px color-mix(in srgb, var(--da-color-nuit-profonde) 70%, transparent));
+}
+.lp-autocollant:hover { transform: rotate(-6deg) scale(1.05); }
+@media (max-width: 599px) {
+  .lp-lumi__media { padding-bottom: 88px; }
+  .lp-autocollant { width: 7.5rem; right: 2%; bottom: 0; }
+}
+.lp-autocollant__fond {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 7px solid var(--da-color-papier);
+  background:
+    radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--da-color-lune) 30%, transparent), transparent 50%),
+    radial-gradient(circle, var(--da-color-ciel-2), var(--da-color-ciel-1) 70%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--da-color-nuit-profonde) 30%, transparent);
+}
+.lp-autocollant .nt-visuel__img { border-radius: 50%; }
+
+/* =========================================================================== 16. Bandeau Léman */
+.lp-leman {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding-block: clamp(96px, 14vw, 200px);
+  -webkit-mask: linear-gradient(180deg, transparent, var(--da-color-bg) 14%, var(--da-color-bg) 86%, transparent);
+  mask: linear-gradient(180deg, transparent, var(--da-color-bg) 14%, var(--da-color-bg) 86%, transparent);
+}
+.lp-leman__fond { position: absolute; inset: -12% 0; z-index: -2; translate: 0 var(--decalage, 0px); }
+.lp-leman__voile {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--da-color-nuit-profonde) 82%, transparent) 0%, color-mix(in srgb, var(--da-color-nuit-profonde) 40%, transparent) 52%, transparent 80%);
+}
+.lp-leman__grille { display: grid; gap: clamp(40px, 6vw, 80px); align-items: center; }
+@media (min-width: 900px) { .lp-leman__grille { grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr); } }
+.lp-leman__texte .lp-intro { color: var(--da-color-ink); }
+.lp-leman__media { width: min(76%, 22rem); margin-inline: auto; }
+
+/* =========================================================================== 17. Formats prévus */
+.lp-formats { isolation: isolate; overflow: hidden; }
+.lp-formats__ciel {
+  position: absolute;
+  inset: 0 0 auto;
+  height: min(70%, 640px);
+  z-index: -1;
+  -webkit-mask: linear-gradient(180deg, transparent, var(--da-color-bg) 18%, var(--da-color-bg) 40%, transparent);
+  mask: linear-gradient(180deg, transparent, var(--da-color-bg) 18%, var(--da-color-bg) 40%, transparent);
+  opacity: 0.55;
+}
+.lp-cartes { display: grid; gap: var(--da-space-4); margin: 0; padding: 0; list-style: none; }
+@media (min-width: 600px) { .lp-cartes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1000px) { .lp-cartes { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--da-space-5); } }
+.lp-carte-holo { display: flex; flex-direction: column; gap: var(--da-space-2); min-height: 15rem; padding: var(--da-space-6) var(--da-space-5) var(--da-space-5); }
+.lp-carte-holo:not(.lp-carte-holo--note) {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--da-color-lune) 10%, transparent), transparent 35%, transparent 65%, color-mix(in srgb, var(--da-color-aurore) 8%, transparent)),
+    linear-gradient(160deg, var(--lp-reflet), transparent 40%),
+    var(--lp-verre);
+  box-shadow: var(--da-shadow-card), inset 0 0 0 8px color-mix(in srgb, var(--da-color-nuit-profonde) 25%, transparent), inset 0 0 0 9px color-mix(in srgb, var(--da-color-or) 16%, transparent);
+}
+.lp-carte-holo p { margin: 0; color: var(--da-color-ink-muted); }
+.lp-carte-holo__icone { color: var(--da-color-or); margin-bottom: auto; filter: drop-shadow(0 0 10px color-mix(in srgb, var(--da-color-or) 35%, transparent)); }
+.lp-carte-holo__badge { position: absolute; top: var(--da-space-5); right: var(--da-space-5); }
+.lp-carte-holo .lp-h3 { margin-top: var(--da-space-6); }
+.lp-carte-holo--note { border-style: dashed; background: transparent; box-shadow: none; }
+@media (max-width: 599px) {
+  .lp-carte-holo { min-height: 0; padding: var(--da-space-5); }
+  .lp-carte-holo .lp-h3 { margin-top: var(--da-space-3); }
+}
+.lp-carte-holo--note .lp-carte-holo__icone { color: var(--da-color-ink-muted); filter: none; }
+
+/* =========================================================================== 18. Alertes (formulaire) */
+.lp-alertes::before {
+  content: "";
+  position: absolute;
+  inset: 15% 0 0;
+  z-index: -1;
+  background: radial-gradient(ellipse 60% 50% at 30% 40%, color-mix(in srgb, var(--da-color-aurore) 9%, transparent), transparent 70%);
+  pointer-events: none;
+}
+.lp-formulaire-zone { display: grid; gap: clamp(40px, 5vw, 72px); }
+@media (min-width: 960px) { .lp-formulaire-zone { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); align-items: start; } }
+.lp-alertes__visuel { display: none; }
+@media (min-width: 960px) { .lp-alertes__visuel { display: block; width: min(100%, 20rem); margin-top: var(--da-space-7); } }
+@property --lp-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.lp-formulaire {
+  position: relative;
+  display: grid;
+  gap: var(--da-space-5);
+  padding: clamp(20px, 4vw, 40px);
+  border-radius: var(--da-radius-lg);
+  background: var(--lp-verre-fort);
+  -webkit-backdrop-filter: blur(var(--da-blur-verre));
+  backdrop-filter: blur(var(--da-blur-verre));
+  box-shadow: var(--da-shadow-raised);
+}
+.lp-formulaire::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1.5px;
+  border-radius: inherit;
+  background: conic-gradient(from var(--lp-angle), var(--da-color-lune), var(--da-color-or), var(--da-color-aurore), var(--da-color-ciel-3), var(--da-color-lune));
+  -webkit-mask: linear-gradient(var(--da-color-bg) 0 0) content-box, linear-gradient(var(--da-color-bg) 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(var(--da-color-bg) 0 0) content-box exclude, linear-gradient(var(--da-color-bg) 0 0);
+  opacity: 0.8;
+  pointer-events: none;
+}
+.lp-champ { display: grid; gap: var(--da-space-2); }
 .lp-champ label, .lp-groupe legend { font-weight: 700; }
 .lp-requis, .lp-facultatif { font-weight: 400; color: var(--da-color-ink-muted); }
-.lp-formulaire input[type="email"],
-.lp-formulaire input[type="text"],
-.lp-formulaire select {
+.lp-champ input:not([type="checkbox"]),
+.lp-champ select {
   width: 100%;
-  min-height: var(--da-touch-target);
-  padding: 8px 12px;
-  border: 2px solid var(--da-color-line-strong);
+  min-height: 52px;
+  padding: 12px 16px;
+  border: 1px solid var(--da-color-line-strong);
   border-radius: var(--da-radius-md);
-  background: var(--da-color-surface);
+  background: color-mix(in srgb, var(--da-color-bg) 70%, transparent);
   color: var(--da-color-ink);
   font: inherit;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
-.lp-formulaire input[aria-invalid="true"] { border-color: var(--da-color-error); }
+.lp-champ select { appearance: auto; }
+.lp-champ select option { background: var(--da-color-surface); color: var(--da-color-ink); }
+.lp-champ input:not([type="checkbox"]):hover,
+.lp-champ select:hover { border-color: var(--da-color-ink-muted); }
+.lp-champ input:not([type="checkbox"]):focus-visible,
+.lp-champ select:focus-visible {
+  border-color: var(--da-color-focus);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--da-color-focus) 25%, transparent);
+  outline: 3px solid var(--da-color-focus);
+  outline-offset: 2px;
+}
+.lp-champ input[aria-invalid="true"] { border-color: var(--da-color-error); }
 .lp-groupe { margin: 0; padding: 0; border: 0; min-width: 0; }
-.lp-groupe legend { padding: 0; margin-bottom: var(--da-space-2); }
-.lp-options { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--da-space-1) var(--da-space-4); }
-@media (min-width: 600px) { .lp-options { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.lp-groupe legend { margin-bottom: var(--da-space-3); padding: 0; }
+.lp-options { display: flex; flex-wrap: wrap; gap: var(--da-space-2); }
 .lp-option {
-  display: flex;
-  align-items: flex-start;
+  display: inline-flex;
+  align-items: center;
   gap: var(--da-space-2);
   min-height: var(--da-touch-target);
-  padding-block: 10px;
-  font-weight: 400;
+  padding: 8px 16px 8px 12px;
+  border: 1px solid var(--lp-bord-verre-fort);
+  border-radius: var(--da-radius-pill);
+  background: color-mix(in srgb, var(--da-color-bg) 50%, transparent);
   cursor: pointer;
+  transition: border-color 0.25s ease, background-color 0.25s ease;
 }
-.lp-champ .lp-option label { font-weight: 400; cursor: pointer; }
-.lp-option input { flex: none; width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--da-color-ink); }
-[data-da="b"] .lp-option input { accent-color: var(--da-color-accent); }
-.lp-option--consentement { padding-block: 0; }
+.lp-option:hover { border-color: var(--da-color-ink-muted); }
+.lp-option:has(input:checked) { border-color: var(--da-color-lune); background: color-mix(in srgb, var(--da-color-accent-soft) 70%, transparent); }
+.lp-option input { width: 20px; height: 20px; margin: 0; accent-color: var(--da-color-accent); flex: none; }
+.lp-option--consentement {
+  align-items: flex-start;
+  gap: var(--da-space-3);
+  padding: var(--da-space-4);
+  border-radius: var(--da-radius-md);
+  cursor: default;
+}
+.lp-option--consentement input { margin-top: 3px; width: 22px; height: 22px; }
+.lp-option--consentement label { font-weight: 500; cursor: pointer; }
 .lp-aide { margin: 0; font-size: var(--da-text-sm); color: var(--da-color-ink-muted); }
 .lp-erreur { margin: 0; font-size: var(--da-text-sm); font-weight: 700; color: var(--da-color-error); }
-.lp-piege { position: absolute !important; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
-.lp-actions { display: flex; flex-wrap: wrap; gap: var(--da-space-3); }
-.lp-formulaire[aria-busy="true"] .da-btn { cursor: progress; }
-
-.lp-statut { margin: 0; font-weight: 600; }
+.lp-piege { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.lp-actions { display: flex; }
+.lp-actions .da-btn { width: 100%; }
+@media (min-width: 600px) { .lp-actions .da-btn { width: auto; } }
+.lp-statut { margin: 0; font-size: var(--da-text-sm); }
 .lp-statut:empty { display: none; }
-.lp-statut--info { padding: var(--da-space-3); background: var(--da-color-status-preorder-bg); color: var(--da-color-status-preorder-fg); border-radius: var(--da-radius-sm); }
-.lp-statut--succes { padding: var(--da-space-3); background: var(--da-color-status-local-bg); color: var(--da-color-status-local-fg); border-radius: var(--da-radius-sm); }
-.lp-statut--erreur { padding: var(--da-space-3); border: 2px solid var(--da-color-error); color: var(--da-color-error); border-radius: var(--da-radius-sm); }
-.lp-confirmation { display: grid; gap: var(--da-space-3); }
-.lp-confirmation p { margin: 0; }
-.lp-confirmation h3:focus { outline: none; }
+.lp-statut--info { padding: var(--da-space-3) var(--da-space-4); border-radius: var(--da-radius-md); background: var(--da-color-status-preorder-bg); color: var(--da-color-status-preorder-fg); }
+.lp-statut--erreur { padding: var(--da-space-3) var(--da-space-4); border-radius: var(--da-radius-md); background: var(--da-color-accent-soft); color: var(--da-color-error); font-weight: 700; }
+.lp-confirmation {
+  padding: var(--da-space-5);
+  border-radius: var(--da-radius-md);
+  background: var(--da-color-status-local-bg);
+  color: var(--da-color-status-local-fg);
+}
+.lp-confirmation .lp-h3 { color: inherit; }
+.lp-confirmation p { margin: var(--da-space-2) 0 0; }
 
-/* ---------- FAQ ---------- */
-.lp-faq { max-width: 52rem; }
-.lp-faq details { border-top: var(--da-border-width) solid var(--da-color-line); }
-.lp-faq details:last-of-type { border-bottom: var(--da-border-width) solid var(--da-color-line); }
+/* =========================================================================== 19. Questions fréquentes */
+.lp-faq-grille { display: grid; gap: clamp(32px, 5vw, 72px); }
+@media (min-width: 960px) {
+  .lp-faq-grille { grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr); align-items: start; }
+  .lp-faq-intro { position: sticky; top: calc(var(--lp-entete-h) + 32px); }
+}
+.lp-faq-visuel { display: none; }
+@media (min-width: 960px) { .lp-faq-visuel { display: block; width: min(100%, 17rem); margin-top: var(--da-space-7); } }
+.lp-faq { display: grid; gap: var(--da-space-3); }
+.lp-faq details {
+  border: 1px solid var(--lp-bord-verre);
+  border-radius: var(--da-radius-md);
+  background: var(--lp-verre);
+  transition: border-color 0.3s ease, background-color 0.3s ease;
+}
+.lp-faq details[open] { border-color: color-mix(in srgb, var(--da-color-lune) 40%, transparent); background: var(--lp-verre-fort); }
 .lp-faq summary {
+  position: relative;
   display: flex;
-  justify-content: space-between;
-  gap: var(--da-space-3);
-  min-height: var(--da-touch-target);
-  padding: var(--da-space-3) 0;
+  align-items: center;
+  min-height: 60px;
+  padding: var(--da-space-4) calc(var(--da-space-5) + 36px) var(--da-space-4) var(--da-space-5);
+  font-family: var(--da-font-display);
+  font-size: 1.0625rem;
   font-weight: 700;
-  cursor: pointer;
+  line-height: 1.3;
   list-style: none;
+  cursor: pointer;
+  border-radius: var(--da-radius-md);
 }
 .lp-faq summary::-webkit-details-marker { display: none; }
-.lp-faq summary::after { content: "+"; flex: none; font-family: var(--da-font-price); font-size: var(--da-text-lg); line-height: 1; }
-.lp-faq details[open] summary::after { content: "−"; }
-.lp-faq details p { margin: 0 0 var(--da-space-4); max-width: 44rem; }
+.lp-faq summary::after {
+  content: "";
+  position: absolute;
+  right: var(--da-space-5);
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  margin-top: -13px;
+  border-radius: 50%;
+  border: 1px solid var(--lp-bord-verre-fort);
+  background:
+    linear-gradient(var(--da-color-or), var(--da-color-or)) center / 10px 1.5px no-repeat,
+    linear-gradient(var(--da-color-or), var(--da-color-or)) center / 1.5px 10px no-repeat;
+  transition: transform 0.4s var(--da-courbe-douce);
+}
+.lp-faq details[open] summary::after { transform: rotate(135deg); }
+.lp-faq summary:hover { color: var(--da-color-or-doux); }
+.lp-faq details p { margin: 0; padding: 0 var(--da-space-5) var(--da-space-5); color: var(--da-color-ink-muted); }
 
-/* ---------- Pied de page ---------- */
-.lp-pied { padding-block: var(--da-space-6); border-top: var(--da-border-width) solid var(--da-color-line); font-size: var(--da-text-sm); color: var(--da-color-ink-muted); }
-.lp-pied p { margin: 0 0 var(--da-space-2); max-width: 60rem; }
+/* =========================================================================== 20. Pied de page */
+.lp-pied {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: clamp(220px, 26vw, 400px) 0 var(--da-space-7);
+  background: linear-gradient(180deg, transparent, var(--da-color-nuit-profonde) clamp(220px, 26vw, 400px));
+  font-size: var(--da-text-sm);
+  color: var(--da-color-ink-muted);
+}
+.lp-pied__ciel {
+  position: absolute;
+  inset: 0 0 auto;
+  height: clamp(240px, 28vw, 430px);
+  z-index: -1;
+  -webkit-mask: linear-gradient(180deg, transparent, var(--da-color-bg) 35%, var(--da-color-bg) 85%, transparent);
+  mask: linear-gradient(180deg, transparent, var(--da-color-bg) 35%, var(--da-color-bg) 85%, transparent);
+}
+.lp-pied__grille { display: grid; gap: var(--da-space-6); }
+@media (min-width: 900px) { .lp-pied__grille { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); align-items: start; } }
+.lp-pied__marque { display: grid; gap: var(--da-space-4); justify-items: start; }
+.da-root .lp-pied__logo { height: 28px; width: auto; }
+.lp-pied__devise { margin: 0; font-family: var(--da-font-display); font-size: 1.375rem; font-weight: 700; line-height: 1.2; color: var(--da-color-ink); }
+.lp-pied__legal p { margin: 0 0 var(--da-space-3); }
+.lp-pied__mention { color: var(--da-color-ink); }
+.lp-pied__credits { font-size: var(--da-text-xs); }
 
-/* ---------- Pages secondaires (merci, confirmation, désinscription, confidentialité) ---------- */
-.lp-page { padding-block: var(--da-space-7); }
-.lp-page .da-container { max-width: 48rem; }
-.lp-page h1 { font-size: var(--da-text-2xl); margin-bottom: var(--da-space-4); }
-.lp-page p, .lp-page li { max-width: 44rem; }
-.lp-texte-legal h2 { margin: var(--da-space-6) 0 var(--da-space-3); font-size: var(--da-text-xl); }
-.lp-texte-legal h3 { margin: var(--da-space-5) 0 var(--da-space-2); font-size: var(--da-text-md); }
-.lp-tableau { overflow-x: auto; margin: var(--da-space-3) 0; }
-.lp-tableau table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: var(--da-text-sm); }
-.lp-tableau th, .lp-tableau td { padding: var(--da-space-2); border-bottom: var(--da-border-width) solid var(--da-color-line); text-align: left; vertical-align: top; }
-.lp-tableau th { border-bottom: 2px solid var(--da-color-ink); }
-.lp-a-remplir { background: var(--da-color-status-restock-bg); color: var(--da-color-status-restock-fg); padding: 0 4px; border-radius: var(--da-radius-sm); }
+/* =========================================================================== 21. Pages secondaires (merci, confidentialité…) */
+.lp-page-simple .lp-entete { margin-bottom: 0; }
+.lp-page { padding-block: clamp(48px, 8vw, 112px); }
+.lp-page .da-container {
+  max-width: 52rem;
+}
+.lp-page__carte {
+  padding: clamp(24px, 5vw, 56px);
+  border: 1px solid var(--lp-bord-verre);
+  border-radius: var(--da-radius-lg);
+  background: var(--lp-verre-fort);
+  box-shadow: var(--da-shadow-raised);
+}
+.lp-page h1 { font-size: clamp(2rem, 1.2rem + 3vw, 3.4rem); line-height: 1.02; margin-bottom: var(--da-space-5); }
+.lp-page h2 { font-family: var(--da-font-display); font-size: 1.375rem; margin: var(--da-space-6) 0 var(--da-space-3); }
+.lp-page p, .lp-page li { color: var(--da-color-ink-muted); }
+.lp-page table { width: 100%; border-collapse: collapse; font-size: var(--da-text-sm); }
+.lp-page th, .lp-page td { padding: var(--da-space-2); border-bottom: 1px solid var(--da-color-line); text-align: left; vertical-align: top; }
+.lp-texte-legal { overflow-wrap: anywhere; }
+.lp-texte-legal .lp-a-remplir, .lp-a-remplir { background: var(--da-color-status-restock-bg); color: var(--da-color-status-restock-fg); }
+.lp-pied--simple { padding-top: var(--da-space-7); }
+
+/* =========================================================================== 21 bis. Maquettes (fiche produit, page de drop) */
+.lp-apercu--maquette { background: var(--da-color-accent-soft); color: var(--da-color-ink); }
+.lp-fictif {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px dashed var(--da-color-or);
+  border-radius: var(--da-radius-pill);
+  font-family: var(--da-font-price);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-style: normal;
+  letter-spacing: 0.12em;
+  line-height: 1.6;
+  vertical-align: middle;
+  text-transform: uppercase;
+  color: var(--da-color-or-doux);
+}
+.lp-maquette .lp-entete { margin-bottom: 0; }
+.lp-maquette__main { padding-top: var(--da-space-6); }
+.lp-fil { margin-bottom: var(--da-space-6); color: var(--da-color-ink-muted); }
+.lp-fiche { display: grid; gap: clamp(32px, 5vw, 72px); }
+@media (min-width: 960px) { .lp-fiche { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+@media (min-width: 960px) { .lp-fiche__galerie { position: sticky; top: calc(var(--lp-entete-h) + 24px); } }
+.lp-fiche__photo .da-photo { aspect-ratio: 1; border-radius: var(--da-radius-lg); background: var(--lp-verre); border-color: var(--da-color-line-strong); line-height: 1.7; }
+.lp-fiche__vignettes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--da-space-3); margin: var(--da-space-3) 0 0; padding: 0; list-style: none; }
+.lp-fiche__vignettes .da-photo { background: var(--lp-verre); font-size: var(--da-text-xs); }
+.lp-fiche__info { display: grid; gap: var(--da-space-5); }
+.lp-fiche__badges { display: flex; flex-wrap: wrap; gap: var(--da-space-2); align-items: center; margin: 0; }
+.lp-fiche__titre { font-size: clamp(2rem, 1.2rem + 2.8vw, 3.4rem); line-height: 1.02; }
+.lp-fiche__sous-titre { margin: calc(-1 * var(--da-space-3)) 0 0; color: var(--da-color-ink-muted); }
+.lp-fiche__resa { display: grid; gap: var(--da-space-4); padding: clamp(20px, 3vw, 32px); }
+.lp-fiche__resa-titre { display: flex; align-items: center; gap: var(--da-space-2); margin: 0; font-family: var(--da-font-display); font-size: 1.5rem; color: var(--da-color-status-preorder-fg); }
+.lp-fiche__faits, .lp-fiche__specs, .lp-drop-statut { display: grid; gap: var(--da-space-2); margin: 0; }
+.lp-fiche__faits > div, .lp-fiche__specs > div, .lp-drop-statut > div { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: var(--da-space-3); }
+.lp-fiche__faits dt, .lp-fiche__specs dt, .lp-drop-statut dt { font-weight: 700; color: var(--da-color-ink-muted); }
+.lp-fiche__faits dd, .lp-fiche__specs dd, .lp-drop-statut dd { margin: 0; }
+.lp-statut-resa { font-weight: 700; color: var(--da-color-aurore); }
+.lp-deux-prix { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--da-space-3); margin-top: var(--da-space-2); }
+.lp-deux-prix__bloc {
+  display: grid;
+  align-content: start;
+  gap: var(--da-space-1);
+  padding: var(--da-space-4);
+  border: 1px solid var(--lp-bord-verre-fort);
+  border-radius: var(--da-radius-md);
+  background: color-mix(in srgb, var(--da-color-bg) 55%, transparent);
+}
+.lp-deux-prix__bloc--resa { border-color: var(--da-color-status-preorder-fg); background: color-mix(in srgb, var(--da-color-status-preorder-bg) 70%, transparent); }
+.lp-deux-prix__libelle { margin: 0; font-size: var(--da-text-sm); font-weight: 700; color: var(--da-color-ink-muted); }
+.lp-deux-prix__montant { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--da-space-2); }
+.lp-deux-prix__montant .da-price { font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem); font-weight: 700; }
+.lp-deux-prix__detail { margin: 0; font-size: var(--da-text-sm); color: var(--da-color-ink-muted); }
+.lp-fiche__limite { margin: 0; font-size: var(--da-text-sm); }
+.lp-fiche__actions { display: flex; flex-wrap: wrap; gap: var(--da-space-3); }
+.lp-fiche .lp-garantie { margin-top: 0; }
+.lp-comparaison { display: grid; gap: var(--da-space-4); }
+@media (min-width: 800px) { .lp-comparaison { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.lp-comparaison__col { padding: clamp(20px, 3vw, 36px); }
+.lp-comparaison__tag { margin: 0 0 var(--da-space-4); }
+.lp-liste-coches { display: grid; gap: var(--da-space-2); margin: 0; padding: 0; list-style: none; color: var(--da-color-ink-muted); }
+.lp-liste-coches li { position: relative; padding-left: 1.75rem; }
+.lp-liste-coches li::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 0.35em;
+  width: 6px;
+  height: 11px;
+  border: solid var(--da-color-aurore);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.lp-fiche__histoire { padding-bottom: 0; }
+.lp-hero--drop { min-height: 88vh; min-height: 88svh; }
+.lp-hero--drop .lp-hero__img { object-position: 78% 50%; }
+.lp-hero--drop .nt-scene--drop { aspect-ratio: auto; --drop-x: 74%; --lp-lune-x: 88%; }
+.lp-hero--drop .nt-s--astre { width: 7%; min-width: 48px; top: 12%; right: 6%; }
+.lp-hero--drop .nt-s--boite { width: 10%; min-width: 64px; bottom: 26%; }
+@media (max-width: 699px) { .lp-hero--drop .nt-scene--drop { --drop-x: 70%; } .lp-hero--drop .nt-s--boite { bottom: 18%; } }
+.lp-hero__titre--drop { font-size: clamp(2.4rem, 1.2rem + 4.8vw, 5.6rem); }
+.lp-drop-statut { margin-top: var(--da-space-5); max-width: 32rem; padding: var(--da-space-4) var(--da-space-5); border: 1px solid var(--lp-bord-verre-fort); border-radius: var(--da-radius-md); background: color-mix(in srgb, var(--da-color-nuit-profonde) 60%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.lp-drop-statut .da-badge { padding: 6px 12px; font-size: var(--da-text-sm); }
+.lp-drop-statut__date { font-family: var(--da-font-price); font-weight: 700; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.lp-chrono { display: grid; gap: var(--da-space-4); margin: 0; padding: 0; list-style: none; }
+@media (min-width: 900px) { .lp-chrono { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.lp-chrono__etape { padding: clamp(20px, 3vw, 32px); }
+.lp-chrono__etape .lp-etapes__num { display: block; margin-bottom: var(--da-space-4); }
+.lp-chrono__etape p { margin: 0; color: var(--da-color-ink-muted); }
+
+/* =========================================================================== 22. Mouvement (seulement si autorisé) */
+@media (prefers-reduced-motion: no-preference) {
+  /* Animations continues : seulement avec JavaScript (le bouton « Pause des animations » existe alors, WCAG 2.2.2). */
+  .lp-js:not([data-animations="pause"]) .nt-etoiles::before { animation: nt-scintille 4.5s ease-in-out infinite alternate; }
+  .lp-js:not([data-animations="pause"]) .nt-etoiles::after { animation: nt-scintille 6.5s ease-in-out -2s infinite alternate; }
+  .lp-js:not([data-animations="pause"]) .nt-lune::after { animation: nt-respire 6s ease-in-out infinite; }
+  .lp-js:not([data-animations="pause"]) .nt-lune { animation: nt-lueur 6s ease-in-out infinite; }
+  .lp-js:not([data-animations="pause"]) .nt-s--tourbillons { animation: nt-tourne 140s linear infinite; }
+  .lp-js:not([data-animations="pause"]) .nt-s--tourbillons > span:nth-child(2),
+  .lp-js:not([data-animations="pause"]) .nt-s--tourbillons > span:nth-child(4) { animation: nt-tourne 60s linear infinite reverse; }
+  .lp-js:not([data-animations="pause"]) .nt-filante { animation: nt-filante 11s ease-in 3s infinite; }
+  .lp-js:not([data-animations="pause"]) .nt-filante--2 { animation: nt-filante 17s ease-in 9s infinite; }
+  .lp-js:not([data-animations="pause"]) .nt-s--quai > span::before { animation: nt-scintille 3.2s ease-in-out infinite alternate; }
+  .lp-js:not([data-animations="pause"]) .nt-s--jet { animation: nt-jet 5s ease-in-out infinite alternate; }
+  .lp-js:not([data-animations="pause"]) .nt-s--aurore { animation: nt-aurore 18s ease-in-out infinite alternate; }
+  .lp-js:not([data-animations="pause"]) .nt-s--cartes > span { animation: nt-flotte 7s ease-in-out infinite alternate; }
+  .lp-js:not([data-animations="pause"]) .nt-s--cartes > span:nth-child(2) { animation-delay: -3s; }
+  .lp-js:not([data-animations="pause"]) .nt-s--cartes > span:nth-child(3) { animation-delay: -5s; }
+  .lp-js:not([data-animations="pause"]) .lp-defile__piste { animation: nt-defile 48s linear infinite; }
+  .lp-js:not([data-animations="pause"]) .lp-formulaire::before { animation: nt-angle 9s linear infinite; }
+  .lp-js:not([data-animations="pause"]) .lp-autocollant { animation: nt-flotte-doux 8s ease-in-out infinite alternate; }
+  .lp-js:not([data-animations="pause"]) .lp-hero__fleche::after { animation: nt-defiler 2.2s ease-in-out infinite; }
+
+  /* Apparitions : le script pose lp-apparitions seulement s'il peut révéler les éléments (animation, pas de
+     transition : les cartes gardent leurs propres transitions de survol). */
+  .lp-apparitions:not([data-animations="pause"]) [data-apparition]:not(.est-visible) { opacity: 0; }
+  .lp-apparitions:not([data-animations="pause"]) [data-apparition].est-visible { animation: nt-apparition var(--da-duree-apparition) var(--da-courbe-douce) both; }
+  .lp-apparitions:not([data-animations="pause"]) .lp-piliers [data-apparition]:nth-child(2),
+  .lp-apparitions:not([data-animations="pause"]) .lp-cartes [data-apparition]:nth-child(3n + 2) { animation-delay: 90ms; }
+  .lp-apparitions:not([data-animations="pause"]) .lp-piliers [data-apparition]:nth-child(3),
+  .lp-apparitions:not([data-animations="pause"]) .lp-cartes [data-apparition]:nth-child(3n) { animation-delay: 180ms; }
+  .lp-apparitions:not([data-animations="pause"]) .lp-piliers [data-apparition]:nth-child(4) { animation-delay: 270ms; }
+
+  /* Entrée du héro */
+  :root:not([data-animations="pause"]) .lp-hero__contenu > * { animation: nt-entree 1.1s var(--da-courbe-douce) both; }
+  :root:not([data-animations="pause"]) .lp-hero__titre { animation-delay: 0.08s; }
+  :root:not([data-animations="pause"]) .lp-hero__texte { animation-delay: 0.18s; }
+  :root:not([data-animations="pause"]) .lp-hero__actions { animation-delay: 0.26s; }
+  :root:not([data-animations="pause"]) .lp-preuves { animation-delay: 0.34s; }
+}
+@keyframes nt-scintille { from { opacity: 0.35; } to { opacity: 1; } }
+@keyframes nt-respire { 0%, 100% { opacity: 0.55; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.08); } }
+@keyframes nt-lueur {
+  0%, 100% { box-shadow: 0 0 24px 6px color-mix(in srgb, var(--da-color-lune) 50%, transparent), 0 0 90px 30px color-mix(in srgb, var(--da-color-lune) 18%, transparent); }
+  50% { box-shadow: 0 0 34px 10px color-mix(in srgb, var(--da-color-lune) 65%, transparent), 0 0 130px 44px color-mix(in srgb, var(--da-color-lune) 26%, transparent); }
+}
+@keyframes nt-tourne { to { transform: rotate(360deg); } }
+@keyframes nt-filante {
+  0%, 88% { opacity: 0; transform: rotate(-24deg) translateX(0); }
+  90% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(-24deg) translateX(420px); }
+}
+@keyframes nt-jet { from { transform: translateX(-50%) scaleY(0.94); } to { transform: translateX(-50%) scaleY(1.04); } }
+@keyframes nt-aurore { from { transform: skewX(-18deg) translateX(-4%); opacity: 0.8; } to { transform: skewX(-10deg) translateX(4%); opacity: 1; } }
+@keyframes nt-flotte { from { translate: 0 -6px; } to { translate: 0 8px; } }
+@keyframes nt-flotte-doux { from { translate: 0 -4px; } to { translate: 0 6px; } }
+@keyframes nt-defile { to { transform: translateX(-100%); } }
+@keyframes nt-angle { to { --lp-angle: 360deg; } }
+@keyframes nt-apparition { from { opacity: 0; translate: 0 32px; } to { opacity: 1; translate: 0 0; } }
+@keyframes nt-entree { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+@keyframes nt-defiler { 0% { opacity: 0; transform: translateY(0); } 40% { opacity: 1; } 100% { opacity: 0; transform: translateY(12px); } }
+
+/* Bandeau qui défile : immobile (une seule liste, centrée) si le mouvement est réduit ou en pause. */
+@media (prefers-reduced-motion: reduce) {
+  .lp-defile { -webkit-mask: none; mask: none; }
+  .lp-defile__piste { flex-wrap: wrap; justify-content: center; white-space: normal; flex: 1 1 auto; row-gap: var(--da-space-2); }
+  .lp-defile__piste[aria-hidden="true"] { display: none; }
+  .lp-btn-lune::after { display: none; }
+}
+:root[data-animations="pause"] .lp-defile { -webkit-mask: none; mask: none; }
+:root[data-animations="pause"] .lp-defile__piste { flex-wrap: wrap; justify-content: center; white-space: normal; flex: 1 1 auto; row-gap: var(--da-space-2); }
+:root[data-animations="pause"] .lp-defile__piste[aria-hidden="true"] { display: none; }
+:root[data-animations="pause"] .nt-holo { transform: none; }
+:root[data-animations="pause"] *,
+:root[data-animations="pause"] *::before,
+:root[data-animations="pause"] *::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .nt-holo { transform: none; }
+  [data-parallaxe] { translate: none; }
+}
+
+/* =========================================================================== 23. Contrastes forcés et impression */
+@media (forced-colors: active) {
+  .lp-accent { background: none; color: CanvasText; }
+  .nt-scene, .nt-s, .nt-etoiles, .nt-lune, .nt-filante, .lp-hero__voile, .lp-hero__lueur { forced-color-adjust: auto; }
+  .lp-formulaire::before { display: none; }
+  .lp-formulaire, .nt-holo, .lp-faq details { border: 1px solid CanvasText; }
+}
+@media print {
+  .lp-nuit::before, .lp-nuit::after, .lp-hero__scene, .nt-etoiles, .nt-lune, .nt-filante, .lp-defile, .lp-entete, .lp-pied__ciel, .lp-leman__fond, .lp-formats__ciel { display: none; }
+  .lp-hero { min-height: 0; }
+  [data-apparition] { opacity: 1 !important; translate: none !important; }
+}

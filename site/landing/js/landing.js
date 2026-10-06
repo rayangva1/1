@@ -1,5 +1,5 @@
 /*
- * Landing — bascule de thème et formulaire d'inscription aux alertes.
+ * Landing — formulaire d'inscription aux alertes (les effets visuels sont dans js/nuit.js).
  *
  * Contrat d'envoi : POST application/x-www-form-urlencoded vers LANDING_CONFIG.webhookUrl
  * (requête « simple », sans pré-vérification CORS). Champs : voir site/landing/inscription.schema.json.
@@ -136,32 +136,6 @@
   };
 
   if (typeof document === "undefined") { return; }
-
-  /* ------------------------------------------------------------------ thème */
-  function initTheme() {
-    var bouton = document.getElementById("lp-theme");
-    if (!bouton) { return; }
-    var html = document.documentElement;
-    var ordre = ["auto", "light", "dark"];
-    var libelles = { auto: "automatique", light: "clair", dark: "sombre" };
-    function actuel() {
-      var t = html.getAttribute("data-theme");
-      return t === "light" || t === "dark" ? t : "auto";
-    }
-    function afficher() { bouton.textContent = "Thème\u00a0: " + libelles[actuel()]; }
-    bouton.hidden = false;
-    afficher();
-    bouton.addEventListener("click", function () {
-      var suivant = ordre[(ordre.indexOf(actuel()) + 1) % ordre.length];
-      if (suivant === "auto") { html.removeAttribute("data-theme"); } else { html.setAttribute("data-theme", suivant); }
-      try {
-        if (suivant === "auto") { racine.localStorage.removeItem("lp-theme"); } else { racine.localStorage.setItem("lp-theme", suivant); }
-      } catch (e) {
-        /* stockage indisponible : le choix vaut pour cette visite */
-      }
-      afficher();
-    });
-  }
 
   /* ------------------------------------------------------------ formulaire */
   function initFormulaire() {
@@ -329,7 +303,6 @@
   }
 
   function init() {
-    initTheme();
     initFormulaire();
   }
 

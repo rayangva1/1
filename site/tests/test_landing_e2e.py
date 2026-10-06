@@ -152,16 +152,40 @@ def test_champ_piege_simule_un_succes_sans_envoi(navigateur: Any, site: tuple[Pa
     page.close()
 
 
-def test_bascule_de_theme_et_absence_de_debordement(navigateur: Any, site: tuple[Path, str]) -> None:
+def test_pause_des_animations_et_absence_de_debordement(navigateur: Any, site: tuple[Path, str]) -> None:
+    """Ambiance Nuit (toujours sombre) : plus de bascule de thème, un bouton « Pause des animations » (WCAG 2.2.2)."""
     _, url = site
     page = _page(navigateur, url, [])
-    assert page.inner_text("#lp-theme").endswith("automatique")
-    page.click("#lp-theme")
-    assert page.get_attribute("html", "data-theme") == "light"
-    page.click("#lp-theme")
-    assert page.get_attribute("html", "data-theme") == "dark"
+    assert page.query_selector("#lp-theme") is None
+    assert page.get_attribute("html", "data-ambiance") == "nuit"
     assert page.is_visible(".lp-logo__img--sombre") and not page.is_visible(".lp-logo__img--clair")
-    page.click("#lp-theme")
-    assert page.get_attribute("html", "data-theme") is None
+    assert page.get_attribute("#lp-animations", "aria-pressed") == "false"
+    page.click("#lp-animations")
+    assert page.get_attribute("html", "data-animations") == "pause"
+    assert page.get_attribute("#lp-animations", "aria-pressed") == "true"
+    assert page.evaluate("getComputedStyle(document.querySelector('.nt-lune')).animationName") == "none"
+    page.reload()
+    assert page.get_attribute("html", "data-animations") == "pause"  # choix mémorisé
+    page.click("#lp-animations")
+    assert page.get_attribute("html", "data-animations") is None
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.set_viewport_size({"width": 1440, "height": 900})
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     page.close()
+
+
+def test_mouvement_reduit_et_images_indisponibles(navigateur: Any, site: tuple[Path, str]) -> None:
+    """prefers-reduced-motion coupe toutes les animations ; une image qui ne charge pas laisse le décor CSS."""
+    _, url = site
+    contexte = navigateur.new_context(viewport={"width": 390, "height": 844}, reduced_motion="reduce")
+    page = contexte.new_page()
+    page.route("https://**/*.webp", lambda route: route.abort())
+    page.route("https://**/*.png", lambda route: route.abort())
+    page.goto(url + "index.html")
+    page.wait_for_timeout(300)
+    for selecteur in (".nt-lune", ".nt-etoiles", ".lp-defile__piste", ".nt-s--tourbillons"):
+        assert page.evaluate(f"getComputedStyle(document.querySelector('{selecteur}')).animationName") == "none", selecteur
+    assert page.evaluate("[...document.querySelectorAll('[data-apparition]')].every(e => getComputedStyle(e).opacity === '1')")
+    assert page.evaluate("getComputedStyle(document.querySelector('.lp-hero__img')).visibility") == "hidden"
+    assert page.is_visible(".lp-hero .nt-s--ciel")
+    contexte.close()

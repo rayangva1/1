@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr-CH" data-da="a">
+<html lang="fr-CH" data-da="b" data-ambiance="nuit">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,30 +10,33 @@
   <!-- APERCU:FIN -->
   <title>Déclaration de confidentialité — Quai des Cartes</title>
   <meta name="description" content="Inscription aux alertes : quelles données nous traitons, pourquoi, combien de temps, et vos droits (LPD).">
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="dark">
   <link rel="icon" href="assets/da/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="assets/da/favicon-32.png" sizes="32x32" type="image/png">
   <link rel="apple-touch-icon" href="assets/da/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&amp;family=Inter:opsz,wght@14..32,400..700&amp;family=IBM+Plex+Mono:wght@500;600&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Fraunces:ital,opsz,wght,SOFT@1,9..144,300..600,100&amp;family=Space+Grotesk:wght@500;700&amp;display=swap">
   <link rel="stylesheet" href="assets/da/tokens.css">
   <link rel="stylesheet" href="assets/da/components.css">
+  <link rel="stylesheet" href="assets/da/ambiance.css">
   <link rel="stylesheet" href="css/landing.css">
   <script src="js/theme.js"></script>
 </head>
-<body class="da-root">
+<body class="da-root lp-nuit lp-page-simple">
   <a class="lp-evitement" href="#contenu">Aller au contenu</a>
   <header class="lp-entete">
-    <div class="da-container lp-entete__inner">
+    <div class="lp-entete__inner">
       <a class="lp-logo" href="./">
-        <img class="lp-logo__img lp-logo__img--clair" src="assets/da/logo-horizontal.svg" alt="Quai des Cartes" width="1083" height="140">
-        <img class="lp-logo__img lp-logo__img--sombre" src="assets/da/logo-horizontal-fond-sombre.svg" alt="Quai des Cartes" width="1083" height="140">
+        <img class="lp-logo__img lp-logo__img--clair" src="assets/da/logo-horizontal.svg" alt="Quai des Cartes" width="963" height="132" loading="lazy">
+        <img class="lp-logo__img lp-logo__img--sombre" src="assets/da/logo-horizontal-fond-sombre.svg" alt="Quai des Cartes" width="963" height="132">
       </a>
+      <a class="da-btn lp-btn-verre lp-entete__cta" href="./">Accueil</a>
     </div>
   </header>
   <main id="contenu" class="lp-page">
     <div class="da-container">
+      <div class="lp-page__carte">
       <!-- APERCU:DEBUT -->
       <p class="lp-note lp-a-remplir">Brouillon repris de docs/04-legal/CONFIDENTIALITE_LANDING.md : relecture express du juriste requise avant publication.</p>
       <!-- APERCU:FIN -->
@@ -67,10 +70,11 @@
       <h2>10. Modifications</h2>
       <p>Nous pouvons adapter cette déclaration. La version en vigueur est publiée sur cette page, avec sa date. À l'ouverture de la boutique, elle est remplacée par la déclaration complète.</p>
       </div>
+      </div>
     </div>
   </main>
-  <footer class="lp-pied">
-    <div class="da-container">
+  <footer class="lp-pied lp-pied--simple">
+    <div class="da-container lp-pied__legal">
       <p class="lp-pied__mention" id="mention-independance">Quai des Cartes est une boutique indépendante. Elle n'est ni affiliée, ni sponsorisée, ni approuvée par The Pokémon Company, Nintendo, Creatures Inc. ou GAME FREAK inc. Pokémon et les noms associés sont des marques de leurs titulaires respectifs ; nous les utilisons uniquement pour désigner les produits authentiques que nous revendons.</p>
       <p>Exploitant : {{RAISON_SOCIALE}}, {{ADRESSE_POSTALE}}, Suisse. Contact : <a href="mailto:{{EMAIL_SUPPORT}}">{{EMAIL_SUPPORT}}</a></p>
       <p><a href="./">Accueil</a> · <a href="confidentialite.html">Déclaration de confidentialité</a></p>
