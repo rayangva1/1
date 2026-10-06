@@ -15,7 +15,8 @@
 * **Empreintes signées par la propriétaire** (coffre) : mandat (``POKESHOP_MANDATE_FINGERPRINT``,
   obligatoire pour un mandat actif), seuils du stop-loss (``POKESHOP_STOPLOSS_FINGERPRINT``) et
   règles de prix (``POKESHOP_RULES_FINGERPRINT``) ; absentes => seuils les plus stricts, et
-  :meth:`Settings.real_write_blockers` les liste.
+  :meth:`Settings.real_write_blockers` les liste. Paramètres du pré-drop (``POKESHOP_PREDROP_FINGERPRINT``) :
+  absente ou différente => pré-drop **désactivé** (:mod:`pokeshop.predrop`).
 * **Simulation par défaut** (SPEC §0.6) : ``POKESHOP_DRY_RUN`` vaut ``true`` tant qu'il n'est
   pas explicitement mis à ``false`` ; une écriture réelle exige en plus le niveau d'autonomie
   adéquat (:mod:`pokeshop.autonomy`).
@@ -96,6 +97,8 @@ ENV_VARIABLES: dict[str, tuple[str, ...]] = {
     "mandate_fingerprint": ("POKESHOP_MANDATE_FINGERPRINT",),
     "stoploss_fingerprint": ("POKESHOP_STOPLOSS_FINGERPRINT",),
     "rules_fingerprint": ("POKESHOP_RULES_FINGERPRINT",),
+    "predrop_path": ("POKESHOP_PREDROP_PATH",),
+    "predrop_fingerprint": ("POKESHOP_PREDROP_FINGERPRINT",),
     "owner_token_sha256": ("POKESHOP_OWNER_TOKEN_SHA256",),
     "api_token_sha256": ("POKESHOP_API_TOKEN_SHA256",),
     "agent_tokens_sha256": ("POKESHOP_AGENT_TOKENS_SHA256",),
@@ -161,6 +164,9 @@ class Settings(FrozenModel):
     mandate_fingerprint: str | None = None
     stoploss_fingerprint: str | None = None
     rules_fingerprint: str | None = None
+    predrop_path: Path | None = None
+    predrop_fingerprint: str | None = None
+    """Empreinte des paramètres du pré-drop signés (coffre) ; absente => pré-drop désactivé (fermé par défaut)."""
     owner_token_sha256: str | None = None
     api_token_sha256: str | None = None
     agent_tokens_sha256: dict[str, str] = Field(default_factory=dict)
@@ -236,7 +242,7 @@ class Settings(FrozenModel):
         return v
 
     @field_validator("owner_token_sha256", "api_token_sha256", "mandate_fingerprint", "stoploss_fingerprint",
-                     "rules_fingerprint")
+                     "rules_fingerprint", "predrop_fingerprint")
     @classmethod
     def _sha(cls, v: str | None) -> str | None:
         if v is None:
@@ -388,6 +394,7 @@ class Settings(FrozenModel):
             "mandate_fingerprint_configured": self.mandate_fingerprint is not None,
             "stoploss_fingerprint_configured": self.stoploss_fingerprint is not None,
             "rules_fingerprint_configured": self.rules_fingerprint is not None,
+            "predrop_fingerprint_configured": self.predrop_fingerprint is not None,
         }
 
 

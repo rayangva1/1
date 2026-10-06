@@ -114,11 +114,12 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypeVar
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
+from pydantic import AwareDatetime, BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
 
 from . import __version__
 from . import authz
@@ -215,6 +216,19 @@ from .northstar import (
     ShippedOrder,
     is_unresolved_key,
     unresolved_key,
+)
+from .predrop import (
+    Eligibility,
+    FirmAllocation,
+    DemandSignal,
+    Predrop,
+    PredropConfigStatus,
+    PredropError,
+    PredropPersistenceError,
+    PredropRegistry,
+    evaluate_eligibility,
+    load_predrop_config,
+    public_offer,
 )
 from .pricing import basket_contribution, decide_price
 from .publish import (
@@ -586,6 +600,13 @@ class Services:
     invoices: SupplierInvoiceBook = field(default_factory=SupplierInvoiceBook)
     """Factures fournisseur enregistrées et paiements (journal ``supplier_invoices``, revue R4) : référence du coût
     d'une réception et plancher des dettes de la photo du stop-loss."""
+    predrop: PredropRegistry = field(default_factory=PredropRegistry)
+    """Pré-drop (journal ``predrop``) : allocations fermes, demande agrégée, pré-drops, réservations payées,
+    remboursements préparés ; argent encaissé = dette dérivée de la photo du stop-loss jusqu'à l'expédition."""
+    predrop_config: PredropConfigStatus = field(
+        default_factory=lambda: PredropConfigStatus(enabled=False, signature="UNSIGNED", reason="non chargé")
+    )
+    """Paramètres du pré-drop : activé seulement s'ils sont signés (``POKESHOP_PREDROP_FINGERPRINT``)."""
 
     @property
     def balance_statement(self) -> BalanceStatement | None:
@@ -839,6 +860,15 @@ class Services:
             balances = BalanceStatementBook.restore(journal_for(BalanceStatementBook.STREAM))
         except ActivityRegisterPersistenceError as exc:
             balances = BalanceStatementBook(store=failed(BalanceStatementBook.STREAM, exc))
+        # Pré-drop (6.10.2026) : paramètres signés (sinon désactivé) et registre persisté (dettes de la photo).
+        predrop_config = load_predrop_config(cfg.predrop_path, expected_fingerprint=cfg.predrop_fingerprint)
+        signatures["predrop"] = predrop_config.signature
+        if predrop_config.signature == "TAMPERED":
+            errors["predrop"] = predrop_config.reason
+        try:
+            predrop = PredropRegistry.restore(journal_for(PredropRegistry.STREAM))
+        except PredropPersistenceError as exc:
+            predrop = PredropRegistry(store=failed(PredropRegistry.STREAM, exc))
         if NorthStarLedger.STREAM not in restore_errors and OrderRegister.STREAM not in restore_errors:
             # Rattrape une vente (et sa sortie de stock) enregistrée mais pas encore dérivée. Revue R4 (R3-NEW-04) :
             # un conflit sur une écriture dérivée ne gèle plus le registre : étoile polaire signalée incomplète.
@@ -937,6 +967,8 @@ class Services:
             orders=orders,
             invoices=invoices,
             balances=balances,
+            predrop=predrop,
+            predrop_config=predrop_config,
         )
         if photo is not None:  # plafond pub et budget stock du moteur, jamais ceux de la photo relue
             svc.stoploss_state, _ = svc.authoritative_photo(photo, now())
@@ -1402,6 +1434,78 @@ class InvoicePaymentIn(_In):
 # --------------------------------------------------------------------------- application
 
 
+class PredropAllocationIn(_In):
+    """Allocation **ferme** confirmée par le fournisseur (propriétaire ou workflow 03 après sa validation)."""
+
+    product_key: str = Field(min_length=1, max_length=120)
+    supplier_id: str = Field(min_length=1, max_length=120)
+    qty: int = Field(ge=1, le=100_000)
+    supplier_confirmation_ref: str = Field(min_length=3, max_length=200)
+    expected_delivery: date | None = None
+    source: str = Field(min_length=3, max_length=300)
+
+
+class PredropReduceIn(_In):
+    """Réduction d'allocation annoncée par le fournisseur ou constatée à la réception (baisse seulement)."""
+
+    new_qty: int = Field(ge=0, le=100_000)
+    supplier_confirmation_ref: str = Field(min_length=3, max_length=200)
+    reason: str = Field(min_length=10, max_length=500)
+
+
+class PredropDemandIn(_In):
+    """Compte **agrégé** d'inscrits consentants intéressés : aucun autre champ (donnée personnelle : 422)."""
+
+    product_key: str = Field(min_length=1, max_length=120)
+    interested_consenting_subscribers: int = Field(ge=0, le=10_000_000)
+    as_of: AwareDatetime
+    source: str = Field(min_length=3, max_length=200)
+
+
+class PredropOpenIn(_In):
+    """Ouverture d'un pré-drop : le moteur évalue toutes les conditions sur ses registres."""
+
+    product_key: str = Field(min_length=1, max_length=120)
+    drop_date: date
+    opens_at: AwareDatetime | None = None
+    closes_at: AwareDatetime | None = None
+    market_ref_chf: PositiveMoney | None = None
+    """Référence marché : **propriétaire seule** (un rôle qui en fournit une : 403)."""
+
+
+class PredropApproveIn(_In):
+    """Validation d'un pré-drop en attente par la propriétaire (référence marché attestée, ou inconnue assumée)."""
+
+    market_ref_chf: PositiveMoney | None = None
+    reason: str = Field(min_length=10, max_length=500)
+
+
+class PredropCloseIn(_In):
+    """Fermeture d'un pré-drop (acte protecteur)."""
+
+    reason: str = Field(min_length=10, max_length=500)
+
+
+class PredropReservationIn(_In):
+    """Réservation **payée** (commande Shopify, workflow 02) ; ``customer_ref`` = sha256 de l'identifiant client."""
+
+    predrop_id: str = Field(min_length=1, max_length=120)
+    order_id: str = Field(min_length=1, max_length=120)
+    customer_ref: str = Field(pattern=r"^[0-9a-f]{64}$")
+    qty: int = Field(ge=1, le=10)
+    amount_paid_ttc: PositiveMoney
+    paid_at: AwareDatetime
+    priority_access: bool = False
+    """Commande passée par l'accès prioritaire des inscrits aux alertes (attesté par la boutique)."""
+
+
+class PredropRefundExecutedIn(_In):
+    """Remboursement exécuté par le PSP (relevé par le workflow 02)."""
+
+    executed_at: AwareDatetime
+    psp_refund_ref: str = Field(min_length=3, max_length=120)
+
+
 def _token_ok(token: str | None, expected: str | None) -> bool:
     if not token or not expected:
         return False
@@ -1560,6 +1664,8 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
         (SyncRegistryPersistenceError, 503),
         (ActivityRegisterPersistenceError, 503),
         (InvoicePersistenceError, 503),
+        (PredropPersistenceError, 503),
+        (PredropError, 409),
         (InvoiceError, 409),
         (SyncRegistryError, 409),
         (ActivityRegisterError, 409),
@@ -1692,6 +1798,7 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                 "autonomy_level": int(svc.autonomy.level),
                 "global_frozen": svc.stoploss_engine.frozen if svc.stoploss_engine else None,
                 "signatures": svc.signatures,
+                "predrop": {"enabled": svc.predrop_config.enabled, "signature": svc.predrop_config.signature},
                 "persistence": {
                     "backend": svc.state_backend,
                     "restored": not svc.restore_errors,
@@ -2846,11 +2953,13 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             (PersistentPriceHistory.STREAM, "historique des prix"),
             (SupplierInvoiceBook.STREAM, "registre des factures fournisseur"),
             (BalanceStatementBook.STREAM, "registre des dettes et créances"),
+            (PredropRegistry.STREAM, "registre du pré-drop"),  # réservations payées : dette dérivée
         ):
             _persistence_guard(stream, what)
         now = svc.clock()
         try:
             return build_activity_photo(
+                predrop_debts=lambda as_of: svc.predrop.outstanding_debt(as_of=as_of, shipped=_shipped),
                 now=now,
                 capital=svc.capital,
                 paypal=svc.paypal_balance,
@@ -3706,12 +3815,16 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
             key = entry.product_id if entry is not None else unresolved_key(line.public_sku)
             lines.append(OrderLine(public_sku=line.public_sku, product_key=key, qty=line.qty))
         data = body.model_dump(exclude={"lines"})
+        # Pré-drop : chiffre d'affaires reconnu à l'expédition (date posée par le moteur), jamais à l'encaissement.
+        _persistence_guard(PredropRegistry.STREAM, "registre du pré-drop")
+        recognized_at = now if svc.predrop.is_reservation(body.order_id) else None
         try:
             order, created = svc.orders.record_shipped(
-                ShippedOrder(**data, lines=tuple(lines), recorded_by=principal.name, recorded_at=now),
+                ShippedOrder(**data, lines=tuple(lines), recorded_by=principal.name, recorded_at=now,
+                             recognized_at=recognized_at),
                 svc.northstar,
                 svc.costs,
-            )
+            )  # fmt: skip
         except NorthStarPersistenceError:
             raise
         except NorthStarError as exc:
@@ -4218,6 +4331,414 @@ def create_app(settings: Settings | None = None, *, services: Services | None = 
                      "stock_ref": movement.stock_ref, "invoice_ref": movement.invoice_ref},
         )  # fmt: skip
         return _ok({"northstar_added": added, "valuation": ledger.valuation() if ledger is not None else None})
+
+    # -- pré-drop (décision de la propriétaire du 6.10.2026) ------------------------------------------------
+    def _shipped(order_id: str) -> bool:
+        """Commande expédiée enregistrée par le moteur (fin de la dette d'une réservation pré-drop)."""
+        return svc.orders.get(order_id) is not None
+
+    def _predrop_guard(*more: tuple[str, str]) -> None:
+        _persistence_guard(PredropRegistry.STREAM, "registre du pré-drop")
+        for stream, what in more:
+            _persistence_guard(stream, what)
+
+    def _predrop_quarantined(entry: CatalogEntry | None, product_key: str) -> bool:
+        keys = entry.keys if entry is not None else frozenset({product_key})
+        return any(svc.incidents.is_quarantined(k) for k in keys)
+
+    def _predrop_block(entry: CatalogEntry | None, product_key: str) -> str | None:
+        """Motif qui interdit toute nouvelle promesse pré-drop (None : aucun) — fermé par défaut."""
+        if _predrop_quarantined(entry, product_key):
+            return "référence en quarantaine (incident ouvert)"
+        return _predrop_stoploss_problem(entry, product_key)
+
+    def _predrop_stoploss_problem(entry: CatalogEntry | None, product_key: str) -> str | None:
+        """Gel ou blocage du stop-loss, ou état inconnu (photo absente, périmée) : fermé par défaut."""
+        keys = entry.keys if entry is not None else frozenset({product_key})
+        engine = svc.stoploss_engine
+        if engine is None:
+            return "stop-loss indisponible (seuils non chargés)"
+        if engine.frozen:
+            return "gel global du stop-loss (verrou)"
+        status, _ = svc.gate.stoploss_status()
+        if status is None:
+            return f"état du stop-loss inconnu ({svc.gate.last_stoploss_error or 'photo absente ou périmée'})"
+        if status.global_frozen:
+            return "gel global du stop-loss"
+        if keys & set(status.blocked_products):
+            return "référence bloquée par le stop-loss produit"
+        return None
+
+    def _predrop_cost(entry: CatalogEntry | None, product_key: str, allocation: FirmAllocation | None) -> Decimal | None:
+        """Coût rendu du moteur (jamais déclaré) : max(offre fraîche du fournisseur de l'allocation, CMP du stock)."""
+        keys = entry.keys if entry is not None else frozenset({product_key})
+        now = svc.clock()
+        max_age = svc.rules.stock.max_age
+        found: list[Decimal] = []
+        for key in sorted(keys):
+            if allocation is not None:
+                rc = svc.sync.replacement_costs.latest(key, allocation.supplier_id)
+                if rc is not None and now - rc.source_ts <= max_age and rc.source_ts - now <= timedelta(minutes=5):
+                    found.append(rc.unit_cost)
+            else:
+                rc = svc.sync.replacement_costs.current(key, now, max_age)
+                if rc is not None:
+                    found.append(rc.unit_cost)
+            ledger = svc.costs.ledger(key)
+            if ledger is not None and ledger.average_unit_cost is not None:
+                found.append(ledger.average_unit_cost)
+        return max(found) if found else None
+
+    def _predrop_eligibility(product_key: str, *, market_ref: Decimal | None, ignore: str | None = None) -> Eligibility:
+        """Éligibilité évaluée sur les registres du moteur (catalogue, validations, coûts, stop-loss, incidents)."""
+        entry = svc.catalog.entry_for(product_key)
+        listing_known = entry is not None and entry.canonical
+        approval = svc.catalog_approvals.effective_for(entry.listing, entry.product_id) if entry is not None else None
+        allocation = svc.predrop.allocation(product_key)
+        active = svc.predrop.active_for(product_key)
+        return evaluate_eligibility(
+            product_key=product_key,
+            config_status=svc.predrop_config,
+            allocation=allocation,
+            demand=svc.predrop.demand(product_key),
+            now=svc.clock(),
+            listing_known=listing_known,
+            listing_approved=approval is not None and approval.approved,
+            cost=_predrop_cost(entry, product_key, allocation),
+            params=svc.rules.pricing,
+            market_ref=market_ref,
+            stoploss_problem=_predrop_stoploss_problem(entry, product_key),
+            quarantined=_predrop_quarantined(entry, product_key),
+            committed=0,
+            open_predrop=None if active is None or active.predrop_id == ignore else active.predrop_id,
+        )
+
+    def _predrop_view(predrop: Predrop, now: datetime) -> dict[str, Any]:
+        """Lecture interne d'un pré-drop : sans coût ni marge (prix, paramètres figés, quota, dette)."""
+        quota = svc.predrop.quota(predrop.predrop_id, at=now)
+        debt = svc.predrop.outstanding_debt(as_of=now, shipped=_shipped).by_predrop.get(predrop.predrop_id, Decimal("0"))
+        return {
+            "predrop_id": predrop.predrop_id,
+            "product_key": predrop.product_key,
+            "status": predrop.status,
+            "accepting": svc.predrop_config.enabled and svc.predrop.accepting(predrop.predrop_id, now)
+            and _predrop_block(svc.catalog.entry_for(predrop.product_key), predrop.product_key) is None,
+            "drop_date": predrop.drop_date,
+            "opens_at": predrop.opens_at,
+            "closes_at": predrop.closes_at,
+            "prix_drop_chf": predrop.prices.drop_price,
+            "prix_predrop_chf": predrop.prices.predrop_price,
+            "supplement_effectif": predrop.prices.effective_premium_pct,
+            "plafonnements": list(predrop.prices.capped_by),
+            "market_ref_chf": predrop.market_ref_chf,
+            "needs_owner": list(predrop.needs_owner),
+            "validated_by": predrop.validated_by,
+            "per_customer_limit": predrop.per_customer_limit,
+            "priority_window_hours": predrop.priority_window_hours,
+            "demand_score": predrop.demand_score,
+            "config_version": predrop.config_version,
+            "quota": quota,
+            "collected_not_delivered_chf": debt,
+            "closed_at": predrop.closed_at,
+            "close_reason": predrop.close_reason,
+        }
+
+    def _predrop_audit(principal: Principal, action: str, entity_id: str, payload: dict[str, Any]) -> None:
+        svc.audit.append(
+            actor=principal.name, actor_kind=ActorKind.PROPRIETAIRE if principal.owner else ActorKind.AGENT,
+            action=action, entity="predrop", entity_id=entity_id, dry_run=False, payload=payload,
+        )  # fmt: skip
+
+    @app.post("/predrop/allocations", status_code=201)
+    async def predrop_allocation(request: Request) -> PokeshopJSONResponse:
+        """Allocation **ferme** (confirmation fournisseur) : propriétaire ou workflow 03 après sa validation.
+
+        Jamais déclarée par l'agent qui bénéficie du pré-drop. Le fournisseur doit être connu du moteur pour la
+        référence (lien du catalogue, offre évaluée, cycle sur le catalogue du registre) — sinon 409, sauf
+        propriétaire. Même confirmation et même contenu : sans effet ; une baisse passe par la réduction (409).
+        """
+        principal = require_api(request)
+        _predrop_guard((CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation"))
+        body = await _body(request, PredropAllocationIn)
+        entry = svc.catalog.entry_for(body.product_key)
+        if entry is None or not entry.canonical:
+            raise HTTPProblem(409, f"{body.product_key} : fiche canonique absente du catalogue validé")
+        if not principal.owner and body.supplier_id not in _known_suppliers(entry.product_id, entry):
+            raise HTTPProblem(
+                409, f"fournisseur {body.supplier_id} inconnu du moteur pour {body.product_key} : allocation à poser par "
+                "la propriétaire (confirmation fournisseur vérifiée)"
+            )
+        allocation, created = svc.predrop.set_allocation(FirmAllocation(
+            **body.model_dump(), recorded_by=principal.name, recorded_at=svc.clock()))  # fmt: skip
+        if created:
+            _predrop_audit(principal, "predrop.allocation", allocation.product_key,
+                           {"qty": allocation.qty, "supplier_id": allocation.supplier_id,
+                            "supplier_confirmation_ref": allocation.supplier_confirmation_ref})  # fmt: skip
+        return _ok({"allocation": allocation, "created": created}, 201 if created else 200)
+
+    @app.post("/predrop/allocations/{product_key}/reduce")
+    async def predrop_allocation_reduce(product_key: str, request: Request) -> PokeshopJSONResponse:
+        """Réduction d'allocation : pré-drop servi en premier (ordre de paiement), quota drop réduit d'abord, puis
+        remboursement intégral des dernières réservations (préparé, avec brouillon d'email ; validation de la
+        propriétaire aux niveaux d'autonomie 1 et 2)."""
+        principal = require_api(request)
+        _predrop_guard()
+        body = await _body(request, PredropReduceIn)
+        result = svc.predrop.reduce_allocation(
+            product_key, body.new_qty, supplier_confirmation_ref=body.supplier_confirmation_ref, reason=body.reason,
+            recorded_by=principal.name, at=svc.clock(), autonomy_level=int(svc.autonomy.level),
+        )  # fmt: skip
+        if result.created:
+            _predrop_audit(principal, "predrop.allocation_reduce", product_key,
+                           {"previous_qty": result.reduction.previous_qty, "new_qty": result.reduction.new_qty,
+                            "kept": list(result.plan.kept), "refunded": list(result.plan.refunded),
+                            "drop_quota_after": result.plan.drop_quota_after})  # fmt: skip
+        return _ok({"allocation": result.allocation, "plan": result.plan, "refunds": result.refunds,
+                    "created": result.created})  # fmt: skip
+
+    @app.post("/predrop/demand", status_code=201)
+    async def predrop_demand(request: Request) -> PokeshopJSONResponse:
+        """Compte **agrégé** d'inscrits consentants intéressés (workflow marketing) : aucune donnée personnelle."""
+        principal = require_api(request)
+        _predrop_guard()
+        body = await _body(request, PredropDemandIn)
+        now = svc.clock()
+        if body.as_of - now > timedelta(minutes=5):
+            raise HTTPProblem(409, "compte d'inscrits daté du futur : horloge non fiable")
+        signal, created = svc.predrop.record_demand(DemandSignal(
+            **body.model_dump(), recorded_by=principal.name, recorded_at=now))  # fmt: skip
+        if created:
+            _predrop_audit(principal, "predrop.demand", signal.product_key,
+                           {"interested_consenting_subscribers": signal.interested_consenting_subscribers})  # fmt: skip
+        return _ok({"signal": signal, "created": created}, 201 if created else 200)
+
+    @app.get("/predrop/eligibility/{product_key}")
+    def predrop_eligibility(product_key: str, request: Request) -> PokeshopJSONResponse:
+        """Conditions du pré-drop évaluées sur les registres du moteur ; deux prix, sans coût ni marge."""
+        require_api(request)
+        _predrop_guard()
+        return _ok({"enabled": svc.predrop_config.enabled, "signature": svc.predrop_config.signature,
+                    "eligibility": _predrop_eligibility(product_key, market_ref=None).view()})  # fmt: skip
+
+    @app.post("/predrop/open", status_code=201)
+    async def predrop_open(request: Request) -> PokeshopJSONResponse:
+        """Ouvre un pré-drop si **toutes** les conditions sont remplies (sinon 409 avec la liste).
+
+        Référence marché : propriétaire seule (rôle : 403). Ouvert par un rôle avec une référence marché inconnue ou un
+        prix drop en REVIEW : enregistré **en attente** de la propriétaire (aucune réservation acceptée). Ouvert par la
+        propriétaire : ouvert (son acte vaut validation). Prix et paramètres figés à l'ouverture.
+        """
+        principal = require_api(request)
+        _predrop_guard((CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation"),
+                       (CatalogApprovalBook.STREAM, "registre des validations de fiches"),
+                       (CostRegister.STREAM, "registre de coûts historiques"))  # fmt: skip
+        body = await _body(request, PredropOpenIn)
+        if body.market_ref_chf is not None and not principal.owner:
+            _predrop_audit(principal, "predrop.open.market_ref_refused", body.product_key,
+                           {"motif": "référence marché déclarée par un rôle"})  # fmt: skip
+            raise HTTPProblem(403, "référence marché : valeur décisive, posée par la propriétaire seule")
+        now = svc.clock()
+        tz = ZoneInfo(cfg.timezone)
+        if body.drop_date <= now.astimezone(tz).date():
+            raise HTTPProblem(422, "date du drop : postérieure à aujourd'hui")
+        opens_at = body.opens_at or now
+        if now - opens_at > timedelta(minutes=5):
+            raise HTTPProblem(422, "ouverture dans le passé")
+        drop_start = datetime.combine(body.drop_date, datetime.min.time(), tzinfo=tz)
+        closes_at = body.closes_at or drop_start
+        if closes_at > drop_start or closes_at <= opens_at:
+            raise HTTPProblem(422, "fermeture des réservations : après l'ouverture et au plus tard au début du jour du drop")
+        eligibility = _predrop_eligibility(body.product_key, market_ref=body.market_ref_chf)
+        if not eligibility.eligible:
+            _predrop_audit(principal, "predrop.open_refused", body.product_key, {"failed": list(eligibility.failed())})
+            raise HTTPProblem(409, "pré-drop refusé : conditions non remplies (" + ", ".join(eligibility.failed()) + ")",
+                              eligibility=eligibility.view())  # fmt: skip
+        config = svc.predrop_config.config
+        allocation = svc.predrop.allocation(body.product_key)
+        entry = svc.catalog.entry_for(body.product_key)
+        assert config is not None and allocation is not None and entry is not None and eligibility.prices is not None
+        pending = bool(eligibility.needs_owner) and not principal.owner
+        predrop = Predrop(
+            predrop_id=f"PD-{body.product_key}-{body.drop_date:%Y%m%d}",
+            product_key=body.product_key,
+            public_sku=entry.listing.public_sku,
+            allocation_ref=allocation.supplier_confirmation_ref,
+            drop_date=body.drop_date,
+            opens_at=opens_at,
+            closes_at=closes_at,
+            status="PENDING_OWNER" if pending else "OPEN",
+            prices=eligibility.prices,
+            config_version=config.predrop_version,
+            config_fingerprint=config.fingerprint,
+            premium_pct=config.premium_pct,
+            predrop_share=config.predrop_share_of_allocation,
+            reserve_min_units=config.safety_reserve_min_units,
+            reserve_share=config.safety_reserve_share,
+            per_customer_limit=config.per_customer_limit,
+            priority_window_hours=config.priority_window_hours,
+            demand_threshold=config.demand_threshold,
+            demand_interested=eligibility.demand_interested or 0,
+            demand_allocation=allocation.qty,
+            demand_score=eligibility.demand_score or Decimal("0"),
+            market_ref_chf=body.market_ref_chf,
+            market_ref_attested_by=authz.OWNER if body.market_ref_chf is not None else None,
+            requested_by=principal.name,
+            requested_at=now,
+            validated_by=authz.OWNER if principal.owner else None,
+            validated_at=now if principal.owner else None,
+            needs_owner=eligibility.needs_owner,
+        )
+        predrop, _ = svc.predrop.open(predrop)
+        _predrop_audit(principal, "predrop.open", predrop.predrop_id,
+                       {"status": predrop.status, "needs_owner": list(predrop.needs_owner),
+                        "prix_drop_chf": predrop.prices.drop_price, "prix_predrop_chf": predrop.prices.predrop_price})  # fmt: skip
+        view = _predrop_view(predrop, now)
+        offer = public_offer(predrop, accepting=bool(view["accepting"])) if predrop.status == "OPEN" else None
+        return _ok({"predrop": view, "offer": offer}, 201)
+
+    @app.post("/predrop/{predrop_id}/approve")
+    async def predrop_approve(predrop_id: str, request: Request) -> PokeshopJSONResponse:
+        """Validation par la propriétaire d'un pré-drop en attente : conditions réévaluées (référence marché attestée
+        ou inconnue assumée), prix recalculés et figés, ouverture."""
+        principal = require_api(request)
+        if not principal.owner:  # matrice : propriétaire seule (défense en profondeur)
+            raise HTTPProblem(403, "validation d'un pré-drop : jeton propriétaire")
+        _predrop_guard((CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation"),
+                       (CatalogApprovalBook.STREAM, "registre des validations de fiches"))  # fmt: skip
+        body = await _body(request, PredropApproveIn)
+        predrop = svc.predrop.get(predrop_id)
+        if predrop is None:
+            raise HTTPProblem(404, f"pré-drop {predrop_id} inconnu")
+        if predrop.status != "PENDING_OWNER":
+            raise HTTPProblem(409, f"pré-drop {predrop_id} : {predrop.status}, rien à valider")
+        eligibility = _predrop_eligibility(predrop.product_key, market_ref=body.market_ref_chf, ignore=predrop_id)
+        if not eligibility.eligible or eligibility.prices is None:
+            raise HTTPProblem(409, "validation refusée : conditions non remplies (" + ", ".join(eligibility.failed()) + ")",
+                              eligibility=eligibility.view())  # fmt: skip
+        now = svc.clock()
+        approved = predrop.model_copy(update={
+            "status": "OPEN", "prices": eligibility.prices, "opens_at": max(predrop.opens_at, now),
+            "market_ref_chf": body.market_ref_chf,
+            "market_ref_attested_by": authz.OWNER if body.market_ref_chf is not None else None,
+            "validated_by": authz.OWNER, "validated_at": now, "needs_owner": eligibility.needs_owner,
+        })  # fmt: skip
+        if approved.opens_at >= approved.closes_at:
+            raise HTTPProblem(409, "fermeture des réservations déjà passée : rouvrir un nouveau pré-drop")
+        svc.predrop.update(approved)
+        _predrop_audit(principal, "predrop.approve", predrop_id,
+                       {"reason": body.reason, "market_ref_chf": body.market_ref_chf,
+                        "prix_predrop_chf": approved.prices.predrop_price})  # fmt: skip
+        return _ok({"predrop": _predrop_view(approved, now)})
+
+    @app.post("/predrop/{predrop_id}/close")
+    async def predrop_close(predrop_id: str, request: Request) -> PokeshopJSONResponse:
+        """Ferme un pré-drop (acte protecteur) : plus aucune réservation acceptée ; les unités non réservées vont au drop."""
+        principal = require_api(request)
+        _predrop_guard()
+        body = await _body(request, PredropCloseIn)
+        now = svc.clock()
+        closed, changed = svc.predrop.close(predrop_id, by=principal.name, at=now, reason=body.reason)
+        if changed:
+            _predrop_audit(principal, "predrop.close", predrop_id, {"reason": body.reason})
+        return _ok({"predrop": _predrop_view(closed, now), "changed": changed})
+
+    @app.get("/predrop/offers")
+    def predrop_offers(request: Request) -> PokeshopJSONResponse:
+        """Offres publiques (statut « Réservations ouvertes / fermées », date du drop, deux prix, garantie, aucune
+        différence remboursée ; ni compte à rebours, ni « plus que N », ni coût, ni marge) et lecture interne."""
+        require_api(request)
+        _predrop_guard()
+        now = svc.clock()
+        offers, internal = [], []
+        for predrop in svc.predrop.predrops():
+            if predrop.status == "PENDING_OWNER":
+                internal.append(_predrop_view(predrop, now))
+                continue
+            view = _predrop_view(predrop, now)
+            offers.append(public_offer(predrop, accepting=bool(view["accepting"])))
+            internal.append(view)
+        return _ok({"enabled": svc.predrop_config.enabled, "signature": svc.predrop_config.signature,
+                    "simulation": cfg.dry_run, "offers": offers, "internal": internal})  # fmt: skip
+
+    @app.post("/predrop/reservations", status_code=201)
+    async def predrop_reservation(request: Request) -> PokeshopJSONResponse:
+        """Réservation **payée** (workflow 02) : idempotente par commande, enregistrée atomiquement.
+
+        Jamais refusée pour un motif métier (le client a payé) : hors quota, limite par client atteinte, hors fenêtre
+        prioritaire, montant ≠ prix pré-drop × quantité, pré-drop fermé, désactivé ou suspendu (gel, quarantaine)
+        => non servie et **remboursement intégral préparé** (validation de la propriétaire aux niveaux 1 et 2).
+        L'argent encaissé est une dette jusqu'à l'expédition (photo du stop-loss) ; chiffre d'affaires reconnu à
+        l'expédition (``POST /orders/shipped``).
+        """
+        principal = require_api(request)
+        _predrop_guard((CatalogRegistry.CATALOG_STREAM, "catalogue de synchronisation"))
+        body = await _body(request, PredropReservationIn)
+        now = svc.clock()
+        if body.paid_at - now > timedelta(minutes=5):
+            raise HTTPProblem(409, "paiement daté du futur : horloge non fiable")
+        predrop = svc.predrop.get(body.predrop_id)
+        blocked = None
+        if predrop is not None:
+            blocked = _predrop_block(svc.catalog.entry_for(predrop.product_key), predrop.product_key)
+        reservation, refund, created = svc.predrop.record_reservation(
+            predrop_id=body.predrop_id, order_id=body.order_id, customer_ref=body.customer_ref, qty=body.qty,
+            amount_paid_ttc=body.amount_paid_ttc, paid_at=body.paid_at, priority_access=body.priority_access,
+            recorded_by=principal.name, at=now, enabled=svc.predrop_config.enabled, blocked_reason=blocked,
+            autonomy_level=int(svc.autonomy.level),
+        )  # fmt: skip
+        if created:
+            _predrop_audit(principal, "predrop.reservation", reservation.order_id,
+                           {"predrop_id": reservation.predrop_id, "status": reservation.status,
+                            "not_served_reason": reservation.not_served_reason, "qty": reservation.qty,
+                            "amount_paid_ttc": reservation.amount_paid_ttc, "blocked": blocked,
+                            "refund_status": refund.status if refund is not None else None})  # fmt: skip
+        return _ok({"reservation": reservation.public_view(), "refund": refund, "created": created,
+                    "state": svc.predrop.reservation_state(reservation.order_id, _shipped)},
+                   201 if created else 200)  # fmt: skip
+
+    @app.get("/predrop/reservations")
+    def predrop_reservations(request: Request, predrop_id: str | None = None) -> PokeshopJSONResponse:
+        """Réservations (sans identifiant client) avec leur état dérivé (expédiée, remboursée…)."""
+        require_api(request)
+        _predrop_guard((OrderRegister.STREAM, "registre des commandes"))
+        rows = [{**r.public_view(), "state": svc.predrop.reservation_state(r.order_id, _shipped)}
+                for r in svc.predrop.reservations(predrop_id)]  # fmt: skip
+        return _ok({"reservations": rows,
+                    "collected_not_delivered": svc.predrop.outstanding_debt(as_of=svc.clock(), shipped=_shipped)})  # fmt: skip
+
+    @app.get("/predrop/refunds")
+    def predrop_refunds(request: Request, status: str | None = None) -> PokeshopJSONResponse:
+        """Remboursements préparés (en attente de la propriétaire, approuvés, exécutés) et brouillons d'email."""
+        require_api(request)
+        _predrop_guard()
+        return _ok({"refunds": svc.predrop.refunds(status)})
+
+    @app.post("/predrop/refunds/{refund_id}/approve")
+    async def predrop_refund_approve(refund_id: str, request: Request) -> PokeshopJSONResponse:
+        """Validation de la propriétaire **en un clic** d'un remboursement préparé (corps vide admis)."""
+        principal = require_api(request)
+        if not principal.owner:  # matrice : propriétaire seule (défense en profondeur)
+            raise HTTPProblem(403, "validation d'un remboursement : jeton propriétaire")
+        _predrop_guard()
+        refund, changed = svc.predrop.approve_refund(refund_id, by=authz.OWNER, at=svc.clock())
+        if changed:
+            _predrop_audit(principal, "predrop.refund_approve", refund_id,
+                           {"order_id": refund.order_id, "amount_ttc": refund.amount_ttc})  # fmt: skip
+        return _ok({"refund": refund, "changed": changed})
+
+    @app.post("/predrop/refunds/{refund_id}/executed")
+    async def predrop_refund_executed(refund_id: str, request: Request) -> PokeshopJSONResponse:
+        """Remboursement exécuté par le PSP (relevé du workflow 02) : approuvé seulement (sinon 409) ; la dette sort."""
+        principal = require_api(request)
+        _predrop_guard()
+        body = await _body(request, PredropRefundExecutedIn)
+        refund, changed = svc.predrop.mark_refund_executed(
+            refund_id, by=principal.name, at=svc.clock(), executed_at=body.executed_at, psp_refund_ref=body.psp_refund_ref
+        )
+        if changed:
+            _predrop_audit(principal, "predrop.refund_executed", refund_id,
+                           {"order_id": refund.order_id, "psp_refund_ref": refund.psp_refund_ref})  # fmt: skip
+        return _ok({"refund": refund, "changed": changed})
 
     def _engine_refusal(event: str, label: str) -> Callable[[str], None]:
         def hook(motif: str) -> None:

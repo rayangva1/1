@@ -57,7 +57,7 @@ __all__ = [
     "matrix_markdown",
 ]
 
-AUTHZ_VERSION = "2026-10-05.r6"
+AUTHZ_VERSION = "2026-10-06.predrop"
 """Version de la matrice (à changer à chaque modification ; citée par ``/health`` et la doc générée)."""
 
 OWNER = "propriétaire"
@@ -285,6 +285,41 @@ ROUTE_MATRIX: dict[tuple[str, str], RouteRule] = {
     ("POST", "/costs/invoices/{invoice_ref}/payments"): _write(
         "costs.invoice_payment", {"connecteur-tresorerie"},
         note="paiement relevé sur le compte (cumul ≤ montant de la facture) : seule baisse de la dette d'une facture"),
+    # -- pré-drop (décision de la propriétaire du 6.10.2026) : réservation garantie avant réception
+    ("POST", "/predrop/allocations"): _write(
+        "predrop.allocation", {"n8n-03-factures"},
+        note="allocation ferme (confirmation fournisseur validée par la propriétaire, workflow 03 ; fournisseur connu "
+        "du moteur) : jamais déclarée par l'agent qui bénéficie du pré-drop ; une baisse passe par la réduction"),
+    ("POST", "/predrop/allocations/{product_key}/reduce"): _write(
+        "predrop.allocation_reduce", {"n8n-03-factures", "operations-sav"},
+        note="réduction annoncée par le fournisseur ou constatée à la réception (acte protecteur, baisse seulement) : "
+        "pré-drop servi en premier (ordre de paiement), quota drop réduit d'abord, remboursements intégraux préparés"),
+    ("POST", "/predrop/demand"): _write(
+        "predrop.demand", {"n8n-06-marketing"},
+        note="compte agrégé d'inscrits consentants intéressés (aucune donnée personnelle : tout autre champ, 422)"),
+    ("GET", "/predrop/eligibility/{product_key}"): _read(
+        "predrop.eligibility", "conditions évaluées sur les registres du moteur ; deux prix, sans coût ni marge"),
+    ("POST", "/predrop/open"): _write(
+        "predrop.open", {"chef-de-projet", "finance-pricing"},
+        note="toutes les conditions requises (sinon 409) ; référence marché : propriétaire seule (rôle : 403) ; "
+        "référence inconnue ou prix drop REVIEW : en attente de la propriétaire"),
+    ("POST", "/predrop/{predrop_id}/approve"): _owner(
+        "predrop.approve", "validation d'un pré-drop en attente (référence marché attestée ou inconnue assumée)"),
+    ("POST", "/predrop/{predrop_id}/close"): _write(
+        "predrop.close", {"chef-de-projet", "finance-pricing", "qa-conformite"}, note="acte protecteur"),
+    ("GET", "/predrop/offers"): _read(
+        "predrop.offers", "offres publiques (statut ouvert/fermé, date du drop, deux prix, garantie) ; quotas internes"),
+    ("POST", "/predrop/reservations"): _write(
+        "predrop.reservation", {"n8n-02-commandes"},
+        note="réservation payée (commande Shopify, identifiant client haché) : jamais refusée pour un motif métier — "
+        "hors quota, limite, fenêtre ou prix : non servie et remboursement intégral préparé ; dette jusqu'à expédition"),
+    ("GET", "/predrop/reservations"): _read("predrop.reservations", "sans identifiant client"),
+    ("GET", "/predrop/refunds"): _read("predrop.refunds", "remboursements préparés et brouillons d'email"),
+    ("POST", "/predrop/refunds/{refund_id}/approve"): _owner(
+        "predrop.refund_approve", "validation en un clic d'un remboursement préparé (niveaux d'autonomie 1 et 2)"),
+    ("POST", "/predrop/refunds/{refund_id}/executed"): _write(
+        "predrop.refund_executed", {"n8n-02-commandes"},
+        note="remboursement PSP relevé (approuvé seulement) : seule sortie de la dette d'une réservation remboursée"),
     # -- tableau de bord (lecture)
     ("GET", "/dashboard/daily"): _read("dashboard.daily"),
     ("GET", "/dashboard/weekly"): _read("dashboard.weekly"),
@@ -402,6 +437,12 @@ def matrix_markdown(matrix: Mapping[tuple[str, str], RouteRule] | None = None) -
         "  simulation) ou propriétaire.",
         "- Relais `n8n-08-mandat` : `requested_by` parmi les agents qui dépensent (jamais `qa-conformite`, `catalogue` ni",
         "  `finance-pricing`, qui paie) ; décision humaine d'une dépense en attente : propriétaire (`POST /mandate/human-decision`).",
+        "- Pré-drop : allocation ferme posée par la propriétaire ou `n8n-03-factures` (confirmation fournisseur validée),",
+        "  jamais par l'agent qui bénéficie du pré-drop ; compte d'inscrits intéressés agrégé (`n8n-06-marketing`, aucune",
+        "  donnée personnelle) ; référence marché et validation d'un pré-drop en attente : propriétaire ; réservations",
+        "  payées et remboursements exécutés : `n8n-02-commandes` (montant comparé au prix pré-drop du moteur) ;",
+        "  remboursement préparé validé par la propriétaire aux niveaux d'autonomie 1 et 2 ; argent encaissé = dette",
+        "  dérivée du registre jusqu'à l'expédition (chiffre d'affaires reconnu à l'expédition, jamais à l'encaissement).",
         "",
         "## Validation humaine requise",
         "",

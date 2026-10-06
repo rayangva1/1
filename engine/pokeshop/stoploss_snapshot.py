@@ -21,6 +21,10 @@ Dettes et créances         :class:`BalanceStatementBook` (journal ``balance_sta
                            créances ; le plancher des dettes survit au redémarrage). Revue R4 (R3-NEW-02) :
                            **plancher** des factures fournisseur enregistrées non payées (:mod:`pokeshop.invoices`,
                            ``n8n-03-factures`` ; paiement relevé par ``connecteur-tresorerie``) ajouté aux dettes
+Réservations pré-drop      :class:`pokeshop.predrop.PredropRegistry` — argent encaissé en pré-drop ni expédié ni
+                           remboursé : dette **dérivée** du registre (``POST /predrop/reservations``, workflow 02),
+                           **ajoutée** aux précommandes déclarées (qui ne comptent que les précommandes hors pré-drop)
+                           et déduite du cash disponible ; jamais déclarée par un agent
 Stock au coût historique   :class:`pokeshop.northstar.CostRegister` (``POST /costs/movements``)
 Exposition par extension   même registre, extension lue dans le catalogue validé (``POST /catalog/items``)
 Marges produit             prix public en vigueur (historique des prix) et coût du stock (CMP) ou coût
@@ -49,7 +53,7 @@ connue (``orchestration/README.md``) : l'activité publicitaire n'est connue que
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal
@@ -232,8 +236,9 @@ class BankBalanceReading(FrozenModel):
 class BalanceStatement(FrozenModel):
     """Dettes et créances à date (déclarées par un jeton nommé, jamais supposées nulles).
 
-    ``preorders_collected_chf`` : précommandes encaissées non livrées (dette envers les clients, déduite du
-    cash disponible) ; ``debts`` : factures reçues non payées, TVA due, remboursements promis… ;
+    ``preorders_collected_chf`` : précommandes encaissées non livrées **hors réservations pré-drop** (dette envers les
+    clients, déduite du cash disponible ; les réservations pré-drop sont dérivées du registre du moteur et ajoutées
+    par la photo, :mod:`pokeshop.predrop`) ; ``debts`` : factures reçues non payées, TVA due, remboursements promis… ;
     ``receivables`` : versements PSP en transit, TVA à récupérer, stock payé en transit (au coût).
     """
 
@@ -622,6 +627,7 @@ def build_activity_photo(
     balances_max_age: timedelta | None = None,
     incomplete: Mapping[str, str] | None = None,
     order_book: Any = None,
+    predrop_debts: Callable[[datetime], Any] | None = None,
 ) -> tuple[StopLossState, dict[str, Any]]:
     """Photo d'activité tirée des registres ; :class:`PhotoSourcesError` si une source manque ou est périmée.
 
@@ -637,6 +643,11 @@ def build_activity_photo(
     attente, revue R5, R4-NEW-01), reportés dans les sources (dépenses : validation humaine). ``order_book`` :
     registre des commandes du moteur — contribution des commandes attribuées re-dérivée avec le coût des ventes du
     registre de coûts (revue R6, R5-NEW-01) ; absent : contribution 0 (fermé par défaut).
+
+    Pré-drop (6.10.2026) : ``predrop_debts(as_of)`` renvoie l'argent encaissé en pré-drop (payé au plus tard à la date de
+    la photo) ni expédié ni remboursé (:meth:`pokeshop.predrop.PredropRegistry.outstanding_debt`) ; il est **dérivé** du
+    registre, ajouté aux précommandes déclarées (``preorders_collected_chf`` = précommandes **hors** pré-drop) dans les
+    dettes, et déduit du cash disponible.
     """
     _aware(now, "now")
     problems: list[str] = []
@@ -677,6 +688,12 @@ def build_activity_photo(
     debts = balances.debts
     if balances.preorders_collected_chf > 0:
         debts = (BalanceItem(label="Précommandes encaissées non livrées", amount=balances.preorders_collected_chf), *debts)
+    predrop = predrop_debts(as_of) if predrop_debts is not None else None
+    predrop_total = Decimal(getattr(predrop, "total_chf", Decimal("0"))) if predrop is not None else Decimal("0")
+    if predrop_total > 0:  # dette dérivée du registre du pré-drop, jamais déclarée
+        debts = (*debts, BalanceItem(label="Réservations pré-drop encaissées non livrées (registre du moteur)",
+                                     amount=predrop_total))  # fmt: skip
+    preorders = balances.preorders_collected_chf + predrop_total
     unpaid = invoices.unpaid(paid_until=as_of) if invoices is not None else ()  # paiement compté si le cash l'a vu
     debts = (
         *debts,
@@ -769,7 +786,7 @@ def build_activity_photo(
         ad_spends=tuple(s for s in spends if s.day <= as_of.date()),
         attributed_orders=attributed,
         ads_daily_cap_chf=ads_daily_cap_chf,
-        cash_available_chf=cash - balances.preorders_collected_chf,
+        cash_available_chf=cash - preorders,
         capital_movements=movements,
         net_worth=NetWorthSnapshot(
             as_of=as_of, cash_chf=cash, stock=tuple(stock), receivables=receivable_items, debts=debts
@@ -796,6 +813,10 @@ def build_activity_photo(
         # Revue R5 (R4-NEW-01) : coût des ventes en attente => étoile polaire et photo incomplètes (dépenses : humain).
         "complete": not reasons,
         "incomplete": reasons,
+        # Pré-drop : précommandes déclarées (hors pré-drop) + réservations pré-drop dérivées du registre du moteur.
+        "precommandes": {"declarees_chf": balances.preorders_collected_chf, "predrop_derivees_chf": predrop_total,
+                         "predrop_reservations": int(getattr(predrop, "reservations", 0) or 0),
+                         "total_chf": preorders},
         "capital_movements": len(movements),
         "stock_lines": len(stock),
         "extensions": [e.extension for e in extensions],

@@ -49,6 +49,10 @@ Conventions :
 * **Commande jamais perdue pour un SKU** (revue R6, R5-NEW-02) : ancien SKU d'une clé rattaché par l'historique du
   catalogue ; SKU inconnu ou ambigu : ligne non rattachée (:data:`UNRESOLVED_KEY_PREFIX`), coût des ventes en
   attente, rattachée par la propriétaire (:meth:`OrderRegister.resolve_line`).
+* **Chiffre d'affaires reconnu à l'expédition, jamais à l'encaissement** (pré-drop, 6.10.2026) : l'argent d'une
+  réservation pré-drop reste une **dette** (:class:`pokeshop.predrop.PredropRegistry`) jusqu'à la commande expédiée ;
+  ses ventes et sa sortie au CMP sont datées de l'expédition (:attr:`ShippedOrder.recognized_at`, posée par le
+  moteur), jamais de la date de paiement. Aucune écriture de l'étoile polaire n'est dérivée d'une réservation.
 """
 
 from __future__ import annotations
@@ -1039,7 +1043,7 @@ class OrderLine(FrozenModel):
 
 
 def _posted_content(model: FrozenModel) -> dict[str, Any]:
-    data = model.model_dump(mode="json", exclude={"recorded_by", "recorded_at"})
+    data = model.model_dump(mode="json", exclude={"recorded_by", "recorded_at", "recognized_at"})
     data["lines"] = [{"public_sku": ln["public_sku"], "qty": ln["qty"]} for ln in data.get("lines", [])]
     return data
 
@@ -1062,18 +1066,29 @@ class ShippedOrder(FrozenModel):
     recorded_by: str = Field(min_length=2)
     recorded_at: datetime
     lines: tuple[OrderLine, ...] = ()
+    recognized_at: datetime | None = None
+    """Date de reconnaissance des ventes (et de la sortie au CMP) fixée **par le moteur** : pour une réservation
+    pré-drop payée longtemps avant réception, l'expédition (date d'enregistrement de la commande expédiée) — le
+    chiffre d'affaires est reconnu à l'expédition, jamais à l'encaissement (:mod:`pokeshop.predrop`). None : date
+    de paiement (commande ordinaire, payée et expédiée dans la foulée)."""
 
-    @field_validator("paid_at", "recorded_at")
+    @field_validator("paid_at", "recorded_at", "recognized_at")
     @classmethod
-    def _tz(cls, v: datetime) -> datetime:
-        if v.tzinfo is None or v.utcoffset() is None:
+    def _tz(cls, v: datetime | None) -> datetime | None:
+        if v is not None and (v.tzinfo is None or v.utcoffset() is None):
             raise ValueError("horodatage avec fuseau horaire obligatoire")
         return v
 
     def content(self) -> dict[str, Any]:
-        """Contenu comparé pour l'idempotence : champs **postés** (hors acteur, date d'enregistrement et clé produit
-        des lignes, dérivée par le moteur — revue R6, R5-NEW-02 : une ligne rattachée ensuite reste la même commande)."""
+        """Contenu comparé pour l'idempotence : champs **postés** (hors acteur, date d'enregistrement, date de
+        reconnaissance et clé produit des lignes, dérivées par le moteur — revue R6, R5-NEW-02 : une ligne rattachée
+        ensuite reste la même commande)."""
         return _posted_content(self)
+
+    @property
+    def recognition_at(self) -> datetime:
+        """Date des écritures de ventes et de la sortie au CMP : ``recognized_at`` sinon date de paiement."""
+        return self.recognized_at if self.recognized_at is not None else self.paid_at
 
     @property
     def sale_ref(self) -> str:
@@ -1090,9 +1105,10 @@ class ShippedOrder(FrozenModel):
     def issue_movements(self) -> tuple[CostMovement, ...]:
         """Sorties au CMP dérivées des lignes (une par référence ; quantités cumulées)."""
         return tuple(
-            CostMovement(kind="ISSUE", product_key=key, at=self.paid_at, ref=self.sale_ref, qty=n, recorded_by="moteur")
+            CostMovement(kind="ISSUE", product_key=key, at=self.recognition_at, ref=self.sale_ref, qty=n,
+                         recorded_by="moteur")
             for key, n in self.qty_by_product().items()
-        )
+        )  # fmt: skip
 
 
 class OrderRefund(FrozenModel):
@@ -1224,7 +1240,7 @@ class OrderRegister:
             ledger = costs.ledger(key)
             now_qty = min(needed, ledger.qty_on_hand if ledger is not None else 0)
             if now_qty > 0:
-                movement = CostMovement(kind="ISSUE", product_key=key, at=order.paid_at, ref=order.sale_ref,
+                movement = CostMovement(kind="ISSUE", product_key=key, at=order.recognition_at, ref=order.sale_ref,
                                         qty=now_qty, recorded_by="moteur")  # fmt: skip
                 try:
                     costs.apply(movement)
@@ -1353,7 +1369,7 @@ class OrderRegister:
             return []
         return northstar.order_entries(
             order.order_id,
-            order.paid_at,
+            order.recognition_at,
             net_sales_ht=order.net_sales_ht,
             payment_fees=order.payment_fees,
             logistics=order.shipping_cost_actual,
@@ -1407,7 +1423,7 @@ class OrderRegister:
         if northstar is not None:
             northstar.record_order(
                 order.order_id,
-                order.paid_at,
+                order.recognition_at,
                 net_sales_ht=order.net_sales_ht,
                 payment_fees=order.payment_fees,
                 logistics=order.shipping_cost_actual,
