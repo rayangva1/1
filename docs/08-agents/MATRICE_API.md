@@ -1,6 +1,6 @@
 # Matrice d'autorisations de l'API du moteur
 
-> Générée depuis `engine/pokeshop/authz.py` (version `2026-10-06.predrop`) — ne pas modifier à la main :
+> Générée depuis `engine/pokeshop/authz.py` (version `2026-10-06.predrop-boutique`) — ne pas modifier à la main :
 > `python -m pokeshop.authz > docs/08-agents/MATRICE_API.md`. Refus par défaut : une route absente
 > de la matrice est refusée (403). Le **jeton commun** n'a que la lecture et les aperçus en simulation.
 > Nom d'un jeton nommé = rôle ; son empreinte sha256 va dans `POKESHOP_ROLE_TOKEN_SHA256_<RÔLE>` (une variable
@@ -54,7 +54,8 @@
 | GET | `/predrop/reservations` | READ | oui | tous | oui | sans identifiant client |
 | POST | `/predrop/reservations` | WRITE | **non** | n8n-02-commandes | oui | réservation payée (commande Shopify, identifiant client haché) : jamais refusée pour un motif métier — hors quota, limite, fenêtre ou prix : non servie et remboursement intégral préparé ; dette jusqu'à expédition |
 | POST | `/predrop/{predrop_id}/approve` | WRITE | **non** | aucun | oui | validation d'un pré-drop en attente (référence marché attestée ou inconnue assumée) |
-| POST | `/predrop/{predrop_id}/close` | WRITE | **non** | chef-de-projet, finance-pricing, qa-conformite | oui | acte protecteur |
+| POST | `/predrop/{predrop_id}/close` | WRITE | **non** | chef-de-projet, finance-pricing, n8n-03-factures, qa-conformite | oui | acte protecteur (n8n-03-factures : dès qu'une réduction d'allocation est annoncée, avant sa validation) |
+| POST | `/predrop/{predrop_id}/publish` | WRITE | **non** | n8n-01-sync, site-integrations | oui | fiche « Réservation garantie » construite par le moteur (registres, prix figé, planchers revérifiés), retirée au drop ou sur blocage ; simulation par défaut ; inventaire = réservations ouvertes |
 | GET | `/pricing/approvals` | READ | oui | tous | oui |  |
 | POST | `/pricing/approvals` | WRITE | **non** | aucun | oui | approbation d'un prix public |
 | POST | `/pricing/approvals/{approval_id}/revoke` | WRITE | **non** | chef-de-projet, finance-pricing, qa-conformite | oui | acte protecteur (retour au prix du moteur) |
@@ -118,15 +119,15 @@ Propriétaire seule : POST `/capital/movements`, POST `/catalog/approvals`, POST
 | `catalogue` | POST `/catalog/items` |
 | `finance-pricing` | POST `/catalog/cost-inputs`, POST `/costs/movements`, POST `/northstar/entries`, POST `/predrop/open`, POST `/predrop/{predrop_id}/close`, POST `/pricing/approvals/{approval_id}/revoke`, POST `/stock/reorder-proposal`, POST `/treasury/balance-items` |
 | `direction-artistique` | POST `/mandate/check` |
-| `site-integrations` | POST `/mandate/check`, POST `/sync/run` |
+| `site-integrations` | POST `/mandate/check`, POST `/predrop/{predrop_id}/publish`, POST `/sync/run` |
 | `seo-redaction` | aucune (lecture, aperçus et actes protecteurs seulement) |
 | `communication` | POST `/mandate/check` |
 | `acquisition` | POST `/mandate/check` |
 | `operations-sav` | POST `/mandate/check`, POST `/orders/{order_id}/refunds`, POST `/predrop/allocations/{product_key}/reduce`, POST `/stock/receive`, POST `/stock/reorder-proposal` |
 | `qa-conformite` | POST `/incidents/{incident_id}/close`, POST `/incidents/{incident_id}/resume`, POST `/predrop/{predrop_id}/close`, POST `/pricing/approvals/{approval_id}/revoke` |
-| `n8n-01-sync` | POST `/imports/{supplier}/run`, POST `/sync/run` |
+| `n8n-01-sync` | POST `/imports/{supplier}/run`, POST `/predrop/{predrop_id}/publish`, POST `/sync/run` |
 | `n8n-02-commandes` | POST `/northstar/entries`, POST `/orders/shipped`, POST `/orders/{order_id}/refunds`, POST `/predrop/refunds/{refund_id}/executed`, POST `/predrop/reservations` |
-| `n8n-03-factures` | POST `/costs/invoices`, POST `/predrop/allocations/{product_key}/reduce`, POST `/predrop/allocations` |
+| `n8n-03-factures` | POST `/costs/invoices`, POST `/predrop/allocations/{product_key}/reduce`, POST `/predrop/allocations`, POST `/predrop/{predrop_id}/close` |
 | `n8n-04-incidents` | POST `/incidents/{incident_id}/close`, POST `/incidents/{incident_id}/resume` |
 | `n8n-05-digest` | aucune (lecture, aperçus et actes protecteurs seulement) |
 | `n8n-06-marketing` | POST `/predrop/demand` |

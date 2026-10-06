@@ -65,6 +65,7 @@ from .audit import StateJournal, StateStoreError
 from .errors import PokeshopError, PricingError
 from .models import DEFAULT_ROUNDING_TIERS, DecisionStatus, FrozenModel, PricingParams, RoundingTier, canonical_json
 from .pricing import as_decimal, contribution, decide_price, price_floor_violations, q2, q4, round_up_retail
+from .publish import predrop_reservation_sku
 from .stock import preorder_quota
 
 __all__ = [
@@ -115,6 +116,9 @@ __all__ = [
     "PredropRegistry",
     "public_offer",
     "refund_email_draft",
+    "RESERVATION_LINE_SEPARATOR",
+    "reservation_order_base",
+    "reservation_phase",
     "main",
 ]
 
@@ -177,6 +181,10 @@ NOT_SERVED_REASONS_FR: dict[str, str] = {
     "ALLOCATION_REDUCED": "le fournisseur a réduit la quantité livrée et nous ne pourrons pas vous servir",
 }
 """Motif (code stable) d'une réservation non servie ou remboursée -> phrase de l'email au client."""
+
+RESERVATION_LINE_SEPARATOR = "#"
+"""Une commande Shopify qui porte des réservations de **plusieurs** pré-drops est enregistrée une fois par pré-drop :
+``<commande>`` puis ``<commande>#2``, ``<commande>#3``… (workflow 02) ; l'expédition et la dette suivent la commande."""
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:#/-]{0,119}$")
@@ -802,6 +810,19 @@ class PreparedRefund(FrozenModel):
 def refund_id_for(order_id: str) -> str:
     """Identifiant du remboursement préparé d'une commande (un seul par commande)."""
     return f"pdr:{order_id}"
+
+
+def reservation_order_base(order_id: str) -> str:
+    """Commande Shopify d'une réservation (``<commande>#<n>`` -> ``<commande>``) : expédition, dette, reconnaissance."""
+    return order_id.split(RESERVATION_LINE_SEPARATOR, 1)[0]
+
+
+def reservation_phase(predrop: Predrop, *, accepting: bool, at: datetime) -> Literal["prioritaire", "ouvertes", "fermees"]:
+    """Statut public des réservations : ``prioritaire`` (inscrits aux alertes, fenêtre prioritaire), ``ouvertes``
+    (tout le monde) ou ``fermees`` — jamais une heure de fermeture, un compte à rebours ni un nombre d'unités."""
+    if not accepting:
+        return "fermees"
+    return "prioritaire" if predrop.in_priority_window(at) else "ouvertes"
 
 
 def refund_email_draft(*, order_id: str, amount: Decimal, reason: str, public_sku: str | None) -> str:
@@ -1436,9 +1457,32 @@ class PredropRegistry:
 
     # -- réservations -----------------------------------------------------------------
     def is_reservation(self, order_id: str) -> bool:
-        """Vrai si la commande est une réservation pré-drop (reconnaissance du chiffre d'affaires à l'expédition)."""
+        """Vrai si la commande porte une réservation pré-drop (reconnaissance du chiffre d'affaires à l'expédition).
+
+        Une commande à plusieurs pré-drops est enregistrée ``<commande>``, ``<commande>#2``… : la commande expédiée
+        ``<commande>`` est une réservation dès que l'une de ses entrées l'est.
+        """
+        prefix = f"{order_id}{RESERVATION_LINE_SEPARATOR}"
         with self._lock:
-            return order_id in self._reservations
+            return order_id in self._reservations or any(k.startswith(prefix) for k in self._reservations)
+
+    def product_for_reservation_sku(self, sku: str) -> str | None:
+        """Référence d'une ligne de commande au SKU d'une fiche de réservation (``<SKU>-RESA-<AAAAMMJJ>``) — None sinon.
+
+        Le SKU d'une fiche de réservation n'est pas celui de la fiche normale : sans cette résolution, la ligne
+        expédiée resterait « non rattachée » (coût des ventes en attente). Seuls les pré-drops enregistrés comptent.
+        """
+        with self._lock:
+            for predrop in self._predrops.values():
+                if predrop.public_sku and sku == predrop_reservation_sku(predrop.public_sku, predrop.drop_date):
+                    return predrop.product_key
+        return None
+
+    def latest_for(self, product_key: str) -> Predrop | None:
+        """Dernier pré-drop validé (ouvert ou fermé) de la référence — jamais un pré-drop en attente de la propriétaire."""
+        with self._lock:
+            found = [p for p in self._predrops.values() if p.product_key == product_key and p.status != "PENDING_OWNER"]
+        return max(found, key=lambda p: (p.requested_at, p.predrop_id)) if found else None
 
     def reservation(self, order_id: str) -> PredropReservation | None:
         """Réservation d'une commande (None si inconnue)."""

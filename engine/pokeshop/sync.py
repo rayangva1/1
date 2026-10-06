@@ -21,6 +21,12 @@ Chaque anomalie ouvre un incident (quarantaine de la référence ou suspension d
 Une offre périmée ne change jamais un prix public ; une panne de flux ne touche jamais au stock
 local confirmé (ce module ne modifie aucun stock à partir d'une offre fournisseur).
 
+Pré-drop (:meth:`SyncService.publish_predrop`, décision de la propriétaire du 6.10.2026) : fiche jumelle
+« Réservation garantie » (:func:`pokeshop.publish.build_predrop_publication`) publiée, vérifiée et retirée au drop ;
+son inventaire = réservations encore ouvertes du registre du moteur, diminué des commandes Shopify pas encore
+enregistrées (:func:`predrop_inventory_target`), écrit en compare-and-swap ; une baisse est protectrice. La fiche
+normale ne reçoit que les métachamps d'information du pré-drop (``predrop_lookup``), jamais une variante.
+
 Stock local (:meth:`SyncService.push_stock`) : **Shopify reste l'autorité des réservations de
 vente** (BP §6). Le service pousse ``available = physique − max(réservé service, engagé
 Shopify) − endommagé − sécurité`` avec ``changeFromQuantity`` (compare-and-swap), conserve les
@@ -66,13 +72,23 @@ from .importers import (
     run_import,
 )
 from .incidents import IncidentCode, IncidentManager, IncidentScope, Severity, codes_for_reasons
-from .models import FrozenModel, PriceDecision, PriceEventKind, Reason, ReplacementCost, StockLevel, SupplierOffer
+from .models import (
+    FrozenModel,
+    PriceDecision,
+    PriceEventKind,
+    PricingParams,
+    Reason,
+    ReplacementCost,
+    StockLevel,
+    SupplierOffer,
+)
 from .pricing import evaluate_offer
 from .publish import (
     HARD_BLOCKER_CODES,
     CatalogListing,
     ListingApproval,
     PlanOutcome,
+    PredropPublication,
     PriceValidation,
     PublicationPlan,
     PublishedState,
@@ -81,7 +97,10 @@ from .publish import (
     StockStatus,
     _fold,
     assert_protective_payload,
+    build_predrop_publication,
     build_publication,
+    predrop_reservation_sku,
+    reservation_publication_key,
     sensitive_violations,
     stock_status_for,
 )
@@ -110,6 +129,8 @@ __all__ = [
     "StockTarget",
     "StockPushLine",
     "StockSyncReport",
+    "PredropPublishReport",
+    "predrop_inventory_target",
     "ImportBaselineStore",
     "BaselinePersistenceError",
     "ShopPublication",
@@ -366,6 +387,53 @@ class StockSyncReport(FrozenModel):
     def clean(self) -> bool:
         """Vrai sans erreur critique."""
         return not self.critical_errors
+
+
+class PredropPublishReport(FrozenModel):
+    """Compte rendu de la publication d'une fiche de réservation pré-drop (interne : contient la cible d'inventaire)."""
+
+    run_id: str
+    at: datetime
+    dry_run: bool
+    predrop_id: str
+    product_key: str
+    handle: str
+    phase: str
+    plan_outcome: str
+    action: str | None = None
+    price_chf: Decimal | None = None
+    blockers: tuple[str, ...] = ()
+    reviews: tuple[str, ...] = ()
+    messages: tuple[str, ...] = ()
+    gate_allowed: bool | None = None
+    gate_reasons: tuple[str, ...] = ()
+    written: bool = False
+    replayed: bool = False
+    verified: bool | None = None
+    inventory_action: Literal["SET", "NONE", "REFUSED", "CONFLICT", "ERROR", "SKIPPED"] = "SKIPPED"
+    inventory_target: int | None = None
+    inventory_written: bool = False
+    inventory_reasons: tuple[str, ...] = ()
+    incident_ids: tuple[str, ...] = ()
+    critical_errors: tuple[str, ...] = ()
+
+    @property
+    def clean(self) -> bool:
+        """Vrai sans erreur critique."""
+        return not self.critical_errors
+
+
+def predrop_inventory_target(predrop: PredropPublication, remote: RemoteInventoryLevel) -> int:
+    """Inventaire ``available`` de la fiche de réservation (jamais publié en texte) — fermé par défaut.
+
+    Réservations fermées ou retirées : 0. Sinon réservations encore ouvertes du registre du moteur, diminuées des
+    unités engagées sur Shopify au-delà des réservations confirmées enregistrées (commandes payées pas encore
+    relevées par le workflow 02, ou non servies en attente de remboursement) : jamais une promesse au-delà du quota.
+    """
+    if not predrop.accepting:
+        return 0
+    excess = max(0, remote.committed - predrop.reservations_committed)
+    return max(0, predrop.reservations_available - excess)
 
 
 # ---------------------------------------------------------------- références d'import
@@ -652,8 +720,11 @@ class SyncService:
         stock: StockRegistry | None = None,
         baselines: ImportBaselineStore | None = None,
         publications: ShopPublicationBook | None = None,
+        predrop_lookup: Callable[[str, datetime], PredropPublication | None] | None = None,
     ) -> None:
         self.client = client
+        self.predrop_lookup = predrop_lookup
+        """Pré-drop d'une référence (registre du moteur) : métachamps d'information de la fiche normale."""
         self.publications = publications if publications is not None else ShopPublicationBook()
         """Fiches écrites et vérifiées (identifiant Shopify, statut) : base de la dépublication protectrice."""
         self.stock = stock
@@ -1021,6 +1092,7 @@ class SyncService:
                 stock_status=stock_now,
                 published=published,  # registre du moteur, jamais la fiche (revue R3 SEC-09)
                 validations=ctx.validations.get(pid),  # registre de la propriétaire (revue R2-NEW-05)
+                predrop=self.predrop_lookup(pid, at) if self.predrop_lookup is not None else None,
             )
 
         def resolve_plan(
@@ -1425,6 +1497,324 @@ class SyncService:
             },
         )
         return True
+
+    # -- pré-drop : fiche de réservation ---------------------------------------------------
+    def publish_predrop(
+        self,
+        listing: CatalogListing,
+        predrop: PredropPublication,
+        *,
+        params: PricingParams,
+        landed_cost: Decimal | None,
+        validations: ListingApproval | None,
+        table: ExtensionTable | None = None,
+        sensitive_terms: Collection[str] = (),
+        location_id: str | None = None,
+        remote_level: RemoteInventoryLevel | None = None,
+        now: datetime | None = None,
+        dry_run: bool = True,
+        run_id: str | None = None,
+        normal_handle: str | None = None,
+    ) -> PredropPublishReport:
+        """Publie (ou retire) la fiche « Réservation garantie » d'un pré-drop puis fixe son inventaire.
+
+        Simulation par défaut. Écriture : porte de gouvernance (niveau, gel, stop-loss) puis ``productSet`` contrôlé
+        par la liste blanche ; vérification de l'état réel (statut, prix) ; état inscrit au registre des fiches publiées
+        sous :func:`pokeshop.publish.reservation_publication_key`. Inventaire : :func:`predrop_inventory_target` en
+        compare-and-swap (``changeFromQuantity``) ; une baisse est protectrice (permise pendant un gel), une hausse
+        exige le niveau 2. Aucun prix n'est inscrit dans l'historique des prix de la fiche normale.
+        """
+        at = now or self._clock()
+        if at.tzinfo is None or at.utcoffset() is None:
+            raise SyncError("now doit porter un fuseau horaire")
+        rid = run_id or f"PREDROP-{at:%Y%m%d%H%M%S}-{uuid.uuid4().hex[:8]}"
+        pid = listing.product_key
+        key = reservation_publication_key(pid)
+        incidents: list[str] = []
+        critical: list[str] = []
+        messages: list[str] = []
+        status, _triggers = self.gate.stoploss_status(at)
+        blocked = pid in set(status.blocked_products) if status is not None else False
+        quarantined = self.incidents.is_quarantined(pid)
+        known = self.publications.get(key)
+        published = known.state() if known is not None else None
+        production = not dry_run and not self.test_store
+        plan = build_predrop_publication(
+            listing,
+            predrop,
+            params=params,
+            landed_cost=landed_cost,
+            stoploss_blocked=blocked,
+            quarantined=quarantined,
+            sensitive_terms=sensitive_terms,
+            table=table,
+            real_shop=production,
+            published=published,
+            validations=validations,
+            normal_handle=normal_handle or (normal.handle if (normal := self.publications.get(pid)) else None),
+        )
+        messages.extend(plan.messages)
+        if plan.violations:
+            critical.append(f"{pid} : champ interne dans la charge de réservation ({'; '.join(plan.violations)})")
+            self._incident(dry_run, incidents, code=IncidentCode.INC_07, product_key=pid,
+                           cause="Champ interne ou donnée personnelle dans la fiche de réservation (envoi bloqué).",
+                           details={"run_id": rid, "violations": list(plan.violations)})  # fmt: skip
+        gate: GateDecision | None = None
+        written = replayed = False
+        verified: bool | None = None
+        variant_item: str | None = None
+        if plan.send and plan.action is not None:
+            gate = self.gate.authorize(WriteAction(plan.action), dry_run=dry_run, actor=self.actor, product_key=pid,
+                                       workflow=WORKFLOW_SUPPLIER_TO_SHOP)  # fmt: skip
+            if not gate.allowed:
+                messages.extend(gate.messages)
+            else:
+                protective = plan.outcome is PlanOutcome.UNPUBLISH
+                resp = None
+                try:
+                    if protective:
+                        assert_protective_payload(plan.product_input or {})
+                    resp = self.client.product_set(
+                        plan.product_input or {},
+                        identifier=plan.identifier,
+                        idempotency_key=derive_idempotency_key("productSet", plan.identifier, plan.product_input),
+                        dry_run=dry_run,
+                        autonomy_level=gate.current_level,
+                        protective=protective,
+                    )
+                except SensitiveFieldError as exc:
+                    critical.append(f"{pid} : fiche de réservation refusée par le client ({exc})")
+                    self._incident(dry_run, incidents, code=IncidentCode.INC_07, product_key=pid,
+                                   cause="Champ interne détecté au dernier contrôle avant envoi (rien n'a été envoyé).",
+                                   details={"run_id": rid, "violations": list(exc.violations)})  # fmt: skip
+                except ShopifyError as exc:
+                    messages.append(f"{type(exc).__name__} : {exc}")
+                    self._incident(dry_run, incidents, code=IncidentCode.INC_08, workflow=WORKFLOW_SUPPLIER_TO_SHOP,
+                                   cause=f"Fiche de réservation {plan.handle} : écriture productSet en échec ({exc})",
+                                   details={"run_id": rid})  # fmt: skip
+                if resp is not None and not resp.ok:
+                    messages.extend(f"userError {e.code or ''} : {e.message}" for e in resp.user_errors)
+                    self._incident(dry_run, incidents, code=IncidentCode.INC_08, workflow=WORKFLOW_SUPPLIER_TO_SHOP,
+                                   cause=f"productSet refusé pour la fiche de réservation {plan.handle} : "
+                                   + "; ".join(e.message for e in resp.user_errors),
+                                   details={"run_id": rid})  # fmt: skip
+                elif resp is not None:
+                    replayed = resp.replayed
+                    written = not resp.dry_run
+                    simulated = dry_run or resp.dry_run
+                    verified, variant_item = self._verify_reservation(
+                        plan, pid, predrop, listing, simulated, resp, critical, incidents, rid
+                    )
+                    if verified and written:
+                        self._remember_reservation(plan, key, resp, at, rid, critical)
+        inventory_action: Literal["SET", "NONE", "REFUSED", "CONFLICT", "ERROR", "SKIPPED"] = "SKIPPED"
+        inventory_reasons: list[str] = []
+        target: int | None = None
+        inventory_written = False
+        stays_active = plan.outcome is PlanOutcome.SEND_ACTIVE and gate is not None and gate.allowed and verified
+        if stays_active:
+            (inventory_action, target, inventory_written) = self._set_reservation_inventory(
+                predrop, listing, variant_item, location_id, remote_level, dry_run, at, rid, critical, incidents,
+                inventory_reasons,
+            )  # fmt: skip
+        elif plan.outcome is PlanOutcome.UNPUBLISH:
+            inventory_reasons.append("fiche de réservation retirée (brouillon) : plus aucune réservation achetable")
+        report = PredropPublishReport(
+            run_id=rid,
+            at=at,
+            dry_run=dry_run,
+            predrop_id=predrop.predrop_id,
+            product_key=pid,
+            handle=plan.handle,
+            phase=predrop.phase,
+            plan_outcome=plan.outcome.value,
+            action=plan.action,
+            price_chf=plan.price_chf,
+            blockers=plan.blockers,
+            reviews=plan.reviews,
+            messages=tuple(dict.fromkeys(messages)),
+            gate_allowed=gate.allowed if gate is not None else None,
+            gate_reasons=gate.reasons if gate is not None else (),
+            written=written,
+            replayed=replayed,
+            verified=verified,
+            inventory_action=inventory_action,
+            inventory_target=target,
+            inventory_written=inventory_written,
+            inventory_reasons=tuple(inventory_reasons),
+            incident_ids=tuple(incidents),
+            critical_errors=tuple(critical),
+        )
+        self.audit.append(
+            actor=self.actor,
+            actor_kind=ActorKind.AGENT,
+            action="sync.predrop_publish",
+            entity="predrop",
+            entity_id=predrop.predrop_id,
+            dry_run=dry_run,
+            autonomy_level=int(self.gate.autonomy.level),
+            payload={"run_id": rid, "outcome": report.plan_outcome, "phase": report.phase, "written": written,
+                     "verified": verified, "inventory_action": inventory_action, "inventory_target": target,
+                     "critical_errors": list(critical)},
+        )  # fmt: skip
+        return report
+
+    def _verify_reservation(
+        self,
+        plan: PublicationPlan,
+        pid: str,
+        predrop: PredropPublication,
+        listing: CatalogListing,
+        dry_run: bool,
+        resp: Any,
+        critical: list[str],
+        incidents: list[str],
+        rid: str,
+    ) -> tuple[bool, str | None]:
+        """État réel de la fiche de réservation (statut, prix, SKU) ; renvoie (vérifiée, article d'inventaire)."""
+        problems: list[str] = []
+        item: str | None = None
+        sku = predrop_reservation_sku(listing.public_sku, predrop.drop_date)
+        if plan.outcome is PlanOutcome.UNPUBLISH:
+            if plan.product_input != {"status": "DRAFT"}:
+                problems.append("retrait : charge autre que le statut")
+            elif not dry_run:
+                try:
+                    remote = self.client.product_by_id((plan.identifier or {}).get("id", ""))
+                except ShopifyError as exc:
+                    remote = None
+                    problems.append(f"lecture de vérification impossible : {exc}")
+                if remote is None and not problems:
+                    problems.append("fiche de réservation introuvable après retrait")
+                elif remote is not None and remote.status != "DRAFT":
+                    problems.append(f"statut boutique {remote.status} ≠ DRAFT")
+        elif plan.product_input is None or plan.price_chf is None:
+            problems.append("charge absente")
+        else:
+            problems.extend(sensitive_violations(plan.product_input))
+            variant = plan.product_input["variants"][0]
+            if Decimal(variant["price"]) != plan.price_chf or variant["inventoryItem"]["sku"] != sku:
+                problems.append("prix ou SKU de la charge ≠ plan")
+            if not dry_run:
+                try:
+                    remote = self.client.product_by_handle(plan.handle)
+                except ShopifyError as exc:
+                    remote = None
+                    problems.append(f"lecture de vérification impossible : {exc}")
+                if remote is None and not problems:
+                    problems.append("fiche de réservation introuvable après publication")
+                elif remote is not None:
+                    if plan.target_status is not None and remote.status != plan.target_status.value:
+                        problems.append(f"statut boutique {remote.status} ≠ {plan.target_status.value}")
+                    match = [v for v in remote.variants if v.sku == sku]
+                    if len(remote.variants) != 1 or not match or match[0].price != plan.price_chf:
+                        problems.append(f"variante boutique ≠ réservation {sku} à {plan.price_chf}")
+                    else:
+                        item = match[0].inventory_item_id
+        if problems:
+            critical.append(f"{pid} : vérification de la fiche de réservation en échec ({'; '.join(problems)})")
+            self._incident(dry_run, incidents, code=IncidentCode.INC_01, severity=Severity.CRITIQUE, product_key=pid,
+                           cause="Fiche de réservation pré-drop différente du plan validé : " + "; ".join(problems),
+                           details={"run_id": rid, "predrop_id": predrop.predrop_id})  # fmt: skip
+            return False, None
+        self.audit.append(actor=self.actor, actor_kind=ActorKind.AGENT, action="sync.predrop_verify", entity="predrop",
+                          entity_id=predrop.predrop_id, dry_run=dry_run,
+                          payload={"run_id": rid, "outcome": plan.outcome.value, "price_chf": plan.price_chf,
+                                   "phase": predrop.phase})  # fmt: skip
+        return True, item
+
+    def _remember_reservation(
+        self, plan: PublicationPlan, key: str, resp: Any, at: datetime, rid: str, critical: list[str]
+    ) -> None:
+        """Inscrit l'identifiant Shopify et le statut de la fiche de réservation (dépublication par identifiant)."""
+        gid = (plan.identifier or {}).get("id") or ((resp.root().get("product") or {}).get("id"))
+        status = plan.target_status.value if plan.target_status is not None else None
+        if not isinstance(gid, str) or status is None:
+            return
+        previous = self.publications.get(key)
+        price = plan.price_chf if plan.price_chf is not None else (previous.price_chf if previous is not None else None)
+        try:
+            self.publications.record(ShopPublication(product_id=key, shopify_product_id=gid, status=status,
+                                                     handle=plan.handle, run_id=rid, recorded_at=at, price_chf=price))  # fmt: skip
+        except ShopStatePersistenceError as exc:
+            critical.append(f"{key} : état publié non enregistré ({exc}) : retrait au drop compromis")
+        except ValueError:
+            return
+
+    def _set_reservation_inventory(
+        self,
+        predrop: PredropPublication,
+        listing: CatalogListing,
+        item_id: str | None,
+        location_id: str | None,
+        remote_level: RemoteInventoryLevel | None,
+        dry_run: bool,
+        at: datetime,
+        rid: str,
+        critical: list[str],
+        incidents: list[str],
+        reasons: list[str],
+    ) -> tuple[Literal["SET", "NONE", "REFUSED", "CONFLICT", "ERROR", "SKIPPED"], int | None, bool]:
+        """Inventaire de la fiche de réservation en compare-and-swap ; (action, cible, écrit ?)."""
+        item = item_id or (remote_level.inventory_item_id if remote_level is not None else None)
+        if location_id is None:
+            reasons.append("emplacement Shopify non configuré (POKESHOP_SHOPIFY_LOCATION_ID) : inventaire non fixé")
+            if not dry_run:
+                critical.append(f"{listing.product_key} : inventaire de la fiche de réservation non fixé (emplacement)")
+            return "SKIPPED", None, False
+        remote = remote_level
+        if remote is None and item is not None and self.client.configured:
+            try:
+                remote = self.client.inventory_levels([item], location_id).get(item)
+            except ShopifyError as exc:
+                reasons.append(f"lecture de l'inventaire impossible : {exc}")
+                remote = None
+        if remote is None:
+            if not dry_run:
+                critical.append(f"{listing.product_key} : quantité Shopify de la réservation inconnue, rien n'est écrit")
+                return "ERROR", None, False
+            assumed = RemoteInventoryLevel(inventory_item_id=item or "gid://shopify/InventoryItem/0", available=0,
+                                           committed=0, assumed=True)  # fmt: skip
+            target = predrop_inventory_target(predrop, assumed)
+            reasons.append("simulation : article d'inventaire de la réservation inconnu (fiche pas encore créée), "
+                           f"cible {target} unité(s) calculée, rien n'est écrit")  # fmt: skip
+            return "SKIPPED", target, False
+        target = predrop_inventory_target(predrop, remote)
+        if target == remote.available:
+            return "NONE", target, False
+        protective = target < remote.available  # moins de réservations promises : acte protecteur
+        gate = self.gate.authorize(
+            WriteAction.UNPUBLISH_PRODUCT if protective else WriteAction.SYNC_STOCK,
+            dry_run=dry_run, actor=self.actor, product_key=listing.product_key, workflow=WORKFLOW_SUPPLIER_TO_SHOP,
+        )  # fmt: skip
+        if not gate.allowed:
+            reasons.extend(gate.reasons)
+            return "REFUSED", target, False
+        change = InventoryChange(inventory_item_id=remote.inventory_item_id, location_id=location_id, quantity=target,
+                                 change_from_quantity=remote.available)  # fmt: skip
+        uri = f"pokeshop://predrop/{predrop.predrop_id}/{at:%Y%m%dT%H%M%S}"
+        try:
+            resp = self.client.inventory_set_quantities(
+                [change], reason="correction", reference_document_uri=uri,
+                idempotency_key=derive_idempotency_key("inventorySetQuantities", change, uri), dry_run=dry_run,
+                autonomy_level=gate.current_level,
+            )  # fmt: skip
+        except ShopifyError as exc:
+            reasons.append(f"{type(exc).__name__} : {exc}")
+            self._incident(dry_run, incidents, code=IncidentCode.INC_08, workflow=WORKFLOW_SUPPLIER_TO_SHOP,
+                           cause=f"Inventaire de la réservation {predrop.predrop_id} refusé : {exc}",
+                           details={"run_id": rid})  # fmt: skip
+            return "ERROR", target, False
+        if resp.ok:
+            return "SET", target, not resp.dry_run
+        if resp.concurrency_conflict:
+            reasons.append("conflit de concurrence : quantité Shopify modifiée pendant l'écriture (relu au cycle suivant)")
+            self._incident(dry_run, incidents, code=IncidentCode.INC_08, workflow=WORKFLOW_SUPPLIER_TO_SHOP,
+                           cause=f"Conflit de concurrence sur l'inventaire de la réservation {predrop.predrop_id}",
+                           details={"run_id": rid})  # fmt: skip
+            return "CONFLICT", target, False
+        reasons.append("; ".join(f"{e.code or ''} {e.message}" for e in resp.user_errors))
+        return "ERROR", target, False
 
     # -- stock local -------------------------------------------------------------------
     def push_stock(

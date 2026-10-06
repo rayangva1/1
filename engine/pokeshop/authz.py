@@ -31,7 +31,9 @@ Principes (``docs/08-agents/MATRICE_API.md`` est généré depuis ce module) :
 Pré-drop (6.10.2026) : l'allocation ferme vient de la propriétaire ou de ``n8n-03-factures`` (confirmation fournisseur
 validée par elle), jamais d'un agent qui bénéficie du pré-drop ; la demande est un compte agrégé (``n8n-06-marketing``) ;
 la référence marché et la validation d'un pré-drop en attente ou d'un remboursement préparé : propriétaire ; les
-réservations payées et les remboursements exécutés : ``n8n-02-commandes``.
+réservations payées et les remboursements exécutés : ``n8n-02-commandes`` ; la fiche « Réservation garantie »
+(construite par le moteur) : ``n8n-01-sync`` ou ``site-integrations`` ; la fermeture protectrice dès l'annonce d'une
+réduction d'allocation : aussi ``n8n-03-factures``.
 
 Les contrôles fins restent dans les routes (ex. test d'incident réussi : ``qa-conformite`` ou
 propriétaire ; hausse d'autonomie : propriétaire) : la matrice dit **qui peut appeler** la route.
@@ -62,7 +64,7 @@ __all__ = [
     "matrix_markdown",
 ]
 
-AUTHZ_VERSION = "2026-10-06.predrop"
+AUTHZ_VERSION = "2026-10-06.predrop-boutique"
 """Version de la matrice (à changer à chaque modification ; citée par ``/health`` et la doc générée)."""
 
 OWNER = "propriétaire"
@@ -311,7 +313,12 @@ ROUTE_MATRIX: dict[tuple[str, str], RouteRule] = {
     ("POST", "/predrop/{predrop_id}/approve"): _owner(
         "predrop.approve", "validation d'un pré-drop en attente (référence marché attestée ou inconnue assumée)"),
     ("POST", "/predrop/{predrop_id}/close"): _write(
-        "predrop.close", {"chef-de-projet", "finance-pricing", "qa-conformite"}, note="acte protecteur"),
+        "predrop.close", {"chef-de-projet", "finance-pricing", "qa-conformite", "n8n-03-factures"},
+        note="acte protecteur (n8n-03-factures : dès qu'une réduction d'allocation est annoncée, avant sa validation)"),
+    ("POST", "/predrop/{predrop_id}/publish"): _write(
+        "predrop.publish", {"n8n-01-sync", "site-integrations"},
+        note="fiche « Réservation garantie » construite par le moteur (registres, prix figé, planchers revérifiés), "
+        "retirée au drop ou sur blocage ; simulation par défaut ; inventaire = réservations ouvertes"),
     ("GET", "/predrop/offers"): _read(
         "predrop.offers", "offres publiques (statut ouvert/fermé, date du drop, deux prix, garantie) ; quotas internes"),
     ("POST", "/predrop/reservations"): _write(

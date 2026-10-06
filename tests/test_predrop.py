@@ -822,7 +822,7 @@ def test_revenue_is_recognized_at_shipment_never_at_collection(tmp_path: Path) -
 def test_matrix_roles_and_common_token(tmp_path: Path) -> None:
     client, svc, _ = ready(tmp_path)
     writes = [(m, p) for (m, p), r in authz.ROUTE_MATRIX.items() if p.startswith("/predrop") and r.kind is authz.Kind.WRITE]
-    assert len(writes) == 9
+    assert len(writes) == 10  # étape 2 : + POST /predrop/{predrop_id}/publish (fiche de réservation)
     for method, path in writes:
         concrete = path.replace("{product_key}", P1).replace("{predrop_id}", PID).replace("{refund_id}", "pdr:X")
         assert client.request(method, concrete, headers=H, json={}).status_code == 403, path  # jeton commun

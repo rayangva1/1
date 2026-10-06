@@ -42,6 +42,16 @@ Principes (BP §5-§7, SPEC §0.2 et §2.6) :
 * Contenu public filtré : vocabulaire coûts/marges/fournisseurs (FR, DE, IT, EN), montants,
   pourcentages, données personnelles, noms de fournisseurs ; étiquette ``ext:`` = métachamp
   ``boutique.extension``.
+* **Pré-drop** (décision de la propriétaire du 6.10.2026, :mod:`pokeshop.predrop`) : la réservation garantie est
+  publiée comme une **fiche jumelle** « Réservation garantie — <titre> » (:func:`build_predrop_publication`) :
+  prix = prix pré-drop figé du moteur (planchers revérifiés au coût rendu connu), SKU
+  ``<SKU>-RESA-<AAAAMMJJ>`` (date du drop), inventaire = réservations encore ouvertes (poussé à part, jamais écrit
+  dans la fiche), **dépubliée au drop** (ou à la fermeture, ou sur blocage). La fiche normale n'est jamais
+  restructurée par le pré-drop : ``productSet`` a une sémantique « ensemble » ; ajouter puis retirer une variante
+  changerait ses options et pourrait recréer sa variante (et son article d'inventaire) le jour même où elle reçoit
+  le stock. Elle ne reçoit que trois métachamps d'information (``boutique.date_drop``,
+  ``boutique.reservation_statut``, ``boutique.fiche_liee``). Aucun quota, compte à rebours, coût ni marge publiés :
+  statut « prioritaire / ouvertes / fermées » et date du drop seulement.
 """
 
 from __future__ import annotations
@@ -123,6 +133,17 @@ __all__ = [
     "forbidden_claims",
     "slugify",
     "build_publication",
+    "listing_handle",
+    "PREDROP_TAG",
+    "PREDROP_TITLE_PREFIX",
+    "PREDROP_PRODUCT_TYPE",
+    "PREDROP_PUBLICATION_SUFFIX",
+    "ReservationPhase",
+    "PredropPublication",
+    "predrop_reservation_sku",
+    "predrop_reservation_handle",
+    "reservation_publication_key",
+    "build_predrop_publication",
 ]
 
 PUBLIC_METAFIELD_NAMESPACE = "boutique"
@@ -139,8 +160,12 @@ PUBLIC_METAFIELDS: dict[str, str] = {
     "quantite_max": "number_integer",
     "alerte_reassort": "boolean",
     "fin_de_serie": "boolean",
+    "date_drop": "date",
+    "reservation_statut": "single_line_text_field",
+    "fiche_liee": "single_line_text_field",
 }
-"""Seuls métachamps publiables (clé -> type Shopify), contrat du thème."""
+"""Seuls métachamps publiables (clé -> type Shopify), contrat du thème. Pré-drop : date du drop, statut des
+réservations (``prioritaire`` · ``ouvertes`` · ``fermees``) et handle de la fiche jumelle — jamais un quota."""
 
 _S = "str"
 _B = "bool"
@@ -237,7 +262,8 @@ _IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}(?:\s?[A-Z0-9]{1,3
 _PRICE_RE = re.compile(r"^\d{1,6}\.\d{2}$")
 _HANDLE_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 _TAG_RE = re.compile(
-    r"^(statut:(stock-local|precommande|rupture)|ext:[a-z0-9]+(-[a-z0-9]+)*|nouveaute|cadeau|petit-produit)$"
+    r"^(statut:(stock-local|precommande|rupture)|ext:[a-z0-9]+(-[a-z0-9]+)*|nouveaute|cadeau|petit-produit"
+    r"|reservation-garantie)$"
 )
 SMALL_PRODUCT_TAG = "petit-produit"
 """Étiquette des petits produits (règle « frais par commande exclus ») : la validation de panier de la
@@ -394,6 +420,9 @@ _METAFIELD_VALUES: dict[str, re.Pattern[str]] = {
     "alerte_reassort": re.compile(r"^(true|false)$"),
     "fin_de_serie": re.compile(r"^(true|false)$"),
     "langue": re.compile(r"^(FR|DE|IT|EN|JP)$"),
+    "date_drop": re.compile(r"^\d{4}-\d{2}-\d{2}$"),
+    "reservation_statut": re.compile(r"^(prioritaire|ouvertes|fermees)$"),
+    "fiche_liee": re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$"),
 }
 
 
@@ -980,6 +1009,13 @@ class PublishBlocker(str, Enum):
     DESCRIPTION_MISSING = "DESCRIPTION_MISSING"
     NO_AUTHORIZED_IMAGE = "NO_AUTHORIZED_IMAGE"
     IMAGE_RIGHTS_MISSING = "IMAGE_RIGHTS_MISSING"
+    PREDROP_LISTING_MISMATCH = "PREDROP_LISTING_MISMATCH"
+    PREDROP_ON_PREORDER_LISTING = "PREDROP_ON_PREORDER_LISTING"
+    PREDROP_PRICE_INVALID = "PREDROP_PRICE_INVALID"
+    PREDROP_PRICE_BELOW_FLOOR = "PREDROP_PRICE_BELOW_FLOOR"
+    PREDROP_COST_UNKNOWN = "PREDROP_COST_UNKNOWN"
+    PREDROP_RETIRED = "PREDROP_RETIRED"
+    PREDROP_CLOSED = "PREDROP_CLOSED"
 
 
 BLOCKER_LABELS_FR: dict[PublishBlocker, str] = {
@@ -1023,6 +1059,21 @@ BLOCKER_LABELS_FR: dict[PublishBlocker, str] = {
     PublishBlocker.DESCRIPTION_MISSING: "Description absente.",
     PublishBlocker.NO_AUTHORIZED_IMAGE: "Aucune image autorisée.",
     PublishBlocker.IMAGE_RIGHTS_MISSING: "Au moins une image sans droit d'usage (exclue de la fiche).",
+    PublishBlocker.PREDROP_LISTING_MISMATCH: "Pré-drop d'une autre référence que la fiche : rien n'est publié.",
+    PublishBlocker.PREDROP_ON_PREORDER_LISTING: (
+        "Pré-drop sur une fiche de précommande (-PRECO) : jamais deux promesses de livraison sur la même référence."
+    ),
+    PublishBlocker.PREDROP_PRICE_INVALID: (
+        "Prix pré-drop hors bornes (sous le prix drop ou plus de 10 % au-dessus) : fiche de réservation non publiée."
+    ),
+    PublishBlocker.PREDROP_PRICE_BELOW_FLOOR: (
+        "Prix pré-drop sous les planchers durs au coût rendu actuel : réservations retirées, revue humaine."
+    ),
+    PublishBlocker.PREDROP_COST_UNKNOWN: (
+        "Coût rendu inconnu : planchers du prix pré-drop non revérifiables, fiche de réservation non publiée."
+    ),
+    PublishBlocker.PREDROP_RETIRED: "Drop atteint, pré-drop fermé ou désactivé : fiche de réservation retirée.",
+    PublishBlocker.PREDROP_CLOSED: "Réservations fermées : une fiche de réservation n'est jamais créée fermée.",
 }
 
 _HARD = frozenset(
@@ -1037,6 +1088,11 @@ _HARD = frozenset(
         PublishBlocker.STOPLOSS_PRODUCT,
         PublishBlocker.FORBIDDEN_CLAIM,
         PublishBlocker.UNSAFE_HTML,
+        PublishBlocker.PREDROP_LISTING_MISMATCH,
+        PublishBlocker.PREDROP_ON_PREORDER_LISTING,
+        PublishBlocker.PREDROP_PRICE_INVALID,
+        PublishBlocker.PREDROP_PRICE_BELOW_FLOOR,
+        PublishBlocker.PREDROP_COST_UNKNOWN,
     }
 )
 HARD_BLOCKER_CODES: frozenset[str] = frozenset(b.value for b in _HARD)
@@ -1111,12 +1167,12 @@ def _plain(text: str | None) -> str:
     return " ".join(_TAG_STRIP_RE.sub(" ", text).split())
 
 
+def _mf(key: str, value: str) -> dict[str, str]:
+    return {"namespace": PUBLIC_METAFIELD_NAMESPACE, "key": key, "type": PUBLIC_METAFIELDS[key], "value": value}
+
+
 def _metafields(listing: CatalogListing, fmt: ProductFormat, extension_name: str | None) -> list[dict[str, str]]:
-    ns = PUBLIC_METAFIELD_NAMESPACE
-
-    def mf(key: str, value: str) -> dict[str, str]:
-        return {"namespace": ns, "key": key, "type": PUBLIC_METAFIELDS[key], "value": value}
-
+    mf = _mf
     out = [mf("statut_stock", listing.stock_status.value), mf("format", FORMAT_LABELS_FR[fmt])]
     if listing.identity.language and listing.identity.language != "NA":
         out.append(mf("langue", listing.identity.language))
@@ -1183,6 +1239,114 @@ def stock_status_for(
     return StockStatus.STOCK_LOCAL if local_sellable > 0 else StockStatus.RUPTURE
 
 
+def _identity_blockers(
+    listing: CatalogListing,
+    *,
+    table: ExtensionTable | None,
+    real_shop: bool,
+    quarantined: bool,
+    stoploss_blocked: bool,
+) -> tuple[str | None, ProductFormat, list[PublishBlocker]]:
+    """Titre public, format et blocages durs d'une fiche (identité, scellé, langue, GTIN, FICTIF, quarantaine,
+    stop-loss produit, promesses interdites, HTML actif) — communs à la fiche normale et à sa fiche de réservation."""
+    blockers: list[PublishBlocker] = []
+    ident = listing.identity
+    try:
+        title = product_title_fr(ident, table)
+    except CatalogError:
+        title = None
+    if title is None:
+        blockers.append(PublishBlocker.IDENTITY_INCOMPLETE)
+    if ident.sealed is not True:
+        blockers.append(PublishBlocker.NOT_SEALED)
+    fmt = ProductFormat(ident.format) if ident.format in ProductFormat.__members__ else ProductFormat.UNKNOWN
+    if ident.language != expected_language_for(fmt):
+        blockers.append(PublishBlocker.LANGUAGE_NOT_FR)
+    if not validate_gtin(ident.gtin):
+        blockers.append(PublishBlocker.INVALID_GTIN)
+    elif is_fictitious_gtin(ident.gtin) and not listing.fictif:
+        blockers.append(PublishBlocker.FICTITIOUS_GTIN)
+    if listing.fictif and real_shop:
+        blockers.append(PublishBlocker.FICTIF_DATA)
+    if quarantined:
+        blockers.append(PublishBlocker.QUARANTINED)
+    if stoploss_blocked:
+        blockers.append(PublishBlocker.STOPLOSS_PRODUCT)
+    if forbidden_claims(title, listing.description_html, listing.content_text, *(img.alt for img in listing.images)):
+        blockers.append(PublishBlocker.FORBIDDEN_CLAIM)
+    if listing.description_html and _UNSAFE_HTML_RE.search(listing.description_html):
+        blockers.append(PublishBlocker.UNSAFE_HTML)
+    return title, fmt, blockers
+
+
+def listing_handle(listing: CatalogListing, title: str | None) -> str:
+    """Handle public de la fiche normale : celui de la fiche, sinon dérivé du titre et du SKU boutique."""
+    return listing.handle or slugify(f"{title or listing.product_key}-{listing.public_sku}")
+
+
+# ------------------------------------------------------------------------------- pré-drop
+
+PREDROP_TAG = "reservation-garantie"
+"""Étiquette miroir d'une fiche de réservation **ouverte** (collection « Réservations garanties »)."""
+PREDROP_TITLE_PREFIX = "Réservation garantie — "
+PREDROP_PRODUCT_TYPE = "Réservation garantie"
+"""Type de produit de la fiche jumelle : hors des collections par format (jamais un doublon de la fiche normale)."""
+PREDROP_PUBLICATION_SUFFIX = "#reservation-garantie"
+"""Suffixe de la clé de la fiche jumelle dans le registre des fiches publiées (identifiant Shopify, statut, prix)."""
+_RESA_SKU_RE = re.compile(r"^(?P<base>[A-Z0-9][A-Z0-9._-]{2,60})-RESA-(?P<day>\d{8})$")
+
+ReservationPhase = Literal["prioritaire", "ouvertes", "fermees"]
+
+
+def predrop_reservation_sku(public_sku: str, drop_date: date) -> str:
+    """SKU de la fiche de réservation : ``<SKU boutique>-RESA-<AAAAMMJJ>`` (un pré-drop = une date de drop par référence)."""
+    return f"{public_sku}-RESA-{drop_date:%Y%m%d}"
+
+
+def predrop_reservation_handle(normal_handle: str) -> str:
+    """Handle de la fiche de réservation, dérivé de celui de la fiche normale."""
+    return f"{normal_handle}-reservation-garantie"
+
+
+def reservation_publication_key(product_key: str) -> str:
+    """Clé de la fiche jumelle dans le registre des fiches publiées (distincte de celle de la fiche normale)."""
+    return f"{product_key}{PREDROP_PUBLICATION_SUFFIX}"
+
+
+class PredropPublication(FrozenModel):
+    """Pré-drop vu par la publication (construit par le moteur depuis son registre, jamais reçu d'un appelant).
+
+    Champs publiés : statut des réservations (``phase``), date du drop, prix pré-drop (prix de la fiche de
+    réservation). ``reservations_available`` et ``reservations_committed`` servent **seulement** à l'inventaire de la
+    fiche de réservation (``inventorySetQuantities``) : jamais écrits dans une charge publique, jamais en texte.
+    """
+
+    predrop_id: str = Field(min_length=1, max_length=120)
+    product_key: str = Field(min_length=1, max_length=120)
+    drop_date: date
+    phase: ReservationPhase
+    retired: bool = False
+    """Drop atteint, pré-drop fermé par un acte ou paramètres non signés : fiche de réservation retirée (DRAFT)."""
+    predrop_price: Decimal = Field(gt=0)
+    drop_price: Decimal = Field(gt=0)
+    per_customer_limit: int = Field(ge=1, le=2)
+    reservations_available: int = Field(ge=0, default=0)
+    reservations_committed: int = Field(ge=0, default=0)
+
+    @model_validator(mode="after")
+    def _coherent(self) -> PredropPublication:
+        if self.retired and self.phase != "fermees":
+            raise ValueError("pré-drop retiré : réservations fermées")
+        if self.phase == "fermees" and self.reservations_available:
+            raise ValueError("réservations fermées : aucune unité à publier")
+        return self
+
+    @property
+    def accepting(self) -> bool:
+        """Vrai si des réservations peuvent être payées (phase prioritaire ou ouverte, non retirée)."""
+        return self.phase != "fermees" and not self.retired
+
+
 def build_publication(
     listing: CatalogListing,
     decision: PriceDecision | None,
@@ -1200,8 +1364,13 @@ def build_publication(
     stock_status: StockStatus | None = None,
     published: PublishedState | None = None,
     validations: ListingApproval | None = None,
+    predrop: PredropPublication | None = None,
 ) -> PublicationPlan:
     """Plan de publication d'une fiche selon les règles BP §5-§7 (voir l'en-tête du module).
+
+    ``predrop`` : pré-drop de la référence (registre du moteur) ; la fiche normale reçoit seulement les métachamps
+    d'information ``date_drop``, ``reservation_statut`` et ``fiche_liee`` (handle de la fiche de réservation) — sa
+    structure (options, variante, SKU) ne change jamais. Ignoré sur une fiche de précommande ``-PRECO``.
 
     ``published`` : état écrit et vérifié lu dans le **registre du moteur** (identifiant Shopify, statut,
     dernier prix réellement publié) ; None = référence jamais publiée par le moteur. ``validations`` :
@@ -1233,31 +1402,9 @@ def build_publication(
         reviews.append(PublishBlocker.STOCK_STATUS_CORRECTED)
         listing = listing.model_copy(update={"stock_status": stock_status})
     ident = listing.identity
-    try:
-        title = product_title_fr(ident, table)
-    except CatalogError:
-        title = None
-    if title is None:
-        blockers.append(PublishBlocker.IDENTITY_INCOMPLETE)
-    if ident.sealed is not True:
-        blockers.append(PublishBlocker.NOT_SEALED)
-    fmt = ProductFormat(ident.format) if ident.format in ProductFormat.__members__ else ProductFormat.UNKNOWN
-    if ident.language != expected_language_for(fmt):
-        blockers.append(PublishBlocker.LANGUAGE_NOT_FR)
-    if not validate_gtin(ident.gtin):
-        blockers.append(PublishBlocker.INVALID_GTIN)
-    elif is_fictitious_gtin(ident.gtin) and not listing.fictif:
-        blockers.append(PublishBlocker.FICTITIOUS_GTIN)
-    if listing.fictif and real_shop:
-        blockers.append(PublishBlocker.FICTIF_DATA)
-    if quarantined:
-        blockers.append(PublishBlocker.QUARANTINED)
-    if stoploss_blocked:
-        blockers.append(PublishBlocker.STOPLOSS_PRODUCT)
-    if forbidden_claims(title, listing.description_html, listing.content_text, *(img.alt for img in listing.images)):
-        blockers.append(PublishBlocker.FORBIDDEN_CLAIM)
-    if listing.description_html and _UNSAFE_HTML_RE.search(listing.description_html):
-        blockers.append(PublishBlocker.UNSAFE_HTML)
+    title, fmt, blockers = _identity_blockers(
+        listing, table=table, real_shop=real_shop, quarantined=quarantined, stoploss_blocked=stoploss_blocked
+    )
 
     # -- prix : dernier prix **réellement publié** (registre du moteur), jamais un prix déclaré par l'appelant
     current = published.price_chf if published is not None else None
@@ -1381,7 +1528,7 @@ def build_publication(
     if outcome is PlanOutcome.NOT_SENT and price is None and PublishBlocker.PRICE_UNKNOWN not in reviews:
         reviews.append(PublishBlocker.PRICE_UNKNOWN)
 
-    handle = listing.handle or slugify(f"{title or listing.product_key}-{listing.public_sku}")
+    handle = listing_handle(listing, title)
     product_input: dict[str, Any] | None = None
     identifier: dict[str, str] | None = None
     violations: list[str] = []
@@ -1418,6 +1565,17 @@ def build_publication(
             "metafields": _metafields(listing, fmt, ext_name),
             "seo": {"title": title[:70], "description": _plain(listing.description_html)[:320]},
         }
+        if (
+            predrop is not None
+            and predrop.product_key == listing.product_key
+            and not listing.public_sku.endswith("-PRECO")
+        ):
+            # Information seulement (statut, date, fiche liée) : jamais une variante, un quota ni un prix ajoutés.
+            product_input["metafields"] += [
+                _mf("date_drop", predrop.drop_date.isoformat()),
+                _mf("reservation_statut", predrop.phase),
+                _mf("fiche_liee", predrop_reservation_handle(handle)),
+            ]
         if listing.description_html:
             product_input["descriptionHtml"] = listing.description_html
         identifier = {"id": published.shopify_product_id} if published is not None else {"handle": handle}
@@ -1449,4 +1607,164 @@ def build_publication(
         inputs_hash=decision.inputs_hash if decision is not None else None,
         price_approval_id=approval.approval_id if approval is not None and sent else None,
         stock_status=listing.stock_status.value,
+    )
+
+
+def build_predrop_publication(
+    listing: CatalogListing,
+    predrop: PredropPublication,
+    *,
+    params: PricingParams,
+    landed_cost: Decimal | None,
+    stoploss_blocked: bool = False,
+    quarantined: bool = False,
+    sensitive_terms: Collection[str] = (),
+    table: ExtensionTable | None = None,
+    real_shop: bool = False,
+    published: PublishedState | None = None,
+    validations: ListingApproval | None = None,
+    normal_handle: str | None = None,
+) -> PublicationPlan:
+    """Plan de la **fiche jumelle « Réservation garantie »** d'un pré-drop (fermé par défaut).
+
+    ``normal_handle`` : handle de la fiche normale **réellement publiée** (registre du moteur) ; à défaut, celui que
+    :func:`build_publication` calcule. La fiche de réservation et la fiche normale se citent par ces handles
+    (``boutique.fiche_liee``).
+
+    * Prix = prix pré-drop **figé** du moteur (jamais un prix déclaré), revérifié : ≥ prix drop et ≤ prix drop × 1,10,
+      planchers durs au **coût rendu connu** (``landed_cost``, frais par commande inclus) ; coût inconnu : non publiée.
+    * Mêmes blocages durs que la fiche normale (identité, langue, GTIN, FICTIF en boutique réelle, quarantaine,
+      stop-loss produit, promesses interdites), validations de la propriétaire sur le **contenu exact** de la fiche
+      (fiche approuvée et contenu validé), jamais sur une fiche ``-PRECO``.
+    * Retirée (``{"status": "DRAFT"}``, action protectrice) au drop, à la fermeture par un acte, sur paramètres non
+      signés ou sur blocage ; quota épuisé : reste en ligne « Réservations fermées » (inventaire 0) jusqu'au drop ;
+      jamais **créée** fermée.
+    * Charge : titre « Réservation garantie — <titre> », type « Réservation garantie », une variante (SKU
+      ``-RESA-<date>``, ``DENY``), métachamps publics seulement (statut ``precommande`` ouvert / ``rupture`` fermé,
+      ``date_drop``, ``reservation_statut``, ``fiche_liee``, quantité maximale = limite par client) ; aucun quota,
+      compte à rebours, coût ni marge (liste blanche :func:`sensitive_violations`).
+    """
+    blockers: list[PublishBlocker] = []
+    reviews: list[PublishBlocker] = []
+    content: list[PublishBlocker] = []
+    flags = validations
+    if flags is not None and not flags.applies_to(listing):
+        reviews.append(PublishBlocker.VALIDATION_OUTDATED)
+        flags = None
+    approved = flags is not None and (flags.approved or flags.category_rule_validated)
+    content_ok = flags is not None and flags.content_validated
+    title, fmt, hard_found = _identity_blockers(
+        listing, table=table, real_shop=real_shop, quarantined=quarantined, stoploss_blocked=stoploss_blocked
+    )
+    blockers += hard_found
+    if predrop.product_key != listing.product_key:
+        blockers.append(PublishBlocker.PREDROP_LISTING_MISMATCH)
+    if listing.public_sku.endswith("-PRECO"):
+        blockers.append(PublishBlocker.PREDROP_ON_PREORDER_LISTING)
+    price = q2(predrop.predrop_price)
+    drop = q2(predrop.drop_price)
+    if price < drop or price > drop * Decimal("1.10"):
+        blockers.append(PublishBlocker.PREDROP_PRICE_INVALID)
+    if landed_cost is None or landed_cost <= 0:
+        blockers.append(PublishBlocker.PREDROP_COST_UNKNOWN)
+    elif price_floor_violations(price, landed_cost, params, small_product=False):
+        blockers.append(PublishBlocker.PREDROP_PRICE_BELOW_FLOOR)
+    authorized = [img for img in listing.images if img.authorized]
+    if not content_ok or not (listing.content_text or "").strip():
+        content.append(PublishBlocker.CONTENT_NOT_VALIDATED)
+    if not _plain(listing.description_html):
+        content.append(PublishBlocker.DESCRIPTION_MISSING)
+    if not authorized:
+        content.append(PublishBlocker.NO_AUTHORIZED_IMAGE)
+    if len(authorized) != len(listing.images):
+        content.append(PublishBlocker.IMAGE_RIGHTS_MISSING)
+    if predrop.retired:
+        reviews.append(PublishBlocker.PREDROP_RETIRED)
+
+    normal_handle = normal_handle or listing_handle(listing, title)
+    handle = predrop_reservation_handle(normal_handle)
+    hard = [b for b in blockers if b in _HARD]
+    active = published is not None and published.status is ShopStatus.ACTIVE
+    outcome = PlanOutcome.NOT_SENT
+    target: ShopStatus | None = None
+    action: str | None = None
+    if hard or predrop.retired or not approved:
+        if not approved and not hard:
+            reviews.append(PublishBlocker.NOT_APPROVED)
+        if active:
+            outcome, target, action = PlanOutcome.UNPUBLISH, ShopStatus.DRAFT, "UNPUBLISH_PRODUCT"
+    elif content:
+        pass  # fiche incomplète : rien n'est créé ni écrasé, revue humaine (une fiche en ligne garde son état)
+    elif published is None and not predrop.accepting:
+        reviews.append(PublishBlocker.PREDROP_CLOSED)
+    else:
+        action = "UPDATE_APPROVED_PRODUCT" if published is not None else "PUBLISH_NEW_PRODUCT"
+        outcome, target = PlanOutcome.SEND_ACTIVE, ShopStatus.ACTIVE
+
+    product_input: dict[str, Any] | None = None
+    identifier: dict[str, str] | None = None
+    violations: list[str] = []
+    if outcome is PlanOutcome.UNPUBLISH and published is not None:
+        product_input = {"status": ShopStatus.DRAFT.value}
+        identifier = {"id": published.shopify_product_id}
+    elif outcome is PlanOutcome.SEND_ACTIVE and title is not None and target is not None:
+        ident = listing.identity
+        ext_name = _extension_name(ident, table)
+        status_now = StockStatus.PRECOMMANDE if predrop.accepting else StockStatus.RUPTURE
+        view = listing.model_copy(update={
+            "stock_status": status_now, "max_qty": predrop.per_customer_limit, "restock_alert": False,
+            "end_of_series": False, "new_arrival": False, "gift": False,
+        })  # fmt: skip
+        tags = _tags(view, ext_name, target) + ([PREDROP_TAG] if predrop.accepting else [])
+        full_title = f"{PREDROP_TITLE_PREFIX}{title}"
+        product_input = {
+            "title": full_title,
+            "handle": handle,
+            "status": target.value,
+            "productType": PREDROP_PRODUCT_TYPE,
+            "tags": sorted(t for t in tags if _TAG_RE.match(t)),
+            "productOptions": [{"name": "Title", "values": [{"name": "Default Title"}]}],
+            "variants": [
+                {
+                    "optionValues": [{"optionName": "Title", "name": "Default Title"}],
+                    "price": _price_text(price),
+                    "barcode": ident.gtin or "",
+                    "inventoryPolicy": "DENY",
+                    "inventoryItem": {"sku": predrop_reservation_sku(listing.public_sku, predrop.drop_date), "tracked": True},
+                }
+            ],
+            "files": [{"originalSource": img.url, "alt": img.alt, "contentType": "IMAGE"} for img in authorized],
+            "metafields": [
+                *_metafields(view, fmt, ext_name),
+                _mf("date_drop", predrop.drop_date.isoformat()),
+                _mf("reservation_statut", predrop.phase),
+                _mf("fiche_liee", normal_handle),
+            ],
+            "seo": {"title": full_title[:70], "description": _plain(listing.description_html)[:320]},
+        }
+        if listing.description_html:
+            product_input["descriptionHtml"] = listing.description_html
+        identifier = {"id": published.shopify_product_id} if published is not None else {"handle": handle}
+        violations = sensitive_violations(product_input, sensitive_terms=sensitive_terms)
+        if violations:
+            blockers.append(PublishBlocker.SENSITIVE_FIELD)
+            product_input, identifier = None, None
+            outcome, target, action = PlanOutcome.NOT_SENT, None, None
+    all_codes = list(dict.fromkeys([*blockers, *reviews, *content]))
+    sent = outcome is not PlanOutcome.NOT_SENT
+    return PublicationPlan(
+        product_key=listing.product_key,
+        handle=handle,
+        outcome=outcome,
+        target_status=target,
+        action=action,
+        price_chf=price if sent and outcome is not PlanOutcome.UNPUBLISH else None,
+        price_source="UNCHANGED" if sent and outcome is not PlanOutcome.UNPUBLISH else None,
+        product_input=product_input,
+        identifier=identifier,
+        blockers=tuple(b.value for b in dict.fromkeys(blockers)),
+        reviews=tuple(r.value for r in dict.fromkeys([*reviews, *content])),
+        messages=tuple(BLOCKER_LABELS_FR[c] for c in all_codes),
+        violations=tuple(violations),
+        stock_status=(StockStatus.PRECOMMANDE if predrop.accepting else StockStatus.RUPTURE).value,
     )
