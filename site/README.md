@@ -8,15 +8,15 @@
 
 | Chemin | Rôle |
 |---|---|
-| `landing/` | Page de présentation + inscription aux alertes (statique, sans faux stock, sans prix, sans précommande), ambiance « Nuit sur le Léman » et mascotte Lumi (nom provisoire). Mode d'emploi : `landing/README.md` |
+| `landing/` | Page de présentation + inscription aux alertes (statique, sans faux stock, sans prix, sans précommande), mise en page « Nuit sur le Léman » (archivée, refonte en ambiance « Atelier » à l'étape 2) avec les visuels de l'Atelier et le renard « Braise » (nom provisoire). Mode d'emploi : `landing/README.md` |
 | `maquettes/` | Maquettes **jamais publiées** de la boutique dans la même ambiance : `fiche-produit.html` (produit FICTIF en réservation garantie) et `drop.html` (drop FICTIF) |
-| `config/visuels.json` | Source unique des visuels de la marque (adresses, dimensions, largeurs des variantes) ; `outils/visuels.py` les applique aux pages, `outils/rapatrier_visuels.py` les rapatrie avant publication (PNG d'origine archivée dans `visuels-sources/`, ignoré par git ; variantes WebP budgétées dans `landing/assets/visuels/`) |
+| `config/visuels.json` | Source unique des 13 visuels de la marque (10 illustrations du renard, 3 photos d'ambiance : dimensions, format, nature, usage, description, texte alternatif, filet orange mesuré, largeurs des variantes, source importée) ; `outils/visuels.py` les applique aux pages, `outils/rapatrier_visuels.py --importer <dossier>` les importe **en local** (source d'origine archivée dans `visuels-sources/`, ignoré par git ; variantes WebP budgétées dans `landing/assets/visuels/`) |
 | `config/publication_landing.yaml` | Champs propres à la landing (URL publique, mois d'ouverture, webhook n8n), même format que le registre légal |
 | `shopify/STRUCTURE_BOUTIQUE.md` | Collections, filtres, pages, navigation, métachamps publics, installation du thème |
 | `shopify/MODELE_FICHE_PRODUIT.md` | Fiche produit standard (BP §7) : champs, sources, interdits, exemple FICTIF, contrôle |
 | `shopify/snippets/` | Snippets Liquid : `da-badges`, `da-statut-stock`, `da-delai-sortie`, `da-mention-independance`, `da-formulaire-alertes`, `da-icone` |
-| `outils/da_sync.py` | Copie les fichiers DA approuvés dans `landing/assets/da/` (+ manifeste d'empreintes) ; bascule de direction A/B et d'ambiance (Nuit) |
-| `outils/visuels.py`, `outils/rapatrier_visuels.py`, `outils/lumi_svg.py` | Balises `data-visuel` synchronisées avec `config/visuels.json` (jamais de PNG dans un `srcset`) ; rapatriement contrôlé (format, dimensions), variantes WebP dans un budget de poids, bascule en local, fermé par défaut ; Lumi en SVG pour le décor de secours des pages de remerciement |
+| `outils/da_sync.py` | Copie les fichiers DA approuvés dans `landing/assets/da/` (+ manifeste d'empreintes) ; bascule de direction A/B et d'ambiance (Atelier, toujours claire ; Nuit, archivée) |
+| `outils/visuels.py`, `outils/rapatrier_visuels.py`, `outils/renard_svg.py` | Balises `data-visuel` synchronisées avec `config/visuels.json` (adresses, dimensions et texte alternatif ; jamais de PNG dans un `srcset`) ; import local contrôlé (format réel JPEG/PNG/WebP, proportions, orientation EXIF, sRGB, aucune métadonnée publiée), variantes WebP dans un budget de poids, bascule en local, fermé par défaut ; silhouette SVG du renard pour le décor de secours |
 | `outils/publication.py` | Pages secondaires (`source` ; la confidentialité vient de `docs/04-legal/CONFIDENTIALITE_LANDING.md`, notice limitée à la landing), dossier d'aperçu (`apercu`), dossier final (`publication`, refusé tant qu'un champ de la liste fermée `CHAMPS_LANDING` n'est pas validé : publiable à J10, sans champ de la boutique), `etat` |
 | `outils/verifier_site.py` | Contrôles : HTML, liens, ressources externes, termes interdits, prix, affirmations inexactes (réponse humaine systématique, contenu des boîtes vérifié, finalité « uniquement », limite « par commande »), notice de confidentialité couvrant chaque champ du formulaire, nom de travail absent des modèles Shopify, message sans JavaScript exact sur la page publiée, chaque champ de la landing fourni au plus tard à J10 (interventions et backlog), workflow d'inscription sans exécution conservée (dès son export), accessibilité de base, typographie, snippets Liquid, synchronisation |
 | `outils/typo.py`, `outils/markdown_mini.py` | Espaces insécables du français ; conversion des textes légaux en HTML |
@@ -33,7 +33,7 @@ python site/outils/publication.py source           # régénère merci / confirm
 python site/outils/publication.py etat             # champs requis pour publier, avec statut et décideur
 python site/outils/publication.py apercu           # site/dist/apercu/
 python site/outils/publication.py publication      # site/dist/landing/ (refus motivé tant que non validé)
-python site/outils/rapatrier_visuels.py            # visuels en local (avant publication ; réseau requis)
+python site/outils/rapatrier_visuels.py --importer <dossier>   # visuels en local (aucun réseau)
 python site/outils/verifier_site.py                # contrôles (code 1 si erreur)
 python -m pytest site/tests -q                     # tests
 ```
@@ -50,6 +50,6 @@ Tests de rendu Liquid : ils utilisent `python-liquid` **s'il est installé** (ou
 ## Validation humaine requise
 
 - [ ] C06 : valider le nom (la publication refuse le nom de travail).
-- [ ] C10 : valider la direction DA (proposée : B + ambiance « Nuit sur le Léman », bascule en une commande) et la mascotte Lumi (nom provisoire).
+- [ ] C10 : valider l'ambiance « Atelier » (`docs/05-da/DIRECTION_ATELIER.md`, retenue par le propriétaire le 06.10.2026, bascule en une commande : `da_sync.py --direction a --ambiance atelier`) et la mascotte, un renard au nom provisoire « Braise » (alternatives : Suie, Kit ; recherche de marque à faire).
 - [ ] B08, B04, B15 : domaine, outil d'envoi d'emails, boutique Shopify (comptes au nom de l'entité).
 - [ ] C07 : GO de publication de la landing après la checklist de `landing/README.md` §6.

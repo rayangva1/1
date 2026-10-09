@@ -221,16 +221,22 @@ def test_publication_refusee_tant_que_les_visuels_sont_distants(tmp_path: Path) 
         publication.construire("publication", tmp_path / "pub", champs=_champs_fictifs(), source=source, visuels_manifeste=m)
     assert any("rapatrier_visuels.py" in e for e in exc.value.erreurs)
     source, m = source_visuels_locaux(tmp_path)
-    visuels.chemin_variante(m, "autocollant-lumi", 256, source).unlink()
+    visuels.chemin_variante(m, "renard-couche", 480, source).unlink()
     with pytest.raises(publication.PublicationError) as exc:
         publication.construire("publication", tmp_path / "pub2", champs=_champs_fictifs(), source=source, visuels_manifeste=m)
-    assert any("autocollant-lumi" in e and "absent" in e for e in exc.value.erreurs)
+    assert any("renard-couche" in e and "absent" in e for e in exc.value.erreurs)
     source, m = fictifs.landing_aux_visuels(tmp_path, "local", nom="lourd")
-    lourde = visuels.chemin_variante(m, "quai-nuit", 1280, source)
+    lourde = visuels.chemin_variante(m, "renard-pied-de-page", 1280, source)
     lourde.write_bytes(lourde.read_bytes() + b"\x00" * visuels.plafond_octets(1280))
     with pytest.raises(publication.PublicationError) as exc:
         publication.construire("publication", tmp_path / "pub3", champs=_champs_fictifs(), source=source, visuels_manifeste=m)
-    assert any("quai-nuit" in e and "budget" in e for e in exc.value.erreurs)
+    assert any("renard-pied-de-page" in e and "budget" in e for e in exc.value.erreurs)
+    # Une variante locale qui n'est pas un WebP (ex. le JPEG d'origine renommé) est refusée.
+    source, m = fictifs.landing_aux_visuels(tmp_path, "local", nom="jpeg")
+    visuels.chemin_variante(m, "photo-classeur", 640, source).write_bytes(fictifs.jpeg_entete(640, 425))
+    with pytest.raises(publication.PublicationError) as exc:
+        publication.construire("publication", tmp_path / "pub4", champs=_champs_fictifs(), source=source, visuels_manifeste=m)
+    assert any("photo-classeur" in e and "WebP" in e for e in exc.value.erreurs)
 
 
 def test_publication_complete_avec_champs_fictifs(tmp_path: Path) -> None:
@@ -250,10 +256,11 @@ def test_publication_complete_avec_champs_fictifs(tmp_path: Path) -> None:
     assert (sortie / "merci.html").read_text(encoding="utf-8").count("noindex") == 1
     assert "img-src 'self' data:;" in entetes
     assert "cloudfront" not in index and 'src="assets/visuels/' in index
+    assert not [u for u in re.findall(r'\b(?:src|srcset|imagesrcset|href)="([^"]*)"', index) if "assets/visuels" in u and "://" in u]
     assert any(f.startswith("assets/visuels/") for f in rapport.fichiers)
     assert vs.verifier_landing(sortie, publication_mode=True) == []
     # Un visuel distant resté dans un dossier de publication est refusé par le contrôle
-    distant = index.replace('src="assets/visuels/', 'src="' + visuels.charger()["base_distante"], 1)
+    distant = index.replace('src="assets/visuels/', 'src="' + fictifs.BASE_DISTANTE_FICTIVE, 1)
     (sortie / "index.html").write_text(distant, encoding="utf-8")
     assert any("visuel distant dans un dossier de publication" in e for e in vs.verifier_landing(sortie, publication_mode=True))
 

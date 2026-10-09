@@ -3,7 +3,8 @@
 
 Sorties (toutes dans docs/05-da/) :
 - tokens/tokens.css            variables CSS des 2 directions, clair + sombre
-- tokens/tokens-nuit.css       ambiance « Nuit sur le Léman » (data-ambiance="nuit", bâtie sur B, toujours sombre)
+- tokens/tokens-<ambiance>.css une feuille par ambiance de tokens.json > ambiances (data-ambiance="<nom>"), un seul mode :
+                               « atelier » (bâtie sur A, toujours claire) ; « nuit » (bâtie sur B, toujours sombre, ARCHIVÉE)
 - logo/{a,b}/*.svg             logos vectoriels (contours pleins, sans police)
 - social/{a,b}/*.svg           templates 9:16, 4:5, 1:1 (zones photo à remplacer)
 - social/guides/*.svg          zones sûres indicatives
@@ -11,7 +12,7 @@ Sorties (toutes dans docs/05-da/) :
 - components/email-transactionnel-{a,b}.html   email HTML « email-safe »
 - components/icones.svg        sprite des pictogrammes
 - CHARTE.html, components/{badges,carte-produit,banniere,page-produit}.html   (tools/pages_html.py)
-- DIRECTION_A.md / DIRECTION_B.md / DIRECTION_NUIT.md : tableaux de contrastes réinjectés entre marqueurs
+- DIRECTION_A.md / DIRECTION_B.md / DIRECTION_<AMBIANCE>.md : tableaux de contrastes réinjectés entre marqueurs
 - logo/png/*.png               exports PNG (option --png, nécessite cairosvg)
 
 Usage : python docs/05-da/tools/generer_da.py [--png]
@@ -60,9 +61,14 @@ def couleurs(da: str, mode: str = "light") -> dict[str, str]:
     return {k: v["$value"] for k, v in TOKENS["directions"][da]["color"][mode].items()}
 
 
+def mode_ambiance(nom: str) -> str:
+    """Mode unique d'une ambiance : « light » (toujours claire, ex. atelier) ou « dark » (toujours sombre, ex. nuit)."""
+    return str(TOKENS["ambiances"][nom]["mode"])
+
+
 def couleurs_ambiance(nom: str) -> dict[str, str]:
-    """Couleurs d'une ambiance (toujours sombre) : {nom: '#RRGGBB'}."""
-    return {k: v["$value"] for k, v in TOKENS["ambiances"][nom]["color"]["dark"].items()}
+    """Couleurs d'une ambiance (dans son mode unique) : {nom: '#RRGGBB'}."""
+    return {k: v["$value"] for k, v in TOKENS["ambiances"][nom]["color"][mode_ambiance(nom)].items()}
 
 
 def police(da: str, role: str) -> str:
@@ -126,13 +132,14 @@ def generer_css() -> str:
 
 
 def generer_css_ambiance(nom: str) -> str:
-    """Construit tokens-<nom>.css : surcharge des variables de la direction de base, toujours en sombre.
+    """Construit tokens-<nom>.css : surcharge des variables de la direction de base, dans le mode unique de l'ambiance.
 
     Sélecteur ``:root[data-ambiance="<nom>"][data-da]`` : même spécificité que les blocs sombres de tokens.css
     (0,3,0) et chargé après lui, il l'emporte quel que soit le réglage clair/sombre du système.
     """
     amb = TOKENS["ambiances"][nom]
-    decls = [("color-scheme", "dark")]
+    mode = mode_ambiance(nom)
+    decls = [("color-scheme", mode)]
     decls += [(f"--da-font-{k}", v["$value"]) for k, v in amb["font"].items()]
     decls += [(f"--da-{k}", v["$value"]) for k, v in amb["style"].items()]
     decls += [(f"--da-color-{k}", v) for k, v in couleurs_ambiance(nom).items()]
@@ -141,7 +148,8 @@ def generer_css_ambiance(nom: str) -> str:
         f" * Ambiance « {amb['nom']} » — {NOM} (nom de travail, non validé)\n"
         " * FICHIER GÉNÉRÉ par docs/05-da/tools/generer_da.py depuis tokens.json — ne pas éditer à la main.\n"
         f" * À charger APRÈS tokens.css ; s'active avec data-ambiance=\"{nom}\" et data-da=\"{amb['base']}\" sur <html>.\n"
-        " * Toujours sombre : aucun mode clair (contrastes calculés dans DIRECTION_NUIT.md).\n"
+        f" * {'Toujours claire : aucun mode sombre' if mode == 'light' else 'Toujours sombre : aucun mode clair'}"
+        f" (contrastes calculés dans DIRECTION_{nom.upper()}.md).\n"
         " * Polices Google Fonts : URL dans tokens.json > ambiances > googleFonts.\n"
         " */\n"
         + _bloc([f':root[data-ambiance="{nom}"][data-da]'], decls)
@@ -365,10 +373,19 @@ def fichiers_logos() -> dict[str, str]:
         chemins([("#000000", mono_bn.main), ("#FFFFFF", qn.main)]),
     )
     out["logo/b/favicon.svg"] = svg_doc(32, 32, f"{NOM} — favicon, direction B", DESC_LOGO, chemins(dessin_b_favicon(cb["accent"], "#FFFFFF")))
-    # Ambiance Nuit (bâtie sur B) : même lettrage, clair de lune et point du « i » rose lune
+    # Ambiance Nuit (bâtie sur B, archivée) : même lettrage, clair de lune et point du « i » rose lune
     if "nuit" in AMBIANCES:
         cn = couleurs_ambiance("nuit")
         logo("logo/b/logo-b-nuit.svg", dessin_b_mot, cn["ink"], cn["accent-text"], f"{NOM} — logo principal, ambiance Nuit sur le Léman")
+    # Ambiance Atelier (bâtie sur A) : même lettrage ; charbon et fil orange sur papier, crème et fil orange sur charbon
+    if "atelier" in AMBIANCES:
+        ct = couleurs_ambiance("atelier")
+        logo("logo/a/logo-a-atelier.svg", dessin_a_horizontal, ct["ink"], ct["accent"], f"{NOM} — logo horizontal, ambiance Atelier")
+        logo("logo/a/logo-a-atelier-fond-sombre.svg", dessin_a_horizontal, ct["inverse-ink"], ct["inverse-accent"],
+             f"{NOM} — logo horizontal sur charbon, ambiance Atelier")
+        out["logo/a/favicon-atelier.svg"] = svg_doc(
+            32, 32, f"{NOM} — favicon, ambiance Atelier", DESC_LOGO, chemins(dessin_a_favicon(ct["ink"], ct["bg"], ct["accent"]))
+        )
     return out
 
 
@@ -1011,13 +1028,13 @@ def tableau_contrastes_md(da: str) -> str:
     return "\n".join(lignes)
 
 
-def paires_ambiance() -> list[dict]:
-    """Paires contrôlées pour une ambiance : paires communes + paires propres aux ambiances."""
-    return list(TOKENS["contrastPairs"]) + list(TOKENS.get("ambianceContrastPairs", []))
+def paires_ambiance(nom: str) -> list[dict]:
+    """Paires contrôlées pour une ambiance : paires communes + paires propres à l'ambiance (``contrastPairs``)."""
+    return list(TOKENS["contrastPairs"]) + list(TOKENS["ambiances"][nom].get("contrastPairs", []))
 
 
 def tableau_contrastes_ambiance_md(nom: str) -> str:
-    """Tableau Markdown des contrastes d'une ambiance (toujours sombre, ratios tronqués)."""
+    """Tableau Markdown des contrastes d'une ambiance (mode unique, ratios tronqués)."""
     from contraste import niveau, ratio, ratio_affiche
 
     lignes = [
@@ -1025,12 +1042,13 @@ def tableau_contrastes_ambiance_md(nom: str) -> str:
         "|---|---|---|---|---|---|---|",
     ]
     cols = couleurs_ambiance(nom)
-    for paire in paires_ambiance():
+    lib = "Clair" if mode_ambiance(nom) == "light" else "Sombre"
+    for paire in paires_ambiance(nom):
         fg, bg = cols[paire["fg"]], cols[paire["bg"]]
         r = ratio(fg, bg)
         niv = niveau(r) if paire["min"] >= 4.5 else ("UI ≥ 3:1" if r >= 3 else "insuffisant")
         lignes.append(
-            f"| Sombre | {paire['usage']} | `{fg}` {paire['fg']} | `{bg}` {paire['bg']} | "
+            f"| {lib} | {paire['usage']} | `{fg}` {paire['fg']} | `{bg}` {paire['bg']} | "
             f"**{ratio_affiche(fg, bg)}:1** | {paire['min']} | {niv} |"
         )
     return "\n".join(lignes)

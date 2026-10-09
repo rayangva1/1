@@ -6,9 +6,10 @@ Contrôles :
 2. Logos : contours uniquement (pas de <text>, pas de police, pas d'image), aucun terme « Poké ».
 3. Gabarits sociaux aux bonnes dimensions ; packaging en millimètres.
 4. Contrastes WCAG de toutes les paires déclarées (tokens.json) >= seuil, clair ET sombre.
-5. Les ratios annoncés dans DIRECTION_A.md / DIRECTION_B.md / DIRECTION_NUIT.md sont exacts (recalculés).
-   Ambiances (tokens.json > ambiances, ex. « nuit ») : toujours sombres, mêmes clés de couleur que les
-   directions (et plus), polices chargées par leur URL, paires communes + paires d'ambiance ≥ seuil.
+5. Les ratios annoncés dans DIRECTION_A.md / DIRECTION_B.md / DIRECTION_<AMBIANCE>.md sont exacts (recalculés).
+   Ambiances (tokens.json > ambiances : « atelier », « nuit » archivée) : un seul mode déclaré (``mode`` = light,
+   toujours claire, ou dark, toujours sombre), mêmes clés de couleur que les directions (et plus), polices chargées
+   par leur URL, paires communes + paires propres à l'ambiance (``contrastPairs``) ≥ seuil.
 6. Fichiers générés synchronisés avec tokens.json et le générateur.
 7. HTML : ressources relatives existantes ; ressources externes limitées à Google Fonts.
 8. Fichiers publics : aucun terme de donnée interne (coût, marge, fournisseur…), aucun EAN.
@@ -17,6 +18,9 @@ Contrôles :
     (docs/04-legal/champs_a_remplir.yaml), dans les champs de la landing (site/config/publication_landing.yaml)
     ou dans la liste fermée VARIABLES_DA (valeurs propres à un produit ou à une commande, jamais une règle) ;
     une limite « par commande » (les CGV fixent une limite par foyer) est refusée.
+11. Mascotte de l'ambiance Atelier (renard « Braise », nom provisoire) : DIRECTION_ATELIER.md écrit chacune des
+    règles de marque (quadrupède, une seule queue, jamais debout, ni gants ni vêtements, aucun trait d'Évoli ni d'un
+    Pokémon, ne tient jamais un produit Pokémon, n'illustre jamais un produit vendu, nom provisoire et alternatives).
 
 Usage : python docs/05-da/tools/verifier_da.py   (code de sortie 1 si erreur)
 """
@@ -151,19 +155,29 @@ def lignes_contraste(tokens: dict) -> list[dict]:
     return lignes
 
 
+MODES_AMBIANCE = {"light": "toujours claire", "dark": "toujours sombre"}
+
+
+def paires_ambiance(tokens: dict, nom: str) -> list[dict]:
+    """Paires d'une ambiance : paires communes aux directions + paires propres à l'ambiance."""
+    return list(tokens["contrastPairs"]) + list(tokens["ambiances"][nom].get("contrastPairs", []))
+
+
 def lignes_contraste_ambiances(tokens: dict) -> list[dict]:
-    """Paires de chaque ambiance (mode sombre unique) : paires communes + ``ambianceContrastPairs``."""
+    """Paires de chaque ambiance, dans son mode unique : paires communes + ``contrastPairs`` de l'ambiance."""
     lignes = []
-    paires = list(tokens["contrastPairs"]) + list(tokens.get("ambianceContrastPairs", []))
     for nom, amb in tokens.get("ambiances", {}).items():
-        cols = {k: v["$value"] for k, v in amb["color"]["dark"].items()}
-        for paire in paires:
+        mode = amb.get("mode")
+        if mode not in MODES_AMBIANCE or mode not in amb.get("color", {}):
+            continue  # signalé par verifier_ambiances
+        cols = {k: v["$value"] for k, v in amb["color"][mode].items()}
+        for paire in paires_ambiance(tokens, nom):
             if paire["fg"] not in cols or paire["bg"] not in cols:
-                continue  # signalé par verifier_tokens
+                continue  # signalé par verifier_ambiances
             fg, bg = cols[paire["fg"]], cols[paire["bg"]]
             lignes.append(
                 {
-                    "da": nom, "mode": "dark", "fg": paire["fg"], "bg": paire["bg"],
+                    "da": nom, "mode": mode, "fg": paire["fg"], "bg": paire["bg"],
                     "fg_hex": fg, "bg_hex": bg, "ratio": ratio(fg, bg),
                     "affiche": ratio_affiche(fg, bg), "min": paire["min"], "usage": paire["usage"],
                 }
@@ -172,23 +186,28 @@ def lignes_contraste_ambiances(tokens: dict) -> list[dict]:
 
 
 def verifier_ambiances(tokens: dict) -> list[str]:
-    """Structure des ambiances : base existante, sombre seulement, couleurs complètes et valides, polices chargées."""
+    """Structure des ambiances : base existante, un seul mode, couleurs complètes et valides, polices chargées."""
     erreurs: list[str] = []
     reference = set(next(iter(tokens["directions"].values()))["color"]["light"])
-    paires = list(tokens["contrastPairs"]) + list(tokens.get("ambianceContrastPairs", []))
+    if "ambianceContrastPairs" in tokens:
+        erreurs.append("ambianceContrastPairs : chaque ambiance déclare ses propres paires (ambiances.<nom>.contrastPairs)")
     for nom, amb in tokens.get("ambiances", {}).items():
         if amb.get("base") not in tokens["directions"]:
             erreurs.append(f"ambiance {nom} : direction de base inconnue {amb.get('base')!r}")
-        if set(amb.get("color", {})) != {"dark"}:
-            erreurs.append(f"ambiance {nom} : une ambiance est toujours sombre (clé color.dark seule attendue)")
+        mode = amb.get("mode")
+        if mode not in MODES_AMBIANCE:
+            erreurs.append(f"ambiance {nom} : mode {mode!r} invalide (light : toujours claire ; dark : toujours sombre)")
             continue
-        cles = set(amb["color"]["dark"])
+        if set(amb.get("color", {})) != {mode}:
+            erreurs.append(f"ambiance {nom} : une ambiance a un seul mode, {MODES_AMBIANCE[mode]} (clé color.{mode} seule attendue)")
+            continue
+        cles = set(amb["color"][mode])
         if not reference <= cles:
             erreurs.append(f"ambiance {nom} : couleurs manquantes {sorted(reference - cles)}")
-        for k, v in amb["color"]["dark"].items():
+        for k, v in amb["color"][mode].items():
             if not est_hex(v["$value"]):
                 erreurs.append(f"ambiance {nom}/{k} : couleur invalide {v['$value']}")
-        for paire in paires:
+        for paire in paires_ambiance(tokens, nom):
             for cle in (paire["fg"], paire["bg"]):
                 if cle not in cles:
                     erreurs.append(f"ambiance {nom} : paire de contraste vers un token inconnu {cle}")
@@ -301,6 +320,40 @@ def verifier_docs_contrastes(racine: Path, tokens: dict) -> list[str]:
             if lc["da"] == nom and (lc["fg_hex"].upper(), lc["bg_hex"].upper()) not in publies:
                 erreurs.append(f"{doc.name} : paire non publiée {lc['fg']}/{lc['bg']}")
     return erreurs
+
+
+# ---------------------------------------------------------------------------
+# 11 Règles de marque de la mascotte (ambiance Atelier)
+# ---------------------------------------------------------------------------
+#: Règles que DIRECTION_ATELIER.md doit écrire en toutes lettres (libellé, motifs exigés). Un visuel ou un texte qui
+#: les contredit sort de la marque : un renard ORIGINAL, jamais un personnage existant (licence, Sega, Naruto).
+REGLES_MASCOTTE: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("toujours quadrupède", (r"quadrupède",)),
+    ("une seule queue, jamais neuf (Feunard / Ninetales, Kurama)", (r"une seule queue", r"Feunard", r"Ninetales", r"Kurama")),
+    ("jamais debout sur deux pattes", (r"jamais debout sur (?:ses )?deux pattes",)),
+    ("jamais de gants, chaussures ni vêtements (Tails, Sega)", (r"gants", r"chaussures", r"vêtements", r"Tails")),
+    ("aucun trait d'Évoli ni d'un Pokémon", (r"Évoli", r"collerette", r"bout de (?:la )?queue crème", r"mèche frontale")),
+    ("ne tient jamais un vrai produit Pokémon", (r"ne tient jamais un (?:vrai )?produit Pokémon",)),
+    ("les illustrations n'illustrent jamais un produit vendu", (r"n['’]illustrent jamais un produit vendu",)),
+    ("nom provisoire, alternatives et recherche de marque", (r"Braise[^.\n]{0,40}nom provisoire", r"\bSuie\b", r"\bKit\b", r"Swissreg")),
+)
+
+
+def verifier_mascotte(racine: Path = RACINE, tokens: dict | None = None) -> list[str]:
+    """DIRECTION_ATELIER.md écrit chaque règle de marque de la mascotte (dès que l'ambiance Atelier est déclarée)."""
+    tokens = charger_tokens(racine) if tokens is None else tokens
+    if "atelier" not in tokens.get("ambiances", {}):
+        return []
+    doc = racine / "DIRECTION_ATELIER.md"
+    if not doc.exists():
+        return ["DIRECTION_ATELIER.md absent (règles de la mascotte)"]
+    texte = doc.read_text(encoding="utf-8")
+    return [
+        f"DIRECTION_ATELIER.md : règle de mascotte absente « {libelle} » (motif {motif!r})"
+        for libelle, motifs in REGLES_MASCOTTE
+        for motif in motifs
+        if not re.search(motif, texte, re.IGNORECASE)
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -468,6 +521,7 @@ def tout_verifier(racine: Path = RACINE) -> dict[str, list[str]]:
         "termes_publics": verifier_termes_publics(racine),
         "champs": verifier_champs(racine),
         "docs": verifier_docs(racine),
+        "mascotte": verifier_mascotte(racine, tokens),
     }
 
 

@@ -1,22 +1,33 @@
 #!/usr/bin/env python3
-"""Visuels de la marque : une seule source d'adresses (``site/config/visuels.json``), appliquée aux pages.
+"""Visuels de la marque : une seule source (``site/config/visuels.json``), appliquée aux pages.
 
 Les pages (landing ``site/landing/*.html`` et maquettes ``site/maquettes/*.html``) ne contiennent que des balises
 marquées ``data-visuel="<identifiant>"`` : ``<img>``, ``<source>`` (dans ``<picture>``) et ``<link rel="preload">``.
 Ce module réécrit leurs attributs gérés à partir du manifeste :
 
-* ``<img>`` : ``src``, ``srcset``, ``width``, ``height`` ;
+* ``<img>`` : ``src``, ``srcset``, ``width``, ``height`` et ``alt`` (texte alternatif du manifeste ; une page qui doit
+  dire autre chose dans son contexte pose ``data-alt-contexte`` et garde son propre ``alt``) ;
 * ``<source>`` : ``srcset``, ``width``, ``height`` ;
 * ``<link rel="preload">`` : ``href``, ``imagesrcset``.
 
-Le texte alternatif, ``sizes``, ``loading``, ``fetchpriority`` et ``media`` restent écrits dans la page (ils dépendent
-du contexte). Deux sources :
+``sizes``, ``loading``, ``fetchpriority`` et ``media`` restent écrits dans la page (ils dépendent de la mise en page).
+Deux sources :
 
-* ``distant`` (aperçu) : la variante légère ``<fichier>_min.webp`` du service de génération, **seule** (jamais la PNG
-  haute définition : plusieurs mégaoctets, elle serait choisie par presque tous les écrans) ;
-* ``local`` (publication) : variantes WebP à plusieurs largeurs (``<fichier>-<largeur>.webp``) produites par
-  ``site/outils/rapatrier_visuels.py`` dans ``site/landing/assets/visuels/`` à partir de la PNG d'origine, qui reste
-  une archive hors du dossier publié. Le ``srcset`` ne contient que ces variantes (descripteurs de largeur exacts).
+* ``local`` (publication, état normal) : variantes WebP à plusieurs largeurs (``<fichier>-<largeur>.webp``) dans
+  ``site/landing/assets/visuels/``, produites par ``site/outils/rapatrier_visuels.py`` à partir des fichiers
+  d'origine (import local ``--importer <dossier>``, ou rapatriement depuis ``base_distante``), qui restent une
+  archive hors du dossier publié (``site/visuels-sources/``). Le ``srcset`` ne contient que ces variantes
+  (descripteurs de largeur exacts) ;
+* ``distant`` (aperçu seulement, si ``base_distante`` est renseignée) : la variante légère ``<fichier>_min.webp`` du
+  service d'hébergement, **seule** (jamais la PNG haute définition).
+
+Chaque visuel déclare aussi sa ``nature`` (``illustration`` de marque ou ``photo`` d'ambiance), son ``format``
+(proportions « 21:9 », contrôlées), son ``usage``, sa ``description``, son ``alt`` (``""`` seulement si ``decoratif``),
+le filet orange photographié (``fil`` : deux points en fractions de l'image, ou ``null``) et, une fois importé,
+``fichier_source`` et ``empreinte_source`` (SHA-256 du fichier d'origine). Règles de rédaction contrôlées (fermé par
+défaut, ``docs/05-da/DIRECTION_ATELIER.md`` §7 et §8) : aucun nom de la licence ; une photo d'ambiance ne se présente
+jamais comme un produit en vente ; une illustration du renard ne décrit ni plusieurs queues, ni une posture debout, ni
+vêtements, et toute boîte, carte ou étui décrit est « vierge » ou « sans marque ».
 
 La publication est refusée tant que la source n'est pas ``local`` (``erreurs_publication``) : la page publiée ne
 charge aucune image d'un tiers (politique de sécurité ``img-src 'self'``, aucune adresse IP de visiteur transmise).
@@ -31,6 +42,7 @@ Usage :
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import re
@@ -50,13 +62,37 @@ VARIANTES_DISTANTES = {"min": "_min.webp", "hd": ".png"}
 PLAFONDS_OCTETS = ((1600, 250 * 1024), (8192, 450 * 1024))
 ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 FICHIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$")
+FICHIER_SOURCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}\.(?:jpe?g|png|webp)$", re.IGNORECASE)
+EMPREINTE_RE = re.compile(r"^[0-9a-f]{64}$")
+FORMAT_RE = re.compile(r"^([1-9][0-9]?):([1-9][0-9]?)$")
+#: Écart toléré entre les proportions déclarées (« 16:9 ») et les dimensions réelles (1920 × 1086 : 0,6 %).
+TOLERANCE_FORMAT = 0.012
+NATURES = ("illustration", "photo")
 BALISE_RE = re.compile(r"<(img|source|link)\b([^<>]*?)\s*(/?)>", re.IGNORECASE | re.DOTALL)
 ATTR_RE = re.compile(r'([^\s=/>"]+)(?:\s*=\s*"([^"]*)")?')
 GERES = {
-    "img": ("src", "srcset", "width", "height"),
+    "img": ("src", "srcset", "width", "height", "alt"),
     "source": ("srcset", "width", "height"),
     "link": ("href", "imagesrcset"),
 }
+#: Attribut d'une balise <img> qui garde son propre texte alternatif (contexte de la page).
+ALT_CONTEXTE = "data-alt-contexte"
+#: Règles de rédaction (descriptions et textes alternatifs), DIRECTION_ATELIER.md §7–§8.
+TERMES_LICENCE = re.compile(
+    r"pok[ée]\s*-?\s*(?:mon|ball)|[ée]voli|eevee|feunard|ninetales|goupix|vulpix|roussil|braixen|zorua|zoroark|pikachu"
+    r"|kurama|\btails\b|\bsega\b|\bnaruto\b",
+    re.IGNORECASE,
+)
+TERMES_VENTE = re.compile(
+    r"\b(?:nos|notre|en vente|à vendre|vendus?|prix|stock|disponibles?|achet\w*|commander)\b", re.IGNORECASE
+)
+TERMES_MASCOTTE_INTERDITS = re.compile(
+    r"\bqueues\b|deux queues|neuf queues|\bdebout\b|deux pattes|\bgants?\b|chaussures?|v[êe]tements?|habill[ée]|"
+    r"[ée]charpe|collerette|m[èe]che frontale",
+    re.IGNORECASE,
+)
+OBJETS_DECRITS = re.compile(r"\b(?:bo[îi]tes?|[ée]tuis?|cartes?|classeurs?|pochettes?|sleeves?|toploaders?)\b", re.IGNORECASE)
+OBJETS_VIERGES = re.compile(r"\bvierges?\b|sans marque", re.IGNORECASE)
 
 
 class VisuelsError(ValueError):
@@ -64,10 +100,14 @@ class VisuelsError(ValueError):
 
 
 # --------------------------------------------------------------------------- manifeste
-def charger(chemin: Path = CONFIG) -> dict:
-    """Manifeste validé ; lève ``VisuelsError`` si invalide."""
+def charger(chemin: Path = CONFIG, *, exiger_variantes: bool = True) -> dict:
+    """Manifeste validé ; lève ``VisuelsError`` si invalide.
+
+    ``exiger_variantes=False`` : seul l'import local l'utilise, pour lire un manifeste dont un visuel vient d'être
+    déclaré (source « local », variantes encore à produire) ; tous les autres contrôles restent appliqués.
+    """
     manifeste = json.loads(chemin.read_text(encoding="utf-8"))
-    erreurs = valider(manifeste)
+    erreurs = valider(manifeste, exiger_variantes=exiger_variantes)
     if erreurs:
         raise VisuelsError("; ".join(erreurs))
     return manifeste
@@ -77,15 +117,64 @@ def _entier(val: object, maxi: int = 8192) -> bool:
     return isinstance(val, int) and not isinstance(val, bool) and 0 < val <= maxi
 
 
-def valider(m: dict) -> list[str]:
+def ratio_format(fmt: str) -> float | None:
+    """Proportions d'un format « L:H » (ex. « 21:9 » → 2.333…) ; None si le format est invalide."""
+    m = FORMAT_RE.match(str(fmt))
+    return int(m.group(1)) / int(m.group(2)) if m else None
+
+
+def _fil_valide(fil: object) -> bool:
+    if fil is None:
+        return True
+    if not isinstance(fil, list) or len(fil) != 2:
+        return False
+    for point in fil:
+        if not isinstance(point, list) or len(point) != 2:
+            return False
+        if not all(isinstance(c, (int, float)) and not isinstance(c, bool) and 0 <= c <= 1 for c in point):
+            return False
+    return True
+
+
+def erreurs_redaction(ident: str, v: dict) -> list[str]:
+    """Règles de rédaction des descriptions et textes alternatifs (licence, vente, règles de la mascotte)."""
+    err: list[str] = []
+    textes = {"alt": str(v.get("alt", "")), "description": str(v.get("description", "")), "usage": str(v.get("usage", ""))}
+    for cle, texte in textes.items():
+        m = TERMES_LICENCE.search(texte)
+        if m:
+            err.append(f"{ident} : {cle} cite « {m.group(0)} » (aucun nom ni personnage de la licence ou d'une autre marque)")
+    if v.get("nature") == "photo":
+        for cle in ("alt", "description"):
+            m = TERMES_VENTE.search(textes[cle])
+            if m:
+                err.append(f"{ident} : {cle} d'une photo d'ambiance dit « {m.group(0)} » (jamais présentée comme un produit en vente)")
+    if v.get("nature") == "illustration":
+        for cle in ("alt", "description"):
+            m = TERMES_MASCOTTE_INTERDITS.search(textes[cle])
+            if m:
+                err.append(f"{ident} : {cle} décrit « {m.group(0)} » (renard quadrupède, une seule queue, sans vêtement : "
+                           "DIRECTION_ATELIER.md §8)")
+    for cle in ("alt", "description"):
+        if OBJETS_DECRITS.search(textes[cle]) and not OBJETS_VIERGES.search(textes[cle]):
+            err.append(f"{ident} : {cle} décrit une boîte, une carte ou un étui sans dire « vierge » ou « sans marque »")
+    return err
+
+
+def valider(m: dict, *, exiger_variantes: bool = True) -> list[str]:
     """Erreurs de structure du manifeste (fermé par défaut : tout champ douteux est refusé)."""
     err: list[str] = []
     if m.get("source") not in SOURCES:
         err.append(f"source invalide {m.get('source')!r} (attendu : distant ou local)")
-    base = str(m.get("base_distante", ""))
-    u = urlparse(base)
-    if u.scheme != "https" or not u.hostname or not base.endswith("/") or "?" in base or "#" in base:
-        err.append("base_distante : adresse https se terminant par « / » attendue")
+    base = m.get("base_distante")
+    if base is None:
+        if m.get("source") == "distant":
+            err.append("base_distante : absente alors que la source est distante (visuels importés en local : source « local »)")
+    else:
+        base = str(base)
+        u = urlparse(base)
+        if u.scheme != "https" or not u.hostname or not base.endswith("/") or "?" in base or "#" in base:
+            err.append("base_distante : adresse https se terminant par « / » attendue (ou null)")
     dossier = str(m.get("dossier_local", ""))
     if not dossier.endswith("/") or dossier.startswith("/") or ".." in Path(dossier).parts or "\\" in dossier:
         err.append("dossier_local : chemin relatif à site/landing/ se terminant par « / » attendu (sans « .. »)")
@@ -118,12 +207,35 @@ def valider(m: dict) -> list[str]:
             or (isinstance(largeurs, list) and not set(variantes) <= set(largeurs))
         ):
             err.append(f"{ident} : variantes = null ou sous-liste croissante de largeurs (écrite par rapatrier_visuels.py)")
-        if not str(v.get("description", "")).strip():
-            err.append(f"{ident} : description manquante")
-    if m.get("source") == "local" and isinstance(visuels, dict):
+        for cle in ("description", "usage"):
+            if not str(v.get(cle, "")).strip():
+                err.append(f"{ident} : {cle} manquante")
+        if v.get("nature") not in NATURES:
+            err.append(f"{ident} : nature {v.get('nature')!r} invalide (illustration ou photo)")
+        alt = v.get("alt")
+        decoratif = v.get("decoratif", False)
+        if not isinstance(alt, str) or not isinstance(decoratif, bool):
+            err.append(f"{ident} : alt (texte) et decoratif (booléen) attendus")
+        elif decoratif != (alt.strip() == ""):
+            err.append(f"{ident} : alt vide si et seulement si decoratif = true")
+        proportion = ratio_format(v.get("format", ""))
+        if proportion is None:
+            err.append(f"{ident} : format « L:H » attendu (ex. 21:9)")
+        elif _entier(v.get("largeur")) and _entier(v.get("hauteur")):
+            ecart = abs(v["largeur"] / v["hauteur"] / proportion - 1)
+            if ecart > TOLERANCE_FORMAT:
+                err.append(f"{ident} : {v['largeur']}×{v['hauteur']} ne respecte pas le format {v['format']} (écart {ecart:.1%})")
+        if v.get("fichier_source") is not None and not FICHIER_SOURCE_RE.match(str(v["fichier_source"])):
+            err.append(f"{ident} : fichier_source invalide (nom simple en .jpg, .jpeg, .png ou .webp)")
+        if v.get("empreinte_source") is not None and not EMPREINTE_RE.match(str(v["empreinte_source"])):
+            err.append(f"{ident} : empreinte_source = SHA-256 hexadécimal (écrit par rapatrier_visuels.py) ou null")
+        if not _fil_valide(v.get("fil")):
+            err.append(f"{ident} : fil = null ou deux points [x, y] en fractions de l'image (0 à 1)")
+        err += erreurs_redaction(ident, v)
+    if m.get("source") == "local" and isinstance(visuels, dict) and exiger_variantes:
         for ident, v in visuels.items():
             if not v.get("variantes"):
-                err.append(f"{ident} : source locale sans variantes (relancer rapatrier_visuels.py)")
+                err.append(f"{ident} : source locale sans variantes (lancer python site/outils/rapatrier_visuels.py --importer <dossier>)")
     return err
 
 
@@ -152,7 +264,19 @@ def chemin_variante(m: dict, ident: str, largeur: int, racine: Path = LANDING) -
 
 def url_distante(m: dict, ident: str, variante: str) -> str:
     """Adresse distante d'un fichier (``min`` : WebP léger de l'aperçu ; ``hd`` : PNG d'origine à rapatrier)."""
+    if not m.get("base_distante"):
+        raise VisuelsError("aucune base_distante : les visuels sont importés en local (rapatrier_visuels.py --importer)")
     return m["base_distante"] + m["visuels"][ident]["fichier"] + VARIANTES_DISTANTES[variante]
+
+
+def hote_distant(m: dict) -> str:
+    """Hôte de ``base_distante`` (chaîne vide si les visuels sont uniquement locaux)."""
+    return urlparse(m.get("base_distante") or "").hostname or ""
+
+
+def alt_html(m: dict, ident: str) -> str:
+    """Texte alternatif du manifeste, échappé pour un attribut entre guillemets doubles."""
+    return html.escape(str(m["visuels"][ident].get("alt", "")), quote=False).replace('"', "&quot;")
 
 
 def _relatif(cible: Path, page: Path) -> str:
@@ -192,6 +316,7 @@ def attributs(m: dict, ident: str, balise: str, page: Path, racine: Path = LANDI
         "imagesrcset": srcset(m, ident, page, racine),
         "width": str(v["largeur"]),
         "height": str(v["hauteur"]),
+        "alt": alt_html(m, ident),
     }
     return {k: tout[k] for k in GERES[balise]}
 
@@ -216,6 +341,10 @@ def _reecrire(m: dict, page: Path, balise: str, brut: str, ferme: str, erreurs: 
         erreurs.append(f"{page.name} : visuel inconnu « {ident} » (absent de site/config/visuels.json)")
         return None
     valeurs = attributs(m, ident, balise.lower(), page, racine)
+    geres = GERES[balise.lower()]
+    if ALT_CONTEXTE in noms:
+        valeurs.pop("alt", None)
+        geres = tuple(k for k in geres if k != "alt")
     sortie: list[str] = []
     vus: set[str] = set()
     for nom, val in attrs:
@@ -225,7 +354,7 @@ def _reecrire(m: dict, page: Path, balise: str, brut: str, ferme: str, erreurs: 
             vus.add(cle)
         else:
             sortie.append(nom if val is None else f'{nom}="{val}"')
-    sortie += [f'{k}="{valeurs[k]}"' for k in GERES[balise.lower()] if k not in vus]
+    sortie += [f'{k}="{valeurs[k]}"' for k in geres if k not in vus]
     return f"<{balise} {' '.join(sortie)}{' /' if ferme else ''}>"
 
 
@@ -293,7 +422,7 @@ def verifier(m: dict | None = None, liste: list[Path] | None = None, racine: Pat
     err = valider(m)
     if err:
         return [f"site/config/visuels.json : {e}" for e in err]
-    hote = urlparse(m["base_distante"]).hostname or ""
+    hote = hote_distant(m)
     for page in pages() if liste is None else liste:
         texte = page.read_text(encoding="utf-8")
         erreurs: list[str] = []
@@ -325,7 +454,8 @@ def erreurs_publication(m: dict | None = None, racine: Path = LANDING) -> list[s
     if m["source"] != "local":
         return [
             (
-                "visuels servis depuis une adresse distante : lancer python site/outils/rapatrier_visuels.py "
+                "visuels servis depuis une adresse distante : importer les fichiers en local (python "
+                "site/outils/rapatrier_visuels.py --importer <dossier>) ou lancer python site/outils/rapatrier_visuels.py "
                 "avant de publier (la page publiée ne charge aucune image d'un tiers)"
             )
         ]
@@ -343,8 +473,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.action == "liste":
         for ident, v in m["visuels"].items():
-            for variante in VARIANTES_DISTANTES:
-                print(f"{ident:30} {variante:5} {url_distante(m, ident, variante)}")
+            if m.get("base_distante"):
+                for variante in VARIANTES_DISTANTES:
+                    print(f"{ident:30} {variante:5} {url_distante(m, ident, variante)}")
             for largeur in v.get("variantes") or []:
                 print(f"{ident:30} {largeur:<5} {m['dossier_local']}{nom_variante(m, ident, largeur)}")
         return 0

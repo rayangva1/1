@@ -9,9 +9,10 @@ Modes (SPEC §0.6 : simulation par défaut) :
                   remplies, ``⟦À REMPLIR⟧`` / ``⟦à valider⟧`` sinon ; bandeau d'aperçu et ``noindex`` gardés.
 * ``publication`` construit le dossier à déposer (défaut ``site/dist/landing/``). **Refuse**
                   (code 1) tant qu'un champ utilisé n'est pas ``valide``, que le nom n'est pas validé,
-                  que l'URL du webhook ou de la landing est invalide, ou que les visuels de la marque sont
-                  encore servis à distance (``site/outils/rapatrier_visuels.py`` : la page publiée ne charge
-                  aucune image d'un tiers).
+                  que l'URL du webhook ou de la landing est invalide, ou que les visuels de la marque ne sont
+                  pas tous servis en local, présents, en WebP et dans leur budget de poids (import local :
+                  ``site/outils/rapatrier_visuels.py --importer <dossier>`` ; la page publiée ne charge aucune
+                  image d'un tiers, un visuel distant est toujours refusé).
 * ``etat``        liste les champs requis, leur statut, leur nature (définitif ou provisoire) et le décideur.
 
 Les champs viennent du registre légal (``docs/04-legal/champs_a_remplir.yaml``, source unique de
@@ -44,8 +45,8 @@ sys.path.insert(0, str(REPO / "docs" / "04-legal" / "outils"))
 
 import registre_champs as rc  # noqa: E402
 import visuels  # noqa: E402
-from lumi_svg import BUSTE_SALUE, SILHOUETTE_QUAI  # noqa: E402
 from markdown_mini import convertir  # noqa: E402
+from renard_svg import RENARD_ASSIS  # noqa: E402
 from typo import typographier  # noqa: E402
 
 LANDING = REPO / "site" / "landing"
@@ -190,28 +191,16 @@ MENTION_INDEPENDANCE = (
 )
 
 
-#: Accueil illustré des pages de remerciement (revue DA-22) : Lumi au-dessus du titre, avec son décor de secours
-#: (dessin SVG) si l'illustration ne charge pas. Balises data-visuel synchronisées par site/outils/visuels.py.
-ACCUEILS: dict[str, str] = {
-    "merci.html": (
-        '        <figure class="lp-page__lumi nt-scene nt-scene--autocollant">\n'
-        f'          <span class="nt-s lp-autocollant__fond" aria-hidden="true">{BUSTE_SALUE}</span>\n'
-        '          <img class="nt-visuel__img" alt="Autocollant rond de Lumi, notre loutre mascotte, qui salue." '
-        'sizes="9rem" fetchpriority="high" decoding="async" data-visuel="autocollant-lumi" src="">\n'
-        "        </figure>\n"
-    ),
-    "inscription-confirmee.html": (
-        '        <figure class="lp-page__lumi lp-page__lumi--arche nt-scene nt-scene--quai">\n'
-        '          <span class="nt-s nt-s--ciel" aria-hidden="true"></span>\n'
-        '          <span class="nt-s nt-s--astre" aria-hidden="true"><span class="nt-lune nt-lune--echo"></span></span>\n'
-        '          <span class="nt-s nt-s--lac" aria-hidden="true"></span>\n'
-        '          <span class="nt-s nt-s--quai" aria-hidden="true"><span></span><span></span></span>\n'
-        f"          {SILHOUETTE_QUAI}\n"
-        '          <img class="nt-visuel__img" alt="Illustration : Lumi, notre loutre mascotte, assise sur le quai sous la lune rose." '
-        'sizes="8.5rem" fetchpriority="high" decoding="async" data-visuel="loutre-quai-lune" src="">\n'
-        "        </figure>\n"
-    ),
-}
+#: Accueil illustré des pages de remerciement (revue DA-22) : le renard de la marque (« Braise », nom provisoire)
+#: au-dessus du titre, avec sa silhouette SVG en décor de secours si l'illustration ne charge pas (renard_svg.py).
+#: Balises data-visuel synchronisées par site/outils/visuels.py (adresses et texte alternatif du manifeste).
+ACCUEIL_RENARD = (
+    '        <figure class="lp-page__renard nt-scene nt-scene--papier">\n'
+    f'          <span class="nt-s lp-page__renard-fond" aria-hidden="true">{RENARD_ASSIS}</span>\n'
+    '          <img class="nt-visuel__img" alt="" sizes="9rem" fetchpriority="high" decoding="async" data-visuel="renard-couche" src="">\n'
+    "        </figure>\n"
+)
+ACCUEILS: dict[str, str] = {"merci.html": ACCUEIL_RENARD, "inscription-confirmee.html": ACCUEIL_RENARD}
 
 
 def _corps(contenu: str, accueil: str | None = None) -> str:
@@ -256,7 +245,7 @@ PAGES_SIMPLES: dict[str, tuple[str, str, str]] = {
         """      <h1 class="da-title">Merci, vérifiez votre boîte mail</h1>
       <p>Nous venons de vous envoyer un email de confirmation. Cliquez sur son lien pour activer vos alertes : sans confirmation, nous ne vous écrirons pas.</p>
       <p>Rien reçu d'ici quelques minutes ? Regardez dans les courriers indésirables, puis réessayez depuis la <a href="./#alertes">page d'accueil</a>.</p>
-      <p class="lp-signature">— Lumi (nom provisoire) vous salue depuis le quai.</p>
+      <p class="lp-signature">— Braise (nom provisoire), notre renard, vous fait signe depuis l'atelier.</p>
       <p class="lp-note">Cette inscription ne réserve aucun produit et n'engage aucun paiement.</p>""",
     ),
     "inscription-confirmee.html": (
@@ -265,7 +254,7 @@ PAGES_SIMPLES: dict[str, tuple[str, str, str]] = {
         """      <h1 class="da-title">C'est confirmé</h1>
       <p>Vous recevrez l'alerte d'ouverture, puis les alertes de stock correspondant à vos choix et, au plus, un email récapitulatif par semaine.</p>
       <p>Chaque email contient un lien pour modifier vos préférences ou vous désinscrire en un clic.</p>
-      <p class="lp-signature">— Lumi (nom provisoire) veille sur le quai jusqu'à l'ouverture.</p>
+      <p class="lp-signature">— Braise (nom provisoire) dresse l'oreille jusqu'à l'ouverture.</p>
       <p><a class="da-btn da-btn--secondary" href="./">Retour à l'accueil</a></p>""",
     ),
     "desinscription.html": (

@@ -1,6 +1,6 @@
 # 05-da — Direction artistique
 
-> Propriétaire : agent « direction-artistique ». Date : 4 octobre 2026. Source métier : BP §8 (et §1, §7, §9).
+> Propriétaire : agent « direction-artistique ». Date : 4 octobre 2026 (ambiance Atelier : 9 octobre 2026). Source métier : BP §8 (et §1, §7, §9).
 > Statut : **PROPOSITION — identité non validée.** Nom de travail : **Quai des Cartes** (`{{NOM_BOUTIQUE}}` reste le placeholder des textes publics tant que le nom n'est pas validé, SPEC §5).
 
 La DA sert l'étoile polaire (contribution nette cumulée) : faire acheter en confiance, réduire les erreurs d'achat et le SAV, produire vite et pour presque rien. Elle ne compense pas une marge insuffisante (BP §1).
@@ -11,8 +11,9 @@ La DA sert l'étoile polaire (contribution nette cumulée) : faire acheter en co
 |---|---|---|
 | 1. Naming | `NAMING.md` | 3 pistes + 5 alternatives + noms écartés, prononciation FR/DE, recherche web préliminaire sourcée, recommandation, check-list des vérifications humaines |
 | 2. Deux directions | `DIRECTION_A.md` (Quai, orange) · `DIRECTION_B.md` (Pochette, violet) | Concept, palette clair/sombre avec rôles, **96 contrastes WCAG calculés**, polices, grille, icônes, photo, références, page produit |
-| 2 bis. Ambiance Nuit | `DIRECTION_NUIT.md` (« Nuit sur le Léman », bâtie sur B, toujours sombre) · `tokens/tokens-nuit.css` · `logo/b/logo-b-nuit.svg` | Palette indigo / rose lune / or, **39 contrastes calculés**, Fraunces en mots d'accent, règles de mouvement, **règles de la mascotte Lumi (nom provisoire)** et des visuels générés |
-| 3. Tokens | `tokens/tokens.json` (source) · `tokens/tokens.css` et `tokens/tokens-nuit.css` (générés) | 2 directions × clair/sombre + ambiance Nuit (bloc `ambiances`), espacements, typo, rayons, ombres, lueurs |
+| 2 bis. **Ambiance Atelier** (retenue le 06.10.2026) | `DIRECTION_ATELIER.md` (bâtie sur A, toujours claire) · `tokens/tokens-atelier.css` · `logo/a/logo-a-atelier.svg`, `logo/a/logo-a-atelier-fond-sombre.svg`, `logo/a/favicon-atelier.svg` | Palette **mesurée sur les photos du propriétaire** (papier `#EFEAE1`, charbon `#1D1B19`, fil orange `#F26A1B`), **45 contrastes calculés**, Geist + Instrument Serif + Geist Mono, grille éditoriale, motif signature « le fil orange », règles photo, **règles de marque du renard Braise (nom provisoire)**, alternatives de nom |
+| 2 ter. Ambiance Nuit (**archivée**) | `DIRECTION_NUIT.md` (« Nuit sur le Léman », bâtie sur B, toujours sombre) · `tokens/tokens-nuit.css` · `logo/b/logo-b-nuit.svg` | Remplacée par Atelier (décision du propriétaire du 06.10.2026) ; gardée tant que la landing actuelle n'est pas refaite. La loutre Lumi est abandonnée. |
+| 3. Tokens | `tokens/tokens.json` (source) · `tokens/tokens.css`, `tokens/tokens-atelier.css`, `tokens/tokens-nuit.css` (générés) | 2 directions × clair/sombre + ambiances (bloc `ambiances` : un seul mode chacune, paires de contraste propres), espacements, typo, rayons, ombres |
 | 4. Logos | `logo/a/`, `logo/b/`, `logo/png/`, `logo/REGLES_LOGO.md` | Principal, horizontal/empilé, fond sombre, mono noir/blanc, monogramme, favicon ; zone de protection, tailles mini |
 | 5. Mini-charte | `CHARTE.html` | 12 sections, bascule A/B et clair/sombre, contrastes recalculés en direct |
 | 6. Composants | `components/` | `badges.html`, `carte-produit.html`, `banniere.html`, `page-produit.html`, `email-transactionnel-{a,b}.html`, `components.css`, `icones.svg`, `apercu.js` |
@@ -65,7 +66,7 @@ python -m pytest docs/05-da/tests -q           # tests
 
 Les HTML (`CHARTE.html`, `components/*.html`), les SVG et `tokens.css` sont **générés** : modifier la source (`tokens.json`, `tools/*.py`, `components/components.css`) puis régénérer, jamais le fichier produit. Pour changer une couleur : modifier `tokens/tokens.json`, relancer le générateur (les tableaux de contrastes de `DIRECTION_*.md` sont réécrits), puis le vérificateur. Une couleur sous le seuil WCAG fait échouer les tests.
 
-`verifier_da.py` contrôle : XML bien formé de chaque SVG (viewBox, dimensions, titre) ; logos sans texte ni police ni « Poké » ; dimensions des gabarits sociaux ; packaging en mm avec calque de découpe ; contrastes ≥ seuils (2 directions × 2 modes) ; exactitude des ratios publiés ou cités ; synchronisation des fichiers générés ; ressources HTML relatives existantes et externes limitées à Google Fonts ; aucun terme interne ni EAN dans les fichiers publics ; champs `{{…}}` des fichiers publics déclarés (registre légal, landing ou `VARIABLES_DA`) et aucune limite « par commande » ; section finale « Validation humaine requise » dans chaque document.
+`verifier_da.py` contrôle : XML bien formé de chaque SVG (viewBox, dimensions, titre) ; logos sans texte ni police ni « Poké » ; dimensions des gabarits sociaux ; packaging en mm avec calque de découpe ; contrastes ≥ seuils (2 directions × 2 modes, puis chaque ambiance dans son mode unique avec ses paires propres) ; règles de marque de la mascotte écrites dans `DIRECTION_ATELIER.md` ; exactitude des ratios publiés ou cités ; synchronisation des fichiers générés ; ressources HTML relatives existantes et externes limitées à Google Fonts ; aucun terme interne ni EAN dans les fichiers publics ; champs `{{…}}` des fichiers publics déclarés (registre légal, landing ou `VARIABLES_DA`) et aucune limite « par commande » ; section finale « Validation humaine requise » dans chaque document.
 
 ## 5. Champs à remplacer (placeholders)
 
@@ -73,16 +74,18 @@ Les HTML (`CHARTE.html`, `components/*.html`), les SVG et `tokens.css` sont **g�
 
 Règle « une valeur, un endroit » : tout champ `{{MAJUSCULES}}` d'un fichier public est soit un champ du registre légal (`docs/04-legal/champs_a_remplir.yaml`) ou de la landing (`site/config/publication_landing.yaml`), soit une variable propre à un produit, une commande ou une collection de la liste fermée `VARIABLES_DA` de `tools/verifier_da.py` (jamais une règle : limite, délai, TVA). `verifier_da.py` refuse tout autre champ et toute limite exprimée « par commande ».
 
-## 6. Ambiance « Nuit sur le Léman » et mascotte
+## 6. Ambiance « Atelier » et mascotte (renard Braise, nom provisoire)
 
-La landing et les maquettes de la boutique utilisent l'ambiance **Nuit** (`DIRECTION_NUIT.md`) : `data-da="b"` + `data-ambiance="nuit"` sur `<html>`, `tokens/tokens-nuit.css` chargé après `tokens.css` (copie `site/landing/assets/da/ambiance.css`, `site/outils/da_sync.py`). La mascotte **Lumi** (loutre originale, nom provisoire) et les visuels générés pour la marque suivent les règles du §6 de `DIRECTION_NUIT.md` : jamais un produit, jamais un élément de la licence, photos réelles seules sur les fiches.
+Décision du propriétaire du 06.10.2026 : l'ambiance **Atelier** (`DIRECTION_ATELIER.md`) remplace « Nuit sur le Léman » et la loutre Lumi. Activation : `data-da="a"` + `data-ambiance="atelier"` sur `<html>`, `tokens/tokens-atelier.css` chargé après `tokens.css` (copie `site/landing/assets/da/ambiance.css` par `python site/outils/da_sync.py --direction a --ambiance atelier`). Palette mesurée sur les photos, polices, grille, motif « le fil orange », règles photo et **règles de marque du renard** (toujours quadrupède, une seule queue, jamais debout, ni gants ni vêtements, aucun trait d'Évoli ni d'un Pokémon, ne tient jamais un produit Pokémon, n'illustre jamais un produit vendu) : `DIRECTION_ATELIER.md` §8, contrôlées par `verifier_da.py`.
+
+Visuels : 13 fichiers (10 illustrations du renard, 3 photos d'ambiance du propriétaire) déclarés dans `site/config/visuels.json` et servis **en local** (import : `python site/outils/rapatrier_visuels.py --importer <dossier>`). Étape en cours : la landing actuelle garde l'ambiance Nuit (archivée) avec les nouveaux visuels jusqu'à sa refonte en Atelier (étape 2).
 
 ## Validation humaine requise
 
 **Une seule séance de validation de l'identité par la responsable (≈ 30 minutes, BP §8)**, à faire avec `CHARTE.html` ouvert :
 
 - [ ] **Nom** : après vérification humaine du domaine .ch, des handles et des marques (Swissreg/IPI, EUIPO, OMPI, Zefix — check-list `NAMING.md` §6), valider « Quai des Cartes » ou la piste de repli.
-- [ ] **Direction** : choisir A (Quai, orange) **ou** B (Pochette, violet).
+- [ ] **Direction** : choisir A (Quai, orange) **ou** B (Pochette, violet). *Le propriétaire a retenu le 06.10.2026 l'ambiance Atelier, bâtie sur A : à confirmer en séance avec `DIRECTION_ATELIER.md` (palette, polices, mascotte et son nom).*
 - [ ] **Logo, couleur d'accent, polices** de la direction retenue.
 - [ ] **Juriste** : mention « boutique indépendante » et mention de marque en pied de page ; usage du mot « Pokémon » pour désigner les produits.
 - [ ] **Confidentialité** : chargement des polices (Google Fonts ou auto-hébergement).

@@ -2,7 +2,7 @@
  * Landing et maquettes — ambiance « Nuit sur le Léman » (docs/05-da/DIRECTION_NUIT.md), bâtie sur la direction B.
  * Complète assets/da/tokens.css, assets/da/components.css et assets/da/ambiance.css (DA, docs/05-da).
  * Aucune couleur en dur : uniquement les variables --da-* (contrastes calculés dans DIRECTION_NUIT.md).
- * Préfixes : lp- (pages), nt- (décor de nuit réutilisable : scènes, étoiles, lune, Lumi en SVG, cartes).
+ * Préfixes : lp- (pages), nt- (décor de nuit réutilisable : scènes, étoiles, lune, cartes), rn- (renard en SVG).
  * Mobile d'abord. Mouvement : seulement si prefers-reduced-motion le permet ET que la pause n'est pas demandée.
  * Les décors .nt-scene sont dessinés en CSS/SVG : visibles tant qu'une image de marque n'est pas chargée (ou si
  * elle ne charge pas), masqués dès qu'elle l'est (classe a-visuel posée par js/nuit.js).
@@ -18,8 +18,10 @@
   --lp-bord-verre: color-mix(in srgb, var(--da-color-ink) 14%, transparent);
   --lp-bord-verre-fort: color-mix(in srgb, var(--da-color-ink) 24%, transparent);
   --lp-reflet: color-mix(in srgb, var(--da-color-ink) 7%, transparent);
-  --lp-pelage: color-mix(in srgb, var(--da-color-ciel-1) 70%, var(--da-color-ciel-2));
-  --lp-pelage-ombre: color-mix(in srgb, var(--da-color-ciel-1) 62%, var(--da-color-nuit-profonde));
+  /* Silhouette de secours du renard (renard_svg.py) : pelage, crème, pointes orange (à reprendre en Atelier). */
+  --lp-renard-pelage: var(--da-color-nuit-profonde);
+  --lp-renard-creme: var(--da-color-papier);
+  --lp-renard-braise: var(--da-color-or);
   --lp-voile: var(--da-color-nuit-profonde);
   --lp-gouttiere: clamp(16px, 4.5vw, 56px);
   --lp-section-y: clamp(56px, 6.5vw, 104px);
@@ -34,8 +36,6 @@
     --lp-bord-verre: var(--da-color-line);
     --lp-bord-verre-fort: var(--da-color-line-strong);
     --lp-reflet: transparent;
-    --lp-pelage: var(--da-color-ciel-1);
-    --lp-pelage-ombre: var(--da-color-nuit-profonde);
   }
 }
 
@@ -333,7 +333,7 @@ body.lp-nuit { position: relative; }
   background: radial-gradient(ellipse 65% 50% at var(--teinte-x) 50%, color-mix(in srgb, var(--teinte) 15%, transparent), transparent 72%);
   opacity: 0.75;
 }
-.lp-lumi { --teinte: var(--da-color-ciel-2); --teinte-x: 72%; }
+.lp-mascotte { --teinte: var(--da-color-ciel-2); --teinte-x: 72%; }
 .lp-drop { --teinte: var(--da-color-or); --teinte-x: 28%; }
 .lp-reservation { --teinte: var(--da-color-lune); --teinte-x: 76%; }
 .lp-formats { --teinte: var(--da-color-ciel-3); --teinte-x: 50%; }
@@ -355,7 +355,7 @@ body.lp-nuit { position: relative; }
   box-shadow: var(--da-shadow-raised), 0 0 0 1px var(--lp-bord-verre);
   isolation: isolate;
 }
-.nt-cadre--arche { border-radius: 999px 999px var(--da-radius-lg) var(--da-radius-lg); aspect-ratio: 1520 / 2688; }
+.nt-cadre--arche { border-radius: 999px 999px var(--da-radius-lg) var(--da-radius-lg); aspect-ratio: 1152 / 1440; }
 .nt-cadre::after {
   content: "";
   position: absolute;
@@ -467,7 +467,7 @@ body.lp-nuit { position: relative; }
 .nt-s--quai > span:nth-child(1) { left: 22%; }
 .nt-s--quai > span:nth-child(2) { left: 88%; }
 
-/* La lune : un croissant (signature de Lumi), halo sur l'enveloppe (non masquée). */
+/* La lune : un croissant, halo sur l'enveloppe (non masquée). */
 .lp-hero__lune {
   left: var(--lp-lune-x);
   top: var(--lp-lune-y);
@@ -529,20 +529,14 @@ body.lp-nuit { position: relative; }
 }
 .nt-filante--2 { top: 6%; left: 52%; width: 120px; }
 
-/* Lumi, assise sur le quai, tournée vers la lune (silhouette SVG du décor de secours) */
-.nt-s--lumi {
+/* Le renard assis sur le quai (silhouette SVG du décor de secours, renard_svg.py) */
+.nt-s--renard {
   right: 13%;
   bottom: 11%;
   width: clamp(58px, 8.5vw, 140px);
   height: auto;
-  aspect-ratio: 100 / 120;
-  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--da-color-lune) 40%, transparent));
+  aspect-ratio: 120 / 140;
 }
-.nt-l-corps { fill: var(--lp-pelage-ombre); }
-.nt-l-queue { fill: none; stroke: var(--lp-pelage-ombre); stroke-width: 10; stroke-linecap: round; }
-.nt-l-carte { fill: var(--da-color-lune); }
-.nt-l-reflet { fill: var(--da-color-ink); }
-.nt-l-reflet--nez { fill: var(--da-color-ink-muted); }
 
 /* Petite lune générique (écho du pied de page) */
 .nt-s--astre { top: 14%; right: 12%; width: 12%; aspect-ratio: 1; }
@@ -556,7 +550,7 @@ body.lp-nuit { position: relative; }
 }
 
 /* Jour de drop */
-.nt-scene--drop { aspect-ratio: 2688 / 1520; --drop-x: 38%; }
+.nt-scene--drop { aspect-ratio: 1920 / 1086; --drop-x: 38%; }
 .nt-scene--drop .nt-s--ciel {
   background:
     radial-gradient(ellipse 40% 48% at var(--drop-x) 70%, color-mix(in srgb, var(--da-color-or) 38%, transparent), transparent 70%),
@@ -738,47 +732,24 @@ body.lp-nuit { position: relative; }
 .nt-scene--quai .nt-s--lac { height: 32%; }
 .nt-scene--quai .nt-s--quai { height: 16%; }
 
-/* Planche blanc cassé (mascotte) */
+/* Planche blanc cassé (mascotte, portrait 4:5) */
 .nt-scene--papier {
-  aspect-ratio: 2688 / 1520;
+  aspect-ratio: 4 / 5;
   background:
     radial-gradient(circle, color-mix(in srgb, var(--da-color-lac-1) 12%, transparent) 1px, transparent 1.5px) 0 0 / 22px 22px,
     var(--da-color-papier);
 }
-.nt-s--planche {
-  inset: 10% 3% 12%;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  align-items: center;
-  justify-items: center;
-}
-.nt-planche__case { display: grid; justify-items: center; gap: 10px; width: 100%; }
-.nt-planche__legende {
-  font-family: var(--da-font-text);
-  font-size: clamp(0.5625rem, 0.45rem + 0.4vw, 0.75rem);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--da-color-lac-1);
-}
-
-/* =========================================================================== 8. Lumi en SVG (secours de la planche et de l'autocollant) */
-.nt-lumi { display: block; width: 92%; height: auto; aspect-ratio: 1; overflow: visible; }
-.nt-l-pelage { fill: var(--lp-pelage); }
-.nt-l-front { fill: color-mix(in srgb, var(--da-color-ciel-2) 55%, var(--lp-pelage)); }
-.nt-l-oreille { fill: color-mix(in srgb, var(--da-color-lune) 55%, var(--lp-pelage)); }
-.nt-l-croissant { fill: var(--da-color-lune); }
-.nt-l-museau { fill: color-mix(in srgb, var(--da-color-ink-muted) 70%, var(--da-color-papier)); }
-.nt-l-nez,
-.nt-l-oeil { fill: var(--da-color-nuit-profonde); }
-.nt-l-moustaches { fill: var(--da-color-nuit-profonde); opacity: 0.55; }
-.nt-l-eclat { fill: var(--da-color-ink); }
-.nt-l-trait { fill: none; stroke: var(--da-color-nuit-profonde); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.nt-l-trait--epais { stroke-width: 2.6; }
-.nt-l-zz { fill: none; stroke: var(--da-color-ciel-2); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-.nt-l-boite { fill: var(--da-color-papier); stroke: color-mix(in srgb, var(--da-color-ink-muted) 60%, var(--da-color-papier)); }
-.nt-l-ruban { fill: var(--da-color-ciel-2); }
-.nt-lumi--grand { width: 78%; }
+.lp-planche__fond { inset: 12%; display: grid; place-items: center; }
+/* =========================================================================== 8. Le renard en SVG (décor de secours, renard_svg.py) */
+.rn-renard { display: block; width: 100%; height: auto; aspect-ratio: 120 / 140; overflow: visible; }
+.rn-pelage,
+.rn-truffe { fill: var(--lp-renard-pelage); }
+.rn-creme { fill: var(--lp-renard-creme); }
+.rn-braise,
+.rn-oeil { fill: var(--lp-renard-braise); }
+.rn-trait { fill: none; stroke: var(--lp-renard-creme); stroke-opacity: 0.25; stroke-width: 1.2; stroke-linecap: round; }
+.lp-planche__fond .rn-renard { width: min(70%, 16rem); }
+.lp-autocollant__fond .rn-renard { width: 62%; }
 
 /* =========================================================================== 9. Héro */
 .lp-hero {
@@ -792,14 +763,14 @@ body.lp-nuit { position: relative; }
   overflow: hidden;
 }
 .lp-hero__scene { position: absolute; inset: 0; z-index: -2; transform-origin: 80% 100%; }
-/* Lumi est assise sur le quai, en bas à droite de la bannière : on ancre l'image en bas à droite. */
+/* Le renard est assis à droite de la bannière : on ancre l'image en bas à droite. */
 .lp-hero__img { object-position: 80% 100%; }
 .lp-hero__voile {
   position: absolute;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  /* Mobile : titre en haut (voile ≥ 76 %), Lumi visible au milieu (aucun voile), boutons en bas. */
+  /* Mobile : titre en haut (voile ≥ 76 %), le renard visible au milieu (aucun voile), boutons en bas. */
   background:
     linear-gradient(180deg,
       color-mix(in srgb, var(--lp-voile) 88%, transparent) 0%,
@@ -880,11 +851,11 @@ body.lp-nuit { position: relative; }
     font-size: 1.0625rem;
     color: var(--da-color-ink);
   }
-  /* Décor de secours mobile : Lumi au milieu, sur un quai remonté, face à la lune. */
+  /* Décor de secours mobile : le renard au milieu, sur un quai remonté, face à la lune. */
   .lp-hero .nt-s--lac { height: 46%; }
   .lp-hero .nt-s--relief { bottom: 44%; height: 14%; }
   .lp-hero .nt-s--quai { bottom: 36%; height: 6%; width: 64%; }
-  .lp-hero .nt-s--lumi { right: 16%; bottom: 41.5%; width: 25vw; }
+  .lp-hero .nt-s--renard { right: 16%; bottom: 41.5%; width: 25vw; }
   .lp-hero .nt-s--tourbillons { left: -30%; top: 6%; width: 150vw; }
 }
 
@@ -919,10 +890,10 @@ body.lp-nuit { position: relative; }
   clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
 }
 
-/* =========================================================================== 11. Lumi (rencontre) */
-.lp-lumi__grille { display: grid; gap: clamp(40px, 6vw, 80px); align-items: center; }
-@media (min-width: 900px) { .lp-lumi__grille { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); } }
-.lp-lumi .lp-h2 { font-size: clamp(2.6rem, 1.2rem + 5vw, 5.6rem); }
+/* =========================================================================== 11. La mascotte (rencontre) */
+.lp-mascotte__grille { display: grid; gap: clamp(40px, 6vw, 80px); align-items: center; }
+@media (min-width: 900px) { .lp-mascotte__grille { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); } }
+.lp-mascotte .lp-h2 { font-size: clamp(2.6rem, 1.2rem + 5vw, 5.6rem); }
 .lp-humeurs { margin: var(--da-space-5) 0 0; color: var(--da-color-ink); }
 .lp-humeurs__titre {
   display: block;
@@ -933,7 +904,7 @@ body.lp-nuit { position: relative; }
   text-transform: uppercase;
   color: var(--da-color-or);
 }
-.lp-lumi__media { position: relative; padding-bottom: clamp(48px, 7vw, 96px); }
+.lp-mascotte__media { position: relative; padding-bottom: clamp(48px, 7vw, 96px); }
 .lp-planche { transform: rotate(-1.5deg); }
 .lp-autocollant {
   position: absolute;
@@ -965,7 +936,7 @@ body.lp-nuit { position: relative; }
 .lp-autocollant:hover { transform: perspective(700px) rotate3d(1, -1, 0, 18deg) rotate(-4deg) scale(1.05); }
 .lp-autocollant:hover::after { opacity: 1; }
 @media (max-width: 599px) {
-  .lp-lumi__media { padding-bottom: 88px; }
+  .lp-mascotte__media { padding-bottom: 88px; }
   .lp-autocollant { width: 7.5rem; right: 2%; bottom: 0; }
 }
 .nt-scene--autocollant { background: var(--da-color-papier); }
@@ -978,10 +949,20 @@ body.lp-nuit { position: relative; }
     radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--da-color-lune) 30%, transparent), transparent 50%),
     radial-gradient(circle, var(--da-color-ciel-2), var(--da-color-ciel-1) 70%);
 }
-.lp-autocollant .nt-visuel__img { border-radius: 50%; }
+.lp-autocollant .nt-visuel__img { border-radius: 50%; object-position: 50% 30%; }
+
+/* Triptyque des photos d'ambiance (objets vierges, jamais présentés comme des produits en vente) */
+.lp-atelier { display: grid; gap: var(--da-space-4); margin: 0 0 clamp(48px, 7vw, 96px); }
+@media (min-width: 900px) { .lp-atelier { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.4fr); align-items: end; } }
+.lp-atelier__photo { margin: 0; overflow: hidden; border-radius: var(--da-radius-lg); aspect-ratio: 2000 / 1131; }
+.lp-atelier__photo--portrait { aspect-ratio: 4 / 5; }
+.lp-atelier__photo--classeur { aspect-ratio: 2000 / 1328; }
+.lp-atelier__photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.lp-atelier__legende { grid-column: 1 / -1; margin: 0; font-size: 0.875rem; color: var(--da-color-ink-muted); }
+.lp-autocollant--classeur .nt-visuel__img { object-position: 53% 18%; }
 
 /* =========================================================================== 12. Le jour du drop */
-.lp-duo__media { aspect-ratio: 2688 / 1520; }
+.lp-duo__media { aspect-ratio: 1920 / 1086; }
 /* Les trois moments du drop : une frise typographique sous l'image (chiffres géants, une ligne d'horizon). */
 .lp-etapes { display: grid; margin: var(--da-space-6) 0 0; padding: 0; list-style: none; }
 .lp-drop .lp-etapes { margin: clamp(32px, 5vw, 64px) auto 0; }
@@ -1107,7 +1088,7 @@ body.lp-nuit { position: relative; }
     -webkit-mask: none;
     mask: none;
   }
-  /* Lumi est sur un rocher à droite : l'image est ancrée à droite, le texte reste à gauche. */
+  /* Le renard est assis sur le quai, à droite : l'image est ancrée à droite, le texte reste à gauche. */
   .lp-leman__img { object-position: 82% 55%; }
   .lp-leman__voile,
   .lp-alertes__voile {
@@ -1117,6 +1098,9 @@ body.lp-nuit { position: relative; }
     z-index: -1;
     pointer-events: none;
     background: linear-gradient(90deg, color-mix(in srgb, var(--lp-voile) 90%, transparent) 0, color-mix(in srgb, var(--lp-voile) 84%, transparent) min(680px, 58%), transparent min(1040px, 90%));
+  }
+  .lp-alertes__voile {
+    background: linear-gradient(270deg, color-mix(in srgb, var(--lp-voile) 90%, transparent) 0, color-mix(in srgb, var(--lp-voile) 84%, transparent) min(680px, 58%), transparent min(1040px, 90%));
   }
   .lp-leman__contenu { padding-block: 0; }
   .lp-leman__texte { max-width: 34rem; }
@@ -1177,10 +1161,10 @@ body.lp-nuit { position: relative; }
 .lp-alertes__intro { padding-top: var(--da-space-5); }
 @media (min-width: 700px) {
   .lp-alertes__bandeau { display: grid; align-items: center; min-height: max(56vh, 440px); padding-block: clamp(64px, 7vw, 104px); }
-  /* Lumi est sur la tour de droite : image ancrée à droite, texte à gauche. */
-  .lp-alertes__img { object-position: 85% 50%; }
-  .lp-alertes__intro { padding-top: 0; }
-  .lp-alertes__intro > * { max-width: 36rem; }
+  /* Le renard est à gauche, la droite du visuel est libre : image ancrée à gauche, texte à droite. */
+  .lp-alertes__img { object-position: 15% 50%; }
+  .lp-alertes__intro { padding-top: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 36rem); }
+  .lp-alertes__intro > * { grid-column: 2; justify-self: start; max-width: 36rem; }
   .lp-alertes__intro .lp-intro { color: var(--da-color-ink); }
 }
 .lp-formulaire-zone { display: grid; gap: clamp(32px, 5vw, 64px); margin-top: clamp(32px, 5vw, 56px); }
@@ -1529,18 +1513,18 @@ body.lp-nuit { position: relative; }
 .lp-texte-legal { overflow-wrap: anywhere; }
 .lp-texte-legal .lp-a-remplir, .lp-a-remplir { background: var(--da-color-status-restock-bg); color: var(--da-color-status-restock-fg); }
 .lp-pied--simple { padding-top: var(--da-space-7); }
-/* Lumi accueille sur les pages de remerciement (revue DA-22). */
+/* Le renard accueille sur les pages de remerciement (revue DA-22). */
 .lp-page__ciel { position: absolute; inset: 0 0 40%; z-index: -1; pointer-events: none; }
-.lp-page__lumi {
+.lp-page__renard {
   position: relative;
   width: 9rem;
-  aspect-ratio: 1;
+  aspect-ratio: 4 / 5;
   margin: calc(-1 * clamp(56px, 8vw, 92px)) auto var(--da-space-5);
-  border-radius: 50%;
+  border-radius: var(--da-radius-lg);
   box-shadow: 0 0 0 6px var(--da-color-papier), 0 18px 40px color-mix(in srgb, var(--da-color-nuit-profonde) 70%, transparent);
-  transform: rotate(-6deg);
+  transform: rotate(-3deg);
 }
-.lp-page__lumi--arche { width: 8.5rem; aspect-ratio: 1520 / 2688; border-radius: 999px 999px var(--da-radius-md) var(--da-radius-md); box-shadow: var(--da-shadow-raised), 0 0 0 1px var(--lp-bord-verre); transform: none; }
+.lp-page__renard-fond { inset: 10%; display: grid; place-items: center; }
 .lp-page__carte--accueil { margin-top: clamp(56px, 8vw, 92px); text-align: center; }
 .lp-page__carte--accueil p { margin-inline: auto; max-width: 34rem; }
 .lp-signature { font-family: var(--da-font-accent); font-style: italic; font-size: 1.125rem; font-variation-settings: "SOFT" 100, "opsz" 144; color: var(--da-color-lune); }

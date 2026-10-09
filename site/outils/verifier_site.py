@@ -5,8 +5,9 @@ Contrôles :
 1. HTML bien formé (balises équilibrées, identifiants uniques), en-tête complet (langue, titre, description,
    viewport), SEO de base (canonical, Open Graph) sur la page principale.
 2. Ressources : relatives existantes ; externes limitées à Google Fonts ; liens et ancres valides. Visuels de la
-   marque (balises ``data-visuel``) : adresse distante de ``site/config/visuels.json`` admise en source et en aperçu
-   seulement, jamais dans un dossier de publication ; balises synchronisées avec le manifeste. Images : ``width`` et
+   marque (balises ``data-visuel``) : fichiers locaux existants ; une adresse distante n'est admise qu'en source et
+   en aperçu, et seulement sur l'hôte ``base_distante`` de ``site/config/visuels.json`` (aucune si elle est nulle :
+   visuels importés en local), jamais dans un dossier de publication ; balises synchronisées avec le manifeste. Images : ``width`` et
    ``height`` (pas de décalage de mise en page), ``loading="lazy"`` sauf l'image principale (``fetchpriority="high"``).
 3. Contenu public : aucun terme interne (coût, marge, fournisseur…), aucun prix, aucun EAN, aucune fausse
    urgence, aucune promesse de rareté ou de valeur, aucun bouton d'achat ou de précommande.
@@ -410,8 +411,9 @@ def verifier_page(chemin: Path, racine: Path, *, publication_mode: bool = False)
 
 
 def _hote_visuels() -> str | None:
+    """Hôte distant admis en aperçu (``base_distante``) ; None si les visuels sont uniquement locaux."""
     try:
-        return urlparse(visuels.charger()["base_distante"]).hostname
+        return visuels.hote_distant(visuels.charger()) or None
     except (OSError, ValueError, KeyError):
         return None
 

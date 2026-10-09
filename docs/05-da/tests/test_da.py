@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+import shutil
 import sys
 import xml.etree.ElementTree as ET
 from decimal import Decimal
@@ -341,7 +342,10 @@ class TestAmbianceNuit:
         tokens = verifier_da.charger_tokens()
         assert verifier_da.verifier_ambiances(tokens) == []
         lignes = verifier_da.lignes_contraste_ambiances(tokens)
-        assert len(lignes) == len(tokens["contrastPairs"]) + len(tokens["ambianceContrastPairs"])
+        # Chaque ambiance : toutes les paires communes + toutes ses paires propres, chacune calculée et ≥ seuil.
+        attendu = sum(len(tokens["contrastPairs"]) + len(amb["contrastPairs"]) for amb in tokens["ambiances"].values())
+        assert len(lignes) == attendu
+        assert len([lc for lc in lignes if lc["da"] == "nuit"]) == len(tokens["contrastPairs"]) + 15
         assert all(lc["ratio"] >= lc["min"] for lc in lignes)
 
     def test_couleur_insuffisante_detectee(self) -> None:
@@ -373,6 +377,12 @@ class TestAmbianceNuit:
             assert css.count(f"--da-color-{k}:") == 1, k
         assert "--da-font-accent:" in css
 
+    def test_nuit_archivee(self) -> None:
+        tokens = verifier_da.charger_tokens()
+        assert tokens["ambiances"]["nuit"]["statut"].startswith("ARCHIVÉE") and tokens["ambiances"]["nuit"]["mode"] == "dark"
+        doc = (DA / "DIRECTION_NUIT.md").read_text(encoding="utf-8")
+        assert "ARCHIVÉE" in doc.split("## 1.")[0] and "DIRECTION_ATELIER.md" in doc and "06.10.2026" in doc
+
     def test_logo_nuit_et_tableau_publie(self) -> None:
         logo = (DA / "logo" / "b" / "logo-b-nuit.svg").read_text(encoding="utf-8")
         n = generer_da.couleurs_ambiance("nuit")
@@ -380,3 +390,104 @@ class TestAmbianceNuit:
         doc = (DA / "DIRECTION_NUIT.md").read_text(encoding="utf-8")
         assert generer_da.tableau_contrastes_ambiance_md("nuit") in doc
         assert "Lumi (nom provisoire)" in doc and "Validation humaine requise" in doc
+
+
+# ---------------------------------------------------------------------------
+# Ambiance « Atelier » (bâtie sur A, toujours claire) et mascotte Braise (nom provisoire)
+# ---------------------------------------------------------------------------
+class TestAmbianceAtelier:
+    def test_structure_claire_bati_sur_a(self) -> None:
+        tokens = verifier_da.charger_tokens()
+        amb = tokens["ambiances"]["atelier"]
+        assert amb["base"] == "a" and amb["mode"] == "light" and set(amb["color"]) == {"light"}
+        assert verifier_da.verifier_ambiances(tokens) == []
+        lignes = [lc for lc in verifier_da.lignes_contraste_ambiances(tokens) if lc["da"] == "atelier"]
+        assert len(lignes) == len(tokens["contrastPairs"]) + len(amb["contrastPairs"]) >= 40
+        assert all(lc["mode"] == "light" and lc["ratio"] >= lc["min"] for lc in lignes)
+
+    def test_un_seul_mode_et_paires_par_ambiance(self) -> None:
+        tokens = copy.deepcopy(verifier_da.charger_tokens())
+        tokens["ambiances"]["atelier"]["color"]["dark"] = tokens["ambiances"]["atelier"]["color"]["light"]
+        assert any("toujours claire" in e for e in verifier_da.verifier_ambiances(tokens))
+        tokens = copy.deepcopy(verifier_da.charger_tokens())
+        tokens["ambiances"]["atelier"]["mode"] = "jour"
+        assert any("mode 'jour' invalide" in e for e in verifier_da.verifier_ambiances(tokens))
+        tokens = copy.deepcopy(verifier_da.charger_tokens())
+        tokens["ambianceContrastPairs"] = []
+        assert any("ambianceContrastPairs" in e for e in verifier_da.verifier_ambiances(tokens))
+        tokens = copy.deepcopy(verifier_da.charger_tokens())
+        tokens["ambiances"]["atelier"]["contrastPairs"].append({"fg": "fil", "bg": "bg", "min": 3.0, "usage": "x"})
+        assert any("token inconnu fil" in e for e in verifier_da.verifier_ambiances(tokens))
+
+    @pytest.mark.parametrize(("cle", "valeur"), [("ink-muted", "#9A948C"), ("accent-text", "#D9672A"), ("inverse-muted", "#5A544D"), ("line-strong", "#B5ADA2")])
+    def test_couleur_insuffisante_detectee(self, cle: str, valeur: str) -> None:
+        tokens = copy.deepcopy(verifier_da.charger_tokens())
+        tokens["ambiances"]["atelier"]["color"]["light"][cle]["$value"] = valeur
+        assert any(e.startswith(f"atelier/light {cle} sur") for e in verifier_da.verifier_contrastes(tokens))
+
+    def test_regles_du_fil_orange(self) -> None:
+        c = generer_da.couleurs_ambiance("atelier")
+        assert c["accent"] == c["status-new-bg"] == c["inverse-accent"] == "#F26A1B"
+        # Le fil orange n'est jamais du texte sur papier, ni un contour interactif : décor seulement.
+        assert contraste.ratio(c["accent"], c["bg"]) < 3.0 and c["focus"] != c["accent"]
+        # Texte sur orange : charbon (jamais blanc ni crème) ; l'orange s'écrit sur charbon.
+        assert contraste.ratio("#FFFFFF", c["accent"]) < 4.5 <= contraste.ratio(c["on-accent"], c["accent"])
+        assert contraste.ratio(c["on-ink"], c["accent"]) < 4.5
+        assert contraste.ratio(c["inverse-accent"], c["inverse-bg"]) >= 4.5
+
+    def test_palette_documentee_et_mesuree(self) -> None:
+        doc = (DA / "DIRECTION_ATELIER.md").read_text(encoding="utf-8")
+        for cle, valeur in generer_da.couleurs_ambiance("atelier").items():
+            if not cle.startswith("status-") and not cle.startswith("lang-"):
+                assert f"`{valeur}`" in doc, cle
+        assert "Méthode de mesure" in doc and "sRGB" in doc
+        assert generer_da.tableau_contrastes_ambiance_md("atelier") in doc
+        assert verifier_da.verifier_citations(DA) == []
+
+    def test_polices_chargees(self) -> None:
+        tokens = copy.deepcopy(verifier_da.charger_tokens())
+        url = tokens["ambiances"]["atelier"]["googleFonts"]
+        assert all(f in url for f in ("family=Geist:", "family=Geist+Mono", "family=Instrument+Serif"))
+        tokens["ambiances"]["atelier"]["googleFonts"] = url.replace("&family=Instrument+Serif:ital@0;1", "")
+        assert any("Instrument Serif" in e for e in verifier_da.verifier_ambiances(tokens))
+
+    def test_css_genere_clair_et_prioritaire(self) -> None:
+        css = (DA / "tokens" / "tokens-atelier.css").read_text(encoding="utf-8")
+        assert css == generer_da.generer_css_ambiance("atelier")
+        assert ':root[data-ambiance="atelier"][data-da] {' in css and "color-scheme: light;" in css
+        assert "Toujours claire" in css
+        for k in generer_da.couleurs_ambiance("atelier"):
+            assert css.count(f"--da-color-{k}:") == 1, k
+        for v in ("--da-font-accent:", "--da-fil-epaisseur: 2px;", "--da-espace-section:", "--da-display-xl:"):
+            assert v in css, v
+
+    def test_logos_atelier(self) -> None:
+        c = generer_da.couleurs_ambiance("atelier")
+        clair = (DA / "logo" / "a" / "logo-a-atelier.svg").read_text(encoding="utf-8")
+        sombre = (DA / "logo" / "a" / "logo-a-atelier-fond-sombre.svg").read_text(encoding="utf-8")
+        favicon = ET.parse(DA / "logo" / "a" / "favicon-atelier.svg").getroot()
+        assert c["ink"] in clair and c["accent"] in clair and "<text" not in clair
+        assert c["inverse-ink"] in sombre and c["inverse-accent"] in sombre and "<text" not in sombre
+        assert favicon.get("viewBox") == "0 0 32 32"
+
+    def test_regles_de_la_mascotte_ecrites(self, tmp_path: Path) -> None:
+        assert verifier_da.verifier_mascotte() == []
+        doc = (DA / "DIRECTION_ATELIER.md").read_text(encoding="utf-8")
+        assert "Braise (nom provisoire)" in doc and "Validation humaine requise" in doc
+        # Chaque règle retirée du document est signalée (tests négatifs sur une copie).
+        (tmp_path / "tokens").mkdir()
+        shutil.copyfile(DA / "tokens" / "tokens.json", tmp_path / "tokens" / "tokens.json")
+        assert verifier_da.verifier_mascotte(tmp_path) == ["DIRECTION_ATELIER.md absent (règles de la mascotte)"]
+        for retire, attendu in (
+            ("quadrupède", "toujours quadrupède"),
+            ("Kurama", "une seule queue"),
+            ("Tails", "gants"),
+            ("collerette", "Évoli"),
+            ("jamais debout sur deux pattes", "debout"),
+            ("ne tient jamais un produit Pokémon", "produit Pokémon"),
+            ("n'illustrent jamais un produit vendu", "produit vendu"),
+            ("Suie", "nom provisoire"),
+        ):
+            (tmp_path / "DIRECTION_ATELIER.md").write_text(re.sub(re.escape(retire), "…", doc, flags=re.IGNORECASE), encoding="utf-8")
+            erreurs = verifier_da.verifier_mascotte(tmp_path)
+            assert any(attendu in e for e in erreurs), (retire, erreurs)

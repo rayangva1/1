@@ -1,5 +1,8 @@
 # Ambiance « Nuit sur le Léman » (bâtie sur la direction B)
 
+> **ARCHIVÉE — remplacée par l'ambiance « Atelier » (`DIRECTION_ATELIER.md`), décision du propriétaire du 06.10.2026.**
+> Le propriétaire abandonne l'ambiance nocturne et la loutre « Lumi » au profit d'une direction tirée de ses photos (papier crème, charbon mat, fil orange) et d'un renard original (« Braise », nom provisoire). Ce document est gardé pour mémoire : ne plus l'appliquer à un nouveau visuel ou à une nouvelle page. Ses tokens (`tokens/tokens-nuit.css`) restent générés tant que la landing actuelle n'est pas refaite (étape 2), puis seront retirés. Les douze visuels générés de Lumi ont été retirés de `site/config/visuels.json`.
+
 > Proposition d'ambiance immersive pour la landing et les pages de drop, construite **sur la direction B « Pochette »** (mêmes formes arrondies, même lettrage, mêmes composants `da-*`). Nom de travail : **Quai des Cartes** (non validé). Mascotte : **Lumi** (nom provisoire, non validé).
 > Sources : `tokens/tokens.json` (bloc `ambiances.nuit`, généré en `tokens/tokens-nuit.css`), `DIRECTION_B.md`, `docs/04-legal/USAGE_MARQUES.md`, `docs/04-legal/PRECOMMANDES.md` (textes de la réservation garantie). Application : `site/landing/` et `site/maquettes/`.
 
@@ -141,9 +144,6 @@ Loutre **originale** créée pour la boutique : fourrure indigo profond, **marqu
 
 ## Validation humaine requise
 
-- [ ] **C10** : valider l'ambiance « Nuit sur le Léman » sur la direction B (ou revenir à A / B sans ambiance : `python site/outils/da_sync.py --direction a --ambiance aucune`).
-- [ ] Valider le rose lune `#FF6FAE` (texte foncé dessus) et l'or `#FFD27A` comme couleur de focus.
-- [ ] Valider l'ajout de **Fraunces** (licence OFL à reconfirmer sur fonts.google.com) ou s'en passer.
-- [ ] Valider la mascotte et son nom (« Lumi » est provisoire) ; recherche d'antériorité du nom et du dessin (marques, IPI) avant tout usage commercial (stickers, packaging).
-- [ ] Juriste : confirmer que les visuels générés (mascotte originale, boîtes génériques sans marque) respectent `USAGE_MARQUES.md` ; confirmer les conditions d'utilisation commerciale de l'outil de génération.
-- [ ] Rapatrier les visuels en local avant la mise en ligne (`site/landing/README.md`).
+- [x] **C10** : ambiance « Nuit sur le Léman » **non retenue** (décision du propriétaire du 06.10.2026, remplacée par « Atelier » : `DIRECTION_ATELIER.md`).
+- [ ] Après la refonte de la landing en ambiance Atelier (étape 2) : confirmer le retrait des tokens Nuit (`tokens.json > ambiances > nuit`, `tokens/tokens-nuit.css`, `logo/b/logo-b-nuit.svg`).
+- Les autres points (rose lune, or du focus, Fraunces, mascotte Lumi, visuels générés de Lumi) sont **sans objet** : l'ambiance et la mascotte sont abandonnées.

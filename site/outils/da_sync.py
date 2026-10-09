@@ -6,15 +6,18 @@ peut donc pas pointer vers ``../../docs/05-da``. La source de vérité reste ``d
 ce script recopie les fichiers sous des noms neutres et écrit un manifeste (direction,
 source, empreinte SHA-256). ``verifier_site.py`` refuse toute copie désynchronisée.
 
-Ambiance (facultative) : une ambiance de ``tokens.json > ambiances`` (ex. « nuit », Nuit sur le Léman, bâtie sur B)
-ajoute ``ambiance.css`` (copie de ``tokens/tokens-<ambiance>.css``), remplace le logo sur fond sombre par celui de
-l'ambiance, pose ``data-ambiance`` sur ``<html>`` et l'URL Google Fonts de l'ambiance sur chaque page (landing et
+Ambiance (facultative) : une ambiance de ``tokens.json > ambiances`` (« atelier », bâtie sur A, toujours claire ;
+« nuit », bâtie sur B, toujours sombre, archivée) ajoute ``ambiance.css`` (copie de ``tokens/tokens-<ambiance>.css``),
+remplace les logos par ceux de l'ambiance (``logo-<d>-<ambiance>.svg`` pour le logo de son mode, et s'ils existent
+``logo-<d>-<ambiance>-fond-sombre.svg`` et ``favicon-<ambiance>.svg``), pose ``data-ambiance`` sur ``<html>``,
+``color-scheme`` selon le mode de l'ambiance et l'URL Google Fonts de l'ambiance sur chaque page (landing et
 maquettes ``site/maquettes/``).
 
 Usage :
-    python site/outils/da_sync.py                                  # direction et ambiance du manifeste
-    python site/outils/da_sync.py --direction b --ambiance nuit    # Nuit sur le Léman (défaut actuel)
-    python site/outils/da_sync.py --direction a --ambiance aucune  # direction A sans ambiance
+    python site/outils/da_sync.py                                     # direction et ambiance du manifeste
+    python site/outils/da_sync.py --direction a --ambiance atelier    # Atelier (retenue le 06.10.2026)
+    python site/outils/da_sync.py --direction b --ambiance nuit       # Nuit sur le Léman (archivée)
+    python site/outils/da_sync.py --direction a --ambiance aucune     # direction A sans ambiance
     python site/outils/da_sync.py --verifier                       # contrôle seul (code 1 si désynchronisé)
 """
 
@@ -47,8 +50,15 @@ def _tokens() -> dict:
 
 
 def ambiances() -> tuple[str, ...]:
-    """Ambiances déclarées dans tokens.json (ex. « nuit »)."""
+    """Ambiances déclarées dans tokens.json (« atelier », « nuit »)."""
     return tuple(_tokens().get("ambiances", {}))
+
+
+def mode_ambiance(ambiance: str | None) -> str | None:
+    """Mode unique d'une ambiance (« light » ou « dark ») ; None sans ambiance."""
+    if ambiance is None:
+        return None
+    return str(_tokens()["ambiances"][ambiance].get("mode", "dark"))
 
 
 def _verifier_ambiance(direction: str, ambiance: str | None) -> None:
@@ -80,7 +90,15 @@ def plan_copie(direction: str, ambiance: str | None = None) -> dict[str, Path]:
     }
     if ambiance is not None:
         plan["ambiance.css"] = DA / "tokens" / f"tokens-{ambiance}.css"
-        plan["logo-horizontal-fond-sombre.svg"] = logo / f"logo-{direction}-{ambiance}.svg"
+        # Le logo de l'ambiance remplace celui de son mode ; ses variantes facultatives remplacent les autres.
+        cle = "logo-horizontal.svg" if mode_ambiance(ambiance) == "light" else "logo-horizontal-fond-sombre.svg"
+        plan[cle] = logo / f"logo-{direction}-{ambiance}.svg"
+        sombre = logo / f"logo-{direction}-{ambiance}-fond-sombre.svg"
+        if sombre.exists():
+            plan["logo-horizontal-fond-sombre.svg"] = sombre
+        favicon = logo / f"favicon-{ambiance}.svg"
+        if favicon.exists():
+            plan["favicon.svg"] = favicon
     return plan
 
 
@@ -126,8 +144,10 @@ def lire_manifeste(cible: Path = ASSETS_DA) -> tuple[str, str | None]:
         return "a", None
 
 
-def synchroniser(direction: str = "a", cible: Path = ASSETS_DA, ambiance: str | None = None) -> dict[str, object]:
-    """Copie les fichiers et écrit le manifeste ; retourne le manifeste."""
+def synchroniser(
+    direction: str = "a", cible: Path = ASSETS_DA, ambiance: str | None = None, racine: Path = LANDING
+) -> dict[str, object]:
+    """Copie les fichiers et écrit le manifeste, puis aligne les pages de ``racine`` ; retourne le manifeste."""
     cible.mkdir(parents=True, exist_ok=True)
     plan = plan_copie(direction, ambiance)
     for publie, src in plan.items():
@@ -139,7 +159,7 @@ def synchroniser(direction: str = "a", cible: Path = ASSETS_DA, ambiance: str | 
             orphelin.unlink()
     manifeste = manifeste_attendu(direction, ambiance)
     (cible / MANIFESTE.name).write_text(json.dumps(manifeste, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    appliquer_direction_html(direction, ambiance=ambiance)
+    appliquer_direction_html(direction, racine=racine, ambiance=ambiance)
     return manifeste
 
 
@@ -164,7 +184,7 @@ def aligner_html(texte: str, direction: str, ambiance: str | None = None) -> str
             nouveau,
             count=1,
         )
-    schema = "dark" if ambiance is not None else "light dark"
+    schema = mode_ambiance(ambiance) or "light dark"
     nouveau = re.sub(r'(<meta name="color-scheme" content=")[^"]*(">)', rf"\g<1>{schema}\g<2>", nouveau, count=1)
     return GOOGLE_FONTS_RE.sub(f'href="{url}"', nouveau)
 

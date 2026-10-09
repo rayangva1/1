@@ -1,4 +1,6 @@
-"""Ambiance « Nuit sur le Léman » : DA synchronisée, maquettes contrôlées, règles d'images, textes de garantie, JS."""
+"""Landing de transition et ambiances : DA synchronisée (Nuit, archivée, encore appliquée ; Atelier, prête), maquettes
+contrôlées, règles d'images, textes de garantie, JS. La landing garde la mise en page Nuit jusqu'à sa refonte en
+ambiance Atelier (étape 2), mais ses visuels et sa mascotte sont déjà ceux de l'Atelier (renard « Braise »)."""
 
 from __future__ import annotations
 
@@ -41,6 +43,33 @@ def test_plan_de_copie_ambiance() -> None:
         da_sync.plan_copie("b", "jour")
 
 
+def test_plan_de_copie_ambiance_atelier() -> None:
+    plan = da_sync.plan_copie("a", "atelier")
+    assert plan["ambiance.css"].name == "tokens-atelier.css"
+    assert plan["logo-horizontal.svg"].name == "logo-a-atelier.svg"
+    assert plan["logo-horizontal-fond-sombre.svg"].name == "logo-a-atelier-fond-sombre.svg"
+    assert plan["favicon.svg"].name == "favicon-atelier.svg"
+    assert all(p.exists() for p in plan.values())
+    assert da_sync.mode_ambiance("atelier") == "light" and da_sync.mode_ambiance("nuit") == "dark"
+    with pytest.raises(ValueError):
+        da_sync.plan_copie("b", "atelier")  # l'ambiance Atelier est bâtie sur A
+
+
+def test_synchronisation_atelier_sur_une_copie(tmp_path: Path) -> None:
+    """Bascule complète vers l'Atelier sur une copie de la landing : le dépôt n'est jamais modifié."""
+    racine = tmp_path / "lp"
+    shutil.copytree(LANDING, racine)
+    avant = {p.name: p.read_bytes() for p in LANDING.glob("*.html")}
+    cible = racine / "assets" / "da"
+    manifeste = da_sync.synchroniser("a", cible=cible, ambiance="atelier", racine=racine)
+    assert manifeste["ambiance"] == "atelier" and manifeste["direction"] == "a"
+    assert da_sync.verifier(cible=cible, racine=racine) == []
+    index = (racine / "index.html").read_text(encoding="utf-8")
+    assert 'data-da="a" data-ambiance="atelier"' in index and 'content="light"' in index and "family=Geist" in index
+    assert (cible / "ambiance.css").read_bytes() == (da_sync.DA / "tokens" / "tokens-atelier.css").read_bytes()
+    assert {p.name: p.read_bytes() for p in LANDING.glob("*.html")} == avant and da_sync.verifier() == []
+
+
 def test_aligner_html_pose_et_retire_l_ambiance() -> None:
     source = publication.pages_secondaires()["merci.html"]
     nuit = da_sync.aligner_html(source, "b", "nuit")
@@ -50,6 +79,10 @@ def test_aligner_html_pose_et_retire_l_ambiance() -> None:
     sans = da_sync.aligner_html(nuit, "a", None)
     assert "data-ambiance" not in sans and "ambiance.css" not in sans and 'data-da="a"' in sans
     assert 'content="light dark"' in sans and "Fraunces" not in sans
+    atelier = da_sync.aligner_html(nuit, "a", "atelier")
+    assert 'data-da="a" data-ambiance="atelier"' in atelier and 'content="light"' in atelier
+    assert "family=Geist" in atelier and "Instrument+Serif" in atelier and "Fraunces" not in atelier
+    assert da_sync.aligner_html(atelier, "a", "atelier") == atelier
 
 
 def test_ambiance_desynchronisee_detectee(tmp_path: Path) -> None:
@@ -79,13 +112,14 @@ def test_index_garde_le_contrat_et_les_textes_exacts() -> None:
     visible = vs._texte_visible(texte)
     garantie, difference = vs.textes_garantie_moteur()
     assert garantie in visible and difference in visible
-    assert "Lumi" in visible and "Nom provisoire" in visible
+    assert "Braise" in visible and "Nom provisoire" in visible
+    assert not re.search(r"\bLumi\b|loutre", texte), "mascotte abandonnée (décision du 06.10.2026)"
     assert "ni approuvée par The Pokémon Company" in visible
     a = vs.analyser(texte)
-    assert [i.get("data-visuel") for i in a.imgs if i.get("fetchpriority") == "high"] == ["heros-nuit-etoilee"]
+    assert [i.get("data-visuel") for i in a.imgs if i.get("fetchpriority") == "high"] == ["renard-heros"]
     assert all(i.get("loading") == "lazy" for i in a.imgs if "data-visuel" in i and i.get("fetchpriority") != "high")
     assert all(i.get("width") and i.get("height") for i in a.imgs)
-    assert re.search(r'<source media="\(max-width: 699px\)"[^>]*data-visuel="heros-nuit-etoilee-portrait"', texte)
+    assert re.search(r'<source media="\(max-width: 699px\)"[^>]*data-visuel="renard-heros-portrait"', texte)
     assert texte.count('rel="preload" as="image"') == 2
     consentement = next(c for c in a.champs if c.get("name") == "consentement")
     assert "checked" not in consentement and "required" in consentement
@@ -99,8 +133,8 @@ def test_textes_de_garantie_identiques_au_moteur() -> None:
 @pytest.mark.parametrize(
     ("modification", "attendu"),
     [
-        (lambda t: t.replace('loading="lazy" decoding="async" data-visuel="quai-nuit"', 'decoding="async" data-visuel="quai-nuit"'), "loading"),
-        (lambda t: t.replace('data-visuel="quai-nuit"', 'fetchpriority="high" data-visuel="quai-nuit"'), "fetchpriority"),
+        (lambda t: t.replace('loading="lazy" decoding="async" data-visuel="renard-pied-de-page"', 'decoding="async" data-visuel="renard-pied-de-page"'), "loading"),
+        (lambda t: t.replace('data-visuel="renard-pied-de-page"', 'fetchpriority="high" data-visuel="renard-pied-de-page"'), "fetchpriority"),
         (lambda t: t.replace('width="963" height="132" loading="lazy">', 'loading="lazy">', 1), "width/height"),
         (lambda t: t.replace("<li>Aucune fausse urgence</li>", "<li>Plus que 3 boîtes</li>", 1), "fausse urgence"),
         (lambda t: t.replace("Le supplément pré-drop paie", "Le supplément paie"), "GUARANTEE_TEXT_FR"),

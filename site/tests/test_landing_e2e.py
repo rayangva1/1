@@ -179,6 +179,8 @@ def test_mouvement_reduit_et_images_indisponibles(navigateur: Any, site: tuple[P
     _, url = site
     contexte = navigateur.new_context(viewport={"width": 390, "height": 844}, reduced_motion="reduce")
     page = contexte.new_page()
+    # Visuels servis en local (assets/visuels/) : on coupe leur chargement, ainsi que toute image distante.
+    page.route("**/assets/visuels/**", lambda route: route.abort())
     page.route("https://**/*.webp", lambda route: route.abort())
     page.route("https://**/*.png", lambda route: route.abort())
     page.goto(url + "index.html")
@@ -194,11 +196,11 @@ def test_mouvement_reduit_et_images_indisponibles(navigateur: Any, site: tuple[P
 # ----------------------------------------------------------------------------- visuels (revue PERF-01) et contrastes (A11Y-01)
 @pytest.fixture(scope="module")
 def site_rapatrie(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
-    """Landing copiée puis « rapatriée » (vraies variantes WebP produites à partir de PNG d'aplat, réseau simulé)."""
+    """Landing copiée puis importée en local (vraies variantes WebP produites à partir de sources FICTIVES d'aplat)."""
     pytest.importorskip("PIL")
     import fictifs
 
-    racine, _, rapport = fictifs.depot_rapatrie(tmp_path_factory.mktemp("rapatrie"))
+    racine, _, rapport = fictifs.depot_importe(tmp_path_factory.mktemp("importe"))
     assert rapport.bascule, rapport.erreurs
     serveur, url = _servir(racine.parent)
     yield url
@@ -251,7 +253,9 @@ def test_texte_sur_illustration_contraste_aa_meme_sur_une_image_blanche(navigate
     image.new("RGB", (8, 8), (255, 255, 255)).save(tampon, format="PNG")
     blanc = tampon.getvalue()
     contexte = navigateur.new_context(viewport={"width": largeur, "height": hauteur}, reduced_motion="reduce")
-    contexte.route("https://d8j0ntlcm91z4.cloudfront.net/**", lambda route: route.fulfill(status=200, content_type="image/png", body=blanc))
+    # Pire cas : chaque visuel (local, ou distant en aperçu) remplacé par du blanc pur.
+    contexte.route("**/assets/visuels/**", lambda route: route.fulfill(status=200, content_type="image/png", body=blanc))
+    contexte.route("https://**/*.webp", lambda route: route.fulfill(status=200, content_type="image/png", body=blanc))
     page = contexte.new_page()
     page.goto(url + "index.html", wait_until="networkidle")
     page.evaluate("document.querySelector('.lp-apercu')?.remove()")
