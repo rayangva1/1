@@ -1,7 +1,7 @@
 # Ambiance « Atelier » (bâtie sur la direction A)
 
 > Direction retenue par le propriétaire le 06.10.2026 : elle **remplace** l'ambiance « Nuit sur le Léman » et la loutre « Lumi » (`DIRECTION_NUIT.md`, archivée). Nom de travail de la boutique : **Quai des Cartes** (non validé). Mascotte : un **renard original**, nom provisoire **Braise** (à valider, §8.5).
-> Sources : `tokens/tokens.json` (bloc `ambiances.atelier`, généré en `tokens/tokens-atelier.css`), les 3 photos du propriétaire et les 10 illustrations du renard (`site/config/visuels.json`), `DIRECTION_A.md` (lettrage, composants), `docs/04-legal/USAGE_MARQUES.md`, BP §7 et §8. Application : `site/landing/` (landing et pages secondaires) et `site/maquettes/`, refaites en Atelier le 10.10.2026 (étape 2).
+> Sources : `tokens/tokens.json` (bloc `ambiances.atelier`, généré en `tokens/tokens-atelier.css`), les 3 photos du propriétaire et les 10 illustrations du renard (`site/config/visuels.json`), `DIRECTION_A.md` (lettrage, composants), `docs/04-legal/USAGE_MARQUES.md`, BP §7 et §8. Application : `site/landing/` (landing et pages secondaires) et `site/maquettes/`, refaites en Atelier le 10.10.2026 (étape 2), puis corrigées après deux critiques (DA, accessibilité et honnêteté) le même jour : un seul papier, statuts monochromes, héro plein écran, fil qui traverse les illustrations.
 
 ## 1. Intention
 
@@ -36,7 +36,7 @@ Mesures du 09.10.2026 (script de mesure local, Pillow) sur les fichiers fournis 
 | Papier éclairé | `#EEEBE3` médiane du mur éclairé (photo boîte, tiers gauche) ; `#E7E2DA` médiane de tout le papier de la photo | `bg` `#EFEAE1` (référence du propriétaire, à 1–2 unités de la mesure) |
 | Papier en pleine lumière | `#F7F3ED` (95e centile, photo boîte) | `surface` `#F8F5EF` |
 | Papier à l'ombre | `#E4DFD7` (bas de la photo boîte), `#E0D9CF` (photo mains) | `surface-alt` `#E4DED3` |
-| Papier des illustrations | `#FCF1E1` (héro), `#FDF5E4` (alertes), `#FCF3E2` (assis) : plus chaud et plus clair que les photos | `papier-chaud` `#FCF2E2` |
+| Papier des illustrations | Bords des 9 illustrations du renard (bande de 2 % sur les quatre côtés, pixels clairs, mesure du 10.10.2026) : médiane `#EBDAC8`, quartile haut `#FCE7D4` ; hauts plus sombres (`#E1CEBD` à `#E9D9C9`, ombres de feuillage), bas et côtés éclairés (`#F7E3CD` à `#FBEEDE`). La première valeur (`#FCF2E2`, mesurée au cœur des zones claires) laissait une couture de 6 à 8 points de luminance au bord de chaque image | `papier-chaud` `#F1E4D3` (entre la médiane et les bords éclairés) |
 | Ombre de feuillage | `#E4DFD5` (5e centile du mur, photo) ; `#E8D7C7` (héro illustré) | `ombre` `#DDD5C8` (un ton plus marqué, décor) |
 | Charbon mat | `#1D1E1B` (couverture du classeur), `#1A1512` (fourrure), `#2B2927` (face éclairée de la boîte) | `ink` `#1D1B19`, `inverse-surface` `#2A2724` |
 | Gris des cartes vierges | `#575657` (photo mains), `#4E4C4C` (photo boîte) | `ink-muted` `#5D5750` (réchauffé pour le papier) |
@@ -49,7 +49,7 @@ Mesures du 09.10.2026 (script de mesure local, Pillow) sur les fichiers fournis 
 | Token | Hex | Rôle |
 |---|---|---|
 | `bg` / `surface` / `surface-alt` | `#EFEAE1` / `#F8F5EF` / `#E4DED3` | Papier éclairé / en pleine lumière / à l'ombre |
-| `papier-chaud` | `#FCF2E2` | Fond d'un chapitre illustré : le bord de l'illustration disparaît |
+| `papier-chaud` | `#F1E4D3` | **Le papier de toute la page** (un seul papier pour tous les chapitres clairs, plus d'alternance avec `bg`) ; le cadre des illustrations y est fondu (masque à gauche, à droite et en haut, bord net en bas là où sort le filet) : le bord de l'image ne se voit plus |
 | `ombre` | `#DDD5C8` | Ombre de feuillage dessinée (décor) |
 | `ink` / `ink-muted` | `#1D1B19` / `#5D5750` | Charbon (texte, bouton principal) / gris chaud (texte secondaire) |
 | `on-ink` | `#F8F5EF` | Texte sur charbon |
@@ -60,7 +60,8 @@ Mesures du 09.10.2026 (script de mesure local, Pillow) sur les fichiers fournis 
 | `focus` | `#1D1B19` | Anneau de focus charbon |
 | `inverse-bg` / `inverse-surface` | `#1D1B19` / `#2A2724` | Chapitre charbon / panneau « boîte noire » |
 | `inverse-ink` / `inverse-muted` / `inverse-accent` / `inverse-focus` | `#EFEAE1` / `#B8AFA4` / `#F26A1B` / `#EFEAE1` | Texte, texte secondaire, surtitre orange et focus sur charbon |
-| Statuts, langue | voir `tokens.json` | Badges (Stock local, Précommande, Nouveauté, Rupture, Réassort, FR) |
+| `inverse-line` | `#4A453F` | Filets sur charbon (décor) |
+| Statuts, langue | voir `tokens.json` | Badges **monochromes** (l'icône et le libellé les distinguent) : Stock local papier `#F8F5EF` et contour charbon ; Précommande `#E4DED3` et contour `line-strong` ; Rupture gris chaud `#5D5750` sur `#E4DED3` ; Réassort charbon sur lin orangé ; Nouveauté charbon sur orange ; FR crème sur charbon. **Réservation garantie** = la « boîte noire à bande orange » de l'illustration : crème sur charbon, bande orange de 3 px en bas (`components.css`). Plus d'indigo ni de vert : ils cassaient la proportion 80/15/5 |
 
 Proportions : **80 % papier, 15 % charbon, 5 % orange au plus**. L'orange est un trait, jamais une surface (sauf le badge Nouveauté).
 
@@ -70,7 +71,7 @@ Règles qui en découlent (ratios recalculés par `tools/verifier_da.py`) :
 - **L'orange s'écrit sur charbon** : 5.60:1 entre `#F26A1B` et `#1D1B19` (surtitres des chapitres inversés).
 - Liens sur papier : rouille, 5.14:1 entre `#A6420C` et `#EFEAE1`, toujours soulignés.
 - Pas de noir pur : le charbon `#1D1B19` (14.33:1 entre `#1D1B19` et `#EFEAE1`) garde la douceur mate des photos.
-- **Texte posé sur une illustration** : jamais directement sur l'image. Le texte vit dans la moitié libre des visuels (gauche du héro), sur `papier-chaud` ou `bg` ; sur mobile et tablette, le titre du héro est posé au-dessus de l'image, sur `papier-chaud`. Seul le titre du héro sur ordinateur (dès 1280 px) passe sur l'illustration : il est **charbon** et posé sur un voile `papier-chaud` d'au moins **64 %** (bords fondus, cœur plein sous le texte) : 6.22:1 même si l'image devenait noire (`#A19B91`), 16.10:1 si elle devenait blanche ; un texte gris (`ink-muted`) n'y est jamais posé (2.58:1 sur le voile noirci, il exigerait 88 %). Preuve Playwright : chaque image remplacée par du noir et du blanc purs, contraste mesuré sous chaque texte (`site/tests/test_landing_e2e.py`, script Node de l'étape 2).
+- **Texte posé sur une illustration** : uniquement dans la zone libre des visuels — titre, introduction et bouton du héro sur ordinateur (dès 1280 px, moitié gauche), titre du héro sur mobile (haut libre du portrait), titre de Genève dans le ciel (dès 900 px), en-tête des alertes sur le mur libre (dès 1100 px). Le texte y est **charbon** (jamais `ink-muted` : numéros et introductions passent en `ink`) et posé sur un voile `papier-chaud` d'au moins **64 %** (`.lp-voile` : plein sous chaque glyphe, bords fondus sur 120 à 240 px pour ne jamais dessiner un calque visible) : 5.30:1 même si l'image devenait noire, 15.4:1 si elle devenait blanche. Le voile s'arrête avant la boîte noire du héro (cadrage `object-position: 62% 100%`). Preuve Playwright : chaque image remplacée par du noir et du blanc purs, contraste mesuré sous chaque texte posé sur une image (`site/tests/e2e/atelier.mjs`, lancé par `scripts/run_all_tests.sh`, et `site/tests/test_landing_e2e.py`).
 
 ### 3.3 Contrastes WCAG 2.x (calculés, tronqués à 2 décimales)
 
@@ -97,24 +98,24 @@ Seuils : texte ≥ 4.5:1 (AA), bordures, focus et composants ≥ 3:1 (WCAG 1.4.1
 | Clair | Bordure de champ sur carte (WCAG 1.4.11) | `#7A7268` line-strong | `#F8F5EF` surface | **4.35:1** | 3.0 | UI ≥ 3:1 |
 | Clair | Anneau de focus sur fond (WCAG 1.4.11) | `#1D1B19` focus | `#EFEAE1` bg | **14.33:1** | 3.0 | UI ≥ 3:1 |
 | Clair | Anneau de focus sur carte (WCAG 1.4.11) | `#1D1B19` focus | `#F8F5EF` surface | **15.77:1** | 3.0 | UI ≥ 3:1 |
-| Clair | Badge Stock local | `#1F5130` status-local-fg | `#DDEBDC` status-local-bg | **7.45:1** | 4.5 | AAA |
-| Clair | Badge Précommande | `#2B3577` status-preorder-fg | `#E2E5F1` status-preorder-bg | **8.89:1** | 4.5 | AAA |
+| Clair | Badge Stock local | `#1D1B19` status-local-fg | `#F8F5EF` status-local-bg | **15.77:1** | 4.5 | AAA |
+| Clair | Badge Précommande | `#1D1B19` status-preorder-fg | `#E4DED3` status-preorder-bg | **12.82:1** | 4.5 | AAA |
 | Clair | Badge Nouveauté | `#1D1B19` status-new-fg | `#F26A1B` status-new-bg | **5.60:1** | 4.5 | AA |
-| Clair | Badge Rupture | `#4A453F` status-out-fg | `#E4DED3` status-out-bg | **7.08:1** | 4.5 | AAA |
-| Clair | Badge Alerte réassort | `#5C4300` status-restock-fg | `#F5E6C0` status-restock-bg | **7.51:1** | 4.5 | AAA |
+| Clair | Badge Rupture | `#5D5750` status-out-fg | `#E4DED3` status-out-bg | **5.32:1** | 4.5 | AA |
+| Clair | Badge Alerte réassort | `#1D1B19` status-restock-fg | `#FBE3D2` status-restock-bg | **13.91:1** | 4.5 | AAA |
 | Clair | Badge langue FR | `#F8F5EF` lang-fr-fg | `#1D1B19` lang-fr-bg | **15.77:1** | 4.5 | AAA |
-| Clair | Texte posé à côté d'une illustration du renard | `#1D1B19` ink | `#FCF2E2` papier-chaud | **15.48:1** | 4.5 | AAA |
-| Clair | Texte secondaire à côté d'une illustration | `#5D5750` ink-muted | `#FCF2E2` papier-chaud | **6.43:1** | 4.5 | AA |
-| Clair | Lien rouille dans un chapitre illustré | `#A6420C` accent-text | `#FCF2E2` papier-chaud | **5.56:1** | 4.5 | AA |
+| Clair | Texte posé à côté d'une illustration du renard | `#1D1B19` ink | `#F1E4D3` papier-chaud | **13.71:1** | 4.5 | AAA |
+| Clair | Texte secondaire à côté d'une illustration | `#5D5750` ink-muted | `#F1E4D3` papier-chaud | **5.69:1** | 4.5 | AA |
+| Clair | Lien rouille dans un chapitre illustré | `#A6420C` accent-text | `#F1E4D3` papier-chaud | **4.92:1** | 4.5 | AA |
 | Clair | Texte posé sur une ombre de feuillage | `#1D1B19` ink | `#DDD5C8` ombre | **11.79:1** | 4.5 | AAA |
 | Clair | Texte secondaire sur une ombre de feuillage | `#5D5750` ink-muted | `#DDD5C8` ombre | **4.89:1** | 4.5 | AA |
 | Clair | Texte secondaire sur encart lin orangé | `#5D5750` ink-muted | `#FBE3D2` accent-soft | **5.78:1** | 4.5 | AA |
 | Clair | Lien rouille sur encart lin orangé | `#A6420C` accent-text | `#FBE3D2` accent-soft | **4.99:1** | 4.5 | AA |
 | Clair | Message d'erreur sur bandeau | `#B42318` error | `#E4DED3` surface-alt | **4.91:1** | 4.5 | AA |
 | Clair | Anneau de focus sur bandeau (WCAG 1.4.11) | `#1D1B19` focus | `#E4DED3` surface-alt | **12.82:1** | 3.0 | UI ≥ 3:1 |
-| Clair | Anneau de focus dans un chapitre illustré (WCAG 1.4.11) | `#1D1B19` focus | `#FCF2E2` papier-chaud | **15.48:1** | 3.0 | UI ≥ 3:1 |
+| Clair | Anneau de focus dans un chapitre illustré (WCAG 1.4.11) | `#1D1B19` focus | `#F1E4D3` papier-chaud | **13.71:1** | 3.0 | UI ≥ 3:1 |
 | Clair | Bordure de champ sur bandeau (WCAG 1.4.11) | `#7A7268` line-strong | `#E4DED3` surface-alt | **3.53:1** | 3.0 | UI ≥ 3:1 |
-| Clair | Bordure de champ dans un chapitre illustré (WCAG 1.4.11) | `#7A7268` line-strong | `#FCF2E2` papier-chaud | **4.27:1** | 3.0 | UI ≥ 3:1 |
+| Clair | Bordure de champ dans un chapitre illustré (WCAG 1.4.11) | `#7A7268` line-strong | `#F1E4D3` papier-chaud | **3.78:1** | 3.0 | UI ≥ 3:1 |
 | Clair | Texte crème sur charbon | `#EFEAE1` inverse-ink | `#1D1B19` inverse-bg | **14.33:1** | 4.5 | AAA |
 | Clair | Texte secondaire sur charbon | `#B8AFA4` inverse-muted | `#1D1B19` inverse-bg | **7.93:1** | 4.5 | AAA |
 | Clair | Surtitre orange sur charbon | `#F26A1B` inverse-accent | `#1D1B19` inverse-bg | **5.60:1** | 4.5 | AA |
@@ -154,7 +155,14 @@ Dans les photos, un filet orange est posé sur le papier. Sur le site, il devien
 2. **Parcours** : entre deux chapitres, il suit la marge gauche (colonne 1), passe sous les numéros de chapitre, longe une image puis **rejoint le filet photographié** de l'image suivante quand elle en a un (points d'entrée et de sortie mesurés et stockés dans `site/config/visuels.json`, champ `fil`, en fractions de largeur et de hauteur). Il s'efface derrière les images sans filet (classeur, Léman, réservation).
 3. **Arrivée** : il se pose sous le renard endormi du pied de page (`renard-pied-de-page`, filet de (0, 0.793) à (0.999, 0.993)).
 
-Réalisation (landing, 10.10.2026) : SVG `aria-hidden="true"` (`.lp-fil`, tracé par `site/landing/js/atelier.js`), un `path` par tronçon entre deux filets photographiés, trait `accent` de `fil-epaisseur` (2 px), angles adoucis (rayon 32 px, 16 px sur mobile). Les points d'entrée et de sortie viennent du manifeste : `site/outils/visuels.py` écrit le champ `fil` dans l'attribut `data-fil` de chaque image (et de la `<source>` portrait du héro) ; le script les projette dans la page (cadrage `object-fit` compris). Les figures `[data-fil-ancre]` (héro, Braise assis, jour du drop, alertes, pied de page) sont raccordées ; les figures `[data-fil-masque]` (Léman plein cadre) masquent le fil, qui passe derrière. Abscisse du fil : milieu de la marge gauche, à côté du contenu (jamais sur un texte). **Dessiné au défilement** (`stroke-dashoffset` suivant le niveau de lecture, à 85 % de la fenêtre, avec une transition douce) ; **coupé** avec `prefers-reduced-motion: reduce` et avec le bouton « Pause des animations » : la ligne est alors affichée entière, immobile. Sans JavaScript, une ligne continue est tracée en CSS dans la marge des chapitres. Le fil ne porte **aucune information** (décor, 2.55:1 sur le papier : jamais un repère de navigation ni un indicateur de progression).
+Réalisation (landing, 10.10.2026, revue après critique) : SVG `aria-hidden="true"` (`.lp-fil`, tracé par `site/landing/js/atelier.js`), trait `accent` de `fil-epaisseur` (2 px).
+
+- **Il traverse les illustrations** (`[data-fil-ancre]`) : il entre dans le filet photographié et en ressort. Points d'entrée et de sortie, **épaisseur** (`fil_epaisseur`, fraction de la hauteur) et **teintes** (`fil_couleurs`, près de l'entrée et de la sortie) mesurés et stockés dans `site/config/visuels.json`, écrits dans `data-fil`, `data-fil-ep` et `data-fil-couleurs` par `site/outils/visuels.py`, projetés par le script (cadrage `object-fit` compris). Le raccord est **effilé** : sur 96 px à la sortie (64 px à l'entrée), un polygone part de l'épaisseur projetée du filet photographié et de sa teinte (orange pâle sur les illustrations) et s'affine jusqu'au trait de 2 px orange — plus de couture entre un filet de 8 px pastel et un trait vectoriel saturé.
+- **Aucun crochet** : à la sortie d'un filet, le fil le prolonge, tourne vers le bas, descend dans un couloir libre (jamais à moins de 32 px d'un texte, d'un formulaire ou d'une figure), puis glisse en S jusqu'à la marge dans l'espace entre deux chapitres. Il entre dans le filet suivant par un coin arrondi qui prolonge le filet lui-même ; sur un cadre fondu, il recouvre la partie fondue du filet.
+- **Il passe sous les illustrations pleine largeur** (Genève, alertes dès 1100 px, pied de page) : il disparaît au milieu du fondu du haut de l'image et réapparaît dans son filet. Au Léman, il **ressort de la corde orange** enroulée au bollard (`data-fil-ancre="corde"`, bout de corde mesuré), descend du quai et traverse l'espace jusqu'aux alertes.
+- **Il relie les chapitres** : chaque numéro porte son tiret orange *devant* le chiffre (« —— 05 ») ; le fil s'y branche quand le numéro est posé contre la marge (`[data-fil-chapitre]`), et le tiret se dessine de 0 à 32 px quand le fil l'atteint. Il se branche aussi sur la bande orange de la photo de la boîte (la bande devient le fil) et sur le filet en diagonale de la photo des mains (`data-fil-ancre="branche"`).
+- **Mobile (moins de 700 px)** : pas de fil dans la marge (il serait à 10 px du texte) ; chaque filet se prolonge de 64 px et s'effile.
+- **Dessiné au défilement** (`stroke-dashoffset` suivant le niveau de lecture, à 85 % de la fenêtre, avec une transition douce) ; **coupé** avec `prefers-reduced-motion: reduce` et avec le bouton « Pause des animations » : la ligne est alors entière et immobile, tous les tirets dessinés. Sans JavaScript, une ligne continue est tracée en CSS dans la marge des chapitres. Le fil ne porte **aucune information** (décor, 2.45:1 sur le papier : jamais un repère de navigation ni un indicateur de progression). Il ne passe jamais sur un texte (contrôle Playwright : chaque point du tracé hors des boîtes de texte).
 
 ## 7. Photographie
 
@@ -168,7 +176,7 @@ Réalisation (landing, 10.10.2026) : SVG `aria-hidden="true"` (`.lp-fil`, tracé
 | Retouche | Balance légèrement chaude ; noirs autour de `#1D1B19` (jamais bouchés) ; blancs au plus `#F8F5EF`. |
 | Fiches produit | **Photo réelle du produit vendu uniquement** (BP §7) ; jamais une illustration du renard ni une photo d'ambiance. |
 
-**Les 3 photos du propriétaire sont des visuels d'ambiance.** Le BP prévoit de vendre « quelques accessoires » (sleeves, 10 % du budget stock) : précisément pour cela, ces photos (boîte noire, étuis rigides, pochettes, classeur, tous vierges) **ne sont jamais présentées comme des produits en vente** : texte alternatif et légende neutres (« Photo d'ambiance : … », jamais « nos accessoires », jamais une marque ni un modèle), aucun prix, aucun statut de stock, jamais à côté de la carte « Accessoires » ni d'un bouton. Si un accessoire photographié est un jour vendu, sa fiche utilise sa propre photo produit. La photo des mains qui glissent une carte vierge dans une pochette montre un geste de collectionneur : elle n'illustre ni un service de cartes à l'unité (pas au lancement), ni le contrôle à réception (les produits scellés ne sont jamais ouverts). `site/outils/visuels.py` refuse un texte alternatif de photo qui dirait « nos », « en vente », « prix » ou « stock ».
+**Les 3 photos du propriétaire sont des visuels d'ambiance.** Le BP prévoit de vendre « quelques accessoires » (sleeves, 10 % du budget stock) : précisément pour cela, ces photos (boîte noire, étuis rigides, pochettes, classeur, tous vierges) **ne sont jamais présentées comme des produits en vente** : texte alternatif et légende neutres et vérifiables (« Photo d'ambiance : objets vierges, sans marque. Sur la boutique, chaque fiche montre la photo réelle du produit vendu. » — jamais « nos accessoires », jamais « ne représente pas un produit de la boutique », affirmation que le propriétaire n'a pas validée), aucun prix, aucun statut de stock. **Aucune image montrant un type d'accessoire** (photo, ou illustration du renard avec un classeur, des étuis ou une boîte) n'est dans une section qui cite « Accessoires » : le chapitre des formats est sans image, et le formulaire d'alertes (case « Accessoires ») n'est accompagné que du renard seul (contrôlé par `site/tests/test_atelier.py`). Sur la landing : la photo de la boîte et celle des mains dans le chapitre du soin, celle du classeur dans la colonne des questions (ordinateur seulement). Si un accessoire photographié est un jour vendu, sa fiche utilise sa propre photo produit. La photo des mains qui glissent une carte vierge dans une pochette montre un geste de collectionneur : elle n'illustre ni un service de cartes à l'unité (pas au lancement), ni le contrôle à réception (les produits scellés ne sont jamais ouverts). `site/outils/visuels.py` refuse un texte alternatif de photo qui dirait « nos », « en vente », « prix » ou « stock ».
 
 ## 8. Mascotte : Braise (nom provisoire)
 
@@ -195,7 +203,7 @@ Visuels de référence : `renard-assis` (pied, face), `renard-couche`, `renard-h
 | Narrateur discret : il veille, garde, salue, dort | Lui faire dire « vite », « dernière chance », un prix ou un stock ; l'associer à un compte à rebours |
 | Afficher « Braise (nom provisoire) » tant que le nom n'est pas validé | Le présenter comme un personnage de la licence ou « officiel » |
 
-**Les illustrations n'illustrent jamais un produit vendu** : elles accompagnent un chapitre (drop, réservation, alertes, expédition) et ne remplacent jamais une photo réelle de produit. Les boîtes noires des illustrations sont des symboles (« un produit scellé »), pas un article du catalogue. Les boîtes ne sont jamais ouvertes sur un contenu identifiable (le jour du drop : une lumière, rien d'autre).
+**Les illustrations n'illustrent jamais un produit vendu** : elles accompagnent un chapitre (drop, réservation, alertes, expédition) et ne remplacent jamais une photo réelle de produit. Les boîtes noires des illustrations sont des symboles (« un produit scellé »), pas un article du catalogue. Les boîtes ne sont jamais ouvertes sur un contenu identifiable (le jour du drop : une lumière, rien d'autre). Sur une page de produit (maquettes), le renard n'est **jamais dans la même section** que le titre du produit ou ses prix, et il est accompagné de la mention « Braise (nom provisoire), création originale de la boutique, ne représente pas ce produit » ; le héro d'une page de drop montre l'emplacement de la photo réelle du produit (contrôlé par `site/tests/test_atelier.py`).
 
 ### 8.3 Contrôle d'un nouveau visuel (avant import)
 
@@ -208,7 +216,7 @@ Visuels de référence : `renard-assis` (pied, face), `renard-couche`, `renard-h
 ### 8.4 Style et cohérence
 
 - Même lumière que les photos (fenêtre de gauche, ombres de feuillage), même papier, même fil orange : le renard vit **dans** l'atelier, pas sur un fond abstrait.
-- Les illustrations ont un papier plus chaud (`papier-chaud`) que les photos : un chapitre illustré prend ce fond, un chapitre photo prend `bg`.
+- Un seul papier (`papier-chaud`) pour toute la page ; les cadres des illustrations y sont fondus. Les photos du propriétaire, plus froides, gardent un cadre net (photographie produit).
 - Un renard par écran au plus ; jamais recadré à travers les yeux ; jamais déformé (étirement, miroir qui inverserait l'oreille la plus haute d'un visuel à l'autre sans raison).
 
 ### 8.5 Nom : Braise (nom provisoire), alternatives et recherche de marque
@@ -243,8 +251,8 @@ Treize visuels, déclarés dans **un seul fichier** (`site/config/visuels.json` 
 
 ## 10. Mouvement et accessibilité
 
-- **Un seul geste signature** : le fil orange qui se dessine au défilement (§6). Apparitions sobres (opacité et translation de 16 px, 800 ms, courbe `cubic-bezier(0.22, 1, 0.36, 1)`), aucun rebond, aucune rotation 3D, aucun reflet holographique.
-- `prefers-reduced-motion: reduce` coupe **toutes** les animations, transitions et effets de défilement ; le bouton « Pause des animations » (en-tête et pied de page, état mémorisé) met tout en pause pour tout le monde (WCAG 2.2.2).
+- **Un seul geste signature** : le fil orange qui se dessine au défilement (§6), et le tiret de chaque numéro qui se dessine quand le fil l'atteint. Deux mises en scène discrètes, sans minuteur ni compteur : l'illustration du héro se pose (échelle seule, jamais d'opacité : le décor de secours ne transparaît pas) et le Léman recule légèrement au défilement (`animation-timeline: view()`, centré sur la corde). Apparitions sobres (opacité et translation de 16 px, 800 ms, courbe `cubic-bezier(0.22, 1, 0.36, 1)`), aucun rebond, aucune rotation 3D, aucun reflet holographique.
+- `prefers-reduced-motion: reduce` coupe **toutes** les animations, transitions et effets de défilement ; le bouton « Pause des animations » (discret dans l'en-tête, libellé lu par les lecteurs d'écran, et dans le pied de page ; état mémorisé) met tout en pause pour tout le monde (WCAG 2.2.2), **défilement doux compris** (`scroll-behavior` porté par `<html>`).
 - Sans JavaScript, tout le contenu est visible (les apparitions ne masquent rien sans script) et le fil est entier.
 - Seules l'opacité et les transformations sont animées ; aucun mouvement ne porte d'information (jamais un stock, une date, une urgence).
 
@@ -271,3 +279,6 @@ Treize visuels, déclarés dans **un seul fichier** (`site/config/visuels.json` 
 - [ ] Valider la mascotte (fiche §8.1, règles §8.2) et **son nom** : Braise, Suie ou Kit, après la recherche de marque du §8.5 (Braixen à examiner en priorité) ; juriste : antériorité du dessin et conditions d'utilisation commerciale de l'outil de génération des illustrations.
 - [ ] Confirmer que les 3 photos sont bien les photos du propriétaire (droits d'auteur et droit à l'image pour la photo des mains) et qu'elles peuvent être publiées comme photos d'ambiance.
 - [ ] Juriste : relire les textes alternatifs des photos d'ambiance (aucune promesse de vente d'un accessoire montré) et la mention d'indépendance.
+- [ ] Valider le papier unique `#F1E4D3` (au lieu de `#FCF2E2` et de l'alternance avec `#EFEAE1`) et les **badges de statut monochromes** (plus d'indigo ni de vert ; « Réservation garantie » en boîte noire à bande orange).
+- [ ] `renard-couche` (pages merci et désinscription) : derrière le corps, une touffe orange peut se lire comme un **second bout de queue** (règle « une seule queue », §8.2). Trancher : garder, faire retoucher la zone (repeindre en noir) par l'auteur des illustrations, ou régénérer le visuel ; aucune retouche n'a été faite sans accord.
+- [ ] Valider la place des photos du propriétaire sur la landing (boîte et mains dans « Le soin », classeur à côté des questions sur ordinateur) et leur légende vérifiable (« Sur la boutique, chaque fiche montre la photo réelle du produit vendu »).

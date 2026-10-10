@@ -30,7 +30,7 @@
     desactive: "Les inscriptions ne sont pas encore ouvertes\u00a0: le formulaire sera activé à la mise en ligne de la page.",
     desactiveApercu: " Aperçu\u00a0: adresse d'envoi (webhookUrl) non configurée dans js/config.js.",
     envoi: "Envoi en cours…",
-    succesTitre: "Merci, vérifiez votre boîte mail",
+    succesTitre: "Merci, vérifiez votre boîte mail.",
     succes: "Nous venons de vous envoyer un email de confirmation. Cliquez sur son lien pour activer vos alertes\u00a0: sans confirmation, nous ne vous écrirons pas.",
     succesSpam: "Rien reçu d'ici quelques minutes\u202f? Regardez dans les courriers indésirables.",
     erreur: "L'inscription n'a pas pu être envoyée. Vérifiez votre connexion et réessayez dans quelques minutes.",

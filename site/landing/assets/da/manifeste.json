@@ -6,7 +6,7 @@
   "fichiers": {
     "ambiance.css": {
       "source": "docs/05-da/tokens/tokens-atelier.css",
-      "sha256": "9fa0bfb20e166d9845f83a6ba2f98ab5e392b57cf5522c3317c7f99027123cc5"
+      "sha256": "094570351dc40018870db62cfb6af331b8ad3f258282d043236dad252b9ddf58"
     },
     "apple-touch-icon.png": {
       "source": "docs/05-da/logo/png/favicon-a-180.png",
@@ -14,7 +14,7 @@
     },
     "components.css": {
       "source": "docs/05-da/components/components.css",
-      "sha256": "edba3eb363e316ae8fd8496db5a70739f9298ac20a2363757afc3f867566e4db"
+      "sha256": "7beedb2096020ed912d9058df4c2b091e9aff5c6c695f53049e5316653309c4c"
     },
     "favicon-32.png": {
       "source": "docs/05-da/logo/png/favicon-a-32.png",

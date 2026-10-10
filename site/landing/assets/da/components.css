@@ -111,6 +111,15 @@
   color: var(--da-color-ink);
   box-shadow: inset 0 0 0 1px var(--da-color-line-strong);
 }
+/* Ambiance « Atelier » (DIRECTION_ATELIER.md §3.2) : statuts monochromes, papier et charbon ; l'icône et le libellé
+   suffisent à les distinguer. « Réservation garantie » est la boîte noire à bande orange de l'illustration. */
+[data-ambiance="atelier"] .da-badge--local { box-shadow: inset 0 0 0 1px var(--da-color-ink); }
+[data-ambiance="atelier"] .da-badge--preorder { box-shadow: inset 0 0 0 1px var(--da-color-line-strong); }
+[data-ambiance="atelier"] .da-badge--reservation {
+  background: var(--da-color-inverse-bg);
+  color: var(--da-color-inverse-ink);
+  box-shadow: inset 0 -3px 0 var(--da-color-accent);
+}
 
 /* ---------- Boutons ---------- */
 .da-btn {

@@ -102,6 +102,12 @@ def test_sources_hors_du_dossier_publie() -> None:
         (("visuels", "renard-couche", "empreinte_source"), "abc", "empreinte_source"),
         (("visuels", "renard-couche", "fil"), [[0, 0.5], [1.2, 1]], "fil"),
         (("visuels", "renard-couche", "fil"), [[0, 0.5]], "fil"),
+        # Raccord du fil : épaisseur et teintes mesurées obligatoires pour un visuel qui a un filet, interdites sinon.
+        (("visuels", "renard-couche", "fil_epaisseur"), None, "fil_epaisseur"),
+        (("visuels", "renard-couche", "fil_epaisseur"), 0.5, "fil_epaisseur"),
+        (("visuels", "renard-couche", "fil_couleurs"), ["#FE9C53"], "fil_couleurs"),
+        (("visuels", "renard-couche", "fil_couleurs"), ["orange", "#FE9641"], "fil_couleurs"),
+        (("visuels", "renard-classeur", "fil_epaisseur"), 0.01, "sans fil"),
         # Règles de rédaction (DIRECTION_ATELIER.md §7–§8)
         (("visuels", "photo-classeur", "alt"), "Photo d'ambiance : nos classeurs, en vente à l'ouverture.", "jamais présentée comme un produit en vente"),
         (("visuels", "photo-boite-etuis", "description"), "Une boîte vierge et son prix.", "jamais présentée comme un produit en vente"),
@@ -162,10 +168,15 @@ def test_attributs_sans_png_et_largeurs_exactes(source: str) -> None:
         assert visuels.src(m, "renard-heros-portrait", page).endswith("-1140.webp")
     assert set(visuels.attributs(m, "renard-heros", "link", page)) == {"href", "imagesrcset"}
     # Filet orange mesuré (« fil ») : écrit sur <img> et <source> d'un visuel qui en a un, jamais sur un <link>.
-    assert set(visuels.attributs(m, "renard-heros", "source", page)) == {"srcset", "width", "height", "data-fil"}
+    assert set(visuels.attributs(m, "renard-heros", "source", page)) == {"srcset", "width", "height", "data-fil", "data-fil-ep", "data-fil-couleurs"}
     assert a["data-fil"] == "0.012 0.871 0.729 0.997" == visuels.fil_html(m, "renard-heros")
-    assert "data-fil" not in visuels.attributs(m, "renard-leman", "img", page)  # visuel sans filet
-    assert set(visuels.attributs(m, "renard-leman", "source", page)) == {"srcset", "width", "height"}
+    # Épaisseur et teintes mesurées du filet : le fil dessiné part de l'épaisseur et de la couleur photographiées.
+    assert a["data-fil-ep"] == "0.013" and a["data-fil-couleurs"] == "#FEAA68 #FE8F41"
+    # Le Léman : le « filet » est le bout de la corde orange enroulée au bollard, d'où ressort le fil.
+    assert visuels.fil_html(m, "renard-leman") == "0.852 0.845 0.836 0.862"
+    for cle in ("data-fil", "data-fil-ep", "data-fil-couleurs"):
+        assert cle not in visuels.attributs(m, "renard-classeur", "img", page)  # visuel sans filet
+    assert set(visuels.attributs(m, "renard-classeur", "source", page)) == {"srcset", "width", "height"}
 
 
 def test_data_fil_ecrit_retire_et_jamais_a_la_main(tmp_path: Path) -> None:
@@ -174,7 +185,8 @@ def test_data_fil_ecrit_retire_et_jamais_a_la_main(tmp_path: Path) -> None:
     page = tmp_path / "p.html"
     sortie = visuels.appliquer_texte('<img alt="" data-visuel="renard-assis" data-fil="0 0 1 1" src="">', m, page, racine=tmp_path)
     assert 'data-fil="0 0.877 0.909 1"' in sortie and 'data-fil="0 0 1 1"' not in sortie
-    sans = visuels.appliquer_texte('<img alt="" data-visuel="renard-classeur" data-fil="0 0.5 1 0.5" src="">', m, page, racine=tmp_path)
+    assert 'data-fil-ep="0.0136"' in sortie and 'data-fil-couleurs="#FDA75C #FE9645"' in sortie
+    sans = visuels.appliquer_texte('<img alt="" data-visuel="renard-classeur" data-fil="0 0.5 1 0.5" data-fil-ep="0.5" src="">', m, page, racine=tmp_path)
     assert "data-fil" not in sans
     assert visuels.appliquer_texte(sortie, m, page, racine=tmp_path) == sortie  # idempotent
     dossier, m2 = fictifs.landing_aux_visuels(tmp_path, "local", nom="fil")

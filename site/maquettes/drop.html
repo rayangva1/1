@@ -4,8 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <!--
-    MAQUETTE (non publiée) — page d'un drop FICTIF, ambiance « Atelier » (docs/05-da/DIRECTION_ATELIER.md) : le jour du
-    drop est un chapitre charbon, Braise (nom provisoire) y ouvre une boîte noire vierge d'où sort une lumière.
+    MAQUETTE (non publiée) — page d'un drop FICTIF, ambiance « Atelier » (docs/05-da/DIRECTION_ATELIER.md) : le héro
+    charbon montre l'emplacement de la PHOTO RÉELLE du produit (jamais une illustration) ; Braise (nom provisoire)
+    n'apparaît que dans l'explication du déroulement, jamais dans une section qui porte le titre du produit ou ses prix.
     Réutilise les feuilles de la landing (site/landing/). Produit, prix et dates FICTIFS ; statut limité à « Réservations
     ouvertes / fermées » (moteur) ; aucun minuteur, aucun nombre d'unités. Contrôlée par site/outils/verifier_site.py.
   -->
@@ -46,9 +47,9 @@
   <main id="contenu">
     <section class="lp-chapitre--charbon lp-drop-hero" aria-labelledby="titre-drop">
       <div class="lp-cadre lp-grille lp-drop-hero__grille">
-        <figure class="lp-media lp-drop-hero__image">
-          <img alt="Illustration : notre renard, ravi, soulève de la patte le couvercle d'une boîte noire vierge d'où sort une lumière dorée." sizes="(min-width: 900px) 56vw, 100vw" fetchpriority="high" decoding="async" data-visuel="renard-jour-de-drop" src="../landing/assets/visuels/renard-jour-de-drop-1280.webp" srcset="../landing/assets/visuels/renard-jour-de-drop-640.webp 640w, ../landing/assets/visuels/renard-jour-de-drop-960.webp 960w, ../landing/assets/visuels/renard-jour-de-drop-1280.webp 1280w, ../landing/assets/visuels/renard-jour-de-drop-1920.webp 1920w" width="1920" height="1086" data-fil="0 0.795 0.794 1">
-        </figure>
+        <div class="lp-drop-hero__photo">
+          <div class="da-photo" role="img" aria-label="Emplacement : photo réelle du produit scellé, face avant">Photo réelle du produit scellé<br>(face avant, langue visible)<br><span class="lp-fictif">À remplacer</span></div>
+        </div>
         <div class="lp-drop-hero__texte">
           <p class="lp-surtitre">Drop FICTIF · maquette</p>
           <h1 id="titre-drop" class="da-title lp-hero__titre">Coffret Dresseur d'élite, <em class="lp-accent">Extension FICTIVE</em></h1>
@@ -67,10 +68,16 @@
 
     <section class="lp-chapitre lp-formats" aria-labelledby="titre-chrono">
       <div class="lp-cadre">
-        <div class="lp-entete-section" data-apparition>
-          <p class="lp-numero"><span class="lp-numero__chiffre">01</span> Comment se passe ce drop</p>
-          <h2 id="titre-chrono" class="da-title lp-h2">Trois moments, <em class="lp-accent">aucune course</em>.</h2>
-          <p class="lp-intro">Pas de minuteur, pas de nombre d'unités : un statut et une date estimée, mis à jour si la date change.</p>
+        <div class="lp-grille lp-drop-deroule">
+          <div class="lp-entete-section" data-apparition>
+            <p class="lp-numero"><span class="lp-numero__chiffre">01</span> Comment se passe ce drop</p>
+            <h2 id="titre-chrono" class="da-title lp-h2">Trois moments, <em class="lp-accent">aucune course</em>.</h2>
+            <p class="lp-intro">Pas de minuteur, pas de nombre d'unités : un statut et une date estimée, mis à jour si la date change.</p>
+          </div>
+          <figure class="lp-drop-deroule__image" data-apparition>
+            <div class="lp-media lp-media--fondu"><img alt="Illustration : notre renard assis, oreilles dressées, lève les yeux, attentif." sizes="(min-width: 900px) 40vw, 92vw" loading="lazy" decoding="async" data-visuel="renard-alertes" src="../landing/assets/visuels/renard-alertes-1280.webp" width="1920" height="1086" srcset="../landing/assets/visuels/renard-alertes-640.webp 640w, ../landing/assets/visuels/renard-alertes-960.webp 960w, ../landing/assets/visuels/renard-alertes-1280.webp 1280w, ../landing/assets/visuels/renard-alertes-1920.webp 1920w" data-fil="0 0.908 0.483 1" data-fil-ep="0.0101" data-fil-couleurs="#FBA45A #FE9144"></div>
+            <figcaption class="lp-note">Illustration : Braise (nom provisoire), création originale de la boutique, ne représente pas ce produit.</figcaption>
+          </figure>
         </div>
         <ol class="lp-chrono">
           <li class="lp-chrono__etape" data-apparition>
@@ -94,10 +101,7 @@
 
     <section class="lp-chapitre lp-reservation" aria-labelledby="titre-explication">
       <div class="lp-cadre lp-grille lp-histoire">
-        <figure class="lp-histoire__image" data-apparition>
-          <div class="lp-media"><img alt="Illustration : notre renard fait un clin d'œil en gardant d'une patte trois boîtes noires vierges à bande orange." sizes="(min-width: 900px) 36vw, 92vw" loading="lazy" decoding="async" data-visuel="renard-reservation" src="../landing/assets/visuels/renard-reservation-1152.webp" srcset="../landing/assets/visuels/renard-reservation-480.webp 480w, ../landing/assets/visuels/renard-reservation-800.webp 800w, ../landing/assets/visuels/renard-reservation-1152.webp 1152w" width="1152" height="1440"></div>
-        </figure>
-        <div class="lp-histoire__texte" data-apparition>
+        <div class="lp-histoire__texte lp-histoire__texte--seul" data-apparition>
           <p class="lp-numero"><span class="lp-numero__chiffre">02</span> La réservation garantie</p>
           <h2 id="titre-explication" class="da-title lp-h2 lp-h2--petit">Deux prix, <em class="lp-accent">côte à côte</em>.</h2>
           <div class="lp-deux-prix">

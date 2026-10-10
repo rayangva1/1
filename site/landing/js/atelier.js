@@ -1,11 +1,16 @@
 /*
  * Ambiance « Atelier » — effets de la landing, des pages secondaires et des maquettes (docs/05-da/DIRECTION_ATELIER.md).
  *
- * - Le fil orange (§6) : une ligne continue, tracée en SVG dans .lp-fil, qui sort du filet photographié du héro,
- *   descend dans la marge gauche, rejoint le filet photographié de chaque figure [data-fil-ancre] (points mesurés,
- *   écrits dans data-fil par site/outils/visuels.py depuis site/config/visuels.json), s'efface derrière les figures
- *   [data-fil-masque] et se pose sous le renard endormi du pied de page. Il se dessine au défilement ; en mouvement
- *   réduit ou en pause, il est entier et immobile. Il ne porte aucune information (décor, aria-hidden).
+ * - Le fil orange (§6) : une ligne continue, tracée en SVG dans .lp-fil. Elle sort du filet photographié du héro,
+ *   descend sous le contenu, glisse en S jusqu'à la marge gauche, entre dans le filet photographié de chaque figure
+ *   [data-fil-ancre] et en ressort (points, épaisseur et teintes mesurés, écrits dans data-fil, data-fil-ep et
+ *   data-fil-couleurs par site/outils/visuels.py depuis site/config/visuels.json) : le raccord est effilé, de
+ *   l'épaisseur et de la teinte du filet photographié jusqu'au trait de 2 px. Elle passe sous les illustrations
+ *   pleine largeur (et sous les figures [data-fil-masque]), ressort de la corde du Léman (data-fil-ancre="corde"), se
+ *   branche sur le tiret de chaque numéro de chapitre [data-fil-chapitre] posé contre la marge et sur le filet des
+ *   photos [data-fil-ancre="branche"], puis se pose sous le renard endormi du pied de page. Sous 700 px, pas de fil
+ *   dans la marge : chaque filet se prolonge et s'effile. Il se dessine au défilement ; en mouvement réduit ou en
+ *   pause, il est entier et immobile. Il ne porte aucune information (décor, aria-hidden).
  * - Images de marque : si une image ne charge pas, elle est masquée (jamais d'icône cassée) et le décor de secours
  *   (silhouette du renard) reste visible.
  * - Boutons « Pause des animations » (WCAG 2.2.2, en-tête et pied de page), choix mémorisé si possible.
@@ -132,18 +137,22 @@
   var Fil = (function () {
     var conteneur = document.querySelector(".lp-fil");
     var svg = conteneur ? conteneur.querySelector("svg") : null;
-    var traits = [];          // [{el, longueur, echantillons: [{l, y}]}]
+    var traits = [];          // [{el, longueur, echantillons: [{l, y}], effiles: [{el, de, a}]}]
+    var chapitres = [];       // [{el, y}] : numéros dont le tiret se dessine quand le fil les atteint
     var premierTrace = true;
     var enAttente = false;
     var calculEnAttente = null;
+    var identifiant = 0;
+    /* Longueurs des raccords effilés (px) : au départ d'un filet photographié, à l'arrivée, sur mobile. */
+    var EFFILE_DEPART = 96, EFFILE_ARRIVEE = 64, PROLONGEMENT = 64;
 
     function point(x, y) { return { x: x, y: y }; }
+    function ajouter(a, d, k) { return point(a.x + d.x * k, a.y + d.y * k); }
 
     function boiteDoc(el) {
       var r = el.getBoundingClientRect();
-      var sx = window.pageXOffset || 0, sy = window.pageYOffset || 0;
       var origine = document.body.getBoundingClientRect();
-      return { x: r.left - origine.left, y: r.top + sy - (origine.top + sy), w: r.width, h: r.height, sx: sx };
+      return { x: r.left - origine.left, y: r.top - origine.top, w: r.width, h: r.height };
     }
 
     /* Source active d'une image (dans <picture>, la première <source> dont la requête média correspond). */
@@ -167,7 +176,23 @@
       return 0.5;
     }
 
-    /* Filet photographié d'une figure, projeté dans la page (object-fit: cover et object-position compris). */
+    /* Fraction d'une variable CSS (« 6% » → 0.06) lue sur un élément ; 0 si absente. */
+    function fraction(el, nom) {
+      var v = parseFloat(window.getComputedStyle(el).getPropertyValue(nom));
+      return isNaN(v) ? 0 : v / 100;
+    }
+
+    /* Le cadre est-il fondu (masque) ? Fondu gauche (fraction de la largeur) et haut (fraction de la hauteur). */
+    function fondus(figure) {
+      var s = window.getComputedStyle(figure);
+      var masque = s.maskImage || s.webkitMaskImage || "none";
+      if (masque === "none") { return { gauche: 0, haut: 0 }; }
+      var gauche = /90deg/.test(masque) ? fraction(figure, "--lp-fondu") : 0;
+      return { gauche: gauche, haut: fraction(figure, "--lp-fondu-haut") };
+    }
+
+    /* Filet photographié d'une figure, projeté dans la page (object-fit: cover et object-position compris), avec son
+       épaisseur projetée (px) et ses couleurs mesurées (entrée, sortie). */
     function filetDe(figure) {
       var img = figure.querySelector("img[data-visuel]");
       if (!img || img.classList.contains("est-indisponible")) { return null; }
@@ -175,7 +200,6 @@
       var f = String(src.getAttribute("data-fil") || "").trim().split(/\s+/).map(Number);
       var nw = Number(src.getAttribute("width")), nh = Number(src.getAttribute("height"));
       if (f.length !== 4 || f.some(isNaN) || !nw || !nh) { return null; }
-      /* Boîte du cadre (l'image peut être légèrement agrandie pendant son apparition, le cadre ne bouge pas). */
       var b = boiteDoc(img.closest(".lp-media") || img);
       if (b.w < 2 || b.h < 2) { return null; }
       var style = window.getComputedStyle(img);
@@ -183,10 +207,14 @@
       var s = style.objectFit === "contain" ? Math.min(b.w / nw, b.h / nh) : Math.max(b.w / nw, b.h / nh);
       var dw = nw * s, dh = nh * s;
       var ox = b.x + (b.w - dw) * pourcent(pos[0]), oy = b.y + (b.h - dh) * pourcent(pos[1]);
+      var ep = Number(src.getAttribute("data-fil-ep")) * dh;
+      var couleurs = String(src.getAttribute("data-fil-couleurs") || "").trim().split(/\s+/);
       return {
         boite: b,
         a: point(ox + f[0] * dw, oy + f[1] * dh),
-        z: point(ox + f[2] * dw, oy + f[3] * dh)
+        z: point(ox + f[2] * dw, oy + f[3] * dh),
+        ep: isNaN(ep) ? 2 : Math.max(2, ep),
+        couleurs: couleurs.length === 2 ? couleurs : []
       };
     }
 
@@ -207,21 +235,8 @@
       return point(dx / n, dy / n);
     }
 
-    /* Polyligne aux angles arrondis (rayon borné par la moitié des segments voisins). */
-    function chemin(points, rayon) {
-      var d = "M" + points[0].x.toFixed(1) + " " + points[0].y.toFixed(1);
-      for (var i = 1; i < points.length - 1; i++) {
-        var p = points[i - 1], c = points[i], n = points[i + 1];
-        var l1 = Math.hypot(c.x - p.x, c.y - p.y), l2 = Math.hypot(n.x - c.x, n.y - c.y);
-        var r = Math.min(rayon, l1 / 2, l2 / 2);
-        if (r < 0.5) { d += " L" + c.x.toFixed(1) + " " + c.y.toFixed(1); continue; }
-        var a = point(c.x - (c.x - p.x) / l1 * r, c.y - (c.y - p.y) / l1 * r);
-        var b = point(c.x + (n.x - c.x) / l2 * r, c.y + (n.y - c.y) / l2 * r);
-        d += " L" + a.x.toFixed(1) + " " + a.y.toFixed(1) + " Q" + c.x.toFixed(1) + " " + c.y.toFixed(1) + " " + b.x.toFixed(1) + " " + b.y.toFixed(1);
-      }
-      var fin = points[points.length - 1];
-      return d + " L" + fin.x.toFixed(1) + " " + fin.y.toFixed(1);
-    }
+    function f1(v) { return v.toFixed(1); }
+    function pt(p) { return f1(p.x) + " " + f1(p.y); }
 
     /* Abscisse du fil : milieu de la marge gauche (même règle que --lp-fil-x dans css/landing.css). */
     function abscisse() {
@@ -232,51 +247,122 @@
       return Math.max(4, Math.round(b.x + marge - marge / 2));
     }
 
+    /* Bas du contenu de la section d'une figure (sans sa marge intérieure basse) et marge haute de la section suivante :
+       le fil descend sous le contenu puis rejoint la marge dans l'espace libre entre deux chapitres. */
+    function espaceSous(figure) {
+      var selecteur = figure.getAttribute("data-fil-retour");
+      var section = (selecteur && figure.closest(selecteur)) || figure.closest("section, footer") || figure;
+      var bs = boiteDoc(section);
+      var s = window.getComputedStyle(section);
+      var bas = bs.y + bs.h - (parseFloat(s.paddingBottom) || 0);
+      var suivante = section.nextElementSibling;
+      while (suivante && suivante.offsetHeight === 0) { suivante = suivante.nextElementSibling; }
+      if (!suivante && section.parentElement && section.parentElement.tagName === "MAIN") { suivante = document.querySelector("footer"); }
+      var haut = suivante ? parseFloat(window.getComputedStyle(suivante).paddingTop) || 0 : 0;
+      return { bas: bas, libre: (bs.y + bs.h) - bas + haut };
+    }
+
+    /* Figures que le fil traverse, dans l'ordre de la page. */
     function ancres(gx) {
       var liste = [];
       Array.prototype.forEach.call(document.querySelectorAll("[data-fil-ancre]"), function (figure) {
-        var filet = filetDe(figure);
-        if (!filet) { return; }
-        var seg = decouper(filet.a, filet.z, filet.boite);
-        if (!seg) { return; }
-        var dir = unitaire(filet.a, filet.z);
-        var b = filet.boite;
-        var entree = seg.a;
-        if (b.x <= gx + 2) {
-          /* Figure qui déborde sous le fil : il rejoint le filet un peu après l'abscisse du fil. */
-          var t = (gx + 24 - filet.a.x) / ((filet.z.x - filet.a.x) || 1);
-          if (t >= 0 && t <= 1) { entree = point(filet.a.x + t * (filet.z.x - filet.a.x), filet.a.y + t * (filet.z.y - filet.a.y)); }
-        }
-        var retourY = b.y + b.h + 36;
-        var selecteur = figure.getAttribute("data-fil-retour");
-        if (selecteur && window.getComputedStyle(figure).getPropertyValue("--lp-fil-retour").trim() !== "0") {
-          var cible = figure.closest(selecteur) || document.querySelector(selecteur);
-          if (cible) {
-            var bc = boiteDoc(cible);
-            var bas = bc.y + bc.h - Math.min(64, parseFloat(window.getComputedStyle(cible).paddingBottom) / 2 || 48);
-            if (bas > retourY) { retourY = bas; }
+        var role = figure.getAttribute("data-fil-ancre") || "";
+        if (role === "branche") { return; }
+        var f = filetDe(figure);
+        if (!f) { return; }
+        var b = f.boite, dir = unitaire(f.a, f.z);
+        var a = { role: role, figure: figure, boite: b, dir: dir, ep: f.ep, couleurs: f.couleurs, plonge: b.x <= gx + 2 && b.x + b.w >= gx };
+        if (role === "corde") {
+          /* Le fil passe sous l'illustration et ressort du bout de la corde photographiée. */
+          if (f.z.x < b.x || f.z.x > b.x + b.w || f.z.y < b.y || f.z.y > b.y + b.h) { return; }
+          a.plonge = true;
+          a.entree = point(gx, b.y);
+          a.sortie = f.z;
+        } else {
+          var seg = decouper(f.a, f.z, b);
+          if (!seg) { return; }
+          var entree = seg.a;
+          if (a.plonge) {
+            /* Illustration pleine largeur : le fil passe dessous et rejoint le filet là où il croise la marge. */
+            var t = (gx - f.a.x) / ((f.z.x - f.a.x) || 1);
+            if (t >= 0 && t <= 1) { entree = point(f.a.x + t * (f.z.x - f.a.x), f.a.y + t * (f.z.y - f.a.y)); }
+          } else {
+            /* Cadre fondu à gauche : le fil dessiné recouvre la partie fondue du filet. */
+            var fondu = fondus(figure).gauche * b.w;
+            if (fondu > 0 && dir.x > 0.2) { entree = ajouter(seg.a, dir, fondu / dir.x); }
           }
+          a.entree = entree;
+          a.sortie = seg.z;
         }
-        liste.push({ role: figure.getAttribute("data-fil-ancre") || "", entree: entree, sortie: seg.z, dir: dir, retourY: retourY, boite: b });
+        var espace = espaceSous(figure);
+        a.bas = espace.bas;
+        a.libre = espace.libre;
+        liste.push(a);
       });
       return liste;
     }
 
-    function troncon(de, vers, gx, rayon) {
+    /* Blocs de contenu (textes, liens, formulaires, figures) : le fil ne les traverse jamais. */
+    function obstacles() {
+      var selecteur = "main h1, main h2, main h3, main p, main li, main dt, main dd, main a, main form, main figure, main summary, main .lp-encadre";
+      return Array.prototype.map.call(document.querySelectorAll(selecteur), function (el) {
+        return { el: el, b: boiteDoc(el) };
+      }).filter(function (o) { return o.b.w > 0 && o.b.h > 0; });
+    }
+
+    /* Abscisse libre la plus proche de x pour une descente verticale entre y0 et y1 (à 32 px au moins de tout bloc). */
+    function abscisseLibre(x, y0, y1, obs, gx, largeur, figure) {
+      var bloques = obs.filter(function (o) {
+        return o.b.y < y1 && o.b.y + o.b.h > y0 && !(figure && (o.el === figure || figure.contains(o.el)));
+      }).map(function (o) { return [o.b.x - 32, o.b.x + o.b.w + 32]; });
+      var candidats = [x];
+      bloques.forEach(function (iv) { candidats.push(iv[0], iv[1]); });
+      var libres = candidats.filter(function (c) {
+        return c > gx + 16 && c < largeur - 8 && !bloques.some(function (iv) { return c > iv[0] + 0.5 && c < iv[1] - 0.5; });
+      });
+      libres.sort(function (a, b) { return Math.abs(a - x) - Math.abs(b - x); });
+      return libres.length ? libres[0] : x;
+    }
+
+    /* Tronçon entre deux figures : il prolonge le filet de sortie, tourne vers le bas sans crochet, descend sous le
+       contenu (dans un couloir libre), glisse en S jusqu'à la marge, la longe puis entre dans le filet suivant (ou passe
+       sous l'image). */
+    function troncon(de, vers, gx, obs, largeur) {
       var e = de.sortie, d = de.dir;
-      var pts = [e];
-      var p1 = point(e.x + d.x * 24, e.y + d.y * 24);
-      pts.push(p1);
-      var yR = Math.max(de.retourY, p1.y + rayon);
-      pts.push(point(p1.x + Math.max(0, d.x) * 8, yR));
-      pts.push(point(gx, yR));
-      var b = vers.entree, d2 = vers.dir;
-      var ecart = b.x - gx;
-      var yApproche = d2.x > 0.2 ? b.y - ecart * (d2.y / d2.x) : b.y - rayon;
-      if (yApproche < yR + rayon) { yApproche = Math.min(b.y, yR + rayon); }
-      pts.push(point(gx, yApproche));
-      pts.push(b);
-      return chemin(pts, rayon);
+      var p1 = ajouter(e, d, 24);
+      var r = 56;
+      var q = point(p1.x + d.x * r * 0.6, p1.y + r * (0.7 + Math.max(0, d.y)));
+      var y1 = Math.max(q.y, de.bas + 16);
+      q.x = abscisseLibre(q.x, q.y, y1, obs, gx, largeur, de.figure);
+      if (q.x < p1.x) {
+        /* Couloir resserré (ex. entre deux colonnes) : le fil tourne aussitôt, sans s'avancer vers le bloc voisin. */
+        p1 = ajouter(e, d, 6);
+      }
+      var c = "M" + pt(e) + " L" + pt(p1) + " C" + pt(ajouter(p1, d, q.x < p1.x ? 12 : r * 0.5)) + " " + f1(q.x) + " " + f1(q.y - r * 0.45) + " " + pt(q);
+      if (y1 > q.y + 0.5) { c += " L" + f1(q.x) + " " + f1(y1); }
+      var hs = Math.max(72, Math.min(240, (de.libre - 16) - 32));
+      var y2 = y1 + hs;
+      c += " C" + f1(q.x) + " " + f1(y1 + hs * 0.55) + " " + f1(gx) + " " + f1(y2 - hs * 0.55) + " " + f1(gx) + " " + f1(y2);
+      var b = vers.entree;
+      if (vers.plonge) {
+        c += " L" + f1(gx) + " " + f1(Math.max(y2, b.y));
+        if (Math.abs(b.x - gx) > 0.5) { c += " L" + pt(b); }
+        return c;
+      }
+      var d2 = vers.dir;
+      var k = (b.x - gx) / Math.max(0.2, d2.x);
+      var coin = point(gx, b.y - d2.y * k);
+      var rc = Math.max(4, Math.min(40, k * 0.6, coin.y - y2));
+      c += " L" + f1(gx) + " " + f1(coin.y - rc) + " Q" + pt(coin) + " " + pt(ajouter(coin, d2, rc)) + " L" + pt(b);
+      return c;
+    }
+
+    /* Branche : depuis la marge, le fil rejoint le tiret d'un numéro de chapitre ou le filet d'une photo. */
+    function branche(cible, d, gx) {
+      var k = (cible.x - gx) / Math.max(0.2, d.x);
+      var coin = point(gx, cible.y - d.y * k);
+      var rc = Math.max(4, Math.min(24, k * 0.6));
+      return "M" + f1(gx) + " " + f1(coin.y - rc - 8) + " L" + f1(gx) + " " + f1(coin.y - rc) + " Q" + pt(coin) + " " + pt(ajouter(coin, d, rc)) + " L" + pt(cible);
     }
 
     function creer(nom, attributs) {
@@ -285,45 +371,164 @@
       return el;
     }
 
+    /* Polygone effilé le long d'un chemin : largeur l0 en s0, l1 en s1, dégradé de couleur (teinte du filet photographié
+       vers l'orange du fil). */
+    function effile(chemin, s0, s1, l0, l1, couleur, versFilet, defs) {
+      var n = 16, gauche = [], droite = [];
+      for (var i = 0; i <= n; i++) {
+        var s = s0 + (s1 - s0) * i / n;
+        var p = chemin.getPointAtLength(s);
+        var pa = chemin.getPointAtLength(Math.max(0, s - 1)), pb = chemin.getPointAtLength(Math.min(chemin.getTotalLength(), s + 1));
+        var t = unitaire(pa, pb), nx = -t.y, ny = t.x;
+        var u = i / n, lisse = u * u * (3 - 2 * u);
+        var w = (l0 + (l1 - l0) * lisse) / 2;
+        gauche.push(point(p.x + nx * w, p.y + ny * w));
+        droite.push(point(p.x - nx * w, p.y - ny * w));
+      }
+      var d = "M" + gauche.map(pt).join(" L") + " L" + droite.reverse().map(pt).join(" L") + " Z";
+      var id = "lp-fil-degrade-" + (identifiant++);
+      var a = chemin.getPointAtLength(s0), z = chemin.getPointAtLength(s1);
+      var degrade = creer("linearGradient", { id: id, gradientUnits: "userSpaceOnUse", x1: f1(a.x), y1: f1(a.y), x2: f1(z.x), y2: f1(z.y) });
+      var arret = creer("stop", { offset: versFilet ? "1" : "0", "stop-color": couleur || "currentColor" });
+      var fin = creer("stop", { offset: versFilet ? "0" : "1", "class": "lp-fil__fin" });
+      if (versFilet) { degrade.appendChild(fin); degrade.appendChild(arret); } else { degrade.appendChild(arret); degrade.appendChild(fin); }
+      if (!couleur) { arret.setAttribute("class", "lp-fil__fin"); }
+      defs.appendChild(degrade);
+      return creer("path", { "class": "lp-fil__effile", d: d, fill: "url(#" + id + ")" });
+    }
+
+    function echantillonner(el) {
+      var longueur = el.getTotalLength();
+      var n = Math.max(24, Math.min(400, Math.round(longueur / 24)));
+      var echantillons = [];
+      var ymax = -Infinity;
+      for (var k = 0; k <= n; k++) {
+        var l = longueur * k / n, y = el.getPointAtLength(l).y;
+        ymax = Math.max(ymax, y);   // niveau de lecture monotone (le fil ne remonte jamais)
+        echantillons.push({ l: l, y: ymax });
+      }
+      return { longueur: longueur, echantillons: echantillons };
+    }
+
+    /* Masque d'un tronçon : il passe sous les illustrations pleine largeur (sauf celle d'où il part). */
+    function masquePour(figures, largeur, hauteur, defs) {
+      if (!figures.length) { return null; }
+      var id = "lp-fil-masque-" + (identifiant++);
+      var masque = creer("mask", { id: id, maskUnits: "userSpaceOnUse", x: 0, y: 0, width: largeur, height: hauteur });
+      masque.appendChild(creer("rect", { x: 0, y: 0, width: largeur, height: hauteur, fill: "white" }));
+      figures.forEach(function (fig) {
+        var b = boiteDoc(fig);
+        var retrait = fondus(fig).haut * b.h * 0.5;   // le fil disparaît au milieu du fondu du haut, pas avant
+        masque.appendChild(creer("rect", { x: f1(b.x), y: f1(b.y + retrait), width: f1(b.w), height: f1(b.h - retrait), fill: "black" }));
+      });
+      defs.appendChild(masque);
+      return "url(#" + id + ")";
+    }
+
     function calculer() {
       calculEnAttente = null;
       if (!svg) { return; }
       var largeur = document.body.clientWidth, hauteur = document.body.scrollHeight;
       while (svg.firstChild) { svg.removeChild(svg.firstChild); }
       traits = [];
+      chapitres = [];
       svg.setAttribute("viewBox", "0 0 " + largeur + " " + hauteur);
       svg.setAttribute("width", largeur);
       svg.setAttribute("height", hauteur);
       var gx = abscisse();
       var liste = ancres(gx);
       if (liste.length < 2) { html.classList.remove("lp-fil-pret"); return; }
-      var rayon = largeur < 600 ? 16 : 32;
-      /* Il s'efface derrière les figures sans filet qui croisent sa course (ex. le Léman plein cadre). */
       var defs = creer("defs", {});
-      var masque = creer("mask", { id: "lp-fil-masque", maskUnits: "userSpaceOnUse", x: 0, y: 0, width: largeur, height: hauteur });
-      masque.appendChild(creer("rect", { x: 0, y: 0, width: largeur, height: hauteur, fill: "white" }));
-      Array.prototype.forEach.call(document.querySelectorAll("[data-fil-masque]"), function (fig) {
-        var b = boiteDoc(fig);
-        if (b.w > 0 && b.x <= gx && b.x + b.w >= gx) {
-          masque.appendChild(creer("rect", { x: b.x, y: b.y, width: b.w, height: b.h, fill: "black" }));
-        }
-      });
-      defs.appendChild(masque);
       svg.appendChild(defs);
-      var groupe = creer("g", { mask: "url(#lp-fil-masque)" });
+      var groupe = creer("g", {});
       svg.appendChild(groupe);
-      for (var i = 0; i < liste.length - 1; i++) {
-        var el = creer("path", { "class": "lp-fil__trait", d: troncon(liste[i], liste[i + 1], gx, rayon) });
-        groupe.appendChild(el);
-        var longueur = el.getTotalLength();
-        var n = Math.max(24, Math.min(400, Math.round(longueur / 24)));
-        var echantillons = [];
-        for (var k = 0; k <= n; k++) {
-          var l = longueur * k / n, pt = el.getPointAtLength(l);
-          echantillons.push({ l: l, y: pt.y });
-        }
-        traits.push({ el: el, longueur: longueur, echantillons: echantillons });
+      var etroit = largeur < 700;
+      var cadre = document.querySelector(".lp-cadre");
+      var gaucheContenu = cadre ? boiteDoc(cadre).x + (parseFloat(window.getComputedStyle(cadre).paddingLeft) || 0) : gx;
+
+      Array.prototype.forEach.call(document.querySelectorAll("[data-fil-chapitre]"), function (numero) {
+        var chiffre = numero.querySelector(".lp-numero__chiffre") || numero;
+        var b = boiteDoc(chiffre);
+        chapitres.push({ el: numero, y: b.y + b.h / 2, x: b.x });
+      });
+
+      if (etroit) {
+        /* Mobile : pas de fil dans la marge (trop proche du texte) ; chaque filet se prolonge et s'effile. */
+        liste.forEach(function (a) {
+          if (a.role === "corde" || a.sortie.x > largeur - 8) { return; }
+          var fin = ajouter(a.sortie, a.dir, PROLONGEMENT);
+          var guide = creer("path", { d: "M" + pt(a.sortie) + " L" + pt(fin), fill: "none" });
+          groupe.appendChild(guide);
+          var poly = effile(guide, 0, PROLONGEMENT, a.ep, 0, a.couleurs[1], false, defs);
+          groupe.removeChild(guide);
+          groupe.appendChild(poly);
+          traits.push({ el: poly, longueur: 0, echantillons: [{ l: 0, y: a.sortie.y }], effiles: [], seul: true });
+        });
+        html.classList.add("lp-fil-pret");
+        premierTrace = false;
+        dessiner(true);
+        return;
       }
+
+      var masquables = Array.prototype.slice.call(document.querySelectorAll("[data-fil-masque]"));
+      var obs = obstacles();
+      /* Le fil passe sous les illustrations pleine largeur : pas de branche vers un numéro posé dessus. */
+      var dessous = liste.filter(function (a) { return a.plonge; }).map(function (a) { return a.boite; });
+      for (var i = 0; i < liste.length - 1; i++) {
+        var de = liste[i], vers = liste[i + 1];
+        var caches = masquables.filter(function (fig) { var b = boiteDoc(fig); return fig !== de.figure && b.x <= gx && b.x + b.w >= gx; });
+        if (vers.plonge && vers.figure !== de.figure) { caches.push(vers.figure); }
+        var el = creer("path", { "class": "lp-fil__trait", d: troncon(de, vers, gx, obs, largeur) });
+        var sousGroupe = creer("g", {});
+        var masque = masquePour(caches, largeur, hauteur, defs);
+        if (masque) { sousGroupe.setAttribute("mask", masque); }
+        sousGroupe.appendChild(el);
+        groupe.appendChild(sousGroupe);
+        var mesure = echantillonner(el);
+        var trait = { el: el, longueur: mesure.longueur, echantillons: mesure.echantillons, effiles: [] };
+        var lDepart = Math.min(EFFILE_DEPART, mesure.longueur / 3);
+        if (de.ep > 2.5) {
+          var depart = effile(el, 0, lDepart, de.ep, 2, de.couleurs[1], false, defs);
+          sousGroupe.appendChild(depart);
+          trait.effiles.push({ el: depart, de: 0 });
+        }
+        if (!vers.plonge && vers.ep > 2.5) {
+          var lArrivee = Math.min(EFFILE_ARRIVEE, mesure.longueur / 3);
+          var arrivee = effile(el, mesure.longueur - lArrivee, mesure.longueur, 2, vers.ep, vers.couleurs[0], true, defs);
+          sousGroupe.appendChild(arrivee);
+          trait.effiles.push({ el: arrivee, de: mesure.longueur - 2 });
+        }
+        traits.push(trait);
+      }
+
+      /* Branches : tiret de chaque numéro posé contre la marge, filet des photos [data-fil-ancre="branche"]. */
+      chapitres.forEach(function (c) {
+        if (c.x > gaucheContenu + 4 || c.x - gx < 8) { return; }
+        if (dessous.some(function (b) { return c.y >= b.y && c.y <= b.y + b.h; })) { return; }
+        var el = creer("path", { "class": "lp-fil__trait lp-fil__branche", d: branche(point(c.x + 1, c.y), point(1, 0), gx) });
+        groupe.appendChild(el);
+        var mesure = echantillonner(el);
+        traits.push({ el: el, longueur: mesure.longueur, echantillons: mesure.echantillons, effiles: [] });
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('[data-fil-ancre="branche"]'), function (figure) {
+        var f = filetDe(figure);
+        if (!f || f.boite.x - gx < 8) { return; }
+        var seg = decouper(f.a, f.z, f.boite);
+        if (!seg) { return; }
+        var d = unitaire(f.a, f.z);
+        var el = creer("path", { "class": "lp-fil__trait lp-fil__branche", d: branche(seg.a, d, gx) });
+        groupe.appendChild(el);
+        var mesure = echantillonner(el);
+        var trait = { el: el, longueur: mesure.longueur, echantillons: mesure.echantillons, effiles: [] };
+        if (f.ep > 2.5) {
+          var l = Math.min(EFFILE_ARRIVEE, mesure.longueur * 0.8);
+          var poly = effile(el, mesure.longueur - l, mesure.longueur, 2, f.ep, f.couleurs[0], true, defs);
+          groupe.appendChild(poly);
+          trait.effiles.push({ el: poly, de: mesure.longueur - 2 });
+        }
+        traits.push(trait);
+      });
+
       html.classList.add("lp-fil-pret");
       if (premierTrace && mouvementAutorise()) {
         /* Premier tracé : le fil part caché puis se dessine jusqu'au niveau de lecture. */
@@ -333,6 +538,7 @@
           t.el.style.strokeDasharray = t.longueur.toFixed(1) + " " + (t.longueur + 4).toFixed(1);
           t.el.style.strokeDashoffset = t.longueur.toFixed(1);
           t.el.classList.add("est-cache");
+          t.effiles.forEach(function (e) { e.el.classList.add("est-cache"); });
         });
         window.requestAnimationFrame(function () {
           window.requestAnimationFrame(function () { dessiner(false); });
@@ -359,20 +565,28 @@
 
     function dessiner(initial) {
       enAttente = false;
+      if (!conteneur) { return; }
       var anime = mouvementAutorise();
       conteneur.classList.toggle("lp-fil--anime", anime && !initial);
       var yCible = (window.pageYOffset || 0) + (window.innerHeight || html.clientHeight) * 0.85;
+      chapitres.forEach(function (c) { c.el.classList.toggle("est-relie", !anime || yCible >= c.y); });
       traits.forEach(function (t) {
+        if (t.seul) {
+          t.el.classList.toggle("est-cache", anime && yCible < t.echantillons[0].y);
+          return;
+        }
         if (!anime) {
           t.el.style.strokeDasharray = "none";
           t.el.style.strokeDashoffset = "0";
           t.el.classList.remove("est-cache");
+          t.effiles.forEach(function (e) { e.el.classList.remove("est-cache"); });
           return;
         }
         var l = longueurA(t, yCible);
         t.el.style.strokeDasharray = t.longueur.toFixed(1) + " " + (t.longueur + 4).toFixed(1);
         t.el.style.strokeDashoffset = (t.longueur - l).toFixed(1);
         t.el.classList.toggle("est-cache", l < 1);
+        t.effiles.forEach(function (e) { e.el.classList.toggle("est-cache", l < Math.max(1, e.de)); });
       });
       if (initial && anime) {
         /* Tracé recalculé (fenêtre, polices) posé sans transition, puis le fil suit la lecture en douceur. */
@@ -381,7 +595,7 @@
     }
 
     function planifierDessin() {
-      if (!enAttente && traits.length) { enAttente = true; window.requestAnimationFrame(function () { dessiner(false); }); }
+      if (!enAttente && (traits.length || chapitres.length)) { enAttente = true; window.requestAnimationFrame(function () { dessiner(false); }); }
     }
 
     function planifierCalcul() {

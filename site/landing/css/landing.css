@@ -1,10 +1,11 @@
 /*
  * Landing, pages secondaires et maquettes — ambiance « Atelier » (docs/05-da/DIRECTION_ATELIER.md).
- * Un établi de collectionneur, le matin, à Genève : papier crème, charbon mat, un seul fil orange.
+ * Un établi de collectionneur, le matin, à Genève : un seul papier crème, charbon mat, un seul fil orange.
  * Requiert assets/da/tokens.css, components.css et ambiance.css (copies de docs/05-da, site/outils/da_sync.py).
  * Règles : uniquement des variables --da-* (aucune couleur en dur : contrôlé par site/outils/verifier_site.py) ;
  * l'orange est un trait (fil, filets, numéros), jamais du texte sur le papier ; tout mouvement est déclaré dans
- * le bloc « prefers-reduced-motion: no-preference » et coupé par le bouton « Pause des animations ».
+ * le bloc « prefers-reduced-motion: no-preference » et coupé par le bouton « Pause des animations » (défilement doux
+ * compris) ; un texte posé sur une illustration est charbon, sur un voile papier d'au moins 64 % (.lp-voile).
  * Préfixes : lp- (pages), rn- (renard dessiné en SVG, décor de secours).
  */
 
@@ -13,14 +14,19 @@
   --lp-entete-h: 64px;
   --lp-gouttiere: 16px;
   --lp-cadre-max: calc(var(--da-largeur-max) + 2 * var(--da-marge-page));
-  --lp-titre-hero: clamp(3.1rem, 0.4rem + 6.6vw, 8.75rem);
-  --lp-titre-chapitre: var(--da-display-l);
-  --lp-chapitre-pad: clamp(80px, 11vw, 176px);
+  /* Hiérarchie : le héro domine (≈ 130 px à 1440), les chapitres récit ≈ 68 px, les chapitres utilitaires ≈ 54 px. */
+  --lp-titre-hero: clamp(3.4rem, 0.6rem + 8.4vw, 11rem);
+  --lp-titre-chapitre: clamp(2.4rem, 1.2rem + 3.4vw, 5rem);
+  --lp-titre-utile: clamp(2.2rem, 1.4rem + 2.2vw, 3.75rem);
+  --lp-chapitre-pad: clamp(56px, 8vw, 128px);
   /* Abscisse du fil orange : milieu de la marge gauche, à côté du contenu (même calcul que js/atelier.js). */
   --lp-fil-x: max(calc(var(--da-marge-page) / 2), calc((100% - var(--da-largeur-max)) / 2 - var(--da-marge-page) / 2));
-  /* Voile de lisibilité sous un texte charbon posé sur une illustration : 64 % de papier chaud suffit pour
-     4.5:1 même sur une image noire (preuve : site/tests, image remplacée par du noir et du blanc purs). */
+  /* Voile de lisibilité sous un texte charbon posé sur une illustration : 64 % de papier suffit pour 4.5:1 même sur
+     une image noire (preuve : site/tests, chaque image remplacée par du noir et du blanc purs). */
   --lp-voile: color-mix(in srgb, var(--da-color-papier-chaud) 64%, transparent);
+  /* Cadres des illustrations fondus dans le papier (gauche, droite, haut) ; le bas reste net, là où sort le filet. */
+  --lp-fondu: 6%;
+  --lp-fondu-haut: 9%;
   --lp-renard-pelage: var(--da-color-ink);
   --lp-renard-creme: var(--da-color-surface);
   --lp-renard-braise: var(--da-color-accent);
@@ -37,6 +43,8 @@
   font-feature-settings: "kern", "liga";
   font-optical-sizing: auto;
 }
+/* Un seul papier pour toute la page (les bords des illustrations y disparaissent). */
+.da-root.lp-atelier { background: var(--da-color-papier-chaud); }
 @media (min-width: 900px) { .da-root { font-size: 1.125rem; } }
 :where(.da-root) p { margin: 0 0 1em; }
 :where(.da-root) p:last-child { margin-bottom: 0; }
@@ -47,6 +55,8 @@
 :where(.da-root) :is(h1, h2, h3) { text-wrap: balance; }
 :where(.da-root) :is(p, li, dd) { text-wrap: pretty; }
 :where(.da-root) figure { margin: 0; }
+/* Jamais un mot coupé en plein milieu dans un titre (components.css autorise la coupure partout ailleurs). */
+.da-root :is(h1, h2, h3) { overflow-wrap: normal; hyphens: manual; }
 .da-title { line-height: 0.95; }
 
 .lp-cadre {
@@ -63,13 +73,28 @@
 .lp-grille > * { grid-column: 1 / -1; min-width: 0; }
 @media (min-width: 600px) { .lp-grille { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
 @media (min-width: 900px) { .lp-grille { grid-template-columns: repeat(12, minmax(0, 1fr)); } }
+/* Grille pleine largeur : les images vont jusqu'au bord de l'écran, le texte reste dans les colonnes du cadre.
+   Lignes : plein-debut | contenu-debut … (colonnes 1 à 12 = lignes 2 à 14) … contenu-fin | plein-fin. */
+.lp-plein {
+  --lp-bord: max(var(--da-marge-page), calc((100% - var(--da-largeur-max)) / 2));
+  display: grid;
+  grid-template-columns: [plein-debut] calc(var(--lp-bord) - var(--lp-gouttiere)) [contenu-debut] repeat(4, minmax(0, 1fr)) [contenu-fin] calc(var(--lp-bord) - var(--lp-gouttiere)) [plein-fin];
+  column-gap: var(--lp-gouttiere);
+}
+.lp-plein > * { grid-column: contenu-debut / contenu-fin; min-width: 0; }
+@media (min-width: 600px) {
+  .lp-plein { grid-template-columns: [plein-debut] calc(var(--lp-bord) - var(--lp-gouttiere)) [contenu-debut] repeat(8, minmax(0, 1fr)) [contenu-fin] calc(var(--lp-bord) - var(--lp-gouttiere)) [plein-fin]; }
+}
+@media (min-width: 900px) {
+  .lp-plein { grid-template-columns: [plein-debut] calc(var(--lp-bord) - var(--lp-gouttiere)) [contenu-debut] repeat(12, minmax(0, 1fr)) [contenu-fin] calc(var(--lp-bord) - var(--lp-gouttiere)) [plein-fin]; }
+}
 
 /* ============================================================== typographie */
 .lp-accent {
   font-family: var(--da-font-accent);
   font-style: italic;
   font-weight: 400;
-  font-size: 1.07em;
+  font-size: 1.1em;
   letter-spacing: -0.012em;
   font-synthesis: none;
 }
@@ -95,14 +120,17 @@
   margin: 0 0 28px;
   color: var(--da-color-ink-muted);
 }
+/* Le tiret orange précède le numéro : c'est là que le fil vient se brancher (js/atelier.js). */
 .lp-numero__chiffre { display: inline-flex; align-items: center; gap: 14px; color: var(--da-color-ink); }
-.lp-numero__chiffre::after {
+.lp-numero__chiffre::before {
   content: "";
   width: 32px;
   height: var(--da-fil-epaisseur);
   background: var(--da-color-accent);
+  transform-origin: left center;
 }
 .lp-h2 { font-size: var(--lp-titre-chapitre); margin: 0 0 32px; }
+.lp-h2--utile { font-size: var(--lp-titre-utile); }
 .lp-h2--petit { font-size: clamp(2rem, 1.2rem + 2.6vw, 3.5rem); }
 .lp-h3 { margin: 0 0 10px; font-size: 1.25rem; font-weight: 560; line-height: 1.25; letter-spacing: -0.012em; }
 .lp-intro { font-size: clamp(1.1875rem, 1rem + 0.6vw, 1.4375rem); line-height: 1.5; letter-spacing: -0.008em; max-width: 34rem; }
@@ -116,6 +144,30 @@
   color: var(--da-color-ink);
 }
 .lp-legende { margin: 14px 0 0; color: var(--da-color-ink-muted); letter-spacing: 0.08em; text-transform: none; font-size: 0.75rem; }
+
+/* ============================================================== voile de lisibilité (texte posé sur une illustration) */
+/* Un rectangle de papier à 64 % dont les bords se fondent sur une grande distance (jamais un calque visible) :
+   pleine opacité sous chaque glyphe, fondu au-delà. Activé seulement là où le texte passe sur l'image. */
+.lp-voile { position: relative; isolation: isolate; }
+.lp-voile::before {
+  --lp-v-haut: 72px;
+  --lp-v-droite: clamp(120px, 12vw, 240px);
+  --lp-v-bas: 56px;
+  --lp-v-gauche: clamp(120px, 12vw, 240px);
+  /* Marge pleine autour de la boîte du texte (jambages des grands titres compris), avant le fondu. */
+  --lp-v-plein: 8px;
+  content: "";
+  position: absolute;
+  inset: calc(-1 * (var(--lp-v-haut) + var(--lp-v-plein))) calc(-1 * (var(--lp-v-droite) + var(--lp-v-plein))) calc(-1 * (var(--lp-v-bas) + var(--lp-v-plein))) calc(-1 * (var(--lp-v-gauche) + var(--lp-v-plein)));
+  z-index: -1;
+  display: none;
+  background: var(--lp-voile);
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent, black var(--lp-v-gauche), black calc(100% - var(--lp-v-droite)), transparent), linear-gradient(180deg, transparent, black var(--lp-v-haut), black calc(100% - var(--lp-v-bas)), transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, transparent, black var(--lp-v-gauche), black calc(100% - var(--lp-v-droite)), transparent), linear-gradient(180deg, transparent, black var(--lp-v-haut), black calc(100% - var(--lp-v-bas)), transparent);
+  mask-composite: intersect;
+}
 
 /* ============================================================== liens d'évitement, aperçu, en-tête */
 .lp-evitement {
@@ -141,15 +193,20 @@
 .lp-apercu p { margin: 0 auto; max-width: var(--da-largeur-max); }
 .lp-apercu strong { color: var(--da-color-inverse-ink); font-weight: 600; }
 
+/* En-tête : transparent sur le papier au chargement, puis papier givré au défilement (js/atelier.js) ; sans script,
+   papier plein. */
 .lp-entete {
   position: sticky;
   top: 0;
   z-index: 40;
-  background: var(--da-color-papier-chaud);
+  background: transparent;
   box-shadow: 0 1px 0 transparent;
 }
+html:not(.lp-js) .lp-entete { background: var(--da-color-papier-chaud); }
 .lp-entete.est-defile {
-  background: var(--da-color-bg);
+  background: color-mix(in srgb, var(--da-color-papier-chaud) 88%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   box-shadow: 0 1px 0 var(--da-color-line);
 }
 .lp-entete__inner { display: flex; align-items: center; gap: 20px; min-height: var(--lp-entete-h); }
@@ -182,34 +239,31 @@
   transform-origin: left center;
 }
 .lp-nav a:hover::after, .lp-nav a:focus-visible::after { transform: scaleX(1); }
-.lp-entete__actions { display: flex; align-items: center; gap: 10px; }
+.lp-entete__actions { display: flex; align-items: center; gap: 6px; }
+/* Bouton « Pause des animations » discret (aucun mouvement automatique de plus de 5 s : le fil suit le défilement) ;
+   libellé lu par les lecteurs d'écran et en infobulle, état porté par aria-pressed. */
 .lp-animations {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
   min-width: 44px;
   min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--da-color-line-strong);
+  padding: 0;
+  border: 1px solid transparent;
   border-radius: var(--da-radius-sm);
   background: transparent;
   color: var(--da-color-ink);
   font: inherit;
-  font-size: 0.8125rem;
   cursor: pointer;
 }
 .lp-animations[hidden] { display: none; }
-.lp-animations:hover { border-color: var(--da-color-ink); }
+.lp-animations:hover { border-color: var(--da-color-line-strong); }
 .lp-animations__lecture { display: none; }
 .lp-animations[aria-pressed="true"] .lp-animations__pause { display: none; }
 .lp-animations[aria-pressed="true"] .lp-animations__lecture { display: block; }
 .lp-animations__texte {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
-}
-@media (min-width: 1280px) {
-  .lp-animations__texte { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; }
 }
 
 /* ============================================================== boutons et liens d'action */
@@ -276,6 +330,17 @@
   object-fit: cover;
 }
 .lp-media img.est-indisponible { visibility: hidden; }
+/* Bords des illustrations fondus dans le papier : ce ne sont plus des rectangles collés sur la page. */
+.lp-media--fondu,
+.lp-page__figure {
+  border-radius: 0;
+  -webkit-mask-image: linear-gradient(90deg, transparent, black var(--lp-fondu), black calc(100% - var(--lp-fondu)), transparent), linear-gradient(180deg, transparent, black var(--lp-fondu-haut), black);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, transparent, black var(--lp-fondu), black calc(100% - var(--lp-fondu)), transparent), linear-gradient(180deg, transparent, black var(--lp-fondu-haut), black);
+  mask-composite: intersect;
+}
+/* Décor de secours (silhouette du renard) : visible si l'image manque ou sans script ; masqué dès que l'image est
+   chargée (sinon il transparaîtrait pendant la pose de l'image). */
 .lp-secours {
   position: absolute;
   inset: 0;
@@ -284,6 +349,7 @@
   place-items: end center;
   padding: 8% 0 6%;
 }
+.lp-media.a-visuel .lp-secours { visibility: hidden; }
 .lp-secours .rn-renard { width: min(42%, 15rem); }
 .rn-renard { display: block; width: 100%; height: auto; aspect-ratio: 120 / 140; overflow: visible; }
 .rn-pelage, .rn-truffe { fill: var(--lp-renard-pelage); }
@@ -301,7 +367,10 @@
   stroke-linejoin: round;
   stroke-linecap: butt;
 }
-.lp-fil__trait.est-cache { visibility: hidden; }
+/* Raccord effilé : le fil part de l'épaisseur et de la teinte du filet photographié et s'affine jusqu'à 2 px. */
+.lp-fil__effile { stroke: none; }
+.lp-fil__fin { stop-color: var(--da-color-accent); }
+.lp-fil__trait.est-cache, .lp-fil__effile.est-cache { visibility: hidden; }
 /* Sans script (ou si le tracé échoue), une ligne continue court dans la marge gauche des chapitres. */
 .lp-chapitre { position: relative; }
 html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
@@ -316,24 +385,24 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
 
 /* ============================================================== héro */
 .lp-hero {
+  position: relative;
+  overflow: clip;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "titre" "actions" "image" "intro" "preuves";
+  grid-template-areas: "tete" "corps" "image" "preuves";
   padding-bottom: var(--lp-chapitre-pad);
-  background: var(--da-color-papier-chaud);
 }
-.lp-hero__titre-bloc,
-.lp-hero__intro,
-.lp-hero__actions,
+.lp-hero__tete,
+.lp-hero__corps,
 .lp-preuves {
   width: 100%;
   max-width: var(--lp-cadre-max);
   margin-inline: auto;
   padding-inline: var(--da-marge-page);
 }
-.lp-hero__titre-bloc { grid-area: titre; padding-top: clamp(28px, 7vw, 64px); }
-.lp-hero__texte { position: relative; isolation: isolate; }
-.lp-hero__titre { margin: 0; font-size: var(--lp-titre-hero); }
+.lp-hero__tete { grid-area: tete; padding-top: clamp(28px, 6vw, 64px); }
+.lp-hero__texte { width: fit-content; max-width: 100%; }
+.lp-hero__titre { margin: 0; font-size: var(--lp-titre-hero); line-height: 0.92; }
 .lp-hero__seo {
   display: block;
   margin-bottom: 18px;
@@ -345,23 +414,32 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
 }
 .lp-hero__accroche { display: block; }
 .lp-ligne { display: inline; }
+.lp-hero__corps { grid-area: corps; margin-top: 24px; }
+.lp-hero__corps-texte { width: fit-content; max-width: 36rem; }
+.lp-hero__intro {
+  margin: 0;
+  color: var(--da-color-ink);
+  font-size: clamp(1.1875rem, 1rem + 0.5vw, 1.375rem);
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+}
 .lp-hero__actions {
-  grid-area: actions;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 28px;
-  margin-top: 28px;
+  margin-top: 24px;
 }
-.lp-hero__image { grid-area: image; margin-top: 36px; aspect-ratio: 1520 / 2380; border-radius: 0; --lp-fil-retour: 0; }
-.lp-hero__image img { object-position: 50% 100%; }
-.lp-hero__intro {
-  grid-area: intro;
-  margin: 72px 0 0;
-  font-size: clamp(1.1875rem, 1rem + 0.7vw, 1.5rem);
-  line-height: 1.45;
-  letter-spacing: -0.01em;
+.lp-hero__image {
+  grid-area: image;
+  margin-top: 48px;
+  aspect-ratio: 2688 / 1152;
+  border-radius: 0;
+  /* Le haut de l'illustration se fond dans le papier de l'en-tête (aucune couture). */
+  -webkit-mask-image: linear-gradient(180deg, transparent, black 28px);
+  mask-image: linear-gradient(180deg, transparent, black 28px);
 }
+.lp-hero__image img { object-position: 76% 100%; }
 .lp-preuves {
   grid-area: preuves;
   display: grid;
@@ -373,38 +451,59 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
   letter-spacing: 0.1em;
 }
 .lp-preuves li { padding: 14px 0; border-top: 1px solid var(--da-color-line); }
-@media (min-width: 600px) {
-  .lp-preuves { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .lp-hero__actions { margin-top: 36px; }
-}
 @media (min-width: 700px) {
-  .lp-hero__image { aspect-ratio: 2688 / 1152; margin-top: 48px; }
-  .lp-hero__image img { object-position: 100% 100%; }
   .lp-ligne { display: block; }
+  /* Les preuves restent dans les deux tiers gauches : le fil descend à leur droite. */
+  .lp-preuves { padding-right: calc(var(--da-marge-page) + 34%); }
 }
+/* Mobile : le titre est posé dans le haut libre de l'illustration portrait, l'accroche avant la ligne de référencement. */
+@media (max-width: 699px) {
+  .lp-hero { grid-template-areas: "image" "corps" "preuves"; }
+  .lp-hero__tete { grid-area: image; z-index: 3; align-self: start; padding-top: 22px; }
+  .lp-hero__titre { display: flex; flex-direction: column-reverse; font-size: clamp(3.25rem, 1rem + 10vw, 4.5rem); }
+  .lp-hero__seo { margin: 14px 0 0; font-size: 1rem; }
+  .lp-surtitre__long { display: none; }
+  .lp-hero__texte.lp-voile::before { display: block; --lp-v-haut: 40px; --lp-v-bas: 48px; --lp-v-gauche: 40px; --lp-v-droite: 64px; }
+  .lp-hero__image {
+    margin-top: 0;
+    aspect-ratio: auto;
+    height: min(calc(100svh - var(--lp-entete-h)), 200vw);
+    min-height: 520px;
+  }
+  .lp-hero__image img { object-position: 50% 40%; }
+  .lp-hero__corps { margin-top: 28px; }
+}
+/* Ordinateur : l'illustration occupe l'écran, titre, introduction et bouton sont posés dans sa moitié libre. */
 @media (min-width: 1280px) {
   .lp-hero {
-    grid-template-areas: "image" "intro" "actions" "preuves";
-    padding-bottom: clamp(120px, 10vw, 176px);
+    grid-template-areas: none;
+    grid-template-rows: auto auto 1fr auto;
+    padding-bottom: clamp(96px, 8vw, 144px);
   }
-  .lp-hero__titre-bloc { grid-area: image; align-self: start; z-index: 3; padding-top: clamp(40px, 4.6vw, 88px); }
-  .lp-hero__texte { width: fit-content; max-width: 62%; }
-  .lp-hero__texte::before {
-    content: "";
-    position: absolute;
-    inset: -56px -72px;
-    z-index: -1;
-    background: var(--lp-voile);
-    -webkit-mask-image: linear-gradient(90deg, transparent, black 56px, black calc(100% - 56px), transparent), linear-gradient(180deg, transparent, black 48px, black calc(100% - 48px), transparent);
-    -webkit-mask-composite: source-in;
-    mask-image: linear-gradient(90deg, transparent, black 56px, black calc(100% - 56px), transparent), linear-gradient(180deg, transparent, black 48px, black calc(100% - 48px), transparent);
-    mask-composite: intersect;
+  .lp-hero__image {
+    grid-row: 1 / 4;
+    grid-column: 1;
+    margin-top: 0;
+    aspect-ratio: auto;
+    height: calc(100svh - var(--lp-entete-h));
+    min-height: 640px;
+    max-height: 1000px;
   }
-  /* Le fil descend à droite du texte d'introduction, puis repart vers la marge sous le héro. */
-  .lp-hero__image { margin-top: 0; --lp-fil-retour: 1; }
-  .lp-hero__intro { margin-top: 56px; max-width: var(--lp-cadre-max); }
-  .lp-hero__intro, .lp-hero__actions, .lp-preuves { padding-right: calc(var(--da-marge-page) + 42%); }
-  .lp-preuves { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 56px; }
+  /* Cadrage : le renard à droite, la boîte noire assez loin du texte pour que le voile ne la touche jamais. */
+  .lp-hero__image img { object-position: 62% 100%; }
+  .lp-hero__tete { grid-row: 1; grid-column: 1; z-index: 3; align-self: start; padding-top: clamp(24px, 4svh, 72px); }
+  .lp-hero .lp-surtitre { margin-bottom: 12px; }
+  .lp-hero__seo { margin-bottom: 10px; }
+  .lp-hero__corps { grid-row: 2; grid-column: 1; z-index: 3; margin-top: clamp(14px, 2svh, 28px); }
+  /* Le héro domine (≈ 130 px à 1440) sans pousser le bouton sous le pli sur un écran bas (1366 × 768). */
+  .lp-hero__titre { font-size: min(var(--lp-titre-hero), 15svh); letter-spacing: -0.045em; }
+  .lp-hero__corps-texte { max-width: 36rem; }
+  .lp-hero__actions { margin-top: 16px; }
+  .lp-hero__texte.lp-voile::before,
+  .lp-hero__corps-texte.lp-voile::before { display: block; }
+  .lp-hero__texte.lp-voile::before { --lp-v-haut: 140px; --lp-v-bas: 32px; --lp-v-plein: 40px; }
+  .lp-hero__corps-texte.lp-voile::before { --lp-v-haut: 24px; --lp-v-bas: 16px; --lp-v-droite: 64px; }
+  .lp-preuves { grid-row: 4; grid-column: 1; margin-top: 40px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 /* ============================================================== chapitres */
@@ -416,11 +515,13 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
 .lp-chapitre--charbon p { color: var(--da-color-inverse-muted); }
 .lp-chapitre--charbon .lp-intro { color: var(--da-color-inverse-ink); }
 .lp-chapitre--charbon :focus-visible { outline-color: var(--da-color-inverse-focus); }
+.lp-chapitre--charbon .lp-h3 { color: var(--da-color-inverse-ink); }
+/* Sur charbon, la « boîte noire à bande orange » garde un contour pour rester lisible comme un badge. */
+.lp-chapitre--charbon .da-badge--reservation { box-shadow: inset 0 0 0 1px var(--da-color-inverse-muted), inset 0 -3px 0 var(--da-color-accent); }
 
 /* 01 · Braise */
-.lp-braise { background: var(--da-color-papier-chaud); }
 .lp-braise__portrait { aspect-ratio: 4 / 5; }
-.lp-braise__texte { margin-top: 72px; }
+.lp-braise__texte { margin-top: 56px; }
 .lp-portrait { margin: 36px 0; padding: 0; border-top: 1px solid var(--da-color-line); }
 .lp-portrait div { display: grid; gap: 4px; padding: 14px 0; border-bottom: 1px solid var(--da-color-line); }
 .lp-portrait dt { color: var(--da-color-ink-muted); }
@@ -436,15 +537,7 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
 .lp-drop__entete .lp-h2 { max-width: 14ch; }
 .lp-drop__corps { margin-top: clamp(40px, 6vw, 72px); align-items: end; }
 .lp-drop__image { aspect-ratio: 1920 / 1086; background: var(--da-color-inverse-surface); }
-.lp-drop__texte { margin-top: 72px; }
-.lp-etapes {
-  display: grid;
-  gap: 0;
-  margin: clamp(72px, 9vw, 120px) 0 0;
-  padding: 0;
-  list-style: none;
-}
-.lp-etapes__item { padding: 28px 0; border-top: 1px solid var(--da-color-inverse-line); }
+.lp-drop__texte { margin-top: 56px; }
 .lp-etapes__num {
   display: block;
   margin-bottom: 18px;
@@ -453,34 +546,45 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
   letter-spacing: 0.16em;
   color: var(--da-color-inverse-accent);
 }
-.lp-etapes__badge { margin: 4px 0 14px; }
-.lp-chapitre--charbon .lp-h3 { color: var(--da-color-inverse-ink); }
 @media (min-width: 900px) {
   .lp-drop__entete .lp-numero { grid-column: 1 / span 12; }
   .lp-drop__entete .lp-h2 { grid-column: 1 / span 11; }
   .lp-drop__image { grid-column: 1 / span 8; }
   .lp-drop__texte { grid-column: 9 / span 4; margin-top: 0; }
-  .lp-etapes { grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: var(--lp-gouttiere); }
-  .lp-etapes__item { padding-right: 24px; }
 }
 
-/* 03 · Réservation garantie */
-.lp-reservation { background: var(--da-color-papier-chaud); }
+/* 03 · Réservation garantie : la garantie est la phrase la plus importante de la page, dite comme une citation. */
 .lp-garantie {
-  margin: 36px 0 0;
-  padding: 24px 28px;
-  background: var(--da-color-accent-soft);
-  border-left: var(--da-fil-epaisseur) solid var(--da-color-accent);
-  border-radius: 0 var(--da-radius-sm) var(--da-radius-sm) 0;
+  margin: 40px 0 0;
+  padding: 28px 0 0;
+  border-top: var(--da-fil-epaisseur) solid var(--da-color-accent);
 }
-.lp-garantie__texte { margin: 0; font-size: 1.125rem; font-weight: 500; line-height: 1.45; color: var(--da-color-ink); }
+.lp-garantie__texte {
+  margin: 0;
+  font-family: var(--da-font-accent);
+  font-weight: 400;
+  font-size: clamp(1.375rem, 1.2rem + 0.5vw, 1.625rem);
+  line-height: 1.22;
+  letter-spacing: -0.01em;
+  color: var(--da-color-ink);
+}
+#reservation .lp-garantie__texte:not(.lp-garantie__texte--limite) { font-size: clamp(1.6rem, 1.2rem + 1.2vw, 2.25rem); line-height: 1.2; }
+.lp-garantie__texte--limite {
+  margin-top: 16px;
+  font-family: var(--da-font-text);
+  font-size: 1rem;
+  line-height: 1.5;
+  letter-spacing: 0;
+  color: var(--da-color-ink-muted);
+}
 .lp-garantie + .lp-note { margin-top: 20px; }
-.lp-garantie__texte--limite { margin-top: 12px; font-size: 1rem; font-weight: 400; color: var(--da-color-ink-muted); }
 .lp-garanties { margin: 36px 0 32px; padding: 0; list-style: none; border-top: 1px solid var(--da-color-line); }
 .lp-garanties__item { display: flex; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--da-color-line); }
 .lp-garanties__icone { flex: none; color: var(--da-color-ink); }
-.lp-reservation__image { margin-top: 72px; }
-.lp-reservation__image .lp-media { aspect-ratio: 4 / 5; }
+.lp-reservation__image { margin-top: 56px; }
+.lp-reservation__image .lp-media { aspect-ratio: 1 / 1; }
+.lp-reservation__image img { object-position: 50% 70%; }
+@media (min-width: 900px) { .lp-reservation__image .lp-media { aspect-ratio: 4 / 5; } .lp-reservation__image img { object-position: 50% 50%; } }
 .lp-reservation__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 18px; }
 .lp-reservation__badges .lp-legende { flex-basis: 100%; margin-top: 4px; }
 @media (min-width: 900px) {
@@ -489,17 +593,15 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
   .lp-reservation__image { grid-column: 8 / span 5; margin-top: 0; }
 }
 
-/* 04 · Formats */
-.lp-formats { background: var(--da-color-bg); }
-.lp-formats__diptyque { align-items: end; row-gap: 40px; }
-.lp-formats__renard { aspect-ratio: 1728 / 977; }
-.lp-formats__photo .lp-media { aspect-ratio: 2000 / 1328; }
-.lp-formats__corps { margin-top: clamp(72px, 9vw, 136px); row-gap: 48px; }
+/* 04 · Formats (texte seul) */
+.lp-formats__corps { row-gap: 48px; }
+.lp-formats__entete .lp-encadre { margin-top: 40px; }
+.lp-formats__langue { display: flex; align-items: center; gap: 12px; margin: -12px 0 24px; font-weight: 500; }
 .lp-formats__liste { margin: 0; padding: 0; list-style: none; border-bottom: 1px solid var(--da-color-line-strong); }
 .lp-format {
   position: relative;
   display: grid;
-  grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+  grid-template-columns: 2.75rem minmax(0, 1fr);
   column-gap: 12px;
   align-items: baseline;
   padding: 22px 0;
@@ -520,78 +622,86 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
 .lp-format__num { font-family: var(--da-font-price); font-size: var(--da-surtitre-taille); letter-spacing: 0.12em; color: var(--da-color-ink-muted); }
 .lp-format__titre { margin: 0; font-size: clamp(1.25rem, 1.05rem + 0.8vw, 1.75rem); font-weight: 520; letter-spacing: -0.02em; line-height: 1.2; }
 .lp-format p { grid-column: 2 / -1; margin: 8px 0 0; color: var(--da-color-ink-muted); font-size: 1rem; }
-.lp-format__langue { grid-column: 3; grid-row: 1; align-self: center; }
 .lp-format--pas .lp-format__titre { color: var(--da-color-ink-muted); }
 @media (min-width: 900px) {
-  .lp-formats__photo { grid-column: 1 / span 4; padding-bottom: 8px; }
-  .lp-formats__renard { grid-column: 5 / span 8; }
   .lp-formats__entete { grid-column: 1 / span 5; align-self: start; position: sticky; top: calc(var(--lp-entete-h) + 40px); }
   .lp-formats__liste { grid-column: 7 / span 6; }
 }
 
-/* 05 · Le soin */
-.lp-soin { background: var(--da-color-bg); }
-.lp-soin__photos { margin-top: clamp(48px, 7vw, 96px); row-gap: 24px; align-items: end; }
-.lp-soin__mains { aspect-ratio: 4 / 5; }
-.lp-soin__boite { aspect-ratio: 2000 / 1131; }
-.lp-soin__legende { margin-top: 0; }
-.lp-manifeste {
-  display: grid;
-  gap: 0;
-  margin: clamp(72px, 9vw, 128px) 0 0;
-  padding: 0;
-  list-style: none;
-}
-.lp-manifeste__ligne { padding: 28px 0 32px; border-top: 1px solid var(--da-color-ink); }
-.lp-manifeste__num { display: block; margin-bottom: 20px; font-family: var(--da-font-accent); font-style: italic; font-size: 1.75rem; line-height: 1; color: var(--da-color-ink-muted); }
-.lp-manifeste__titre { margin: 0 0 12px; font-size: clamp(1.5rem, 1.2rem + 1vw, 2.125rem); font-weight: 520; letter-spacing: -0.025em; line-height: 1.1; }
+/* 05 · Le soin : Braise au-dessus d'un classeur, la photo du propriétaire dont la bande orange prolonge le fil, le manifeste
+   à côté des mains. */
+.lp-soin__ouverture { row-gap: 40px; align-items: end; }
+.lp-soin__renard { aspect-ratio: 1728 / 977; }
+.lp-soin__atelier { margin-top: clamp(48px, 6vw, 88px); row-gap: 14px; align-items: end; }
+.lp-soin__boite { aspect-ratio: 2 / 1; }
+.lp-soin__boite img { object-position: 50% 85%; }
+.lp-soin__legende { margin: 0; }
+.lp-soin__pied { margin-top: clamp(48px, 6vw, 88px); row-gap: 32px; align-items: start; }
+.lp-soin__mains { display: none; aspect-ratio: 1 / 1; }
+.lp-soin__mains img { object-position: 50% 0%; }
+.lp-manifeste { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.lp-manifeste__ligne { padding: 24px 0 26px; border-top: 1px solid var(--da-color-ink); }
+.lp-manifeste__num { display: block; margin-bottom: 14px; font-family: var(--da-font-accent); font-style: italic; font-size: 1.75rem; line-height: 1; color: var(--da-color-ink-muted); }
+.lp-manifeste__titre { margin: 0 0 10px; font-size: clamp(1.5rem, 1.2rem + 1vw, 2.125rem); font-weight: 520; letter-spacing: -0.025em; line-height: 1.1; }
 .lp-manifeste p { color: var(--da-color-ink-muted); font-size: 1rem; }
-.lp-statuts-zone { margin-top: clamp(72px, 9vw, 128px); row-gap: 40px; }
-.lp-statuts { margin: 0; border-top: 1px solid var(--da-color-line-strong); }
-.lp-statuts__ligne { display: grid; gap: 10px; padding: 20px 0; border-bottom: 1px solid var(--da-color-line); }
-.lp-statuts__ligne dd { margin: 0; color: var(--da-color-ink-muted); font-size: 1rem; }
+@media (min-width: 600px) {
+  .lp-soin__mains { display: block; grid-column: 1 / span 3; }
+  .lp-manifeste { grid-column: 4 / span 5; }
+}
+@media (min-width: 900px) {
+  .lp-soin__entete { grid-column: 1 / span 6; align-self: center; }
+  .lp-soin__renard { grid-column: 7 / span 6; }
+  .lp-soin__boite { grid-column: 1 / span 10; }
+  .lp-soin__legende { grid-column: 11 / span 2; }
+  .lp-soin__mains { grid-column: 1 / span 4; }
+  .lp-manifeste { grid-column: 6 / span 7; }
+  .lp-manifeste__ligne { display: grid; grid-template-columns: 4rem minmax(0, 1fr); column-gap: 16px; padding: 22px 0 24px; }
+  .lp-manifeste__num { grid-row: 1 / span 2; margin: 4px 0 0; }
+  .lp-manifeste__ligne p { grid-column: 2; }
+}
+
 .lp-encadre {
-  padding: 28px clamp(20px, 3vw, 36px);
+  padding: 26px clamp(20px, 3vw, 32px);
   border: 1px solid var(--da-color-line-strong);
   border-radius: var(--da-radius-sm);
 }
-.lp-liste { margin: 14px 0 0; padding: 0; list-style: none; }
-.lp-liste li { position: relative; padding: 8px 0 8px 28px; color: var(--da-color-ink-muted); font-size: 1rem; }
-.lp-liste li::before { content: ""; position: absolute; left: 0; top: 1.15em; width: 14px; height: 1px; background: var(--da-color-ink); }
-@media (min-width: 600px) { .lp-statuts__ligne { grid-template-columns: 12rem 1fr; align-items: baseline; gap: 20px; } }
-@media (min-width: 900px) {
-  .lp-soin__entete .lp-h2 { grid-column: 1 / span 10; }
-  .lp-soin__entete .lp-intro { grid-column: 1 / span 6; }
-  .lp-soin__mains { grid-column: 1 / span 4; }
-  .lp-soin__boite { grid-column: 5 / span 8; }
-  .lp-soin__legende { grid-column: 5 / span 8; }
-  .lp-manifeste { grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: var(--lp-gouttiere); }
-  .lp-manifeste__ligne { padding-right: 24px; }
-  .lp-statuts-zone__texte { grid-column: 1 / span 4; }
-  .lp-statuts { grid-column: 6 / span 7; }
-  .lp-encadre { grid-column: 6 / span 7; }
-}
+.lp-encadre .lp-h3 { font-size: 1.125rem; }
+.lp-liste { margin: 12px 0 0; padding: 0; list-style: none; }
+.lp-liste li { position: relative; padding: 7px 0 7px 28px; color: var(--da-color-ink-muted); font-size: 0.9375rem; }
+.lp-liste li::before { content: ""; position: absolute; left: 0; top: 1.1em; width: 14px; height: 1px; background: var(--da-color-ink); }
 
-/* 06 · Genève (plein cadre) */
-.lp-geneve { background: var(--da-color-bg); padding-bottom: 0; }
-.lp-geneve__entete { row-gap: 0; }
-.lp-geneve__image { margin-top: clamp(48px, 7vw, 96px); aspect-ratio: 6 / 5; border-radius: 0; }
+/* 06 · Genève : scène pleine, le titre posé dans le ciel */
+.lp-geneve { padding-bottom: 0; overflow: clip; }
+.lp-geneve__entete { margin-bottom: clamp(32px, 6vw, 56px); }
+.lp-geneve__image {
+  aspect-ratio: 6 / 5;
+  border-radius: 0;
+  -webkit-mask-image: linear-gradient(180deg, transparent, black var(--lp-fondu-haut), black calc(100% - 4%), transparent);
+  mask-image: linear-gradient(180deg, transparent, black var(--lp-fondu-haut), black calc(100% - 4%), transparent);
+}
 .lp-geneve__image img { object-position: 59% 50%; }
 @media (min-width: 700px) {
   .lp-geneve__image { aspect-ratio: 2688 / 1152; }
   .lp-geneve__image img { object-position: 50% 50%; }
 }
 @media (min-width: 900px) {
-  .lp-geneve__entete .lp-numero { grid-column: 1 / span 12; }
-  .lp-geneve__entete .lp-h2 { grid-column: 1 / span 8; margin-bottom: 0; }
-  .lp-geneve__intro { grid-column: 9 / span 4; align-self: end; }
+  .lp-geneve__scene { display: grid; }
+  .lp-geneve__entete, .lp-geneve__image { grid-area: 1 / 1; }
+  .lp-geneve__entete { z-index: 2; align-self: start; margin-bottom: 0; padding-top: clamp(40px, 6vw, 96px); }
+  .lp-geneve__texte { width: fit-content; max-width: min(46rem, 58%); }
+  .lp-geneve__texte.lp-voile::before { display: block; }
+  .lp-geneve .lp-numero { color: var(--da-color-ink); }
+  .lp-geneve .lp-h2 { margin-bottom: 20px; }
+  .lp-geneve__intro { max-width: 30rem; font-size: clamp(1.0625rem, 0.95rem + 0.4vw, 1.25rem); }
+  .lp-geneve__image { aspect-ratio: auto; height: min(86svh, 56vw); min-height: 520px; }
+  .lp-geneve__image img { object-position: 50% 60%; }
 }
 
-/* 07 · Alertes */
-.lp-alertes { background: var(--da-color-papier-chaud); }
+/* 07 · Alertes : l'illustration pleine largeur, le formulaire posé comme une feuille dans l'espace libre */
+.lp-alertes { overflow: clip; }
 .lp-alertes__image { aspect-ratio: 4 / 3; align-self: start; }
-.lp-alertes__image img { object-position: 0% 100%; }
-.lp-alertes__entete { margin-top: 72px; }
+.lp-alertes__image img { object-position: 15% 100%; }
+.lp-alertes__entete { margin-top: 56px; }
 .lp-alertes__aside { margin-top: 48px; }
 .lp-recevrez { margin: 14px 0 20px; padding: 0; list-style: none; counter-reset: recevrez; }
 .lp-recevrez li { position: relative; padding: 12px 0 12px 40px; border-top: 1px solid var(--da-color-line); counter-increment: recevrez; }
@@ -606,11 +716,67 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
   color: var(--da-color-ink-muted);
 }
 @media (min-width: 900px) {
-  .lp-alertes__grille { grid-template-rows: auto auto 1fr; align-items: start; }
-  .lp-alertes__image { grid-column: 1 / span 6; grid-row: 1 / span 2; aspect-ratio: 4 / 5; }
-  .lp-alertes__entete { grid-column: 8 / span 5; grid-row: 1; margin-top: 0; }
-  .lp-alertes__aside { grid-column: 1 / span 5; grid-row: 3; margin-top: 88px; align-self: start; position: sticky; top: calc(var(--lp-entete-h) + 40px); }
-  .lp-alertes .lp-formulaire { grid-column: 8 / span 5; grid-row: 2 / span 2; margin-top: 8px; }
+  .lp-alertes__image { aspect-ratio: 1920 / 1086; }
+  .lp-alertes__image img { object-position: 50% 100%; }
+}
+@media (min-width: 1100px) {
+  .lp-alertes__grille { grid-template-rows: auto auto 1fr; }
+  .lp-alertes__image {
+    grid-column: plein-debut / plein-fin;
+    grid-row: 1 / 3;
+    -webkit-mask-image: linear-gradient(180deg, transparent, black var(--lp-fondu-haut));
+    mask-image: linear-gradient(180deg, transparent, black var(--lp-fondu-haut));
+  }
+  .lp-alertes__entete { grid-column: 8 / 14; grid-row: 1; z-index: 2; margin-top: 0; padding-top: clamp(40px, 4.5vw, 96px); }
+  .lp-alertes__entete.lp-voile::before { display: block; }
+  .lp-alertes__entete .lp-numero { color: var(--da-color-ink); }
+  .lp-alertes .lp-formulaire { grid-column: 8 / 14; grid-row: 2 / 4; z-index: 2; margin-top: 32px; align-self: start; box-shadow: var(--da-shadow-raised); }
+  .lp-alertes__aside { grid-column: 2 / 7; grid-row: 3; margin-top: 56px; align-self: start; }
+}
+
+/* 08 · Questions fréquentes */
+.lp-faq-intro { margin-bottom: 40px; }
+.lp-faq-intro .lp-h2 { font-size: var(--lp-titre-utile); }
+.lp-faq-photo { display: none; }
+.lp-faq { border-bottom: 1px solid var(--da-color-line-strong); }
+.lp-faq details { border-top: 1px solid var(--da-color-line-strong); }
+.lp-faq summary {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 0;
+  font-size: clamp(1.0625rem, 1rem + 0.35vw, 1.25rem);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  list-style: none;
+  cursor: pointer;
+}
+.lp-faq summary::-webkit-details-marker { display: none; }
+.lp-faq summary::after,
+.lp-preciser > summary::after {
+  content: "";
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-right: 4px;
+  background: linear-gradient(currentColor, currentColor) center / 14px 1.5px no-repeat, linear-gradient(currentColor, currentColor) center / 1.5px 14px no-repeat;
+}
+.lp-faq details[open] summary::after,
+.lp-preciser[open] > summary::after { transform: rotate(45deg); }
+.lp-faq summary:hover { color: var(--da-color-accent-text); }
+.lp-faq details p { margin: 0; padding: 0 48px 26px 0; color: var(--da-color-ink-muted); font-size: 1rem; max-width: 42rem; }
+@media (min-width: 900px) {
+  .lp-faq-intro { grid-column: 1 / span 5; position: sticky; top: calc(var(--lp-entete-h) + 40px); align-self: start; margin-bottom: 0; }
+  .lp-faq { grid-column: 7 / span 6; }
+  .lp-faq-photo { display: block; margin-top: 40px; }
+  .lp-faq-photo .lp-media { aspect-ratio: 2000 / 1328; }
+}
+@media (min-width: 1280px) {
+  .lp-faq-intro { grid-column: 1 / span 4; }
+  .lp-faq { grid-column: 6 / span 7; }
 }
 
 /* Formulaire : une feuille de papier posée dans l'espace libre de l'illustration */
@@ -625,7 +791,7 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
   box-shadow: var(--da-shadow-card);
 }
 .lp-formulaire__ligne { display: grid; gap: 22px; }
-@container (min-width: 600px) { .lp-formulaire__ligne { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (min-width: 440px) { .lp-formulaire__ligne { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .lp-champ { display: grid; gap: 8px; align-content: start; }
 .lp-champ label, .lp-groupe legend { font-size: 0.9375rem; font-weight: 500; color: var(--da-color-ink); }
 .lp-requis, .lp-facultatif { font-weight: 400; color: var(--da-color-ink-muted); }
@@ -682,6 +848,23 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
 .lp-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .lp-actions .lp-btn { width: 100%; }
 @media (min-width: 600px) { .lp-actions .lp-btn { width: auto; } }
+/* Champs facultatifs repliés (formats, budget, pour qui, canton) : la feuille reste courte, rien n'est retiré. */
+.lp-preciser { border-block: 1px solid var(--da-color-line); }
+.lp-preciser > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 52px;
+  padding: 12px 0;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  list-style: none;
+  cursor: pointer;
+}
+.lp-preciser > summary::-webkit-details-marker { display: none; }
+.lp-preciser__titre { flex: 1 1 auto; min-width: 0; }
+.lp-preciser__corps { display: grid; gap: 28px; padding: 8px 0 28px; }
 .lp-statut { margin: 0; font-size: 0.9375rem; }
 .lp-statut:empty { display: none; }
 .lp-statut--info { color: var(--da-color-ink-muted); }
@@ -690,49 +873,19 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
 .lp-confirmation .lp-h3 { font-size: 1.5rem; }
 .lp-confirmation:focus-within { outline: none; }
 
-/* 08 · Questions fréquentes */
-.lp-faq-zone { background: var(--da-color-bg); }
-.lp-faq-intro { margin-bottom: 40px; }
-.lp-faq { border-bottom: 1px solid var(--da-color-line-strong); }
-.lp-faq details { border-top: 1px solid var(--da-color-line-strong); }
-.lp-faq summary {
-  position: relative;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 22px 0;
-  font-size: clamp(1.0625rem, 1rem + 0.35vw, 1.25rem);
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  line-height: 1.35;
-  list-style: none;
-  cursor: pointer;
-}
-.lp-faq summary::-webkit-details-marker { display: none; }
-.lp-faq summary::after {
-  content: "";
-  flex: none;
-  width: 14px;
-  height: 14px;
-  margin-right: 4px;
-  background: linear-gradient(currentColor, currentColor) center / 14px 1.5px no-repeat, linear-gradient(currentColor, currentColor) center / 1.5px 14px no-repeat;
-}
-.lp-faq details[open] summary::after { transform: rotate(45deg); }
-.lp-faq summary:hover { color: var(--da-color-accent-text); }
-.lp-faq details p { margin: 0; padding: 0 48px 26px 0; color: var(--da-color-ink-muted); font-size: 1rem; max-width: 42rem; }
-@media (min-width: 900px) {
-  .lp-faq-intro { grid-column: 1 / span 4; position: sticky; top: calc(var(--lp-entete-h) + 40px); align-self: start; margin-bottom: 0; }
-  .lp-faq { grid-column: 6 / span 7; }
-}
 
 /* ============================================================== pied de page */
 .lp-pied { background: var(--da-color-papier-chaud); }
-.lp-pied__image { aspect-ratio: 3 / 2; border-radius: 0; }
+.lp-pied__image {
+  aspect-ratio: 3 / 2;
+  border-radius: 0;
+  -webkit-mask-image: linear-gradient(180deg, transparent, black var(--lp-fondu-haut));
+  mask-image: linear-gradient(180deg, transparent, black var(--lp-fondu-haut));
+}
 .lp-pied__image img { object-position: 62% 50%; }
 @media (min-width: 700px) {
-  .lp-pied__image { aspect-ratio: 2688 / 1152; }
-  .lp-pied__image img { object-position: 50% 50%; }
+  .lp-pied__image { aspect-ratio: 2688 / 920; }
+  .lp-pied__image img { object-position: 50% 70%; }
 }
 .lp-pied__charbon { padding: clamp(56px, 7vw, 96px) 0 clamp(40px, 5vw, 64px); background: var(--da-color-inverse-bg); color: var(--da-color-inverse-ink); }
 .lp-pied__grille { row-gap: 48px; }
@@ -861,7 +1014,7 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
 /* Maquette du drop */
 .lp-drop-hero { padding-block: clamp(40px, 6vw, 88px) var(--lp-chapitre-pad); }
 .lp-drop-hero__grille { row-gap: 48px; align-items: center; }
-.lp-drop-hero__image { aspect-ratio: 1920 / 1086; background: var(--da-color-inverse-surface); }
+.lp-drop-hero__photo .da-photo { aspect-ratio: 16 / 10; border-radius: var(--da-radius-sm); }
 .lp-drop-hero .lp-hero__titre { font-size: clamp(2.5rem, 1.3rem + 3.4vw, 5rem); margin: 0 0 32px; color: var(--da-color-inverse-ink); }
 .lp-drop-statut { display: grid; gap: 0; margin: 0 0 28px; border-top: 1px solid var(--da-color-inverse-line); }
 .lp-drop-statut div { display: grid; grid-template-columns: 6rem 1fr; gap: 12px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--da-color-inverse-line); }
@@ -872,8 +1025,18 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
 .lp-drop-hero .lp-actions { margin-top: 28px; align-items: center; }
 .da-root .lp-drop-hero .lp-lien-fleche { color: var(--da-color-inverse-ink); text-decoration-color: var(--da-color-inverse-muted); }
 @media (min-width: 900px) {
-  .lp-drop-hero__image { grid-column: 1 / span 7; }
+  .lp-drop-hero__photo { grid-column: 1 / span 7; }
   .lp-drop-hero__texte { grid-column: 8 / span 5; }
+}
+/* Déroulé du drop : Braise accompagne l'explication, loin du titre du produit et de ses prix. */
+.lp-drop-deroule { row-gap: 32px; align-items: end; }
+.lp-drop-deroule__image .lp-media { aspect-ratio: 4 / 3; }
+.lp-drop-deroule__image .lp-media img { object-position: 15% 100%; }
+.lp-drop-deroule__image .lp-note { margin-top: 12px; }
+@media (min-width: 900px) {
+  .lp-drop-deroule .lp-entete-section { grid-column: 1 / span 7; }
+  .lp-drop-deroule__image { grid-column: 9 / span 4; }
+  .lp-histoire__texte.lp-histoire__texte--seul { grid-column: 1 / span 8; }
 }
 .lp-chrono { display: grid; gap: 0; margin: 48px 0 0; padding: 0; list-style: none; }
 .lp-chrono__etape { padding: 28px 0; border-top: 1px solid var(--da-color-ink); }
@@ -884,13 +1047,14 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
 }
 .lp-entete-section { max-width: 52rem; }
 
+
 /* ============================================================== mouvement (jamais d'office : coupé par le système ou la pause) */
 @media (prefers-reduced-motion: no-preference) {
   html { scroll-behavior: smooth; }
   .lp-entete { transition: background-color 400ms var(--da-courbe-douce), box-shadow 400ms var(--da-courbe-douce); }
   .lp-nav a::after, .lp-btn::after, .lp-format::before { transition: transform 420ms var(--da-courbe-douce); }
   .lp-lien-fleche::after { transition: transform 300ms var(--da-courbe-douce); }
-  .lp-faq summary::after { transition: transform 300ms var(--da-courbe-douce); }
+  .lp-faq summary::after, .lp-preciser > summary::after { transition: transform 300ms var(--da-courbe-douce); }
   .lp-faq summary, .lp-option, .lp-champ input, .lp-champ select, .lp-animations, .da-root .lp-btn { transition: color 200ms, border-color 200ms, background-color 200ms, box-shadow 200ms; }
   /* Apparitions : seulement si le script peut révéler (classe lp-apparitions) ; sinon tout reste visible. */
   .lp-apparitions [data-apparition] { transition: opacity var(--da-duree-apparition) var(--da-courbe-douce), transform var(--da-duree-apparition) var(--da-courbe-douce); }
@@ -901,19 +1065,36 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
   .lp-apparitions .lp-media img { transition: transform 1600ms var(--da-courbe-douce); }
   .lp-apparitions [data-apparition]:not(.est-visible) img,
   .lp-apparitions .lp-media[data-apparition]:not(.est-visible) img { transform: scale(1.045); }
+  /* L'illustration du héro se pose (échelle seule : aucune transparence, le décor de secours ne transparaît jamais). */
   .lp-hero__img { animation: lp-pose 1800ms var(--da-courbe-douce) both; }
   .lp-fil--anime .lp-fil__trait { transition: stroke-dashoffset 900ms var(--da-courbe-douce); }
-  @keyframes lp-pose { from { transform: scale(1.035); opacity: 0.001; } to { transform: none; opacity: 1; } }
+  .lp-fil--anime .lp-fil__effile { transition: opacity 600ms var(--da-courbe-douce); }
+  /* Le tiret de chaque numéro se dessine quand le fil l'atteint (classe est-relie posée par js/atelier.js). */
+  .lp-fil-pret .lp-numero[data-fil-chapitre] .lp-numero__chiffre::before { transform: scaleX(0); transition: transform 600ms var(--da-courbe-douce); }
+  .lp-fil-pret .lp-numero[data-fil-chapitre].est-relie .lp-numero__chiffre::before { transform: none; }
+  /* Genève en scène : léger recul du plan au défilement, centré sur la corde d'où ressort le fil (aucun minuteur). */
+  @supports (animation-timeline: view()) {
+    .lp-geneve__image img {
+      transform-origin: 84% 86%;
+      animation: lp-plan linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 60%;
+    }
+  }
+  @keyframes lp-pose { from { transform: scale(1.035); } to { transform: none; } }
+  @keyframes lp-plan { from { transform: scale(1.06); } to { transform: none; } }
 }
+:root[data-animations="pause"] { scroll-behavior: auto !important; }
 :root[data-animations="pause"] *,
 :root[data-animations="pause"] *::before,
 :root[data-animations="pause"] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 :root[data-animations="pause"] [data-apparition],
-:root[data-animations="pause"] [data-apparition] img { opacity: 1 !important; transform: none !important; }
+:root[data-animations="pause"] [data-apparition] img,
+:root[data-animations="pause"] .lp-numero__chiffre::before { opacity: 1 !important; transform: none !important; }
 
 /* ============================================================== impression */
 @media print {
   .lp-fil, .lp-entete, .lp-evitement, .lp-apercu, .lp-animations, .lp-lien-bouton { display: none !important; }
-  .lp-chapitre::before { display: none !important; }
+  .lp-chapitre::before, .lp-voile::before { display: none !important; }
   [data-apparition] { opacity: 1 !important; transform: none !important; }
 }

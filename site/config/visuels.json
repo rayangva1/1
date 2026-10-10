@@ -1,5 +1,5 @@
 {
-  "_avertissement": "Source UNIQUE des visuels de la marque : 10 illustrations du renard original (« Braise », nom provisoire ; aucun élément sous licence) et 3 photos d'ambiance du propriétaire (objets vierges, jamais présentés comme des produits en vente). Ne jamais recopier une adresse ni un texte alternatif dans une page : les balises data-visuel sont réécrites par python site/outils/visuels.py appliquer. Visuels 100 % locaux : python site/outils/rapatrier_visuels.py --importer <dossier> contrôle format et proportions, archive la source hors du dossier publié (site/visuels-sources/), produit les variantes WebP aux largeurs « largeurs » dans assets/visuels/ et remplit « variantes », « fichier_source » et « empreinte_source ». « fil » : filet orange photographié, deux points [x, y] en fractions de l'image (mesurés le 09.10.2026). Règles : docs/05-da/DIRECTION_ATELIER.md §7 à §9.",
+  "_avertissement": "Source UNIQUE des visuels de la marque : 10 illustrations du renard original (« Braise », nom provisoire ; aucun élément sous licence) et 3 photos d'ambiance du propriétaire (objets vierges, jamais présentés comme des produits en vente). Ne jamais recopier une adresse ni un texte alternatif dans une page : les balises data-visuel sont réécrites par python site/outils/visuels.py appliquer. Visuels 100 % locaux : python site/outils/rapatrier_visuels.py --importer <dossier> contrôle format et proportions, archive la source hors du dossier publié (site/visuels-sources/), produit les variantes WebP aux largeurs « largeurs » dans assets/visuels/ et remplit « variantes », « fichier_source » et « empreinte_source ». « fil » : filet orange photographié, deux points [x, y] en fractions de l'image (mesurés le 09.10.2026 ; pour le Léman, le bout de la corde orange enroulée au bollard) ; « fil_epaisseur » : son épaisseur en fraction de la hauteur de l'image et « fil_couleurs » : sa couleur près de l'entrée et de la sortie (mesurées le 10.10.2026, largeur à mi-hauteur et médiane du cœur du trait), pour raccorder le fil dessiné sans couture. Règles : docs/05-da/DIRECTION_ATELIER.md §7 à §9.",
   "source": "local",
   "base_distante": null,
   "dossier_local": "assets/visuels/",
@@ -38,6 +38,11 @@
           0.729,
           0.997
         ]
+      ],
+      "fil_epaisseur": 0.013,
+      "fil_couleurs": [
+        "#FEAA68",
+        "#FE8F41"
       ]
     },
     "renard-heros-portrait": {
@@ -72,6 +77,11 @@
           0.997,
           0.978
         ]
+      ],
+      "fil_epaisseur": 0.0093,
+      "fil_couleurs": [
+        "#FD9744",
+        "#FE8B32"
       ]
     },
     "renard-assis": {
@@ -104,6 +114,11 @@
           0.909,
           1.0
         ]
+      ],
+      "fil_epaisseur": 0.0136,
+      "fil_couleurs": [
+        "#FDA75C",
+        "#FE9645"
       ]
     },
     "renard-couche": {
@@ -136,6 +151,11 @@
           0.963,
           1.0
         ]
+      ],
+      "fil_epaisseur": 0.0154,
+      "fil_couleurs": [
+        "#FDA353",
+        "#FE9641"
       ]
     },
     "renard-jour-de-drop": {
@@ -170,6 +190,11 @@
           0.794,
           1.0
         ]
+      ],
+      "fil_epaisseur": 0.02,
+      "fil_couleurs": [
+        "#F9A048",
+        "#FD8936"
       ]
     },
     "renard-reservation": {
@@ -193,7 +218,9 @@
       "usage": "Chapitre « Réservation garantie » et maquettes",
       "description": "Le renard assis garde d'une patte trois boîtes noires vierges à bande orange et fait un clin d'œil ; papier crème, ombres de feuillage.",
       "alt": "Illustration : notre renard fait un clin d'œil en gardant d'une patte trois boîtes noires vierges à bande orange.",
-      "fil": null
+      "fil": null,
+      "fil_epaisseur": null,
+      "fil_couleurs": null
     },
     "renard-alertes": {
       "fichier": "renard-alertes",
@@ -227,6 +254,11 @@
           0.483,
           1.0
         ]
+      ],
+      "fil_epaisseur": 0.0101,
+      "fil_couleurs": [
+        "#FBA45A",
+        "#FE9144"
       ]
     },
     "renard-classeur": {
@@ -252,7 +284,9 @@
       "usage": "Chapitre « Collection » et formats prévus (jamais à côté de la carte « Accessoires »)",
       "description": "Vu de dessus, le renard passe la tête au-dessus d'un classeur ouvert rempli de cartes vierges crème, grises et orange ; tasse de café et crayon sur le papier crème, ombres de feuillage.",
       "alt": "Illustration : notre renard passe la tête au-dessus d'un classeur ouvert rempli de cartes vierges.",
-      "fil": null
+      "fil": null,
+      "fil_epaisseur": null,
+      "fil_couleurs": null
     },
     "renard-leman": {
       "fichier": "renard-leman",
@@ -279,7 +313,21 @@
       "usage": "Chapitre « Expédié depuis Genève »",
       "description": "Le renard assis sur un quai en pierre de Genève, au matin, regarde vers le Jet d'eau ; lac, vieille ville et Alpes enneigées dans la brume ; cordage orange autour d'une bitte d'amarrage à droite.",
       "alt": "Illustration : notre renard assis sur un quai de Genève, avec le Jet d'eau, le lac et les Alpes dans la lumière du matin.",
-      "fil": null
+      "fil": [
+        [
+          0.852,
+          0.845
+        ],
+        [
+          0.836,
+          0.862
+        ]
+      ],
+      "fil_epaisseur": 0.03,
+      "fil_couleurs": [
+        "#BE4814",
+        "#D8622A"
+      ]
     },
     "renard-pied-de-page": {
       "fichier": "renard-pied-de-page",
@@ -316,6 +364,11 @@
           0.999,
           0.993
         ]
+      ],
+      "fil_epaisseur": 0.0138,
+      "fil_couleurs": [
+        "#F79B5C",
+        "#FD893D"
       ]
     },
     "photo-boite-etuis": {
@@ -350,6 +403,11 @@
           0.998,
           0.918
         ]
+      ],
+      "fil_epaisseur": 0.0389,
+      "fil_couleurs": [
+        "#F4722D",
+        "#E76622"
       ]
     },
     "photo-mains-sleeve": {
@@ -384,6 +442,11 @@
           0.517,
           0.148
         ]
+      ],
+      "fil_epaisseur": 0.0102,
+      "fil_couleurs": [
+        "#F17223",
+        "#EF6F1C"
       ]
     },
     "photo-classeur": {
@@ -409,7 +472,9 @@
       "usage": "Photo d'ambiance (collection) ; jamais à côté de la carte « Accessoires »",
       "description": "Photo d'ambiance du propriétaire, vue de dessus : un classeur noir ouvert, pages de pochettes remplies de cartes vierges crème, grises et une orange ; plante, tasse, crayon et carnet sur le papier crème.",
       "alt": "Photo d'ambiance : un classeur ouvert rempli de cartes vierges, vu de dessus, sur un bureau clair.",
-      "fil": null
+      "fil": null,
+      "fil_epaisseur": null,
+      "fil_couleurs": null
     }
   }
 }

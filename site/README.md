@@ -8,7 +8,7 @@
 
 | Chemin | Rôle |
 |---|---|
-| `landing/` | Page de présentation + inscription aux alertes (statique, sans faux stock, sans prix, sans précommande), en ambiance « Atelier » : récit en chapitres porté par le renard « Braise » (nom provisoire), fil orange raccordé aux filets photographiés, pages secondaires illustrées. Mode d'emploi : `landing/README.md` |
+| `landing/` | Page de présentation + inscription aux alertes (statique, sans faux stock, sans prix, sans précommande), en ambiance « Atelier » : héro plein écran, récit en huit chapitres porté par le renard « Braise » (nom provisoire), fil orange qui traverse les filets photographiés et relie les numéros de chapitre, pages secondaires illustrées. Mode d'emploi : `landing/README.md` |
 | `maquettes/` | Maquettes **jamais publiées** de la boutique dans la même ambiance : `fiche-produit.html` (produit FICTIF en réservation garantie) et `drop.html` (drop FICTIF) |
 | `config/visuels.json` | Source unique des 13 visuels de la marque (10 illustrations du renard, 3 photos d'ambiance : dimensions, format, nature, usage, description, texte alternatif, filet orange mesuré, largeurs des variantes, source importée) ; `outils/visuels.py` les applique aux pages, `outils/rapatrier_visuels.py --importer <dossier>` les importe **en local** (source d'origine archivée dans `visuels-sources/`, ignoré par git ; variantes WebP budgétées dans `landing/assets/visuels/`) |
 | `config/publication_landing.yaml` | Champs propres à la landing (URL publique, mois d'ouverture, webhook n8n), même format que le registre légal |
@@ -21,7 +21,7 @@
 | `outils/verifier_site.py` | Contrôles : HTML, liens, ressources externes, termes interdits, prix, mascotte (aucune trace de l'ancienne mascotte ; Braise toujours « nom provisoire » et création originale), affirmations inexactes (réponse humaine systématique, contenu des boîtes vérifié, finalité « uniquement », limite « par commande »), notice de confidentialité couvrant chaque champ du formulaire, nom de travail absent des modèles Shopify, message sans JavaScript exact sur la page publiée, chaque champ de la landing fourni au plus tard à J10 (interventions et backlog), workflow d'inscription sans exécution conservée (dès son export), accessibilité de base, typographie, snippets Liquid, synchronisation |
 | `outils/typo.py`, `outils/markdown_mini.py` | Espaces insécables du français ; conversion des textes légaux en HTML |
 | `outils/generer_og.py`, `outils/og/` | Image de partage 1200 × 630, renard du héro et titre sur voile papier (outil local facultatif : Playwright + Chromium, hors dépendances du projet) |
-| `tests/` | Tests `pytest` du périmètre |
+| `tests/` | Tests `pytest` du périmètre ; `tests/e2e/atelier.mjs` : tests navigateur (Node + Playwright + Chromium, polices OFL servies en local depuis `tests/e2e/polices/`), lancés par `scripts/run_all_tests.sh` |
 | `dist/` | Dossiers construits (ignorés par git) |
 
 ## Commandes
@@ -36,9 +36,11 @@ python site/outils/publication.py publication      # site/dist/landing/ (refus m
 python site/outils/rapatrier_visuels.py --importer <dossier>   # visuels en local (aucun réseau)
 python site/outils/verifier_site.py                # contrôles (code 1 si erreur)
 python -m pytest site/tests -q                     # tests
+node site/tests/e2e/atelier.mjs                    # tests navigateur (code 1 si un contrôle échoue)
+E2E_FILTRE=fil node site/tests/e2e/atelier.mjs     # seulement les contrôles dont le nom correspond
 ```
 
-Tests de rendu Liquid : ils utilisent `python-liquid` **s'il est installé** (outil de test local, pas une dépendance du projet) ; sinon ils sont ignorés, et le contrôle statique des snippets (balises équilibrées, libellés, termes interdits) s'exécute toujours. Test de bout en bout du formulaire : Playwright + Chromium s'ils sont disponibles (variable `CHROMIUM` pour le chemin de l'exécutable), sinon ignoré.
+Tests de rendu Liquid : ils utilisent `python-liquid` **s'il est installé** (outil de test local, pas une dépendance du projet) ; sinon ils sont ignorés, et le contrôle statique des snippets (balises équilibrées, libellés, termes interdits) s'exécute toujours. Tests navigateur : `site/tests/e2e/atelier.mjs` (Node + Playwright ; module `playwright`, sinon `PLAYWRIGHT_MJS`, sinon `/opt/node-tools` ; `CHROMIUM` pour un exécutable précis ; jamais d'appel réseau : polices et webhook interceptés) — formulaire, pause et mouvement réduit (défilement doux compris), sans JavaScript, clavier, images indisponibles, WebP budgété, contraste AA des textes posés sur une illustration (images remplacées par du noir et du blanc purs), bouton du héro au-dessus du pli, aucun renard fantôme, aucun mot coupé dans un titre, fil orange jamais sur un texte, hiérarchie des titres, longueur de page bornée. `scripts/run_all_tests.sh` les lance quand Node et Playwright sont présents et annonce en toutes lettres quand ils sont **ignorés**. `tests/test_landing_e2e.py` (Playwright pour Python) couvre le même parcours s'il est installé, sinon il est ignoré.
 
 ## Principes appliqués
 

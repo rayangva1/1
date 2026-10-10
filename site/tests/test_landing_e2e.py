@@ -1,6 +1,8 @@
 """Parcours réel du formulaire dans un navigateur (Playwright + Chromium, facultatifs).
 
-Ignoré si Playwright ou Chromium sont absents (ce ne sont pas des dépendances du projet).
+Ignoré si Playwright ou Chromium sont absents (ce ne sont pas des dépendances du projet). Le même parcours, étendu
+(fil orange, héro au-dessus du pli, mots coupés, renard fantôme…), est couvert par ``site/tests/e2e/atelier.mjs``
+(Node + Playwright), lancé par ``scripts/run_all_tests.sh``.
 Chromium : variable d'environnement ``CHROMIUM`` (chemin de l'exécutable), sinon celui de Playwright.
 Le webhook est intercepté : aucune requête ne sort de la machine.
 """
@@ -90,6 +92,7 @@ def test_inscription_envoyee_et_confirmation_affichee(navigateur: Any, site: tup
     assert page.is_enabled("#lp-envoyer")
     page.fill("#lp-email", "lea@exemple.ch")
     page.fill("#lp-prenom", "Léa")
+    page.click(".lp-preciser > summary")  # champs facultatifs repliés (DA-09)
     page.check('input[value="etb"]')
     page.check('input[value="displays"]')
     page.check('input[value="30-60"]')
@@ -160,10 +163,16 @@ def test_pause_des_animations_et_absence_de_debordement(navigateur: Any, site: t
     assert page.get_attribute("html", "data-ambiance") == "atelier"
     assert page.is_visible(".lp-logo__img")
     page.wait_for_function("document.documentElement.classList.contains('lp-fil-pret')")
-    assert page.evaluate("document.querySelectorAll('.lp-fil__trait').length") == 4  # héro → Braise → drop → alertes → pied
+    # Héro → Braise → drop → Léman (corde) → alertes → pied : cinq tronçons, plus les branches (numéros, photos).
+    assert page.evaluate("document.querySelectorAll('.lp-fil__trait:not(.lp-fil__branche)').length") == 0  # mobile : pas de rail
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.wait_for_timeout(400)
+    assert page.evaluate("document.querySelectorAll('.lp-fil__trait:not(.lp-fil__branche)').length") == 5
     assert page.get_attribute("#lp-animations", "aria-pressed") == "false"
     page.click("#lp-animations")
     assert page.get_attribute("html", "data-animations") == "pause"
+    # La pause coupe aussi le défilement doux, porté par <html> (A11Y-01).
+    assert page.evaluate("getComputedStyle(document.documentElement).scrollBehavior") == "auto"
     assert page.get_attribute("#lp-animations", "aria-pressed") == "true"
     assert page.evaluate("[...document.querySelectorAll('.lp-fil__trait')].every(p => getComputedStyle(p).strokeDasharray === 'none')")
     assert page.evaluate("getComputedStyle(document.querySelector('.lp-hero__img')).animationName") == "none"
@@ -172,7 +181,7 @@ def test_pause_des_animations_et_absence_de_debordement(navigateur: Any, site: t
     page.click("#lp-animations")
     assert page.get_attribute("html", "data-animations") is None
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-    page.set_viewport_size({"width": 1440, "height": 900})
+    page.set_viewport_size({"width": 390, "height": 844})
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     page.close()
 
@@ -203,8 +212,8 @@ def test_fil_entier_en_mouvement_reduit(navigateur: Any, site: tuple[Path, str])
     page = contexte.new_page()
     page.goto(url + "index.html", wait_until="networkidle")
     page.wait_for_function("document.documentElement.classList.contains('lp-fil-pret')")
-    traits = page.evaluate("[...document.querySelectorAll('.lp-fil__trait')].map(p => [getComputedStyle(p).strokeDasharray, p.getTotalLength()])")
-    assert len(traits) == 4 and all(d == "none" and longueur > 100 for d, longueur in traits)
+    traits = page.evaluate("[...document.querySelectorAll('.lp-fil__trait:not(.lp-fil__branche)')].map(p => [getComputedStyle(p).strokeDasharray, p.getTotalLength()])")
+    assert len(traits) == 5 and all(d == "none" and longueur > 300 for d, longueur in traits)
     contexte.close()
 
 
@@ -249,15 +258,17 @@ def _luminance(rgb: tuple[float, ...]) -> float:
     return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2])
 
 
-#: Textes posés sur (ou contre) une illustration : le titre du héro (sur l'image dès 1280 px, au-dessus ailleurs).
+#: Textes posés sur (ou contre) une illustration : héro (titre, introduction, lien ; sur l'image dès 1280 px et sur
+#: mobile), Genève (dans le ciel dès 900 px), alertes (sur le mur libre dès 1100 px).
 TEXTES_SUR_ILLUSTRATION = (
-    ".lp-hero .lp-surtitre", ".lp-hero__seo", ".lp-hero__accroche .lp-ligne", ".lp-hero__accroche .lp-accent", ".lp-nav a",
-    "#titre-mascotte", "#titre-alertes", "#titre-promesse",
+    ".lp-hero .lp-surtitre", ".lp-hero__seo", ".lp-hero__accroche .lp-ligne", ".lp-hero__accroche .lp-accent", ".lp-hero__intro",
+    ".lp-hero__actions .lp-lien-fleche", ".lp-nav a", "#titre-mascotte", "#titre-alertes", ".lp-alertes__entete .lp-numero",
+    ".lp-alertes__entete .lp-intro", "#titre-promesse", ".lp-geneve .lp-numero", ".lp-geneve__intro",
 )
 
 
 @pytest.mark.parametrize("couleur", [(255, 255, 255), (0, 0, 0)], ids=["image-blanche", "image-noire"])
-@pytest.mark.parametrize(("largeur", "hauteur"), [(1440, 900), (1024, 768), (390, 844)])
+@pytest.mark.parametrize(("largeur", "hauteur"), [(1920, 1080), (1440, 900), (1280, 800), (1024, 768), (390, 844)])
 def test_texte_sur_illustration_contraste_aa_meme_sur_une_image_blanche(navigateur: Any, site: tuple[Path, str], largeur: int, hauteur: int, couleur: tuple[int, int, int]) -> None:
     """Chaque illustration remplacée par du blanc pur puis du noir pur (pires cas) : le texte reste AA (voile du héro)."""
     import io
@@ -292,7 +303,9 @@ def test_texte_sur_illustration_contraste_aa_meme_sur_une_image_blanche(navigate
                         texte: e.textContent.trim().slice(0, 30)}; }"""
             )
             masque = page.add_style_tag(content="body *, body *::before, body *::after { color: transparent !important; "
-                                        "-webkit-text-fill-color: transparent !important; text-shadow: none !important; } .lp-accent { background: none !important; }")
+                                        "-webkit-text-fill-color: transparent !important; text-shadow: none !important; text-decoration-color: transparent !important; } "
+                                        ".lp-accent { background: none !important; } .lp-fil, .lp-lien-fleche::after { display: none !important; } "
+                                        ".lp-numero__chiffre::before { visibility: hidden !important; }")
             capture = page.screenshot(clip={"x": info["x"], "y": info["y"], "width": info["w"], "height": info["h"]})
             masque.evaluate("t => t.remove()")
             octets = image.open(io.BytesIO(capture)).convert("RGB").tobytes()

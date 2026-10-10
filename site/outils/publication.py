@@ -256,16 +256,16 @@ PAGES_SIMPLES: dict[str, tuple[str, str, str]] = {
     "merci.html": (
         "Inscription reçue",
         "Votre inscription aux alertes est reçue : confirmez-la depuis l'email que nous venons de vous envoyer.",
-        """      <h1 class="da-title">Merci, vérifiez votre boîte mail</h1>
+        """      <h1 class="da-title">Merci, vérifiez votre boîte mail.</h1>
       <p>Nous venons de vous envoyer un email de confirmation. Cliquez sur son lien pour activer vos alertes : sans confirmation, nous ne vous écrirons pas.</p>
       <p>Rien reçu d'ici quelques minutes ? Regardez dans les courriers indésirables, puis réessayez depuis la <a href="./#alertes">page d'accueil</a>.</p>
-      <p class="lp-signature">Braise (nom provisoire) attend votre clic, roulé en boule.</p>
+      <p class="lp-signature">Braise (nom provisoire) attend votre clic, l'œil en coin.</p>
       <p class="lp-note">Cette inscription ne réserve aucun produit et n'engage aucun paiement.</p>""",
     ),
     "inscription-confirmee.html": (
         "Inscription confirmée",
         "Votre inscription aux alertes est confirmée.",
-        """      <h1 class="da-title">C'est confirmé</h1>
+        """      <h1 class="da-title">C'est confirmé.</h1>
       <p>Vous recevrez l'alerte d'ouverture, puis les alertes de stock correspondant à vos choix et, au plus, un email récapitulatif par semaine.</p>
       <p>Chaque email contient un lien pour modifier vos préférences ou vous désinscrire en un clic.</p>
       <p class="lp-signature">Braise (nom provisoire) dresse l'oreille jusqu'à l'ouverture.</p>
@@ -276,7 +276,7 @@ PAGES_SIMPLES: dict[str, tuple[str, str, str]] = {
         # seulement pour un lien valide : elle confirme la réception, pas un traitement qu'elle ne peut pas voir.
         "Demande de désinscription reçue",
         "Votre demande de désinscription est reçue.",
-        """      <h1 class="da-title">Demande de désinscription reçue</h1>
+        """      <h1 class="da-title">Demande de désinscription reçue.</h1>
       <p>Nous avons bien reçu votre demande. Elle a été transmise à chacun de nos outils d'envoi : vous ne devez plus recevoir d'alerte ni d'email récapitulatif.</p>
       <p>Si un outil n'a pas confirmé le retrait, nous le faisons à la main sans délai. Vous recevez encore une alerte ? Écrivez-nous à <a href="mailto:{{EMAIL_SUPPORT}}">{{EMAIL_SUPPORT}}</a> : nous vous retirons et vous confirmons la désinscription par écrit.</p>
       <p>Nous conservons uniquement votre adresse dans une liste d'exclusion, pour être sûrs de ne plus vous écrire. Les emails liés à une commande (confirmation, expédition) restent envoyés si vous commandez.</p>

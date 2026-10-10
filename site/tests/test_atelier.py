@@ -2,8 +2,8 @@
 aux filets photographiés, mascotte Braise (nom provisoire), maquettes contrôlées, textes de garantie, JS.
 
 Décision du propriétaire du 06.10.2026 : l'Atelier remplace « Nuit sur le Léman » et la loutre « Lumi ». Refonte de la
-landing, des pages secondaires et des maquettes : étape 2 (10.10.2026). Chaque garde-fou des étapes précédentes est
-gardé et adapté au nouveau contenu.
+landing, des pages secondaires et des maquettes : étape 2 (10.10.2026), puis corrections des deux critiques (DA-01 à
+DA-17, HON-01, A11Y-01, TST-01). Chaque garde-fou des étapes précédentes est gardé et adapté au nouveau contenu.
 """
 
 from __future__ import annotations
@@ -115,6 +115,13 @@ def test_css_landing_sans_couleur_et_mouvement_reductible() -> None:
     assert "@media (prefers-reduced-motion: no-preference)" in css
     assert ':root[data-animations="pause"] *' in css and "animation: none !important" in css
     assert "transition: none !important" in css
+    # La pause coupe aussi le défilement doux, porté par <html> lui-même (A11Y-01).
+    assert ':root[data-animations="pause"] { scroll-behavior: auto !important; }' in css
+    # La pose du héro n'anime jamais l'opacité : le décor de secours ne transparaît pas (DA-03) ; il est masqué dès que
+    # l'image est chargée.
+    pose = re.search(r"@keyframes lp-pose \{(.*?)\}\s*\}", css, re.DOTALL)
+    assert pose and "opacity" not in pose.group(1)
+    assert ".lp-media.a-visuel .lp-secours { visibility: hidden; }" in css
     # Aucune animation ni transition déclarée hors du bloc conditionnel (rien ne bouge d'office).
     hors_bloc = re.sub(r"@media \(prefers-reduced-motion: no-preference\) \{.*?\n\}\n", "", css, flags=re.DOTALL)
     assert "infinite" not in css
@@ -147,6 +154,20 @@ def test_voile_de_lisibilite_du_hero_suffisant_sur_image_noire() -> None:
         assert (max(a, b) + 0.05) / (min(a, b) + 0.05) >= 4.5, (fond, voile)
 
 
+def test_statuts_monochromes_dans_l_atelier() -> None:
+    """DA-05 : badges de statut dans la palette (papier, charbon, gris chaud, lin orangé, orange) ; « Réservation
+    garantie » est la boîte noire à bande orange de l'illustration."""
+    tokens = json.loads((da_sync.DA / "tokens" / "tokens.json").read_text(encoding="utf-8"))
+    c = {k: v["$value"] for k, v in tokens["ambiances"]["atelier"]["color"]["light"].items()}
+    palette = {c[k] for k in ("bg", "surface", "surface-alt", "ink", "ink-muted", "accent", "accent-soft", "papier-chaud")}
+    for k, v in c.items():
+        if k.startswith("status-"):
+            assert v in palette, (k, v)
+    composants = (LANDING / "assets" / "da" / "components.css").read_text(encoding="utf-8")
+    regle = re.search(r'\[data-ambiance="atelier"\] \.da-badge--reservation \{(.*?)\}', composants, re.DOTALL)
+    assert regle and "inverse-bg" in regle.group(1) and "inset 0 -3px 0 var(--da-color-accent)" in regle.group(1)
+
+
 # ----------------------------------------------------------------------------- page principale
 def test_index_garde_le_contrat_et_les_textes_exacts() -> None:
     texte = _index()
@@ -175,12 +196,33 @@ def test_recit_en_chapitres_dans_l_ordre() -> None:
     assert positions == sorted(positions)
     assert texte.index('class="lp-hero"') < positions[0] and positions[-1] < texte.index('<footer class="lp-pied">')
     ordre = re.findall(r'data-visuel="([a-z-]+)"', texte.split("<main", 1)[1])
+    # Braise porte chaque chapitre récit (DA-09 : le fil narratif ne disparaît plus sur 4 000 px) ; le chapitre des
+    # formats est sans image (HON-01) ; une photo du propriétaire par chapitre au plus, sauf le soin.
     attendu = ["renard-heros-portrait", "renard-heros", "renard-assis", "renard-jour-de-drop", "renard-reservation",
-               "photo-classeur", "renard-classeur", "photo-mains-sleeve", "photo-boite-etuis", "renard-leman",
-               "renard-alertes", "renard-pied-de-page"]
+               "renard-classeur", "photo-boite-etuis", "photo-mains-sleeve", "renard-leman", "renard-alertes",
+               "photo-classeur", "renard-pied-de-page"]
     assert ordre == attendu
-    numeros = re.findall(r'<span class="lp-numero__chiffre">(\d\d)</span>', texte)
+    numeros = re.findall(r'<p class="lp-numero" data-fil-chapitre><span class="lp-numero__chiffre">(\d\d)</span>', texte)
     assert numeros == [f"{i:02d}" for i in range(1, 9)]
+
+
+def test_page_d_attente_resserree() -> None:
+    """DA-09 : la réservation garantie n'est plus expliquée trois fois, les statuts passent en question fréquente et
+    les champs facultatifs du formulaire sont repliés (toujours dans la page, consentement et confidentialité dehors)."""
+    texte = _index()
+    drop = re.search(r'<section [^>]*id="drop".*?</section>', texte, re.DOTALL).group(0)
+    assert "lp-etapes" not in drop and "Réservation garantie</span>" not in drop
+    assert 'id="statuts"' not in texte and 'id="faq-statuts"' in texte
+    faq = re.search(r'<section [^>]*id="faq".*?</section>', texte, re.DOTALL).group(0)
+    assert all(s in vs._texte_visible(faq) for s in ("Stock local", "Précommande", "Rupture"))
+    formulaire = re.search(r'<form .*?</form>', texte, re.DOTALL).group(0)
+    replie = re.search(r'<details class="lp-preciser">(.*?)</details>', formulaire, re.DOTALL)
+    assert replie and "<summary>" in replie.group(1)
+    for nom in ('name="formats"', 'name="budget"', 'name="pour_qui"', 'name="canton"'):
+        assert nom in replie.group(1), nom
+    for nom in ('name="email"', 'name="consentement"', 'href="confidentialite.html"', 'id="lp-envoyer"'):
+        assert nom in formulaire and nom not in replie.group(1), nom
+    assert "open" not in re.search(r'<details class="lp-preciser"[^>]*>', formulaire).group(0)
 
 
 def test_fil_orange_raccorde_aux_filets_mesures() -> None:
@@ -189,7 +231,9 @@ def test_fil_orange_raccorde_aux_filets_mesures() -> None:
     m = visuels.charger()
     assert '<div class="lp-fil" aria-hidden="true"><svg class="lp-fil__svg" focusable="false"></svg></div>' in texte
     figures = re.findall(r"<figure\b[^>]*\bdata-fil-ancre(?:=\"([a-z]*)\")?[^>]*>(.*?)</figure>", texte, re.DOTALL)
-    assert [r for r, _ in figures] == ["depart", "", "", "", "arrivee"]
+    # Départ (héro), traversées (Braise, drop, alertes), branches (bande de la photo de la boîte, filet des mains),
+    # corde du Léman (le fil passe sous l'image et ressort du bout de la corde), arrivée (pied de page).
+    assert [r for r, _ in figures] == ["depart", "", "", "branche", "branche", "corde", "", "arrivee"]
     for _, contenu in figures:
         balises = re.findall(r"<(?:img|source)\b[^>]*>", contenu)
         assert balises
@@ -197,32 +241,49 @@ def test_fil_orange_raccorde_aux_filets_mesures() -> None:
             ident = re.search(r'data-visuel="([^"]+)"', balise).group(1)
             assert m["visuels"][ident]["fil"], ident
             assert f'data-fil="{visuels.fil_html(m, ident)}"' in balise, ident
-    masques = re.findall(r"<figure\b[^>]*\bdata-fil-masque[^>]*>(.*?)</figure>", texte, re.DOTALL)
-    assert len(masques) == 1 and 'data-visuel="renard-leman"' in masques[0] and "data-fil=" not in masques[0]
-    # Un visuel sans filet ne porte jamais d'attribut data-fil (retiré s'il était écrit à la main).
+            assert f'data-fil-ep="{visuels.fil_ep_html(m, ident)}"' in balise, ident
+            assert f'data-fil-couleurs="{visuels.fil_couleurs_html(m, ident)}"' in balise, ident
+    # Chaque numéro de chapitre est un point d'attache du fil (son tiret se dessine quand le fil l'atteint).
+    assert texte.count('<p class="lp-numero" data-fil-chapitre>') == 8
+    # Un visuel sans filet ne porte jamais d'attribut data-fil* (retiré s'il était écrit à la main).
     for balise in re.findall(r"<img\b[^>]*>", texte):
         ident = re.search(r'data-visuel="([^"]+)"', balise)
         if ident and not m["visuels"][ident.group(1)]["fil"]:
-            assert "data-fil=" not in balise, ident.group(1)
+            assert "data-fil" not in balise, ident.group(1)
+
+
+#: Objets qui sont des types d'accessoires vendus (BP : « quelques accessoires », sleeves) : protège-cartes, étuis,
+#: classeurs, pochettes, boîtes (de rangement ou non : une boîte noire peut se lire comme une boîte de rangement).
+ACCESSOIRES_MONTRES = re.compile(r"[ée]tuis?|classeurs?|pochettes?|sleeves?|toploaders?|prot[èe]ge-cartes|bo[îi]tes?", re.IGNORECASE)
+
+
+def _sections(texte: str) -> list[str]:
+    return re.findall(r"<section\b.*?</section>", texte, re.DOTALL)
 
 
 def test_photos_d_ambiance_jamais_presentees_comme_des_produits() -> None:
-    """Les photos du propriétaire ont une légende neutre et ne sont jamais voisines de « Accessoires » (BP : accessoires
-    vendus ; DIRECTION_ATELIER.md §7)."""
+    """Les photos du propriétaire ont une légende neutre et vérifiable ; aucune image montrant un type d'accessoire
+    n'est dans une section qui cite « Accessoires » (BP : accessoires vendus ; DIRECTION_ATELIER.md §7 ; HON-01)."""
     texte = _index()
+    m = visuels.charger()
     for ident in ("photo-classeur", "photo-mains-sleeve", "photo-boite-etuis"):
         assert f'data-visuel="{ident}"' in texte
     legendes = re.findall(r'<(?:p|figcaption) class="lp-legende[^"]*">(.*?)</(?:p|figcaption)>', texte, re.DOTALL)
     photos = [vs._normaliser(lg) for lg in legendes if "Photo" in lg]
-    assert len(photos) == 2 and all("ambiance" in lg and "ne représente" in lg for lg in photos)
-    # Dans le chapitre des formats, la seule photo (le classeur) est dans le diptyque d'ouverture, séparée de la liste
-    # (et de sa rangée « Accessoires ») par le titre du chapitre ; les autres photos sont dans le chapitre du soin.
+    assert len(photos) == 2
+    for lg in photos:
+        assert "ambiance" in lg and "vierges" in lg and "sans marque" in lg and "photo réelle du produit vendu" in lg, lg
+        # Aucune affirmation invérifiable sur ce que la boutique vendra ou non (HON-01).
+        assert not re.search(r"ne représente(?:nt)? pas (?:un|des) produits?|\bnos\b", lg), lg
+    montre = {ident for ident, v in m["visuels"].items() if ACCESSOIRES_MONTRES.search(v["description"])}
+    assert {"photo-classeur", "photo-mains-sleeve", "photo-boite-etuis", "renard-classeur", "renard-heros"} <= montre
+    citent = [s for s in _sections(texte) if "Accessoires" in vs._texte_visible(s) or 'value="accessoires"' in s]
+    assert citent  # le chapitre des formats et le formulaire d'alertes
+    for section in citent:
+        images = set(re.findall(r'data-visuel="([a-z-]+)"', section))
+        assert not images & montre, (re.search(r'id="([a-z]+)"', section).group(1), images & montre)
     formats = re.search(r'<section [^>]*id="formats".*?</section>', texte, re.DOTALL).group(0)
-    assert re.findall(r'data-visuel="(photo-[a-z-]+)"', formats) == ["photo-classeur"]
-    assert formats.index('data-visuel="photo-classeur"') < formats.index('id="titre-formats"') < formats.index(">Accessoires</h3>")
-    soin = re.search(r'<section [^>]*id="soin".*?</section>', texte, re.DOTALL).group(0)
-    assert re.findall(r'data-visuel="(photo-[a-z-]+)"', soin) == ["photo-mains-sleeve", "photo-boite-etuis"]
-    assert "Accessoires" not in vs._texte_visible(soin)
+    assert "data-visuel" not in formats  # le chapitre qui annonce ce qui sera vendu n'a aucune image
 
 
 def test_textes_de_garantie_identiques_au_moteur() -> None:
@@ -270,6 +331,11 @@ def test_pages_secondaires_illustrees_par_braise() -> None:
         assert len(principales) == (0 if nom == "confidentialite.html" else 1), nom
         assert "création originale" in vs._texte_visible(texte), nom
     assert "Braise (nom provisoire)" in vs._texte_visible(pages["merci.html"])
+    # Le texte dit ce que montre l'image (renard couché, éveillé, l'œil en coin : DA-16) ; titres avec point final.
+    assert "l'œil en coin" in vs._texte_visible(pages["merci.html"]) and "roulé en boule" not in pages["merci.html"]
+    for nom in ("merci.html", "inscription-confirmee.html", "desinscription.html"):
+        titre = re.search(r'<h1 class="da-title">(.*?)</h1>', pages[nom]).group(1)
+        assert titre.endswith("."), (nom, titre)
 
 
 # ----------------------------------------------------------------------------- maquettes
@@ -329,6 +395,24 @@ def test_maquettes_prix_fictifs_coherents_avec_la_regle_des_10_pourcent() -> Non
         if len(prix) >= 2:
             resa, drop = prix[0], prix[1]
             assert drop < resa <= round(drop * 1.10, 2), page.name
+
+
+def test_maquettes_jamais_braise_a_cote_du_produit_ou_de_ses_prix() -> None:
+    """DA-04 : une illustration n'illustre jamais un produit vendu. Aucune section d'une maquette ne contient à la fois
+    une illustration du renard et le titre du produit (h1, .lp-fiche__titre) ou ses deux prix (.lp-deux-prix)."""
+    for page in MAQUETTES.glob("*.html"):
+        texte = page.read_text(encoding="utf-8")
+        principal = texte.split("<main", 1)[1]
+        blocs = re.findall(r"<section\b.*?</section>", principal, re.DOTALL)
+        blocs.append(re.split(r"<section\b", principal)[0])  # contenu hors section (galerie de la fiche)
+        for bloc in blocs:
+            if re.search(r'data-visuel="renard-', bloc):
+                assert not re.search(r"<h1\b|lp-deux-prix|lp-fiche__titre", bloc), page.name
+        if 'data-visuel="renard-' in texte:
+            assert "ne représente pas ce produit" in vs._texte_visible(texte), page.name
+    drop = (MAQUETTES / "drop.html").read_text(encoding="utf-8")
+    heros = re.search(r'<section class="lp-chapitre--charbon lp-drop-hero".*?</section>', drop, re.DOTALL).group(0)
+    assert "data-visuel" not in heros and "Photo réelle du produit scellé" in heros
 
 
 def test_maquette_fiche_sans_illustration_en_guise_de_photo_produit() -> None:

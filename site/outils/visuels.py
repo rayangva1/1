@@ -6,13 +6,16 @@ marquées ``data-visuel="<identifiant>"`` : ``<img>``, ``<source>`` (dans ``<pic
 Ce module réécrit leurs attributs gérés à partir du manifeste :
 
 * ``<img>`` : ``src``, ``srcset``, ``width``, ``height``, ``alt`` (texte alternatif du manifeste ; une page qui doit
-  dire autre chose dans son contexte pose ``data-alt-contexte`` et garde son propre ``alt``) et ``data-fil`` ;
-* ``<source>`` : ``srcset``, ``width``, ``height`` et ``data-fil`` ;
+  dire autre chose dans son contexte pose ``data-alt-contexte`` et garde son propre ``alt``), ``data-fil``,
+  ``data-fil-ep`` et ``data-fil-couleurs`` ;
+* ``<source>`` : ``srcset``, ``width``, ``height``, ``data-fil``, ``data-fil-ep`` et ``data-fil-couleurs`` ;
 * ``<link rel="preload">`` : ``href``, ``imagesrcset``.
 
 ``data-fil`` : le filet orange photographié (« x1 y1 x2 y2 » en fractions de l'image d'origine, champ ``fil``), lu par
-le script de la page pour raccorder le « fil orange » dessiné (DIRECTION_ATELIER.md §6) ; absent si ``fil`` est nul (un
-``data-fil`` resté dans la page est alors retiré). ``sizes``, ``loading``, ``fetchpriority`` et ``media`` restent écrits
+le script de la page pour raccorder le « fil orange » dessiné (DIRECTION_ATELIER.md §6) ; ``data-fil-ep`` : son épaisseur
+mesurée (fraction de la hauteur de l'image, champ ``fil_epaisseur``) et ``data-fil-couleurs`` : sa couleur mesurée près
+de l'entrée et de la sortie (champ ``fil_couleurs``), pour que le fil dessiné parte de l'épaisseur et de la teinte du
+filet photographié. Absents si ``fil`` est nul (un attribut resté dans la page est alors retiré). ``sizes``, ``loading``, ``fetchpriority`` et ``media`` restent écrits
 dans la page (ils dépendent de la mise en page).
 Deux sources :
 
@@ -74,8 +77,8 @@ NATURES = ("illustration", "photo")
 BALISE_RE = re.compile(r"<(img|source|link)\b([^<>]*?)\s*(/?)>", re.IGNORECASE | re.DOTALL)
 ATTR_RE = re.compile(r'([^\s=/>"]+)(?:\s*=\s*"([^"]*)")?')
 GERES = {
-    "img": ("src", "srcset", "width", "height", "alt", "data-fil"),
-    "source": ("srcset", "width", "height", "data-fil"),
+    "img": ("src", "srcset", "width", "height", "alt", "data-fil", "data-fil-ep", "data-fil-couleurs"),
+    "source": ("srcset", "width", "height", "data-fil", "data-fil-ep", "data-fil-couleurs"),
     "link": ("href", "imagesrcset"),
 }
 #: Attribut d'une balise <img> qui garde son propre texte alternatif (contexte de la page).
@@ -95,6 +98,10 @@ TERMES_MASCOTTE_INTERDITS = re.compile(
     re.IGNORECASE,
 )
 OBJETS_DECRITS = re.compile(r"\b(?:bo[îi]tes?|[ée]tuis?|cartes?|classeurs?|pochettes?|sleeves?|toploaders?)\b", re.IGNORECASE)
+#: Couleur mesurée d'un filet (« #RRGGBB »).
+COULEUR_RE = re.compile(r"^#[0-9A-F]{6}$")
+#: Épaisseur maximale d'un filet photographié (fraction de la hauteur de l'image).
+EPAISSEUR_MAX = 0.1
 OBJETS_VIERGES = re.compile(r"\bvierges?\b|sans marque", re.IGNORECASE)
 
 
@@ -234,6 +241,14 @@ def valider(m: dict, *, exiger_variantes: bool = True) -> list[str]:
             err.append(f"{ident} : empreinte_source = SHA-256 hexadécimal (écrit par rapatrier_visuels.py) ou null")
         if not _fil_valide(v.get("fil")):
             err.append(f"{ident} : fil = null ou deux points [x, y] en fractions de l'image (0 à 1)")
+        ep, couleurs = v.get("fil_epaisseur"), v.get("fil_couleurs")
+        if v.get("fil"):
+            if not (isinstance(ep, (int, float)) and not isinstance(ep, bool) and 0 < ep <= EPAISSEUR_MAX):
+                err.append(f"{ident} : fil_epaisseur = épaisseur mesurée du filet, fraction de la hauteur (0 à {EPAISSEUR_MAX})")
+            if not (isinstance(couleurs, list) and len(couleurs) == 2 and all(isinstance(c, str) and COULEUR_RE.match(c) for c in couleurs)):
+                err.append(f"{ident} : fil_couleurs = deux couleurs mesurées « #RRGGBB » (entrée, sortie du filet)")
+        elif ep is not None or couleurs is not None:
+            err.append(f"{ident} : fil_epaisseur et fil_couleurs sans fil (null attendu)")
         err += erreurs_redaction(ident, v)
     if m.get("source") == "local" and isinstance(visuels, dict) and exiger_variantes:
         for ident, v in visuels.items():
@@ -285,6 +300,18 @@ def fil_html(m: dict, ident: str) -> str | None:
     return " ".join(f"{c:g}" for point in fil for c in point)
 
 
+def fil_ep_html(m: dict, ident: str) -> str | None:
+    """Épaisseur mesurée du filet photographié (fraction de la hauteur de l'image) ; None sans filet."""
+    v = m["visuels"][ident]
+    return f"{v['fil_epaisseur']:g}" if v.get("fil") and v.get("fil_epaisseur") else None
+
+
+def fil_couleurs_html(m: dict, ident: str) -> str | None:
+    """Couleurs mesurées du filet (entrée, sortie) ; None sans filet."""
+    v = m["visuels"][ident]
+    return " ".join(v["fil_couleurs"]) if v.get("fil") and v.get("fil_couleurs") else None
+
+
 def alt_html(m: dict, ident: str) -> str:
     """Texte alternatif du manifeste, échappé pour un attribut entre guillemets doubles."""
     return html.escape(str(m["visuels"][ident].get("alt", "")), quote=False).replace('"', "&quot;")
@@ -329,6 +356,8 @@ def attributs(m: dict, ident: str, balise: str, page: Path, racine: Path = LANDI
         "height": str(v["hauteur"]),
         "alt": alt_html(m, ident),
         "data-fil": fil_html(m, ident),
+        "data-fil-ep": fil_ep_html(m, ident),
+        "data-fil-couleurs": fil_couleurs_html(m, ident),
     }
     return {k: val for k in GERES[balise] if (val := tout[k]) is not None}
 
