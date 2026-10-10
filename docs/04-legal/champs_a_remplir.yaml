@@ -1,0 +1,427 @@
+# Registre des champs {{...}} — textes clients (docs/04-legal, FAQ) et SOP (docs/07-ops)
+#
+# Règle : un champ = une seule valeur, saisie ICI, puis recopiée partout par
+#   python docs/04-legal/outils/rendre_textes.py
+# Statuts :
+#   a_remplir  : fait à obtenir (identité, contrat, devis). Aucune valeur proposée.
+#   a_valider  : valeur PROPOSÉE par l'agent legal-ops (hypothèse), à valider par la décideuse.
+#   valide     : valeur validée (indiquer qui et quand dans « valide_par »).
+# Une publication réelle (--publication) refuse tout champ qui n'est pas « valide ».
+# Aucune valeur ci-dessous n'est un tarif, un contrat ou un fait confirmé.
+version: "2026-10-06"
+auteur: "agent legal-ops"
+
+champs:
+  # ------------------------------------------------------------------ identité
+  NOM_BOUTIQUE:
+    description: "Nom commercial de la boutique (naming non validé)"
+    statut: a_remplir
+    decideur: "Propriétaire (C06)"
+    source: "docs/05-da/NAMING.md"
+  RAISON_SOCIALE:
+    description: "Raison de commerce exacte, telle qu'inscrite (RC/IDE). Raison individuelle : contient le nom de famille de la titulaire (art. 945 CO)"
+    statut: a_remplir
+    decideur: "Propriétaire + fiduciaire (B07)"
+    source: "docs/00-pilotage/INTERVENTIONS_HUMAINES.md B07"
+  FORME_JURIDIQUE:
+    description: "Forme juridique de l'entité exploitante (raison individuelle, Sàrl…)"
+    statut: a_remplir
+    decideur: "Propriétaire + fiduciaire (B07)"
+    source: "BP §2, §14"
+  NOM_RESPONSABLE:
+    description: "Personne responsable de l'entité (titulaire ou gérante), pour l'impressum et la protection des données"
+    statut: a_remplir
+    decideur: "Propriétaire"
+    source: "LCD art. 3 al. 1 let. s ch. 1 ; LPD art. 19"
+  ADRESSE_POSTALE:
+    description: "Adresse postale complète de l'entité (pas une case postale seule)"
+    statut: a_remplir
+    decideur: "Propriétaire"
+    source: "LCD art. 3 al. 1 let. s ch. 1"
+  ADRESSE:
+    description: "Alias utilisé par les fichiers DA (carte merci, sticker) : même valeur et même statut que ADRESSE_POSTALE"
+    alias_de: ADRESSE_POSTALE
+    decideur: "Propriétaire"
+    source: "docs/05-da/packaging/NOTE_CHIFFRAGE.md"
+  ADRESSE_RETOURS:
+    description: "Adresse de réception des retours (peut être identique à ADRESSE_POSTALE)"
+    statut: a_remplir
+    decideur: "Propriétaire"
+    source: "SOP_SAV_RETOURS.md"
+  NUMERO_IDE:
+    description: "Numéro IDE au format CHE-123.456.789"
+    statut: a_remplir
+    decideur: "Propriétaire (B09)"
+    source: "docs/00-pilotage/INTERVENTIONS_HUMAINES.md B09"
+  INSCRIPTION_RC:
+    description: "Mention d'inscription au registre du commerce (canton, numéro) ou « non inscrite au registre du commerce »"
+    statut: a_remplir
+    decideur: "Propriétaire + fiduciaire (B09)"
+    source: "art. 931 ss CO"
+  MENTION_TVA:
+    description: "Variante A (assujettie) : « Prix TTC, TVA suisse de 8,1 % incluse. N° TVA : CHE-…-TVA ». Variante B (non assujettie) : « {{RAISON_SOCIALE}} n'est pas assujettie à la TVA ; aucune TVA n'est facturée. » Une entité non inscrite ne doit JAMAIS afficher de TVA (art. 27 LTVA)"
+    statut: a_remplir
+    decideur: "Fiduciaire (B10) puis propriétaire"
+    source: "BP §4 ; LTVA art. 27"
+  EMAIL_SUPPORT:
+    description: "Adresse email du service client (obligatoire : un formulaire de contact ne suffit pas)"
+    statut: a_remplir
+    decideur: "Propriétaire (B02/B08)"
+    source: "LCD art. 3 al. 1 let. s ch. 1"
+  EMAIL_DONNEES:
+    description: "Adresse email pour les demandes liées aux données personnelles (peut être identique à EMAIL_SUPPORT)"
+    statut: a_remplir
+    decideur: "Propriétaire"
+    source: "LPD art. 19, 25"
+  URL_SITE:
+    description: "Adresse du site (domaine acheté en B08)"
+    statut: a_remplir
+    decideur: "Propriétaire (B08)"
+    source: "docs/05-da/NAMING.md"
+  SITE:
+    description: "Alias utilisé par les fichiers DA (carte merci) : même valeur et même statut que URL_SITE"
+    alias_de: URL_SITE
+    decideur: "Propriétaire (B08)"
+    source: "docs/05-da/packaging/NOTE_CHIFFRAGE.md"
+  URL_CGV:
+    description: "URL de la page CGV (Shopify : page de politique « Conditions d'utilisation » ou page dédiée — chemin à vérifier sur la boutique)"
+    statut: a_remplir
+    decideur: "Agent 07 Site"
+    source: "BP §7"
+  URL_RETOURS:
+    description: "URL de la page Livraison et retours"
+    statut: a_remplir
+    decideur: "Agent 07 Site"
+    source: "BP §7"
+  URL_PRECOMMANDES:
+    description: "URL de la page Précommandes"
+    statut: a_remplir
+    decideur: "Agent 07 Site"
+    source: "BP §7"
+  URL_CONFIDENTIALITE:
+    description: "URL de la page Confidentialité"
+    statut: a_remplir
+    decideur: "Agent 07 Site"
+    source: "BP §7"
+  URL_COOKIES:
+    description: "URL de la page Cookies (ou ancre de la page Confidentialité)"
+    statut: a_remplir
+    decideur: "Agent 07 Site"
+    source: "LTC art. 45c"
+  URL_FAQ:
+    description: "URL de la page FAQ"
+    statut: a_remplir
+    decideur: "Agent 07 Site"
+    source: "BP §7"
+  DATE_VERSION:
+    description: "Date d'entrée en vigueur de la version publiée des textes (jj.mm.aaaa)"
+    statut: a_remplir
+    decideur: "Propriétaire, après relecture du juriste (C11)"
+    source: "BL-096"
+  DATE_VERSION_LANDING:
+    description: "Date d'entrée en vigueur de la notice de confidentialité de la landing (CONFIDENTIALITE_LANDING.md), jj.mm.aaaa. Valeur provisoire : la notice est remplacée par la déclaration complète (DATE_VERSION) à l'ouverture"
+    statut: a_remplir
+    decideur: "Propriétaire, après relecture express du juriste (avant le GO C07)"
+    source: "BL-032 (publication de la landing à J10) ; BL-033"
+  HEBERGEUR:
+    description: "Hébergeur du site et de la boutique (raison sociale et pays, selon le contrat accepté)"
+    statut: a_remplir
+    decideur: "Agent 07 Site, à partir des conditions Shopify acceptées (B15)"
+    source: "BP §6"
+
+  # ------------------------------------------------------- paiement et livraison
+  MOYENS_PAIEMENT:
+    description: "Moyens de paiement réellement actifs au checkout"
+    valeur_proposee: "carte de paiement et TWINT"
+    statut: a_valider
+    decideur: "Propriétaire, après activation du PSP et de TWINT (B16)"
+    source: "BP §7 [S10] — TWINT sous conditions d'éligibilité"
+  PSP_NOM:
+    description: "Prestataire de paiement (Shopify Payments ou autre) et son pays"
+    statut: a_remplir
+    decideur: "Propriétaire (B16)"
+    source: "BL-051"
+  TRANSPORTEUR:
+    description: "Transporteur retenu (contrat B17)"
+    statut: a_remplir
+    decideur: "Propriétaire (B17), sur comparatif BL-053"
+    source: "BL-053"
+  MODE_LIVRAISON:
+    description: "Service(s) de livraison proposés au checkout, avec suivi"
+    statut: a_remplir
+    decideur: "Propriétaire, sur comparatif BL-053"
+    source: "BL-053"
+  FRAIS_LIVRAISON:
+    description: "Frais de livraison facturés au client, par service (CHF TTC). Aucun montant tant que le tarif transporteur écrit n'est pas reçu"
+    statut: a_remplir
+    decideur: "Propriétaire ; contrôlé par le moteur de prix (port gratuit = coût réel au panier)"
+    source: "BP §3 « frais de livraison facturés comparés au coût logistique réel »"
+  SEUIL_PORT_OFFERT:
+    description: "Formulation complète, p. ex. « dès [montant] CHF d'articles » ou « non proposée ». Montant décidé après simulation du moteur, jamais estimé par un agent"
+    statut: a_remplir
+    decideur: "Propriétaire, après simulation du moteur (basket_contribution)"
+    source: "BP §5, §7"
+  JOURS_EXPEDITION:
+    description: "Jours fixes de dépôt des colis"
+    valeur_proposee: "lundi, mercredi et vendredi, jours fériés genevois exceptés"
+    statut: a_valider
+    decideur: "Propriétaire (temps de préparation, A07)"
+    source: "INTERVENTIONS_HUMAINES.md A07 (regrouper les envois)"
+  DELAI_EXPEDITION:
+    description: "Délai maximal entre le paiement et la remise au transporteur, pour le stock local"
+    valeur_proposee: "3 jours ouvrés"
+    statut: a_valider
+    decideur: "Propriétaire"
+    source: "BP §7 « délai réaliste » ; hypothèse agent legal-ops"
+  DELAI_ACHEMINEMENT:
+    description: "Délai d'acheminement indicatif du transporteur après dépôt (selon le service)"
+    statut: a_remplir
+    decideur: "Contrat transporteur (B17)"
+    source: "BL-053"
+  DELAI_SIGNALEMENT:
+    description: "Délai demandé au client pour signaler un colis endommagé, un article manquant ou une erreur visible à réception"
+    valeur_proposee: "5 jours après réception"
+    statut: a_valider
+    decideur: "Propriétaire + juriste (ne doit pas restreindre la garantie légale)"
+    source: "art. 201 CO (avis sans délai) ; délai de réclamation transporteur à vérifier"
+  DELAI_RETOUR_VOLONTAIRE:
+    description: "Délai de la politique de retour volontaire (produit scellé, non ouvert)"
+    valeur_proposee: "14 jours après réception"
+    statut: a_valider
+    decideur: "Propriétaire"
+    source: "BP §7 « politique volontaire claire »"
+  DELAI_REMBOURSEMENT:
+    description: "Délai maximal pour déclencher un remboursement après décision (annulation, retour reçu et contrôlé, allocation réduite)"
+    valeur_proposee: "10 jours"
+    statut: a_valider
+    decideur: "Propriétaire"
+    source: "hypothèse agent legal-ops ; délai réel de crédit selon le PSP"
+  LIMITE_PAR_CLIENT:
+    description: "Quantité maximale par référence et par foyer pour les nouveautés et produits marqués « quantité limitée »"
+    valeur_proposee: "2 exemplaires par référence et par foyer"
+    statut: a_valider
+    decideur: "Propriétaire"
+    source: "BP §7 « quantité autorisée » ; REGISTRE_RISQUES.md R28"
+  DELAI_REPONSE_SUPPORT:
+    description: "Délai de première réponse du service client"
+    valeur_proposee: "1 jour ouvré"
+    statut: a_valider
+    decideur: "Propriétaire"
+    source: "BACKLOG BL-121 (réponse < 24 h ouvrées)"
+
+  # ------------------------------------------------------------- précommandes
+  DELAI_ANNULATION_PRECOMMANDE:
+    description: "Jusqu'à quand le client peut annuler gratuitement une précommande"
+    valeur_proposee: "jusqu'à 7 jours avant la date de sortie annoncée"
+    statut: a_valider
+    decideur: "Propriétaire"
+    source: "hypothèse agent legal-ops"
+  SEUIL_REPORT_PRECOMMANDE:
+    description: "Report de la date de sortie au-delà duquel le client peut annuler et être remboursé intégralement"
+    valeur_proposee: "30 jours"
+    statut: a_valider
+    decideur: "Propriétaire + juriste"
+    source: "hypothèse agent legal-ops"
+  DELAI_INFORMATION_REPORT:
+    description: "Délai pour informer les clients d'un report, d'une réduction d'allocation ou d'un changement de contenu"
+    valeur_proposee: "2 jours ouvrés après l'information du fournisseur"
+    statut: a_valider
+    decideur: "Propriétaire"
+    source: "hypothèse agent legal-ops"
+
+  # ------------------------------------------------- pré-drop (réservation garantie)
+  # Valeurs proposées ALIGNÉES sur les paramètres signés du moteur (config/predrop.v1.yaml : per_customer_limit,
+  # priority_window_hours, free_cancellation_days_before_drop) : contrôle check_predrop_alignment de
+  # outils/verifier_legal_ops.py. Changer l'un impose de changer l'autre, puis de signer à nouveau les paramètres (C32).
+  LIMITE_RESERVATION_PREDROP:
+    description: "Nombre maximal de réservations garanties par pré-drop et par foyer, toutes commandes confondues (limite par client du moteur : 1 à 2)"
+    valeur_proposee: "1 réservation garantie par produit et par foyer"
+    statut: a_valider
+    decideur: "Propriétaire (signature des paramètres du pré-drop, C32)"
+    source: "config/predrop.v1.yaml per_customer_limit ; décision de la propriétaire du 6.10.2026"
+  FENETRE_PRIORITAIRE_PREDROP:
+    description: "Durée de l'accès prioritaire des inscrits aux alertes du produit après l'ouverture des réservations garanties"
+    valeur_proposee: "24 heures"
+    statut: a_valider
+    decideur: "Propriétaire (signature des paramètres du pré-drop, C32)"
+    source: "config/predrop.v1.yaml priority_window_hours ; décision de la propriétaire du 6.10.2026"
+  DELAI_ANNULATION_PREDROP:
+    description: "Jusqu'à quand le client peut annuler gratuitement une réservation garantie (date du drop EN VIGUEUR, reportée le cas échéant ; appliqué par le moteur, PredropRegistry.cancel_reservation)"
+    valeur_proposee: "jusqu'à 7 jours avant la date du drop"
+    statut: a_valider
+    decideur: "Propriétaire (signature des paramètres du pré-drop, C32)"
+    source: "config/predrop.v1.yaml free_cancellation_days_before_drop ; revue pré-drop PDL-10 (6.10.2026)"
+
+  # ------------------------------------------------------- données personnelles
+  DUREE_CLE_EMPREINTE_PREDROP:
+    description: "Durée maximale de vie de la clé secrète des empreintes client du pré-drop (renouvelée et détruite après chaque pré-drop soldé ; l'empreinte du journal du moteur n'est alors plus rattachable)"
+    valeur_proposee: "6 mois après le drop"
+    statut: a_valider
+    decideur: "Propriétaire + juriste (note C10 de CONFIDENTIALITE.md ; acte C35 d'INTERVENTIONS_HUMAINES.md)"
+    source: "revue pré-drop PDL-09 (6.10.2026) ; LPD art. 6 al. 4 (proportionnalité)"
+  DUREE_CONSERVATION_SAV:
+    description: "Durée de conservation des échanges du service client"
+    valeur_proposee: "24 mois après le dernier échange"
+    statut: a_valider
+    decideur: "Propriétaire + juriste (validation C26, J9, avant la landing)"
+    source: "LPD art. 6 al. 4 (proportionnalité)"
+  DUREE_CONSERVATION_COMPTE:
+    description: "Suppression d'un compte client inactif"
+    valeur_proposee: "36 mois sans connexion ni commande"
+    statut: a_valider
+    decideur: "Propriétaire + juriste"
+    source: "LPD art. 6 al. 4"
+  DUREE_CONSERVATION_ALERTES:
+    description: "Conservation des inscriptions aux alertes et à l'email récapitulatif"
+    valeur_proposee: "jusqu'à la désinscription, ou 24 mois sans ouverture ni clic"
+    statut: a_valider
+    decideur: "Propriétaire + juriste (validation C26, J9, avant la landing)"
+    source: "LPD art. 6 al. 4"
+  DUREE_CONSERVATION_PANIER:
+    description: "Conservation des paniers non finalisés (email saisi en caisse, articles, consentement marketing coché) ; à aligner sur la durée réelle de conservation des paniers abandonnés dans la boutique en ligne"
+    valeur_proposee: "30 jours après l'abandon du panier"
+    statut: a_valider
+    decideur: "Propriétaire + juriste"
+    source: "LPD art. 6 al. 4 ; email 13 (docs/06-contenu/EMAILS) ; note C4"
+  DUREE_CONSERVATION_PHOTOS_COLIS:
+    description: "Conservation des photos de contenu prises avant fermeture du colis (preuve SAV, sans étiquette visible)"
+    valeur_proposee: "90 jours après expédition"
+    statut: a_valider
+    decideur: "Propriétaire"
+    source: "SOP_PREPARATION_COLIS.md"
+  ST_BOUTIQUE:
+    description: "Sous-traitant boutique et commandes"
+    valeur_proposee: "Shopify"
+    statut: a_valider
+    decideur: "Propriétaire (B15)"
+    source: "BP §6"
+  ST_BOUTIQUE_PAYS:
+    description: "Pays de traitement et garantie de transfert, selon l'accord de traitement (DPA) Shopify en vigueur"
+    statut: a_remplir
+    decideur: "Agent 12 QA, à partir du DPA ; juriste"
+    source: "LPD art. 16-17 ; OPDo annexe 1"
+  ST_PAIEMENT:
+    description: "Sous-traitant paiement"
+    statut: a_remplir
+    decideur: "Propriétaire (B16)"
+    source: "BL-051"
+  ST_PAIEMENT_PAYS:
+    description: "Pays de traitement et garantie de transfert du PSP"
+    statut: a_remplir
+    decideur: "Agent 12 QA ; juriste"
+    source: "LPD art. 16-17"
+  ST_TRANSPORT:
+    description: "Transporteur (destinataire des nom, adresse, téléphone éventuel)"
+    statut: a_remplir
+    decideur: "Propriétaire (B17)"
+    source: "BL-053"
+  ST_TRANSPORT_PAYS:
+    description: "Pays de traitement du transporteur"
+    statut: a_remplir
+    decideur: "Agent 12 QA"
+    source: "LPD art. 16-17"
+  ST_EMAILING:
+    description: "Outil d'emailing (alertes, récapitulatif)"
+    statut: a_remplir
+    decideur: "Propriétaire (B04)"
+    source: "docs/01-marche/PROTOCOLE_LANDING_TEST.md"
+  ST_EMAILING_PAYS:
+    description: "Pays de traitement et garantie de l'outil d'emailing"
+    statut: a_remplir
+    decideur: "Agent 12 QA ; juriste"
+    source: "LPD art. 16-17"
+  ST_MESSAGERIE:
+    description: "Fournisseur de la boîte email du service client et des agents"
+    statut: a_remplir
+    decideur: "Propriétaire (B02)"
+    source: "Modèle d'opération (boîte dédiée aux agents)"
+  ST_MESSAGERIE_PAYS:
+    description: "Pays de traitement et garantie de la messagerie"
+    statut: a_remplir
+    decideur: "Agent 12 QA ; juriste"
+    source: "LPD art. 16-17"
+  ST_IA:
+    description: "Fournisseur des modèles d'IA utilisés par les agents pour trier et rédiger les réponses SAV"
+    statut: a_remplir
+    decideur: "Propriétaire (acceptation explicite C26, J9, avant la landing) ; juriste"
+    source: "Modèle d'opération ; LPD art. 9 (sous-traitance)"
+  ST_IA_PAYS:
+    description: "Pays de traitement et garantie (certification Swiss-US DPF ou clauses contractuelles) du fournisseur d'IA ; usage des données pour l'entraînement exclu par contrat"
+    statut: a_remplir
+    decideur: "Agent 12 QA ; juriste"
+    source: "LPD art. 16-17 ; OPDo annexe 1"
+  ST_BASE:
+    description: "Hébergement de la base de données interne (PostgreSQL) et de l'orchestrateur (n8n)"
+    statut: a_remplir
+    decideur: "Propriétaire (B27, J8 : hébergement de n8n au nom de l'entité) ; agent 07 Site"
+    source: "SPEC §1"
+  ST_BASE_PAYS:
+    description: "Pays d'hébergement de la base et de l'orchestrateur"
+    statut: a_remplir
+    decideur: "Agent 07 Site ; juriste"
+    source: "LPD art. 16-17"
+  ST_AUDIENCE:
+    description: "Outil de mesure d'audience (ou « aucun outil tiers »)"
+    statut: a_remplir
+    decideur: "Agent 07 Site"
+    source: "docs/01-marche/PROTOCOLE_LANDING_TEST.md §5"
+  ST_AUDIENCE_PAYS:
+    description: "Pays de traitement et garantie de l'outil d'audience"
+    statut: a_remplir
+    decideur: "Agent 12 QA ; juriste"
+    source: "LPD art. 16-17"
+  ST_HEBERGEMENT_LANDING:
+    description: "Hébergeur de la landing publiée avant la boutique (par exemple l'hébergeur choisi en site/landing/README.md §3), selon le contrat accepté"
+    statut: a_remplir
+    decideur: "Propriétaire (B04/B08) ; agent 07 Site"
+    source: "site/landing/README.md §3 ; CONFIDENTIALITE_LANDING.md"
+  ST_HEBERGEMENT_LANDING_PAYS:
+    description: "Pays de traitement et garantie de l'hébergeur de la landing"
+    statut: a_remplir
+    decideur: "Agent 12 QA ; juriste"
+    source: "LPD art. 16-17"
+  ST_POLICES:
+    description: "Fournisseur des polices chargées par la landing : « Google Fonts (Google) » si la page charge Google Fonts, sinon « aucun : polices du système » (publication avec --sans-google-fonts). publication.py refuse une valeur incohérente avec le choix fait"
+    statut: a_remplir
+    decideur: "Propriétaire (choix site/landing/README.md, Validation humaine)"
+    source: "site/landing/README.md §3.1 ; CONFIDENTIALITE_LANDING.md N2"
+  ST_POLICES_PAYS:
+    description: "Pays de traitement et garantie du fournisseur des polices (« sans objet » si aucun)"
+    statut: a_remplir
+    decideur: "Agent 12 QA ; juriste"
+    source: "LPD art. 16-17"
+
+  # ----------------------------------------------------------------- opérations
+  EMPLACEMENT_STOCK:
+    description: "Lieu de stockage (adresse interne, jamais publiée)"
+    statut: a_remplir
+    decideur: "Propriétaire (A05)"
+    source: "INTERVENTIONS_HUMAINES.md A05"
+  SEUIL_ENVOI_SIGNATURE:
+    description: "Valeur de commande à partir de laquelle l'envoi se fait contre signature ou avec assurance complémentaire"
+    statut: a_remplir
+    decideur: "Propriétaire, selon les plafonds d'indemnisation du contrat transporteur"
+    source: "CG du transporteur (à lire au contrat)"
+  SEUIL_COLIS_BLOQUE:
+    description: "Durée sans mouvement de suivi au-delà de laquelle une demande de recherche est ouverte"
+    valeur_proposee: "5 jours ouvrés"
+    statut: a_valider
+    decideur: "Propriétaire"
+    source: "hypothèse agent legal-ops ; procédure du transporteur à vérifier"
+  PLAFOND_REMBOURSEMENT_AUTONOME:
+    description: "Montant maximal qu'un agent peut rembourser seul, dans la matrice SAV ; au-delà, validation de la propriétaire"
+    valeur_proposee: "100 CHF par commande"
+    statut: a_valider
+    decideur: "Propriétaire, à aligner sur DELEGATION_AUTONOMIE.md (agent gouvernance)"
+    source: "Modèle d'opération (mandat écrit)"
+  HEURE_DIGEST:
+    description: "Heure d'envoi du résumé quotidien des agents à la propriétaire"
+    valeur_proposee: "7 h 30"
+    statut: a_valider
+    decideur: "Propriétaire"
+    source: "BP §12 tableau de bord"
+  TAUX_HORAIRE_VALORISATION:
+    description: "Taux horaire de valorisation du temps de la propriétaire (second compte de résultat)"
+    statut: a_remplir
+    decideur: "Propriétaire"
+    source: "BP §3 « valoriser le temps dans un second compte de résultat »"

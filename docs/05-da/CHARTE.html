@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="fr-CH" data-da="a">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mini-charte — Quai des Cartes (nom de travail)</title>
+  <meta name="description" content="Mini-charte de marque : logo, couleurs, typographie, grille, composants, photo, ton, do/don't, applications. Proposition à valider.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&amp;family=Inter:opsz,wght@14..32,400..700&amp;family=IBM+Plex+Mono:wght@500;600&amp;family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Space+Grotesk:wght@500;700&amp;display=swap">
+  <link rel="stylesheet" href="tokens/tokens.css">
+  <link rel="stylesheet" href="components/components.css">
+  <link rel="icon" href="logo/a/favicon.svg" type="image/svg+xml">
+  <script src="components/apercu.js" defer></script>
+</head>
+<body class="da-root">
+  <div class="da-preview-bar" role="toolbar" aria-label="Options d'aperçu">
+    <strong>Aperçu</strong>
+    <button type="button" data-set-da="a" aria-pressed="true">Direction A — Quai</button>
+    <button type="button" data-set-da="b" aria-pressed="false">Direction B — Pochette</button>
+    <span aria-hidden="true">·</span>
+    <button type="button" data-set-theme="auto" aria-pressed="true">Auto</button>
+    <button type="button" data-set-theme="light" aria-pressed="false">Clair</button>
+    <button type="button" data-set-theme="dark" aria-pressed="false">Sombre</button>
+  </div>
+  <style>
+    html:not([data-da="b"]) [data-only="b"] { display: none !important; }
+    html[data-da="b"] [data-only="a"] { display: none !important; }
+    .lg { display: none !important; }
+    html:not([data-da="b"]):not([data-theme="dark"]) .lg-a-light,
+    html[data-da="b"]:not([data-theme="dark"]) .lg-b-light,
+    html:not([data-da="b"])[data-theme="dark"] .lg-a-dark,
+    html[data-da="b"][data-theme="dark"] .lg-b-dark { display: block !important; }
+    @media (prefers-color-scheme: dark) {
+      html:not([data-da="b"]):not([data-theme]) .lg-a-light,
+      html[data-da="b"]:not([data-theme]) .lg-b-light { display: none !important; }
+      html:not([data-da="b"]):not([data-theme]) .lg-a-dark,
+      html[data-da="b"]:not([data-theme]) .lg-b-dark { display: block !important; }
+    }
+    .ch-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--da-space-6); padding-block: var(--da-space-5) var(--da-space-8); }
+    @media (min-width: 1000px) { .ch-layout { grid-template-columns: 220px minmax(0, 1fr); } .ch-toc { position: sticky; top: 64px; align-self: start; } }
+    .ch-toc ol { margin: 0; padding-left: 1.4em; display: grid; gap: 4px; font-size: var(--da-text-sm); }
+    .ch-toc a { color: var(--da-color-ink); }
+    .ch-section { padding-block: var(--da-space-6); border-top: 3px solid var(--da-color-ink); scroll-margin-top: 64px; }
+    [data-da="b"] .ch-section { border-top: 1px solid var(--da-color-line-strong); }
+    .ch-section > h2 { font-size: var(--da-text-xl); margin-bottom: var(--da-space-4); }
+    .ch-section h3 { font-family: var(--da-font-text); font-size: var(--da-text-md); margin: var(--da-space-5) 0 var(--da-space-2); }
+    .ch-num { display: inline-block; min-width: 2.2em; color: var(--da-color-accent-text); font-family: var(--da-font-price); }
+    .ch-lead { font-size: var(--da-text-md); max-width: 46rem; }
+    .ch-cols { display: grid; gap: var(--da-space-4); }
+    @media (min-width: 700px) { .ch-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ch-cols--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    .ch-tile { display: grid; place-items: center; min-height: 160px; margin: 0; padding: var(--da-space-5); background: #FFFFFF; border: 1px solid var(--da-color-line); border-radius: var(--da-radius-md); }
+    figure.ch-tile figcaption { color: #4A4843; }
+    .ch-tile--dark { background: #111111; border-color: #111111; }
+    .ch-tile figcaption, .ch-cap { margin-top: var(--da-space-2); font-size: var(--da-text-sm); color: var(--da-color-ink-muted); text-align: center; }
+    figure.ch-tile.ch-tile--dark figcaption { color: #CFCFCF; }
+    .ch-tile img { max-height: 120px; width: auto; }
+    .ch-clear { position: relative; display: inline-block; padding: 28px; background: #FFFFFF; border: 2px dashed #B33F00; }
+    .ch-clear img { max-height: 110px; width: auto; }
+    .ch-clear span { position: absolute; font: 600 12px var(--da-font-price); color: #B33F00; }
+    table.ch-table { width: 100%; border-collapse: collapse; font-size: var(--da-text-sm); }
+    .ch-table th, .ch-table td { padding: 8px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--da-color-line); }
+    .ch-table thead th { border-bottom: 2px solid var(--da-color-ink); }
+    .ch-scroll { overflow-x: auto; }
+    .ch-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--da-space-3); padding: 0; list-style: none; }
+    .ch-swatch { display: grid; gap: 2px; padding: var(--da-space-2); background: var(--da-color-surface); border: 1px solid var(--da-color-line); border-radius: var(--da-radius-md); font-size: var(--da-text-sm); }
+    .ch-swatch__chip { height: 56px; border-radius: var(--da-radius-sm); border: 1px solid var(--da-color-line); }
+    .ch-swatch__name { font-weight: 700; }
+    .ch-swatch__hex { font-size: var(--da-text-xs); color: var(--da-color-ink-muted); overflow-wrap: anywhere; }
+    .ch-swatch__ratio { font-family: var(--da-font-price); font-size: var(--da-text-xs); }
+    .ch-sample { display: inline-block; padding: 4px 10px; border-radius: var(--da-radius-sm); font-weight: 700; }
+    .ch-r { font-family: var(--da-font-price); font-weight: 600; white-space: nowrap; }
+    .ch-spec { display: grid; gap: var(--da-space-2); padding: var(--da-space-4); background: var(--da-color-surface); border: 1px solid var(--da-color-line); border-radius: var(--da-radius-md); }
+    .ch-spec small { color: var(--da-color-ink-muted); font-family: var(--da-font-price); }
+    .ch-gridviz { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--da-gutter-mobile); padding: 0 var(--da-margin-mobile); height: 90px; background: var(--da-color-surface-alt); }
+    .ch-gridviz span { background: var(--da-color-accent-soft); border: 1px solid var(--da-color-accent-text); }
+    .ch-gridviz span:nth-child(n+5) { display: none; }
+    @media (min-width: 600px) { .ch-gridviz { grid-template-columns: repeat(8, 1fr); } .ch-gridviz span:nth-child(n+5) { display: block; } .ch-gridviz span:nth-child(n+9) { display: none; } }
+    @media (min-width: 900px) { .ch-gridviz { grid-template-columns: repeat(12, 1fr); gap: var(--da-gutter-desktop); } .ch-gridviz span:nth-child(n+9) { display: block; } }
+    .ch-space { display: grid; gap: 6px; }
+    .ch-space div { display: flex; align-items: center; gap: var(--da-space-3); font: 500 var(--da-text-sm) var(--da-font-price); }
+    .ch-space i { display: block; height: 14px; background: var(--da-color-accent); }
+    .ch-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: var(--da-space-3); }
+    .ch-icon { margin: 0; display: grid; justify-items: center; gap: 6px; padding: var(--da-space-3); background: var(--da-color-surface); border: 1px solid var(--da-color-line); border-radius: var(--da-radius-md); font-size: var(--da-text-xs); text-align: center; }
+    .ch-dd { display: grid; gap: var(--da-space-3); }
+    @media (min-width: 700px) { .ch-dd { grid-template-columns: 1fr 1fr; } }
+    .ch-do, .ch-dont { padding: var(--da-space-4); border-radius: var(--da-radius-md); background: var(--da-color-surface); border: 1px solid var(--da-color-line); }
+    .ch-do { border-top: 6px solid var(--da-color-status-local-fg); }
+    .ch-dont { border-top: 6px solid var(--da-color-error); }
+    .ch-do h3, .ch-dont h3 { margin-top: 0; }
+    .ch-do ul, .ch-dont ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+    .ch-apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--da-space-3); }
+    .ch-apps figure { margin: 0; }
+    .ch-apps img { width: 100%; height: auto; border: 1px solid var(--da-color-line); background: #fff; }
+    .ch-check { display: grid; gap: var(--da-space-2); padding: 0; list-style: none; }
+    .ch-check li { display: flex; gap: var(--da-space-2); align-items: flex-start; }
+    .ch-check li::before { content: ""; flex: none; width: 18px; height: 18px; margin-top: 3px; border: 2px solid var(--da-color-ink); border-radius: var(--da-radius-sm); }
+  </style>
+  <header class="da-container" style="padding-top:var(--da-space-6)">
+    <img class="lg lg-a-light" src="logo/a/logo-a-principal.svg" alt="Quai des Cartes — logo direction A (nom de travail)" width="220" height="104">
+    <img class="lg lg-a-dark" src="logo/a/logo-a-principal-fond-sombre.svg" alt="Quai des Cartes — logo direction A (nom de travail)" width="220" height="104">
+    <img class="lg lg-b-light" src="logo/b/logo-b-principal.svg" alt="quai des cartes — logo direction B (nom de travail)" width="280" height="39">
+    <img class="lg lg-b-dark" src="logo/b/logo-b-principal-fond-sombre.svg" alt="quai des cartes — logo direction B (nom de travail)" width="280" height="39">
+    <h1 class="da-title" style="font-size:var(--da-text-2xl);margin-top:var(--da-space-5)">Mini-charte de marque</h1>
+    <p class="ch-lead">Proposition du 4 octobre 2026. Nom de travail <strong>« Quai des Cartes »</strong> et identité <strong>non validés</strong> : la responsable choisit une direction (A ou B) et valide le nom une seule fois, après vérification humaine du domaine et des marques (voir <a href="NAMING.md">NAMING.md</a>). Utilisez la barre d'aperçu pour comparer les directions en mode clair et sombre.</p>
+  </header>
+  <div class="da-container ch-layout">
+    <nav class="ch-toc" aria-label="Sommaire">
+      <ol>
+        <li><a href="#intro">Introduction</a></li><li><a href="#logo">Logo</a></li><li><a href="#couleurs">Couleurs</a></li>
+        <li><a href="#typo">Typographie</a></li><li><a href="#grille">Grille</a></li><li><a href="#composants">Composants</a></li>
+        <li><a href="#icones">Iconographie</a></li><li><a href="#photo">Photographie</a></li><li><a href="#ton">Ton</a></li>
+        <li><a href="#dodont">À faire / à éviter</a></li><li><a href="#applications">Applications</a></li><li><a href="#validation">Validation</a></li>
+      </ol>
+    </nav>
+    <main>
+
+      <section class="ch-section" id="intro" aria-labelledby="t1">
+        <h2 class="da-title" id="t1"><span class="ch-num">01</span>Introduction</h2>
+        <p class="ch-lead">Promesse (BP §1) : <strong>Pokémon FR, expédié depuis la Suisse, avec une disponibilité lisible, des produits identifiés correctement et un service fiable.</strong> La marque est indépendante : « Pokémon » désigne les produits vendus, jamais la boutique.</p>
+        <p>Rôle de la DA dans l'étoile polaire (contribution nette cumulée) : faire acheter en confiance (moins d'hésitations, moins d'erreurs de langue ou de format, donc moins de SAV et de retours) avec un coût de production minimal. Une belle DA ne compense pas une marge insuffisante.</p>
+        <div class="ch-scroll"><table class="ch-table">
+          <thead><tr><th>Critère</th><th>Direction A — Quai (signal)</th><th>Direction B — Pochette (collection)</th></tr></thead>
+          <tbody>
+            <tr><td>Idée</td><td>Signalétique de quai et étiquette logistique : précis, fiable, suisse.</td><td>Cartes qu'on sort de la pochette : vif, rond, collection.</td></tr>
+            <tr><td>Accent</td><td>Orange Signal #FF5B14 (texte dessus : noir)</td><td>Violet Électrique #5A31F4 (texte dessus : blanc)</td></tr>
+            <tr><td>Typographie</td><td>Archivo (titres capitales) · Inter · IBM Plex Mono (prix)</td><td>Bricolage Grotesque (titres bas-de-casse) · DM Sans · Space Grotesk (prix)</td></tr>
+            <tr><td>Formes</td><td>Angles vifs, filets, barre-quai</td><td>Coins arrondis, pastilles, carte inclinée</td></tr>
+            <tr><td>Force</td><td>Crédibilité, lisibilité, sobriété : vieillit bien, multi-TCG facile.</td><td>Enthousiasme, mémorisation, réseaux sociaux.</td></tr>
+            <tr><td>Risque</td><td>Peut paraître froid sans photos vivantes.</td><td>Violet moins « logistique » ; demande plus de discipline.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section class="ch-section" id="logo" aria-labelledby="t2">
+        <h2 class="da-title" id="t2"><span class="ch-num">02</span>Logo</h2>
+        <p>Lettrage original dessiné en contours (aucune police, aucun personnage, aucun symbole de licence). Fichiers : <code>logo/a/</code> et <code>logo/b/</code> ; règles complètes dans <a href="logo/REGLES_LOGO.md">REGLES_LOGO.md</a>.</p>
+        <div class="ch-cols ch-cols--3" data-only="a">
+          <figure class="ch-tile"><img src="logo/a/logo-a-principal.svg" alt="Logo principal A" width="200" height="94"><figcaption>Principal (empilé)</figcaption></figure>
+          <figure class="ch-tile"><img src="logo/a/logo-a-horizontal.svg" alt="Logo horizontal A" width="220" height="29"><figcaption>Horizontal (en-tête, email)</figcaption></figure>
+          <figure class="ch-tile"><img src="logo/a/logo-a-monogramme.svg" alt="Monogramme A" width="96" height="96"><figcaption>Monogramme (avatar, sticker)</figcaption></figure>
+          <figure class="ch-tile"><img src="logo/a/logo-a-mono-noir.svg" alt="Logo A noir" width="200" height="94"><figcaption>Mono noir (tampon, fax, gravure)</figcaption></figure>
+          <figure class="ch-tile ch-tile--dark"><img src="logo/a/logo-a-mono-blanc.svg" alt="Logo A blanc" width="200" height="94"><figcaption>Mono blanc sur fond foncé</figcaption></figure>
+          <figure class="ch-tile"><img src="logo/a/favicon.svg" alt="Favicon A" width="48" height="48"><figcaption>Favicon (16–48 px)</figcaption></figure>
+        </div>
+        <div class="ch-cols ch-cols--3" data-only="b">
+          <figure class="ch-tile"><img src="logo/b/logo-b-principal.svg" alt="Logo principal B" width="240" height="33"><figcaption>Principal (une ligne)</figcaption></figure>
+          <figure class="ch-tile"><img src="logo/b/logo-b-empile.svg" alt="Logo empilé B" width="170" height="72"><figcaption>Empilé (sticker, carte)</figcaption></figure>
+          <figure class="ch-tile"><img src="logo/b/logo-b-monogramme.svg" alt="Monogramme B" width="96" height="96"><figcaption>Monogramme (avatar)</figcaption></figure>
+          <figure class="ch-tile"><img src="logo/b/logo-b-mono-noir.svg" alt="Logo B noir" width="240" height="33"><figcaption>Mono noir</figcaption></figure>
+          <figure class="ch-tile ch-tile--dark"><img src="logo/b/logo-b-mono-blanc.svg" alt="Logo B blanc" width="240" height="33"><figcaption>Mono blanc sur fond foncé</figcaption></figure>
+          <figure class="ch-tile"><img src="logo/b/favicon.svg" alt="Favicon B" width="48" height="48"><figcaption>Favicon (16–48 px)</figcaption></figure>
+        </div>
+        <h3>Zone de protection et tailles minimales</h3>
+        <div class="ch-cols">
+          <div style="display:grid;place-items:center;padding:var(--da-space-4)">
+            <div class="ch-clear" data-only="a"><img src="logo/a/logo-a-principal.svg" alt="" width="190" height="90"><span style="top:6px;left:8px">X</span><span style="bottom:6px;right:8px">X</span></div>
+            <div class="ch-clear" data-only="b"><img src="logo/b/logo-b-principal.svg" alt="" width="240" height="33"><span style="top:6px;left:8px">X</span><span style="bottom:6px;right:8px">X</span></div>
+          </div>
+          <div>
+            <p data-only="a"><strong>X = 2 × l'épaisseur de la barre-quai</strong> (≈ 13 % de la hauteur du logo principal). Rien ne pénètre dans cette marge : texte, bord d'image, autre logo.</p>
+            <p data-only="b"><strong>X = la moitié de la hauteur d'x</strong> (hauteur d'un « a »), soit ≈ 29 % de la hauteur du logo. Le point du « i » reste toujours violet ou de la couleur du texte (version mono).</p>
+            <div class="ch-scroll"><table class="ch-table">
+              <thead><tr><th>Version</th><th>Écran (largeur)</th><th>Impression (largeur)</th></tr></thead>
+              <tbody data-only="a">
+                <tr><td>Principal empilé</td><td>96 px</td><td>25 mm</td></tr>
+                <tr><td>Horizontal</td><td>140 px</td><td>35 mm</td></tr>
+                <tr><td>Monogramme</td><td>24 px</td><td>7 mm</td></tr>
+                <tr><td>En dessous</td><td colspan="2">favicon.svg (16–32 px)</td></tr>
+              </tbody>
+              <tbody data-only="b">
+                <tr><td>Principal une ligne</td><td>120 px</td><td>30 mm</td></tr>
+                <tr><td>Empilé</td><td>80 px</td><td>20 mm</td></tr>
+                <tr><td>Monogramme</td><td>24 px</td><td>8 mm</td></tr>
+                <tr><td>En dessous</td><td colspan="2">favicon.svg (16–32 px)</td></tr>
+              </tbody>
+            </table></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="ch-section" id="couleurs" aria-labelledby="t3">
+        <h2 class="da-title" id="t3"><span class="ch-num">03</span>Couleurs</h2>
+        <p>Fond clair neutre, contraste noir, un seul accent vif. Proportions indicatives : <strong>70 % neutres, 20 % encre, 10 % accent au maximum.</strong> Les couleurs de statut sont fonctionnelles : elles ne servent jamais de décoration. Les ratios ci-dessous sont <strong>calculés en direct</strong> (WCAG 2.x, tronqués à 2 décimales) à partir des variables actives ; ils changent avec la direction et le mode.</p>
+        <ul class="ch-swatches"><li class="ch-swatch" data-token="bg"><span class="ch-swatch__chip" style="background:var(--da-color-bg)"></span><span class="ch-swatch__name">Fond de page</span><code class="ch-swatch__hex">--da-color-bg</code><span class="ch-swatch__ratio" aria-live="polite"></span></li><li class="ch-swatch" data-token="surface"><span class="ch-swatch__chip" style="background:var(--da-color-surface)"></span><span class="ch-swatch__name">Surface (cartes)</span><code class="ch-swatch__hex">--da-color-surface</code><span class="ch-swatch__ratio" aria-live="polite"></span></li><li class="ch-swatch" data-token="surface-alt"><span class="ch-swatch__chip" style="background:var(--da-color-surface-alt)"></span><span class="ch-swatch__name">Surface alternée</span><code class="ch-swatch__hex">--da-color-surface-alt</code><span class="ch-swatch__ratio" aria-live="polite"></span></li><li class="ch-swatch" data-token="ink"><span class="ch-swatch__chip" style="background:var(--da-color-ink)"></span><span class="ch-swatch__name">Encre (texte, prix)</span><code class="ch-swatch__hex">--da-color-ink</code><span class="ch-swatch__ratio" aria-live="polite"></span></li><li class="ch-swatch" data-token="ink-muted"><span class="ch-swatch__chip" style="background:var(--da-color-ink-muted)"></span><span class="ch-swatch__name">Texte secondaire</span><code class="ch-swatch__hex">--da-color-ink-muted</code><span class="ch-swatch__ratio" aria-live="polite"></span></li><li class="ch-swatch" data-token="on-ink"><span class="ch-swatch__chip" style="background:var(--da-color-on-ink)"></span><span class="ch-swatch__name">Texte sur encre</span><code class="ch-swatch__hex">--da-color-on-ink</code><span class="ch-swatch__ratio" aria-live="polite"></span></li><li class="ch-swatch" data-token="line"><span class="ch-swatch__chip" style="background:var(--da-color-line)"></span><span class="ch-swatch__name">Filet décoratif</span><code class="ch-swatch__hex">--da-color-line</code><span class="ch-swatch__ratio" aria-live="polite"></span></li><li class="ch-swatch" data-token="line-strong"><span class="ch-swatch__chip" style="background:var(--da-color-line-strong)"></span><span class="ch-swatch__name">Bordure de composant</span><code class="ch-swatch__hex">--da-color-line-strong</code><span class="ch-swatch__ratio" aria-live="polite"></span></li><li class="ch-swatch" data-token="accent"><span class="ch-swatch__chip" style="background:var(--da-color-accent)"></span><span class="ch-swatch__name">Accent</span><code class="ch-swatch__hex">--da-color-accent</code><span class="ch-swatch__ratio" aria-live="polite"></span></li><li class="ch-swatch" data-token="on-accent"><span class="ch-swatch__chip" style="background:var(--da-color-on-accent)"></span><span class="ch-swatch__name">Texte sur accent</span><code class="ch-swatch__hex">--da-color-on-accent</code><span class="ch-swatch__ratio" aria-live="polite"></span></li><li class="ch-swatch" data-token="accent-text"><span class="ch-swatch__chip" style="background:var(--da-color-accent-text)"></span><span class="ch-swatch__name">Accent en texte (liens)</span><code class="ch-swatch__hex">--da-color-accent-text</code><span class="ch-swatch__ratio" aria-live="polite"></span></li><li class="ch-swatch" data-token="accent-soft"><span class="ch-swatch__chip" style="background:var(--da-color-accent-soft)"></span><span class="ch-swatch__name">Accent teinté</span><code class="ch-swatch__hex">--da-color-accent-soft</code><span class="ch-swatch__ratio" aria-live="polite"></span></li><li class="ch-swatch" data-token="focus"><span class="ch-swatch__chip" style="background:var(--da-color-focus)"></span><span class="ch-swatch__name">Focus clavier</span><code class="ch-swatch__hex">--da-color-focus</code><span class="ch-swatch__ratio" aria-live="polite"></span></li><li class="ch-swatch" data-token="error"><span class="ch-swatch__chip" style="background:var(--da-color-error)"></span><span class="ch-swatch__name">Erreur</span><code class="ch-swatch__hex">--da-color-error</code><span class="ch-swatch__ratio" aria-live="polite"></span></li></ul>
+        <h3>Paires vérifiées (texte ≥ 4.5:1, bordures et focus ≥ 3:1)</h3>
+        <div class="ch-scroll"><table class="ch-table" id="ch-pairs">
+          <thead><tr><th>Usage</th><th>Aperçu</th><th>Tokens</th><th>Ratio</th><th>Seuil</th></tr></thead>
+          <tbody><tr data-fg="ink" data-bg="bg" data-min="4.5"><td>Texte courant</td><td><span class="ch-sample" style="color:var(--da-color-ink);background:var(--da-color-bg)">Aa 209.90</span></td><td><code>ink</code> / <code>bg</code></td><td class="ch-r"></td><td>4.5:1</td></tr><tr data-fg="ink-muted" data-bg="bg" data-min="4.5"><td>Texte secondaire</td><td><span class="ch-sample" style="color:var(--da-color-ink-muted);background:var(--da-color-bg)">Aa 209.90</span></td><td><code>ink-muted</code> / <code>bg</code></td><td class="ch-r"></td><td>4.5:1</td></tr><tr data-fg="accent-text" data-bg="bg" data-min="4.5"><td>Lien</td><td><span class="ch-sample" style="color:var(--da-color-accent-text);background:var(--da-color-bg)">Aa 209.90</span></td><td><code>accent-text</code> / <code>bg</code></td><td class="ch-r"></td><td>4.5:1</td></tr><tr data-fg="on-accent" data-bg="accent" data-min="4.5"><td>Texte sur accent</td><td><span class="ch-sample" style="color:var(--da-color-on-accent);background:var(--da-color-accent)">Aa 209.90</span></td><td><code>on-accent</code> / <code>accent</code></td><td class="ch-r"></td><td>4.5:1</td></tr><tr data-fg="on-ink" data-bg="ink" data-min="4.5"><td>Bouton principal (A)</td><td><span class="ch-sample" style="color:var(--da-color-on-ink);background:var(--da-color-ink)">Aa 209.90</span></td><td><code>on-ink</code> / <code>ink</code></td><td class="ch-r"></td><td>4.5:1</td></tr><tr data-fg="line-strong" data-bg="bg" data-min="3.0"><td>Bordure de champ</td><td><span class="ch-sample" style="color:var(--da-color-line-strong);background:var(--da-color-bg)">Aa 209.90</span></td><td><code>line-strong</code> / <code>bg</code></td><td class="ch-r"></td><td>3.0:1</td></tr><tr data-fg="focus" data-bg="bg" data-min="3.0"><td>Focus</td><td><span class="ch-sample" style="color:var(--da-color-focus);background:var(--da-color-bg)">Aa 209.90</span></td><td><code>focus</code> / <code>bg</code></td><td class="ch-r"></td><td>3.0:1</td></tr><tr data-fg="status-local-fg" data-bg="status-local-bg" data-min="4.5"><td>Stock local</td><td><span class="ch-sample" style="color:var(--da-color-status-local-fg);background:var(--da-color-status-local-bg)">Aa 209.90</span></td><td><code>status-local-fg</code> / <code>status-local-bg</code></td><td class="ch-r"></td><td>4.5:1</td></tr><tr data-fg="status-preorder-fg" data-bg="status-preorder-bg" data-min="4.5"><td>Précommande</td><td><span class="ch-sample" style="color:var(--da-color-status-preorder-fg);background:var(--da-color-status-preorder-bg)">Aa 209.90</span></td><td><code>status-preorder-fg</code> / <code>status-preorder-bg</code></td><td class="ch-r"></td><td>4.5:1</td></tr><tr data-fg="status-new-fg" data-bg="status-new-bg" data-min="4.5"><td>Nouveauté</td><td><span class="ch-sample" style="color:var(--da-color-status-new-fg);background:var(--da-color-status-new-bg)">Aa 209.90</span></td><td><code>status-new-fg</code> / <code>status-new-bg</code></td><td class="ch-r"></td><td>4.5:1</td></tr><tr data-fg="status-out-fg" data-bg="status-out-bg" data-min="4.5"><td>Rupture</td><td><span class="ch-sample" style="color:var(--da-color-status-out-fg);background:var(--da-color-status-out-bg)">Aa 209.90</span></td><td><code>status-out-fg</code> / <code>status-out-bg</code></td><td class="ch-r"></td><td>4.5:1</td></tr><tr data-fg="status-restock-fg" data-bg="status-restock-bg" data-min="4.5"><td>Alerte réassort</td><td><span class="ch-sample" style="color:var(--da-color-status-restock-fg);background:var(--da-color-status-restock-bg)">Aa 209.90</span></td><td><code>status-restock-fg</code> / <code>status-restock-bg</code></td><td class="ch-r"></td><td>4.5:1</td></tr><tr data-fg="lang-fr-fg" data-bg="lang-fr-bg" data-min="4.5"><td>Badge FR</td><td><span class="ch-sample" style="color:var(--da-color-lang-fr-fg);background:var(--da-color-lang-fr-bg)">Aa 209.90</span></td><td><code>lang-fr-fg</code> / <code>lang-fr-bg</code></td><td class="ch-r"></td><td>4.5:1</td></tr></tbody>
+        </table></div>
+        <p class="da-muted" style="font-size:var(--da-text-sm)">Liste exhaustive (96 paires, 2 directions × 2 modes) : <a href="DIRECTION_A.md">DIRECTION_A.md</a>, <a href="DIRECTION_B.md">DIRECTION_B.md</a>, contrôlée par <code>tools/verifier_da.py</code>.</p>
+      </section>
+
+      <section class="ch-section" id="typo" aria-labelledby="t4">
+        <h2 class="da-title" id="t4"><span class="ch-num">04</span>Typographie</h2>
+        <p>Trois rôles, trois polices Google Fonts (licence SIL Open Font License, à reconfirmer sur fonts.google.com au moment de l'achat du thème).</p>
+        <div class="ch-cols ch-cols--3">
+          <div class="ch-spec"><small>Titres · --da-font-display</small><p class="da-title" style="font-size:var(--da-text-2xl)">Display FR en stock</p><small data-only="a">Archivo 800, capitales, largeur 112 %</small><small data-only="b">Bricolage Grotesque 800, bas-de-casse</small></div>
+          <div class="ch-spec"><small>Texte · --da-font-text</small><p style="margin:0">Expédié depuis la Suisse. Langue vérifiée à réception, contenu selon la fiche de l'éditeur.</p><small data-only="a">Inter 400 / 600 / 700</small><small data-only="b">DM Sans 400 / 500 / 700</small></div>
+          <div class="ch-spec"><small>Prix · --da-font-price</small><p class="da-price" style="margin:0;font-size:var(--da-text-2xl)">CHF 209.90</p><small data-only="a">IBM Plex Mono 600 (chasse fixe)</small><small data-only="b">Space Grotesk 700 (chiffres tabulaires)</small></div>
+        </div>
+        <h3>Échelle (mobile d'abord)</h3>
+        <div class="ch-scroll"><table class="ch-table">
+          <thead><tr><th>Token</th><th>Taille</th><th>Usage</th></tr></thead>
+          <tbody>
+            <tr><td><code>--da-text-display</code></td><td>36 → 64 px (fluide)</td><td>Accroche de bannière</td></tr>
+            <tr><td><code>--da-text-2xl</code></td><td>36 px</td><td>Titre de page, prix de fiche</td></tr>
+            <tr><td><code>--da-text-xl</code></td><td>28 px</td><td>Titre de section</td></tr>
+            <tr><td><code>--da-text-lg</code></td><td>22 px</td><td>Prix sur carte</td></tr>
+            <tr><td><code>--da-text-base</code></td><td>16 px</td><td>Texte courant (jamais moins sur mobile)</td></tr>
+            <tr><td><code>--da-text-sm</code></td><td>14 px</td><td>Badges, méta</td></tr>
+            <tr><td><code>--da-text-xs</code></td><td>12 px</td><td>Mentions (jamais un prix ni un statut)</td></tr>
+          </tbody>
+        </table></div>
+        <h3>Formats suisses</h3>
+        <p>Prix : <code>CHF 209.90</code> (CHF devant, point décimal, apostrophe des milliers : <code>CHF 1’209.90</code>). Dates : <code>14.11.2026</code>. Langue : <code>FR</code> en capitales dans les badges.</p>
+      </section>
+
+      <section class="ch-section" id="grille" aria-labelledby="t5">
+        <h2 class="da-title" id="t5"><span class="ch-num">05</span>Grille et espacements</h2>
+        <p>4 colonnes (mobile) → 8 (≥ 600 px) → 12 (≥ 900 px). Marges 16 / 32 px, gouttières 16 / 24 px, largeur max 1200 px. Cible tactile 44 px minimum. Produits : 2 par ligne sur mobile, 4 sur ordinateur.</p>
+        <div class="ch-gridviz" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        <p class="ch-cap">Redimensionnez la fenêtre : la grille affichée suit les points de rupture.</p>
+        <h3>Espacements (base 4 px)</h3>
+        <div class="ch-space"><div><i style="width:4px"></i>--da-space-1 · 4 px</div><div><i style="width:8px"></i>--da-space-2 · 8 px</div><div><i style="width:12px"></i>--da-space-3 · 12 px</div><div><i style="width:16px"></i>--da-space-4 · 16 px</div><div><i style="width:24px"></i>--da-space-5 · 24 px</div><div><i style="width:32px"></i>--da-space-6 · 32 px</div><div><i style="width:48px"></i>--da-space-7 · 48 px</div><div><i style="width:64px"></i>--da-space-8 · 64 px</div><div><i style="width:96px"></i>--da-space-9 · 96 px</div></div>
+      </section>
+
+      <section class="ch-section" id="composants" aria-labelledby="t6">
+        <h2 class="da-title" id="t6"><span class="ch-num">06</span>Composants</h2>
+        <p>Pages de référence : <a href="components/badges.html">badges</a>, <a href="components/carte-produit.html">carte produit</a>, <a href="components/banniere.html">bannières</a>, <a href="components/page-produit.html">page produit</a>, emails <a href="components/email-transactionnel-a.html">A</a> / <a href="components/email-transactionnel-b.html">B</a>.</p>
+        <h3>Badges</h3>
+        <div class="da-badges">
+          <span class="da-badge da-badge--fr"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M7 9v6M7 9h3M7 12h2.5M13 15V9h2.5a1.5 1.5 0 0 1 0 3H13M15.5 12l1.5 3"/></svg>FR</span>
+          <span class="da-badge da-badge--local"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 15l2 2 4-4"/></svg>Stock local</span>
+          <span class="da-badge da-badge--preorder"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Précommande</span>
+          <span class="da-badge da-badge--new"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><path d="M12 9l3 3-3 3-3-3z"/></svg>Nouveauté</span>
+          <span class="da-badge da-badge--out"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M7 17L17 7"/></svg>Rupture</span>
+          <span class="da-badge da-badge--restock"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg>Alerte réassort</span>
+        </div>
+        <h3>Boutons</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:var(--da-space-3)">
+          <button type="button" class="da-btn da-btn--primary"><svg class="da-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 4h2l2.5 11h11L21 7H6.4"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg> Ajouter au panier</button>
+          <button type="button" class="da-btn da-btn--secondary">M'alerter du réassort</button>
+          <button type="button" class="da-btn da-btn--accent">Voir les nouveautés</button>
+          <button type="button" class="da-btn da-btn--primary" disabled>Indisponible</button>
+        </div>
+        <h3>Carte produit (exemple FICTIF)</h3>
+        <div class="da-products" style="max-width:640px">
+          <article class="da-card" aria-labelledby="c1">
+            <div class="da-photo" role="img" aria-label="Emplacement photo réelle">Photo produit réelle</div>
+            <div class="da-badges"><span class="da-badge da-badge--fr"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M7 9v6M7 9h3M7 12h2.5M13 15V9h2.5a1.5 1.5 0 0 1 0 3H13M15.5 12l1.5 3"/></svg>FR</span><span class="da-badge da-badge--local"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 15l2 2 4-4"/></svg>Stock local</span></div>
+            <h4 class="da-card__title" id="c1"><a href="components/page-produit.html">Display — Extension exemple — FR</a></h4>
+            <p class="da-card__price da-price">CHF 209.90</p>
+            <p class="da-stock da-stock--local"><svg class="da-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 15l2 2 4-4"/></svg><span>En stock local<span class="da-stock__detail">Expédié sous {{DELAI_EXPEDITION}}</span></span></p>
+            <button type="button" class="da-btn da-btn--primary da-btn--block da-card__cta">Ajouter au panier</button>
+          </article>
+          <article class="da-card" aria-labelledby="c2">
+            <div class="da-photo" role="img" aria-label="Emplacement photo réelle">Photo produit réelle</div>
+            <div class="da-badges"><span class="da-badge da-badge--fr"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M7 9v6M7 9h3M7 12h2.5M13 15V9h2.5a1.5 1.5 0 0 1 0 3H13M15.5 12l1.5 3"/></svg>FR</span><span class="da-badge da-badge--preorder"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Précommande</span></div>
+            <h4 class="da-card__title" id="c2"><a href="components/page-produit.html">Coffret — Extension exemple 2 — FR</a></h4>
+            <p class="da-card__price da-price">CHF 59.90</p>
+            <p class="da-stock da-stock--preorder"><svg class="da-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>Précommande sur allocation confirmée<span class="da-stock__detail">Sortie prévue le {{DATE_SORTIE}}</span></span></p>
+            <button type="button" class="da-btn da-btn--primary da-btn--block da-card__cta">Précommander</button>
+          </article>
+        </div>
+      </section>
+
+      <section class="ch-section" id="icones" aria-labelledby="t7">
+        <h2 class="da-title" id="t7"><span class="ch-num">07</span>Iconographie</h2>
+        <p>Pictogrammes originaux au trait de 2 px sur grille de 24 px, couleur du texte. Direction A : extrémités carrées ; direction B : extrémités arrondies. Une icône accompagne toujours un libellé. Sprite : <code>components/icones.svg</code>.</p>
+        <div class="ch-icons"><figure class="ch-icon"><span><svg class="da-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 15l2 2 4-4"/></svg></span><figcaption>Stock local</figcaption></figure><figure class="ch-icon"><span><svg class="da-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span><figcaption>Précommande</figcaption></figure><figure class="ch-icon"><span><svg class="da-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><path d="M12 9l3 3-3 3-3-3z"/></svg></span><figcaption>Nouveauté</figcaption></figure><figure class="ch-icon"><span><svg class="da-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M7 17L17 7"/></svg></span><figcaption>Rupture</figcaption></figure><figure class="ch-icon"><span><svg class="da-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg></span><figcaption>Alerte réassort</figcaption></figure><figure class="ch-icon"><span><svg class="da-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M7 9v6M7 9h3M7 12h2.5M13 15V9h2.5a1.5 1.5 0 0 1 0 3H13M15.5 12l1.5 3"/></svg></span><figcaption>Langue</figcaption></figure><figure class="ch-icon"><span><svg class="da-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg></span><figcaption>Livraison</figcaption></figure><figure class="ch-icon"><span><svg class="da-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5L16 9"/></svg></span><figcaption>Scellé contrôlé</figcaption></figure><figure class="ch-icon"><span><svg class="da-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 4h2l2.5 11h11L21 7H6.4"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg></span><figcaption>Panier</figcaption></figure><figure class="ch-icon"><span><svg class="da-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"/><path d="M16 16l5 5"/></svg></span><figcaption>Recherche</figcaption></figure><figure class="ch-icon"><span><svg class="da-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg></span><figcaption>Information</figcaption></figure><figure class="ch-icon"><span><svg class="da-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 7h6M9 17h6"/></svg></span><figcaption>Carte à collectionner</figcaption></figure></div>
+        <p class="da-note" style="margin-top:var(--da-space-4)"><svg class="da-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg><span>Interdits : symboles d'énergie ou de types, Poké Ball, éclair façon personnage, silhouettes de créatures, logos d'éditeurs. Pour une icône manquante, partir d'une bibliothèque libre (ex. Lucide, licence ISC) et l'ajuster au trait 2 px.</span></p>
+      </section>
+
+      <section class="ch-section" id="photo" aria-labelledby="t8">
+        <h2 class="da-title" id="t8"><span class="ch-num">08</span>Photographie</h2>
+        <p><strong>Uniquement des photos réelles</strong> : visuels officiels dont l'usage est autorisé par écrit, ou photos prises par la boutique lors d'une session groupée (BP §8). Jamais d'emballage généré, de montage d'un produit non reçu ni de carte « rare » mise en avant.</p>
+        <div class="ch-cols">
+          <div>
+            <h3>Prise de vue</h3>
+            <ul>
+              <li>Fond : <span data-only="a">papier gris chaud proche de <code>#ECEAE4</code>, lumière du jour latérale, ombre courte et nette.</span><span data-only="b">papier gris clair proche de <code>#E9E9F0</code>, lumière diffuse, légère inclinaison des boîtes autorisée.</span></li>
+              <li>Cadrage 1:1 pour la fiche (produit ≈ 70 % de la surface), 4:5 et 9:16 pour les réseaux.</li>
+              <li>Balance des blancs neutre ; retouche limitée à l'exposition, au recadrage et au détourage.</li>
+              <li>Mention de langue (FR) lisible sur au moins une vue.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Liste de vues par produit</h3>
+            <ol>
+              <li>Face avant (photo principale)</li>
+              <li>Dos (contenu imprimé lisible)</li>
+              <li>Côté avec mention de langue</li>
+              <li>Film / scellé intact</li>
+              <li>Échelle (main ou objet courant)</li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section class="ch-section" id="ton" aria-labelledby="t9">
+        <h2 class="da-title" id="t9"><span class="ch-num">09</span>Ton et rédaction</h2>
+        <p>Précis, accessible, sans jargon inutile, <strong>sans fausse urgence</strong> (BP §8). On montre les stocks et délais réellement proposés. Tutoiement exclu, vouvoiement chaleureux.</p>
+        <div class="ch-scroll"><table class="ch-table">
+          <thead><tr><th>À dire</th><th>À éviter</th></tr></thead>
+          <tbody>
+            <tr><td>« En stock local : expédié depuis la Suisse sous 2 jours ouvrables. » (si vrai)</td><td>« DERNIÈRES PIÈCES !!! Dépêchez-vous »</td></tr>
+            <tr><td>« Précommande sur allocation confirmée, sortie prévue le 14.11.2026. »</td><td>« Réservez avant tout le monde ! » sans allocation</td></tr>
+            <tr><td>« Le contenu des boosters est aléatoire. »</td><td>« Cartes rares garanties », « investissement », « valeur qui va monter »</td></tr>
+            <tr><td>« ETB ou display : le bon choix selon votre usage. »</td><td>Jargon non expliqué (« pull rates », « hit »)</td></tr>
+            <tr><td>« Boutique indépendante basée en Suisse. »</td><td>« Boutique officielle Pokémon », « partenaire officiel »</td></tr>
+            <tr><td>« Rupture : aucune date de réassort confirmée. Activez l'alerte. »</td><td>« Bientôt de retour ! » sans date ni commande fournisseur confirmée</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section class="ch-section" id="dodont" aria-labelledby="t10">
+        <h2 class="da-title" id="t10"><span class="ch-num">10</span>À faire / à éviter</h2>
+        <div class="ch-dd">
+          <div class="ch-do"><h3>À faire</h3><ul>
+            <li>Utiliser les fichiers SVG fournis, sans les redessiner.</li>
+            <li>Garder le fond clair neutre et un seul accent par visuel.</li>
+            <li>Écrire le statut de stock en toutes lettres + icône.</li>
+            <li>Reprendre le prix validé par le moteur au moment de publier.</li>
+            <li>Nommer les produits : format — extension — langue.</li>
+            <li>Mentionner « boutique indépendante » sur les supports durables.</li>
+          </ul></div>
+          <div class="ch-dont"><h3>À éviter</h3><ul>
+            <li>Personnages, Poké Ball, police ou logo Pokémon, symboles d'énergie.</li>
+            <li>Cercle coupé horizontalement en deux couleurs avec un rond central.</li>
+            <li>Duo jaune vif + bleu évoquant le logo de la licence.</li>
+            <li>Déformer, ombrer, contourer ou recolorer le logo hors palette.</li>
+            <li>Texte blanc sur l'orange (A) ; texte noir sur le violet (B).</li>
+            <li>Emballage généré par IA, faux stock, compte à rebours, coût ou marge visibles.</li>
+          </ul></div>
+        </div>
+      </section>
+
+      <section class="ch-section" id="applications" aria-labelledby="t11">
+        <h2 class="da-title" id="t11"><span class="ch-num">11</span>Applications</h2>
+        <h3>Réseaux sociaux (zones photo à remplacer par des photos réelles)</h3>
+        <div class="ch-apps" data-only="a">
+          <figure><img src="social/a/couverture-4x5.svg" alt="Couverture 4:5, direction A" width="1080" height="1350" loading="lazy"><figcaption class="ch-cap">Couverture 4:5</figcaption></figure>
+          <figure><img src="social/a/story-9x16-nouveau-stock.svg" alt="Story 9:16, direction A" width="1080" height="1920" loading="lazy"><figcaption class="ch-cap">Story 9:16</figcaption></figure>
+          <figure><img src="social/a/carrousel-4x5-2.svg" alt="Carrousel slide 2, direction A" width="1080" height="1350" loading="lazy"><figcaption class="ch-cap">Carrousel 2/3</figcaption></figure>
+          <figure><img src="social/a/couverture-1x1.svg" alt="Couverture 1:1, direction A" width="1080" height="1080" loading="lazy"><figcaption class="ch-cap">Couverture 1:1</figcaption></figure>
+        </div>
+        <div class="ch-apps" data-only="b">
+          <figure><img src="social/b/couverture-4x5.svg" alt="Couverture 4:5, direction B" width="1080" height="1350" loading="lazy"><figcaption class="ch-cap">Couverture 4:5</figcaption></figure>
+          <figure><img src="social/b/story-9x16-nouveau-stock.svg" alt="Story 9:16, direction B" width="1080" height="1920" loading="lazy"><figcaption class="ch-cap">Story 9:16</figcaption></figure>
+          <figure><img src="social/b/carrousel-4x5-2.svg" alt="Carrousel slide 2, direction B" width="1080" height="1350" loading="lazy"><figcaption class="ch-cap">Carrousel 2/3</figcaption></figure>
+          <figure><img src="social/b/couverture-1x1.svg" alt="Couverture 1:1, direction B" width="1080" height="1080" loading="lazy"><figcaption class="ch-cap">Couverture 1:1</figcaption></figure>
+        </div>
+        <h3>Packaging (à faire chiffrer : <a href="packaging/NOTE_CHIFFRAGE.md">NOTE_CHIFFRAGE.md</a>)</h3>
+        <div class="ch-apps" data-only="a">
+          <figure><img src="packaging/a/sticker-rond-50mm.svg" alt="Sticker rond A" width="200" height="200" loading="lazy"><figcaption class="ch-cap">Sticker Ø 50 mm</figcaption></figure>
+          <figure><img src="packaging/a/carte-merci-a6-recto.svg" alt="Carte merci recto A" width="200" height="277" loading="lazy"><figcaption class="ch-cap">Carte A6 recto</figcaption></figure>
+          <figure><img src="packaging/a/carte-merci-a6-verso.svg" alt="Carte merci verso A" width="200" height="277" loading="lazy"><figcaption class="ch-cap">Carte A6 verso</figcaption></figure>
+          <figure><img src="packaging/a/repere-commande-70x37mm.svg" alt="Repère commande A" width="200" height="106" loading="lazy"><figcaption class="ch-cap">Repère commande 70 × 37 mm</figcaption></figure>
+        </div>
+        <div class="ch-apps" data-only="b">
+          <figure><img src="packaging/b/sticker-rond-50mm.svg" alt="Sticker rond B" width="200" height="200" loading="lazy"><figcaption class="ch-cap">Sticker Ø 50 mm</figcaption></figure>
+          <figure><img src="packaging/b/carte-merci-a6-recto.svg" alt="Carte merci recto B" width="200" height="277" loading="lazy"><figcaption class="ch-cap">Carte A6 recto</figcaption></figure>
+          <figure><img src="packaging/b/carte-merci-a6-verso.svg" alt="Carte merci verso B" width="200" height="277" loading="lazy"><figcaption class="ch-cap">Carte A6 verso</figcaption></figure>
+          <figure><img src="packaging/b/repere-commande-70x37mm.svg" alt="Repère commande B" width="200" height="106" loading="lazy"><figcaption class="ch-cap">Repère commande 70 × 37 mm</figcaption></figure>
+        </div>
+        <h3>Site et emails</h3>
+        <p><a href="components/page-produit.html">Page produit</a> (mobile d'abord) · <a href="components/email-transactionnel-a.html">email de confirmation A</a> · <a href="components/email-transactionnel-b.html">email de confirmation B</a>.</p>
+      </section>
+
+      <section class="ch-section" id="validation" aria-labelledby="t12">
+        <h2 class="da-title" id="t12"><span class="ch-num">12</span>Validation humaine requise</h2>
+        <p>Une seule séance de validation par la responsable (≈ 30 min), puis les agents de contenu n'utilisent plus que les composants approuvés (BP §8).</p>
+        <ul class="ch-check">
+          <li>Choisir le nom (recommandé : « Quai des Cartes ») <em>après</em> vérification humaine du domaine .ch, des comptes sociaux et des registres de marques (Swissreg/IPI, EUIPO).</li>
+          <li>Choisir la direction A ou B (une seule) ; les fichiers de l'autre direction sont archivés.</li>
+          <li>Valider le logo, la couleur d'accent et les polices.</li>
+          <li>Faire valider par le juriste : mention « boutique indépendante » et mention de marque en pied de page.</li>
+          <li>Valider les textes fixes du packaging (délai de signalement, adresse, raison sociale) avec les CGV.</li>
+          <li>Demander les devis d'impression réels avant toute commande (NOTE_CHIFFRAGE.md).</li>
+        </ul>
+      </section>
+    <footer class="da-footer">
+      <p>{{NOM_BOUTIQUE}} — boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus. Pokémon est une marque de ses détenteurs respectifs (mention à faire valider par le juriste).</p>
+      <p>Page de démonstration DA — données d'exemple : FICTIF — <a href="#intro">haut de page</a>.</p>
+    </footer>
+    </main>
+  </div>
+  <script>
+    (function () {
+      "use strict";
+      function lin(c) { c = c / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+      function lum(hex) {
+        var h = hex.replace("#", "");
+        if (h.length !== 6) { return null; }
+        var r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+      }
+      function ratio(a, b) {
+        var la = lum(a), lb = lum(b);
+        if (la === null || lb === null) { return null; }
+        var hi = Math.max(la, lb), lo = Math.min(la, lb);
+        return Math.floor(((hi + 0.05) / (lo + 0.05)) * 100) / 100;
+      }
+      function token(name) { return getComputedStyle(document.documentElement).getPropertyValue("--da-color-" + name).trim().toUpperCase(); }
+      function render() {
+        var bg = token("bg"), ink = token("ink");
+        document.querySelectorAll(".ch-swatch").forEach(function (el) {
+          var hex = token(el.getAttribute("data-token"));
+          el.querySelector(".ch-swatch__hex").textContent = hex + " · --da-color-" + el.getAttribute("data-token");
+          var rb = ratio(hex, bg), ri = ratio(hex, ink);
+          el.querySelector(".ch-swatch__ratio").textContent = "vs fond " + (rb ? rb.toFixed(2) : "?") + ":1 · vs encre " + (ri ? ri.toFixed(2) : "?") + ":1";
+        });
+        document.querySelectorAll("#ch-pairs tbody tr").forEach(function (tr) {
+          var r = ratio(token(tr.getAttribute("data-fg")), token(tr.getAttribute("data-bg")));
+          var min = parseFloat(tr.getAttribute("data-min"));
+          tr.querySelector(".ch-r").textContent = r === null ? "?" : r.toFixed(2) + ":1 " + (r >= min ? "✓" : "✗ insuffisant");
+        });
+      }
+      document.addEventListener("da:change", render);
+      if (window.matchMedia) { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render); }
+      if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", render); } else { render(); }
+    })();
+  </script>
+</body>
+</html>

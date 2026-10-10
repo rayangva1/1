@@ -1,0 +1,67 @@
+/*
+ * Ambiance « Nuit sur le Léman (ambiance immersive bâtie sur la direction B) » — Quai des Cartes (nom de travail, non validé)
+ * FICHIER GÉNÉRÉ par docs/05-da/tools/generer_da.py depuis tokens.json — ne pas éditer à la main.
+ * À charger APRÈS tokens.css ; s'active avec data-ambiance="nuit" et data-da="b" sur <html>.
+ * Toujours sombre : aucun mode clair (contrastes calculés dans DIRECTION_NUIT.md).
+ * Polices Google Fonts : URL dans tokens.json > ambiances > googleFonts.
+ */
+:root[data-ambiance="nuit"][data-da] {
+  color-scheme: dark;
+  --da-font-display: "Bricolage Grotesque", "Trebuchet MS", Arial, sans-serif;
+  --da-font-accent: "Fraunces", Georgia, "Times New Roman", serif;
+  --da-font-text: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  --da-font-price: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  --da-title-weight: 800;
+  --da-title-transform: none;
+  --da-title-tracking: -0.025em;
+  --da-title-stretch: 100%;
+  --da-radius-sm: 8px;
+  --da-radius-md: 16px;
+  --da-radius-lg: 28px;
+  --da-radius-pill: 999px;
+  --da-border-width: 1px;
+  --da-shadow-card: 0 1px 0 rgba(245, 242, 255, 0.06) inset, 0 24px 60px rgba(3, 2, 14, 0.55);
+  --da-shadow-raised: 0 1px 0 rgba(245, 242, 255, 0.10) inset, 0 30px 80px rgba(3, 2, 14, 0.65);
+  --da-glow-accent: 0 0 0 1px rgba(255, 111, 174, 0.35), 0 12px 40px rgba(255, 111, 174, 0.35);
+  --da-glow-or: 0 0 24px rgba(255, 200, 87, 0.45);
+  --da-blur-verre: 16px;
+  --da-duree-apparition: 900ms;
+  --da-courbe-douce: cubic-bezier(0.22, 1, 0.36, 1);
+  --da-color-bg: #0B0A1F;
+  --da-color-surface: #16143A;
+  --da-color-surface-alt: #1F1C4D;
+  --da-color-ink: #F5F2FF;
+  --da-color-ink-muted: #BDB7DE;
+  --da-color-on-ink: #0B0A1F;
+  --da-color-line: #2F2B66;
+  --da-color-line-strong: #8079BD;
+  --da-color-accent: #FF6FAE;
+  --da-color-on-accent: #1A0826;
+  --da-color-accent-text: #FF9ACB;
+  --da-color-accent-soft: #3A1745;
+  --da-color-focus: #FFD27A;
+  --da-color-error: #FF8F87;
+  --da-color-status-local-bg: #0E3227;
+  --da-color-status-local-fg: #8FF0C3;
+  --da-color-status-preorder-bg: #1B2560;
+  --da-color-status-preorder-fg: #BCCBFF;
+  --da-color-status-new-bg: #FF6FAE;
+  --da-color-status-new-fg: #1A0826;
+  --da-color-status-out-bg: #27254A;
+  --da-color-status-out-fg: #D2CEEB;
+  --da-color-status-restock-bg: #3B2B07;
+  --da-color-status-restock-fg: #FFD978;
+  --da-color-lang-fr-bg: #F5F2FF;
+  --da-color-lang-fr-fg: #0B0A1F;
+  --da-color-or: #FFC857;
+  --da-color-or-doux: #FFE6A8;
+  --da-color-lune: #FF7AB8;
+  --da-color-aurore: #5FE3C8;
+  --da-color-ciel-1: #141155;
+  --da-color-ciel-2: #213A9E;
+  --da-color-ciel-3: #7C9BFF;
+  --da-color-lac-1: #0D2052;
+  --da-color-lac-2: #1A4C7A;
+  --da-color-nuit-profonde: #06051A;
+  --da-color-papier: #F6F1E7;
+}

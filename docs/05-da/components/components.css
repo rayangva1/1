@@ -1,0 +1,303 @@
+/*
+ * Composants de la boutique — nom de travail « Quai des Cartes » (non validé).
+ * Requiert ../tokens/tokens.css (variables --da-*). Mobile d'abord, aucune dépendance.
+ * Les deux directions partagent ce fichier : seules les variables changent (data-da="a" | "b").
+ * Règle d'or : un composant public n'affiche JAMAIS de donnée interne (voir README DA).
+ */
+
+/* ---------- Base ---------- */
+.da-root {
+  margin: 0;
+  background: var(--da-color-bg);
+  color: var(--da-color-ink);
+  font-family: var(--da-font-text);
+  font-size: var(--da-text-base);
+  line-height: var(--da-leading-base);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.da-root *,
+.da-root *::before,
+.da-root *::after { box-sizing: border-box; }
+.da-root img { max-width: 100%; height: auto; display: block; }
+.da-root p, .da-root li, .da-root dd, .da-root h1, .da-root h2, .da-root h3 { overflow-wrap: anywhere; }
+:where(.da-root) a { color: var(--da-color-accent-text); text-underline-offset: 0.18em; }
+.da-root :focus-visible { outline: 2px solid var(--da-color-focus); outline-offset: 2px; }
+
+.da-title {
+  font-family: var(--da-font-display);
+  font-weight: var(--da-title-weight);
+  text-transform: var(--da-title-transform);
+  letter-spacing: var(--da-title-tracking);
+  font-stretch: var(--da-title-stretch);
+  line-height: var(--da-leading-tight);
+  margin: 0;
+}
+.da-price {
+  font-family: var(--da-font-price);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.da-muted { color: var(--da-color-ink-muted); }
+.da-visually-hidden {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* ---------- Grille ---------- */
+.da-container {
+  width: 100%;
+  max-width: var(--da-max-width);
+  margin-inline: auto;
+  padding-inline: var(--da-margin-mobile);
+}
+.da-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--da-gutter-mobile);
+}
+@media (min-width: 600px) {
+  .da-container { padding-inline: var(--da-margin-tablet); }
+  .da-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+}
+@media (min-width: 900px) {
+  .da-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--da-gutter-desktop); }
+}
+.da-products {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--da-space-4);
+}
+@media (min-width: 900px) { .da-products { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--da-space-5); } }
+
+/* ---------- Icônes ---------- */
+.da-icon { flex: none; stroke-linecap: square; stroke-linejoin: miter; }
+[data-da="b"] .da-icon { stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- Badges (statut toujours écrit en toutes lettres + icône) ---------- */
+.da-badges { display: flex; flex-wrap: wrap; gap: var(--da-space-2); }
+.da-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: var(--da-radius-sm);
+  font-family: var(--da-font-text);
+  font-size: var(--da-text-sm);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  text-transform: var(--da-title-transform);
+  white-space: nowrap;
+}
+[data-da="b"] .da-badge { border-radius: var(--da-radius-pill); letter-spacing: 0; }
+.da-badge--fr { background: var(--da-color-lang-fr-bg); color: var(--da-color-lang-fr-fg); }
+.da-badge--local { background: var(--da-color-status-local-bg); color: var(--da-color-status-local-fg); }
+.da-badge--preorder { background: var(--da-color-status-preorder-bg); color: var(--da-color-status-preorder-fg); }
+.da-badge--new { background: var(--da-color-status-new-bg); color: var(--da-color-status-new-fg); }
+.da-badge--out { background: var(--da-color-status-out-bg); color: var(--da-color-status-out-fg); }
+.da-badge--restock { background: var(--da-color-status-restock-bg); color: var(--da-color-status-restock-fg); }
+/* Pré-drop : « Réservation garantie » (paire précommande, contour plein pour la distinguer) et « Drop le JJ.MM »
+   (paire texte/fond). Jamais de compteur, de minuteur ni de « plus que N » : un statut et une date. */
+.da-badge--reservation {
+  background: var(--da-color-status-preorder-bg);
+  color: var(--da-color-status-preorder-fg);
+  box-shadow: inset 0 0 0 2px var(--da-color-status-preorder-fg);
+}
+.da-badge--drop {
+  background: var(--da-color-bg);
+  color: var(--da-color-ink);
+  box-shadow: inset 0 0 0 1px var(--da-color-line-strong);
+}
+/* Ambiance « Atelier » (DIRECTION_ATELIER.md §3.2) : statuts monochromes, papier et charbon ; l'icône et le libellé
+   suffisent à les distinguer. « Réservation garantie » est la boîte noire à bande orange de l'illustration. */
+[data-ambiance="atelier"] .da-badge--local { box-shadow: inset 0 0 0 1px var(--da-color-ink); }
+[data-ambiance="atelier"] .da-badge--preorder { box-shadow: inset 0 0 0 1px var(--da-color-line-strong); }
+[data-ambiance="atelier"] .da-badge--reservation {
+  background: var(--da-color-inverse-bg);
+  color: var(--da-color-inverse-ink);
+  box-shadow: inset 0 -3px 0 var(--da-color-accent);
+}
+
+/* ---------- Boutons ---------- */
+.da-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--da-space-2);
+  min-height: var(--da-touch-target);
+  padding: 10px 18px;
+  border: 2px solid transparent;
+  border-radius: var(--da-radius-md);
+  font-family: var(--da-font-text);
+  font-size: var(--da-text-base);
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+}
+[data-da="b"] .da-btn { border-radius: var(--da-radius-pill); }
+.da-btn--primary { background: var(--da-color-ink); color: var(--da-color-on-ink); }
+[data-da="b"] .da-btn--primary { background: var(--da-color-accent); color: var(--da-color-on-accent); }
+.da-btn--secondary { background: transparent; color: var(--da-color-ink); border-color: var(--da-color-ink); }
+.da-btn--accent { background: var(--da-color-accent); color: var(--da-color-on-accent); }
+.da-btn[disabled], .da-btn[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
+.da-btn--block { width: 100%; }
+
+/* ---------- Emplacement photo (photo RÉELLE uniquement) ---------- */
+.da-photo {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  padding: var(--da-space-3);
+  background: var(--da-color-surface-alt);
+  border: 2px dashed var(--da-color-line-strong);
+  border-radius: var(--da-radius-sm);
+  color: var(--da-color-ink-muted);
+  font-size: var(--da-text-sm);
+  font-weight: 600;
+  text-align: center;
+}
+[data-da="b"] .da-photo { border-radius: var(--da-radius-md); }
+
+/* ---------- Carte produit ---------- */
+.da-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--da-space-2);
+  padding: var(--da-space-3);
+  background: var(--da-color-surface);
+  border: var(--da-border-width) solid var(--da-color-line);
+  border-top: 4px solid var(--da-color-ink);
+  border-radius: var(--da-radius-md);
+  box-shadow: var(--da-shadow-card);
+}
+/* Direction B (à placer sur <html> : les directions ne s'imbriquent pas dans les composants). */
+[data-da="b"] .da-card { border: var(--da-border-width) solid transparent; border-radius: var(--da-radius-lg); }
+.da-card__title {
+  margin: 0;
+  font-family: var(--da-font-text);
+  font-size: var(--da-text-base);
+  font-weight: 700;
+  line-height: var(--da-leading-snug);
+}
+.da-card__title a { color: inherit; text-decoration: none; }
+.da-card__title a::after { content: ""; position: absolute; inset: 0; }
+.da-card__title a:focus-visible { outline: none; }
+.da-card:focus-within { outline: 2px solid var(--da-color-focus); outline-offset: 2px; }
+.da-card__meta { margin: 0; font-size: var(--da-text-sm); color: var(--da-color-ink-muted); }
+.da-card__price { margin: 0; font-size: var(--da-text-lg); }
+.da-card__cta { position: relative; z-index: 1; margin-top: auto; }
+
+/* ---------- Statut de stock explicite (texte, jamais la couleur seule) ---------- */
+.da-stock {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--da-text-sm);
+  font-weight: 600;
+  line-height: var(--da-leading-snug);
+}
+.da-stock .da-icon { margin-top: 1px; }
+.da-stock--local { color: var(--da-color-status-local-fg); }
+.da-stock--preorder { color: var(--da-color-status-preorder-fg); }
+.da-stock--reservation { color: var(--da-color-status-preorder-fg); }
+.da-stock--out { color: var(--da-color-status-out-fg); }
+.da-stock__detail { display: block; font-weight: 400; color: var(--da-color-ink-muted); }
+
+/* ---------- Bandeau d'annonce et bannière ---------- */
+.da-annonce {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--da-space-1) var(--da-space-4);
+  padding: var(--da-space-2) var(--da-space-4);
+  background: var(--da-color-ink);
+  color: var(--da-color-on-ink);
+  font-size: var(--da-text-sm);
+  font-weight: 600;
+  text-align: center;
+}
+.da-annonce a { color: inherit; }
+.da-banner {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: var(--da-space-5);
+  padding: var(--da-space-6) var(--da-space-4);
+  background: var(--da-color-surface-alt);
+  border-bottom: 12px solid var(--da-color-accent);
+}
+[data-da="b"] .da-banner { background: var(--da-color-accent-soft); border-bottom: 0; border-radius: var(--da-radius-lg); }
+.da-banner__title { font-size: var(--da-text-display); }
+.da-banner__text { margin: 0; max-width: 38rem; font-size: var(--da-text-md); }
+.da-banner__actions { display: flex; flex-wrap: wrap; gap: var(--da-space-3); }
+.da-banner__media { display: none; }
+@media (min-width: 900px) {
+  .da-banner { grid-template-columns: 1.3fr 1fr; align-items: center; padding: var(--da-space-8) var(--da-space-7); }
+  .da-banner__media { display: grid; }
+}
+.da-banner__deco { position: absolute; pointer-events: none; }
+
+/* ---------- Page produit ---------- */
+.da-product { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--da-space-5); padding-block: var(--da-space-5); }
+@media (min-width: 900px) { .da-product { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--da-space-7); } }
+.da-gallery { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--da-space-2); }
+.da-gallery__thumbs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--da-space-2); }
+.da-gallery__thumbs .da-photo { font-size: var(--da-text-xs); padding: var(--da-space-1); }
+.da-product__info { display: flex; flex-direction: column; gap: var(--da-space-4); }
+.da-product__title { font-size: var(--da-text-2xl); }
+.da-product__price { margin: 0; font-size: var(--da-text-xl); }
+.da-panel {
+  padding: var(--da-space-4);
+  background: var(--da-color-surface);
+  border: var(--da-border-width) solid var(--da-color-line);
+  border-radius: var(--da-radius-md);
+}
+.da-facts { display: grid; grid-template-columns: auto 1fr; gap: var(--da-space-2) var(--da-space-4); margin: 0; font-size: var(--da-text-sm); }
+.da-facts dt { font-weight: 700; }
+.da-facts dd { margin: 0; }
+.da-qty { display: inline-flex; align-items: stretch; border: 2px solid var(--da-color-line-strong); border-radius: var(--da-radius-md); }
+.da-qty button { min-width: var(--da-touch-target); min-height: var(--da-touch-target); border: 0; background: transparent; color: var(--da-color-ink); font-size: var(--da-text-lg); cursor: pointer; }
+.da-qty input { width: 3.5rem; border: 0; background: transparent; color: var(--da-color-ink); text-align: center; font: 600 var(--da-text-md) var(--da-font-price); }
+.da-breadcrumb { display: flex; flex-wrap: wrap; gap: var(--da-space-2); padding: 0; margin: 0; list-style: none; font-size: var(--da-text-sm); }
+.da-breadcrumb li + li::before { content: "/"; margin-right: var(--da-space-2); color: var(--da-color-ink-muted); }
+.da-note {
+  display: flex;
+  gap: var(--da-space-2);
+  padding: var(--da-space-3);
+  border-left: 4px solid var(--da-color-line-strong);
+  background: var(--da-color-surface-alt);
+  font-size: var(--da-text-sm);
+}
+
+/* ---------- Pied de page légal ---------- */
+.da-footer { padding: var(--da-space-6) 0; border-top: var(--da-border-width) solid var(--da-color-line); font-size: var(--da-text-sm); color: var(--da-color-ink-muted); }
+
+/* ---------- Barre d'aperçu (pages de démonstration uniquement) ---------- */
+.da-preview-bar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--da-space-2);
+  padding: var(--da-space-2) var(--da-space-4);
+  background: var(--da-color-surface);
+  border-bottom: var(--da-border-width) solid var(--da-color-line);
+  font-size: var(--da-text-sm);
+}
+.da-preview-bar button {
+  min-height: 36px; padding: 4px 12px;
+  border: 1px solid var(--da-color-line-strong); border-radius: var(--da-radius-sm);
+  background: var(--da-color-surface); color: var(--da-color-ink); font: inherit; cursor: pointer;
+}
+.da-preview-bar button[aria-pressed="true"] { background: var(--da-color-ink); color: var(--da-color-on-ink); border-color: var(--da-color-ink); }
+.da-fictif {
+  margin: var(--da-space-4) 0; padding: var(--da-space-2) var(--da-space-3);
+  border: 1px dashed var(--da-color-line-strong); border-radius: var(--da-radius-sm);
+  font-size: var(--da-text-sm); color: var(--da-color-ink-muted);
+}
+
+@media (prefers-reduced-motion: reduce) { .da-root * { transition: none !important; animation: none !important; } }

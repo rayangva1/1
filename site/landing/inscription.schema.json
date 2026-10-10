@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "site/landing/inscription.schema.json",
+  "title": "Inscription aux alertes — champs reçus par le webhook n8n",
+  "description": "Contrat entre la landing (js/landing.js) et le workflow n8n « inscription alertes ». Envoi POST application/x-www-form-urlencoded : toutes les valeurs sont des chaînes. Sans JavaScript, le navigateur envoie le même formulaire ; « formats » peut alors arriver plusieurs fois (une valeur par case cochée) et les champs consentement_texte, horodatage_client et page sont absents. Le workflow DOIT revalider chaque champ, ignorer les valeurs inconnues, horodater côté serveur et n'envoyer aucun email autre que l'email de confirmation (double opt-in) tant que le lien n'a pas été cliqué.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "email",
+    "consentement",
+    "consentement_version",
+    "source"
+  ],
+  "properties": {
+    "email": {
+      "type": "string",
+      "maxLength": 254,
+      "description": "Adresse saisie, sans espaces en bordure. Contrôle de forme seulement : la preuve est le clic de confirmation."
+    },
+    "prenom": {
+      "type": "string",
+      "maxLength": 60,
+      "description": "Facultatif ; caractères de contrôle et < > retirés."
+    },
+    "formats": {
+      "type": "string",
+      "pattern": "^((displays|etb|bundles-tripacks|coffrets|accessoires|nouveautes)(,(displays|etb|bundles-tripacks|coffrets|accessoires|nouveautes))*)?$",
+      "description": "Valeurs séparées par des virgules, sans doublon. Libellés : displays = Displays ; etb = Coffrets Dresseur d'élite ; bundles-tripacks = Bundles et tripacks ; coffrets = Coffrets cadeaux ; accessoires = Accessoires ; nouveautes = Nouvelles extensions."
+    },
+    "budget": {
+      "type": "string",
+      "enum": [
+        "",
+        "moins-30",
+        "30-60",
+        "60-120",
+        "120-250",
+        "plus-250"
+      ],
+      "description": "Tranche de budget habituel par achat, en CHF (préférence déclarée, pas un prix)."
+    },
+    "pour_qui": {
+      "type": "string",
+      "enum": [
+        "",
+        "collection",
+        "jeu",
+        "cadeau"
+      ]
+    },
+    "canton": {
+      "type": "string",
+      "enum": [
+        "",
+        "AG",
+        "AI",
+        "AR",
+        "BE",
+        "BL",
+        "BS",
+        "FR",
+        "GE",
+        "GL",
+        "GR",
+        "JU",
+        "LU",
+        "NE",
+        "NW",
+        "OW",
+        "SG",
+        "SH",
+        "SO",
+        "SZ",
+        "TG",
+        "TI",
+        "UR",
+        "VD",
+        "VS",
+        "ZG",
+        "ZH",
+        "hors-suisse"
+      ]
+    },
+    "consentement": {
+      "const": "oui",
+      "description": "Case non pré-cochée, cochée par la personne. Toute autre valeur : rejeter."
+    },
+    "consentement_texte": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Texte exact affiché à côté de la case, conservé comme preuve du consentement."
+    },
+    "consentement_version": {
+      "type": "string",
+      "pattern": "^alertes-v[0-9]+-[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "Version du texte de consentement (actuelle : alertes-v1-2026-10-04)."
+    },
+    "horodatage_client": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Heure du navigateur (indicative). L'horodatage qui fait foi est celui du serveur n8n."
+    },
+    "page": {
+      "type": "string",
+      "maxLength": 300,
+      "description": "Adresse de la page, sans paramètres de requête."
+    },
+    "source": {
+      "const": "landing"
+    },
+    "utm_source": {
+      "type": "string",
+      "pattern": "^[a-z0-9._-]{0,60}$",
+      "description": "Canal d'arrivée (protocole landing §5 : reseau, instagram, tiktok, club-{nom}, questionnaire, entretien)."
+    },
+    "utm_medium": {
+      "type": "string",
+      "pattern": "^[a-z0-9._-]{0,60}$"
+    },
+    "utm_campaign": {
+      "type": "string",
+      "pattern": "^[a-z0-9._-]{0,60}$"
+    },
+    "site_web": {
+      "type": "string",
+      "maxLength": 0,
+      "description": "Champ piège invisible (envoyé seulement sans JavaScript). Non vide = robot : répondre comme un succès, sans rien enregistrer ni envoyer."
+    }
+  }
+}

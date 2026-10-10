@@ -1,0 +1,63 @@
+# FICTIF — dictionnaire de champs du jeu d'essai XML « grossiste C » (aucun fournisseur réel).
+# Fichiers : data/samples/FICTIF_flux_grossiste_c*.xml (générés par data/samples/generate_samples.py).
+# Profil imité : flux XML type API (priorité 1 du BP §6) : attributs et sous-éléments,
+# date d'export sur la racine, devise et base HT/TTC en attributs du prix, paliers répétés.
+
+supplier_id: fictif_grossiste_c
+supplier_name: "FICTIF Grossiste C (jeu d'essai XML)"
+mapping_version: "fictif_grossiste_c-v1"
+status: FICTIF
+fictif: true
+description: "FICTIF — jeux d'essai uniquement, simulation"
+
+file_format: xml
+xml:
+  record_path: "./offre"
+  source_ts_attribute: "exporte_le"
+numbers:
+  decimal_separator: "."
+  thousands_separators: []
+dates:
+  formats: ["%Y-%m-%d"]
+  timezone: "Europe/Paris"
+
+columns:
+  supplier_sku: ["@sku"]
+  gtin: [ean]
+  designation: [designation]
+  language: [langue]
+  extension: [extension]
+  format: [format]
+  content: [contenu]
+  sealed: [scelle]
+  price: [prix]
+  currency: ["prix/@devise"]
+  price_basis: ["prix/@base"]
+  vat_rate: [tva]
+  unit_basis: ["conditionnement/@unite"]
+  units_per_pack: ["conditionnement/@unites"]
+  carton_qty: ["conditionnement/@carton"]
+  moq: [moq]
+  available_qty: [stock]
+  availability: ["stock/@statut"]
+  allocation_qty: [allocation]
+  release_date: [sortie]
+  ship_from_country: ["expedition/@pays"]
+  incoterm: ["expedition/@incoterm"]
+required_fields: [supplier_sku, price]
+
+tiers:
+  - {min_qty_column: "paliers/palier/@qte", price_column: "paliers/palier/@prix"}
+  - {min_qty_column: "paliers/palier[2]/@qte", price_column: "paliers/palier[2]/@prix"}
+quantities:
+  stock: UNIT
+  moq: UNIT
+  tiers: UNIT
+  allocation: UNIT
+defaults:
+  vat_country: FR         # FICTIF
+allowed_currencies: [CHF, EUR]
+extension_tables: ["data/samples/FICTIF_extensions_aliases.yaml"]
+
+# Validation humaine requise
+# - [ ] Aucune : dictionnaire d'essai.

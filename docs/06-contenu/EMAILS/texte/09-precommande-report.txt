@@ -1,0 +1,24 @@
+Objet : Report de sortie : {{ $json.produit_titre }}
+
+LA DATE DE SORTIE A CHANGÉ
+
+{{ $json.salutation }}
+
+La sortie de {{ $json.produit_titre }} (commande {{ $json.numero_commande }}) est reportée. Nous vous transmettons l'information dès que nous la recevons.
+
+Date annoncée lors de votre commande : {{ $json.date_initiale }}
+Nouvelle date annoncée : {{ $json.nouvelle_date }}
+Information reçue le : {{ $json.date_information }}
+
+Garder votre précommande : vous n'avez rien à faire. Nous expédions dès réception.
+
+{{ $json.texte_option_annulation }}
+
+Nos conditions de précommande : {{URL_PRECOMMANDES}}
+
+--
+Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
+Conditions de vente : {{URL_CGV}} · Livraison et retours : {{URL_RETOURS}}
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.

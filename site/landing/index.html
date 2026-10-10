@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="fr-CH" data-da="a" data-ambiance="atelier">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!--
+    Landing de validation (BP §1, §9 J1-15) — source : site/landing/README.md. Ambiance « Atelier »
+    (docs/05-da/DIRECTION_ATELIER.md) : papier crème, charbon mat, un seul fil orange. Récit en chapitres porté par
+    Braise (nom provisoire), un renard original sans lien avec la licence.
+    Nom de travail NON VALIDÉ : « Quai des Cartes » (docs/05-da/NAMING.md). Il est remplacé par le nom
+    validé (champ NOM_BOUTIQUE du registre docs/04-legal/champs_a_remplir.yaml) par site/outils/publication.py.
+    Règles : aucun prix, aucun stock, aucune précommande, aucune donnée interne (SPEC §0.2-0.3).
+    Visuels : balises data-visuel réécrites depuis site/config/visuels.json (site/outils/visuels.py : adresses,
+    dimensions, texte alternatif et filet orange mesuré « data-fil ») ; ne jamais écrire une adresse d'image, un texte
+    alternatif ni un filet à la main.
+    Fil orange (DIRECTION_ATELIER.md §6) : js/atelier.js le dessine dans .lp-fil. Il traverse les figures
+    [data-fil-ancre] (il entre dans leur filet photographié et en ressort), passe sous les illustrations pleine largeur,
+    se branche sur le tiret de chaque numéro de chapitre [data-fil-chapitre] et sur les filets des figures
+    [data-fil-ancre="branche"]. Sans JavaScript, une ligne continue est tracée en CSS dans la marge ; en mouvement réduit
+    ou en pause, la ligne est entière et immobile.
+    Titre principal (« Le calme avant le drop. ») : proposition à valider par la propriétaire (ton et référencement).
+  -->
+  <!-- APERCU:DEBUT -->
+  <meta name="robots" content="noindex, nofollow">
+  <!-- APERCU:FIN -->
+  <title>Quai des Cartes — Pokémon JCC en français, expédié depuis Genève</title>
+  <meta name="description" content="Boutique indépendante en préparation à Genève : produits scellés du JCC Pokémon en français, stock affiché tel qu'il est, livraison en Suisse. Inscrivez-vous à l'alerte d'ouverture.">
+  <link rel="canonical" href="{{URL_LANDING}}">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="fr_CH">
+  <meta property="og:site_name" content="Quai des Cartes">
+  <meta property="og:title" content="Quai des Cartes — Pokémon JCC en français, expédié depuis Genève">
+  <meta property="og:description" content="Boutique indépendante en préparation à Genève : produits scellés en français, livraison en Suisse. Inscrivez-vous à l'alerte d'ouverture.">
+  <meta property="og:url" content="{{URL_LANDING}}">
+  <meta property="og:image" content="{{URL_LANDING}}assets/og-image.jpg">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Un renard noir aux oreilles orange, assis à côté d'une boîte noire vierge. Quai des Cartes — Pokémon JCC en français, expédié depuis Genève. Produits scellés, ouverture prochaine. Boutique indépendante, non affiliée à Pokémon, Nintendo ou The Pokémon Company.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="{{URL_LANDING}}assets/og-image.jpg">
+  <meta name="twitter:image:alt" content="Un renard noir aux oreilles orange, assis à côté d'une boîte noire vierge. Quai des Cartes — Pokémon JCC en français, expédié depuis Genève. Produits scellés, ouverture prochaine. Boutique indépendante, non affiliée à Pokémon, Nintendo ou The Pokémon Company.">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#F1E4D3">
+  <link rel="icon" href="assets/da/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/da/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/da/apple-touch-icon.png">
+  <link rel="preload" as="image" media="(max-width: 699px)" imagesizes="100vw" fetchpriority="high" data-visuel="renard-heros-portrait" href="assets/visuels/renard-heros-portrait-1180.webp" imagesrcset="assets/visuels/renard-heros-portrait-480.webp 480w, assets/visuels/renard-heros-portrait-760.webp 760w, assets/visuels/renard-heros-portrait-1180.webp 1180w, assets/visuels/renard-heros-portrait-1520.webp 1520w">
+  <link rel="preload" as="image" media="(min-width: 700px)" imagesizes="100vw" fetchpriority="high" data-visuel="renard-heros" href="assets/visuels/renard-heros-1280.webp" imagesrcset="assets/visuels/renard-heros-640.webp 640w, assets/visuels/renard-heros-960.webp 960w, assets/visuels/renard-heros-1280.webp 1280w, assets/visuels/renard-heros-1920.webp 1920w, assets/visuels/renard-heros-2688.webp 2688w">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&amp;family=Geist+Mono:wght@400..600&amp;family=Instrument+Serif:ital@0;1&amp;display=swap">
+  <link rel="stylesheet" href="assets/da/tokens.css">
+  <link rel="stylesheet" href="assets/da/components.css">
+  <link rel="stylesheet" href="assets/da/ambiance.css">
+  <link rel="stylesheet" href="css/landing.css">
+  <script src="js/theme.js"></script>
+  <script src="js/config.js" defer></script>
+  <script src="js/landing.js" defer></script>
+  <script src="js/atelier.js" defer></script>
+</head>
+<body class="da-root lp-atelier">
+  <a class="lp-evitement" href="#contenu">Aller au contenu</a>
+  <div class="lp-fil" aria-hidden="true"><svg class="lp-fil__svg" focusable="false"></svg></div>
+  <!-- APERCU:DEBUT -->
+  <aside class="lp-apercu" aria-label="Aperçu interne">
+    <p><strong>Aperçu interne, ne pas diffuser.</strong> Nom de travail provisoire « Quai des Cartes » (non validé) ; accroche du héro et nom de la mascotte à valider. Coordonnées et mois d'ouverture à compléter. Le formulaire reste désactivé tant que l'adresse d'envoi n'est pas configurée.</p>
+  </aside>
+  <!-- APERCU:FIN -->
+  <header class="lp-entete" id="entete">
+    <div class="lp-cadre lp-entete__inner">
+      <a class="lp-logo" href="./"><img class="lp-logo__img" src="assets/da/logo-horizontal.svg" alt="Quai des Cartes" width="1083" height="140"></a>
+      <nav class="lp-nav" aria-label="Sections de la page">
+        <ul>
+          <li><a href="#mascotte">Braise</a></li>
+          <li><a href="#drop">Le drop</a></li>
+          <li><a href="#reservation">Réservation</a></li>
+          <li><a href="#formats">Formats</a></li>
+          <li><a href="#faq">Questions</a></li>
+        </ul>
+      </nav>
+      <div class="lp-entete__actions">
+        <button type="button" class="lp-animations" id="lp-animations" data-pause-animations aria-pressed="false" title="Pause des animations" hidden>
+          <svg class="lp-animations__pause" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M9 6v12M15 6v12"/></svg>
+          <svg class="lp-animations__lecture" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5.5v13l11-6.5z"/></svg>
+          <span class="lp-animations__texte">Pause des animations</span>
+        </button>
+        <a class="da-btn lp-btn lp-btn--plein lp-entete__cta" href="#alertes">M'alerter</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="contenu">
+    <!-- =========================================================== HÉRO : Braise attend, à côté d'une boîte -->
+    <section class="lp-hero" aria-labelledby="titre-principal">
+      <div class="lp-hero__tete">
+        <div class="lp-hero__texte lp-voile">
+          <p class="lp-surtitre"><span class="lp-surtitre__long">Boutique en préparation à Genève · </span>Ouverture prévue en {{MOIS_OUVERTURE}}</p>
+          <h1 id="titre-principal" class="da-title lp-hero__titre">
+            <span class="lp-hero__seo">Pokémon JCC en français, expédié depuis Genève</span>
+            <span class="lp-hero__accroche"><span class="lp-ligne">Le <em class="lp-accent">calme</em></span> <span class="lp-ligne">avant le drop.</span></span>
+          </h1>
+        </div>
+      </div>
+      <div class="lp-hero__corps">
+        <div class="lp-hero__corps-texte lp-voile">
+          <p class="lp-hero__intro">Displays, ETB, bundles et coffrets scellés, en français. Le stock affiché sera celui que nous avons en main.</p>
+          <div class="lp-hero__actions">
+            <a class="da-btn lp-btn lp-btn--plein" href="#alertes">Recevoir l'alerte d'ouverture</a>
+            <a class="lp-lien-fleche" href="#drop">Comment se passe un drop</a>
+          </div>
+        </div>
+      </div>
+      <figure class="lp-media lp-hero__image" data-fil-ancre="depart" data-fil-retour=".lp-hero">
+        <span class="lp-secours" aria-hidden="true"><svg class="rn-renard" viewBox="0 0 120 140" aria-hidden="true" focusable="false"><path class="rn-pelage" d="M84 131C66 138 34 137 20 122C10 111 10 95 20 86C28 99 44 113 64 117Z"/><path class="rn-braise" d="M20 86C10 95 10 111 20 122C25 127 31 130 38 132C29 121 25 104 29 92Z"/><path class="rn-pelage" d="M48 133C42 113 43 92 51 76C56 67 63 61 71 60C81 66 87 80 89 96C91 110 91 122 89 133Z"/><path class="rn-creme" d="M61 68C64 80 66 93 68 105C72 92 75 80 77 67C72 64 66 64 61 68Z"/><path class="rn-pelage" d="M46 40L49 5L72 28Z"/><path class="rn-pelage" d="M68 27L91 5L92 40Z"/><path class="rn-creme" d="M55 32L53.5 19L62 28Z"/><path class="rn-creme" d="M77 29L86 19L86.5 33Z"/><path class="rn-braise" d="M49 5L48 16.5L56 12.5Z"/><path class="rn-braise" d="M91 5L83.5 12.2L91.4 16Z"/><path class="rn-pelage" d="M50 45C49 33 59 25 70 25C82 25 90 34 90 43C94 47 99 51 102 55C96 60 87 62 79 62C66 64 51 58 50 45Z"/><path class="rn-creme" d="M68 52C77 50 91 51 102 55C95 60 86 62 78 62C71 61 66 58 68 52Z"/><ellipse class="rn-oeil" cx="77" cy="42" rx="2.8" ry="3.3"/><circle class="rn-truffe" cx="101.5" cy="55.2" r="2.4"/><path class="rn-trait" d="M66 109V131M76 107V131"/></svg></span>
+        <picture>
+          <source media="(max-width: 699px)" sizes="100vw" data-visuel="renard-heros-portrait" srcset="assets/visuels/renard-heros-portrait-480.webp 480w, assets/visuels/renard-heros-portrait-760.webp 760w, assets/visuels/renard-heros-portrait-1180.webp 1180w, assets/visuels/renard-heros-portrait-1520.webp 1520w" width="1520" height="2688" data-fil="0 0.869 0.997 0.978" data-fil-ep="0.0093" data-fil-couleurs="#FD9744 #FE8B32">
+          <img class="lp-hero__img" alt="Illustration : notre renard noir aux oreilles et à la queue orange, assis à côté d'une boîte noire vierge et d'étuis transparents vierges, dans la lumière d'une fenêtre." sizes="100vw" fetchpriority="high" decoding="async" data-visuel="renard-heros" src="assets/visuels/renard-heros-1280.webp" srcset="assets/visuels/renard-heros-640.webp 640w, assets/visuels/renard-heros-960.webp 960w, assets/visuels/renard-heros-1280.webp 1280w, assets/visuels/renard-heros-1920.webp 1920w, assets/visuels/renard-heros-2688.webp 2688w" width="2688" height="1152" data-fil="0.012 0.871 0.729 0.997" data-fil-ep="0.013" data-fil-couleurs="#FEAA68 #FE8F41">
+        </picture>
+      </figure>
+      <ul class="lp-preuves" aria-label="Nos engagements">
+        <li>Stock réel</li>
+        <li>Français vérifié à réception</li>
+        <li>Expédié depuis Genève</li>
+        <li>Livraison en Suisse</li>
+        <li>Aucune fausse urgence</li>
+        <li>Réservation garantie au pré-drop</li>
+      </ul>
+    </section>
+
+    <!-- =========================================================== 01 · RENCONTRE : Braise se présente -->
+    <section class="lp-chapitre lp-braise" id="mascotte" aria-labelledby="titre-mascotte">
+      <div class="lp-cadre lp-grille">
+        <figure class="lp-media lp-media--fondu lp-braise__portrait" data-fil-ancre data-apparition>
+          <span class="lp-secours" aria-hidden="true"><svg class="rn-renard" viewBox="0 0 120 140" aria-hidden="true" focusable="false"><path class="rn-pelage" d="M84 131C66 138 34 137 20 122C10 111 10 95 20 86C28 99 44 113 64 117Z"/><path class="rn-braise" d="M20 86C10 95 10 111 20 122C25 127 31 130 38 132C29 121 25 104 29 92Z"/><path class="rn-pelage" d="M48 133C42 113 43 92 51 76C56 67 63 61 71 60C81 66 87 80 89 96C91 110 91 122 89 133Z"/><path class="rn-creme" d="M61 68C64 80 66 93 68 105C72 92 75 80 77 67C72 64 66 64 61 68Z"/><path class="rn-pelage" d="M46 40L49 5L72 28Z"/><path class="rn-pelage" d="M68 27L91 5L92 40Z"/><path class="rn-creme" d="M55 32L53.5 19L62 28Z"/><path class="rn-creme" d="M77 29L86 19L86.5 33Z"/><path class="rn-braise" d="M49 5L48 16.5L56 12.5Z"/><path class="rn-braise" d="M91 5L83.5 12.2L91.4 16Z"/><path class="rn-pelage" d="M50 45C49 33 59 25 70 25C82 25 90 34 90 43C94 47 99 51 102 55C96 60 87 62 79 62C66 64 51 58 50 45Z"/><path class="rn-creme" d="M68 52C77 50 91 51 102 55C95 60 86 62 78 62C71 61 66 58 68 52Z"/><ellipse class="rn-oeil" cx="77" cy="42" rx="2.8" ry="3.3"/><circle class="rn-truffe" cx="101.5" cy="55.2" r="2.4"/><path class="rn-trait" d="M66 109V131M76 107V131"/></svg></span>
+          <img alt="Illustration : notre renard mascotte assis de face, pelage noir, plastron crème, grands yeux ambrés et sourire en coin ; les pointes de ses oreilles et le bout de sa queue sont orange vif." sizes="(min-width: 900px) 40vw, 100vw" loading="lazy" fetchpriority="low" decoding="async" data-visuel="renard-assis" src="assets/visuels/renard-assis-1280.webp" srcset="assets/visuels/renard-assis-480.webp 480w, assets/visuels/renard-assis-800.webp 800w, assets/visuels/renard-assis-1280.webp 1280w" width="1280" height="1600" data-fil="0 0.877 0.909 1" data-fil-ep="0.0136" data-fil-couleurs="#FDA75C #FE9645">
+        </figure>
+        <div class="lp-braise__texte" data-apparition>
+          <p class="lp-numero" data-fil-chapitre><span class="lp-numero__chiffre">01</span> Rencontre</p>
+          <h2 id="titre-mascotte" class="da-title lp-h2">Voici <em class="lp-accent">Braise</em>.</h2>
+          <p class="lp-etiquette">Nom provisoire</p>
+          <p class="lp-intro">Un renard au pelage noir, au plastron crème et aux grands yeux ambrés ; les pointes de ses oreilles et le bout de son unique queue sont orange vif. Il garde les boîtes scellées jusqu'au jour du drop et dresse l'oreille à chaque nouveauté.</p>
+          <dl class="lp-portrait">
+            <div><dt>Caractère</dt><dd>Attentif, malicieux, jamais pressé.</dd></div>
+            <div><dt>Son rôle</dt><dd>Il veille sur l'atelier et vous accompagne d'un chapitre à l'autre.</dd></div>
+            <div><dt>Il ne fait jamais</dt><dd>Presser, promettre une carte, compter les boîtes à votre place.</dd></div>
+          </dl>
+          <p class="lp-note">Braise est une création originale pour la boutique. Ce n'est pas un personnage Pokémon, et il ne représente aucun produit.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================== 02 · LE JOUR DU DROP (chapitre charbon) -->
+    <section class="lp-chapitre lp-chapitre--charbon lp-drop" id="drop" aria-labelledby="titre-drop">
+      <div class="lp-cadre">
+        <div class="lp-grille lp-drop__entete" data-apparition>
+          <p class="lp-numero" data-fil-chapitre><span class="lp-numero__chiffre">02</span> Le jour du drop</p>
+          <h2 id="titre-drop" class="da-title lp-h2">Une date, un statut, <em class="lp-accent">rien d'autre</em>.</h2>
+        </div>
+        <div class="lp-grille lp-drop__corps">
+          <figure class="lp-media lp-drop__image" data-fil-ancre data-apparition>
+            <img alt="Illustration : notre renard, ravi, soulève de la patte le couvercle d'une boîte noire vierge, symbole du drop, d'où sort une lumière dorée." sizes="(min-width: 900px) 62vw, 100vw" loading="lazy" decoding="async" data-visuel="renard-jour-de-drop" src="assets/visuels/renard-jour-de-drop-1280.webp" srcset="assets/visuels/renard-jour-de-drop-640.webp 640w, assets/visuels/renard-jour-de-drop-960.webp 960w, assets/visuels/renard-jour-de-drop-1280.webp 1280w, assets/visuels/renard-jour-de-drop-1920.webp 1920w" width="1920" height="1086" data-fil="0 0.795 0.794 1" data-fil-ep="0.02" data-fil-couleurs="#F9A048 #FD8936">
+          </figure>
+          <p class="lp-legende lp-drop__legende" data-apparition>La boîte noire est un symbole du drop, pas un produit ouvert : il n'en sort qu'une lumière, et les cartes posées au sol sont vierges.</p>
+          <div class="lp-drop__texte" data-apparition>
+            <p class="lp-intro">Les nouveautés arriveront par « drops » : une date annoncée, une réservation garantie pour qui veut être servi en premier, puis la vente au prix du drop.</p>
+            <p>Pour certains produits, la réservation s'ouvre avant la réception : d'abord pour les personnes inscrites aux alertes de ce produit, puis pour tout le monde. Sur la fiche, toujours une date estimée, jamais une heure.</p>
+            <p>Pas de minuteur, pas de compteur d'unités. Le drop n'ouvre que lorsque le produit est là, à Genève, contrôlé et toujours scellé.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================== 03 · LA RÉSERVATION GARANTIE -->
+    <section class="lp-chapitre lp-reservation" id="reservation" aria-labelledby="titre-reservation">
+      <div class="lp-cadre lp-grille">
+        <div class="lp-reservation__texte" data-apparition>
+          <p class="lp-numero" data-fil-chapitre><span class="lp-numero__chiffre">03</span> Le pré-drop</p>
+          <h2 id="titre-reservation" class="da-title lp-h2">La réservation <em class="lp-accent">garantie</em>.</h2>
+          <p class="lp-intro">Pour certains produits, une réservation ouverte avant leur réception. La fiche affichera deux prix côte à côte : celui de la réservation garantie et celui du drop. Le premier est le second augmenté d'un supplément, qui ne dépasse jamais 10&nbsp;%.</p>
+          <div class="lp-garantie">
+            <p class="lp-garantie__texte">Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.</p>
+            <p class="lp-garantie__texte lp-garantie__texte--limite">Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.</p>
+          </div>
+          <ul class="lp-garanties">
+            <li class="lp-garanties__item">
+              <svg class="lp-garanties__icone" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              <span>Servi en premier</span>
+            </li>
+            <li class="lp-garanties__item">
+              <svg class="lp-garanties__icone" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg>
+              <span>Expédié dès réception</span>
+            </li>
+            <li class="lp-garanties__item">
+              <svg class="lp-garanties__icone" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v4h4"/><path d="M9 12.5l2 2 4-4"/></svg>
+              <span>Remboursé intégralement si nous ne pouvons pas vous servir</span>
+            </li>
+          </ul>
+          <p class="lp-note">Ce que le supplément ne garantit pas, l'ordre de service, les remboursements : <a href="#faq-reservation">toutes les réponses dans les questions fréquentes</a>.</p>
+        </div>
+        <figure class="lp-reservation__image" data-apparition>
+          <div class="lp-media lp-media--fondu"><img alt="Illustration : notre renard fait un clin d'œil en gardant d'une patte une pile de boîtes noires vierges à bande orange." sizes="(min-width: 900px) 36vw, 92vw" loading="lazy" decoding="async" data-visuel="renard-reservation" src="assets/visuels/renard-reservation-1152.webp" srcset="assets/visuels/renard-reservation-480.webp 480w, assets/visuels/renard-reservation-800.webp 800w, assets/visuels/renard-reservation-1152.webp 1152w" width="1152" height="1440"></div>
+          <figcaption class="lp-reservation__badges">
+            <span class="da-badge da-badge--reservation"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5L16 9"/></svg>Réservation garantie</span>
+            <span class="da-badge da-badge--drop"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Drop le JJ.MM</span>
+            <span class="lp-legende">Les deux mentions d'une fiche en pré-drop.</span>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- =========================================================== 04 · LES FORMATS (texte seul : aucune image d'objet à côté de la ligne « Accessoires ») -->
+    <section class="lp-chapitre lp-formats" id="formats" aria-labelledby="titre-formats">
+      <div class="lp-cadre lp-grille lp-formats__corps">
+        <div class="lp-formats__entete" data-apparition>
+          <p class="lp-numero" data-fil-chapitre><span class="lp-numero__chiffre">04</span> À l'ouverture</p>
+          <h2 id="titre-formats" class="da-title lp-h2 lp-h2--utile">Les formats <em class="lp-accent">prévus</em>.</h2>
+          <p class="lp-formats__langue"><span class="da-badge da-badge--fr">FR</span> Tout le catalogue en français</p>
+          <p class="lp-intro">La sélection exacte dépendra des produits réellement reçus et sera annoncée aux inscrits. Aucun prix n'est encore fixé.</p>
+          <div class="lp-encadre">
+            <h3 class="lp-h3">Ce que vous ne verrez pas chez nous</h3>
+            <ul class="lp-liste">
+              <li>Un compte à rebours ou des « dernières pièces » pour vous presser.</li>
+              <li>Une promesse de carte rare ou de valeur future : le contenu des boosters est aléatoire.</li>
+              <li>Une précommande sans quantité confirmée, ou un acompte demandé sur cette page.</li>
+              <li>Un produit annoncé « en stock » alors qu'il n'est pas encore chez nous.</li>
+            </ul>
+          </div>
+        </div>
+        <ol class="lp-formats__liste" data-apparition>
+          <li class="lp-format">
+            <span class="lp-format__num" aria-hidden="true">01</span>
+            <h3 class="lp-format__titre">Displays</h3>
+            <p>Une boîte de boosters d'une même extension.</p>
+          </li>
+          <li class="lp-format">
+            <span class="lp-format__num" aria-hidden="true">02</span>
+            <h3 class="lp-format__titre">Coffrets Dresseur d'élite (ETB)</h3>
+            <p>Des boosters et des accessoires de jeu réunis dans un coffret.</p>
+          </li>
+          <li class="lp-format">
+            <span class="lp-format__num" aria-hidden="true">03</span>
+            <h3 class="lp-format__titre">Bundles et tripacks</h3>
+            <p>Quelques boosters, parfois avec un bonus. Le contenu exact figure sur chaque fiche.</p>
+          </li>
+          <li class="lp-format">
+            <span class="lp-format__num" aria-hidden="true">04</span>
+            <h3 class="lp-format__titre">Coffrets</h3>
+            <p>Des boosters accompagnés d'objets de collection, souvent choisis pour offrir.</p>
+          </li>
+          <li class="lp-format">
+            <span class="lp-format__num" aria-hidden="true">05</span>
+            <h3 class="lp-format__titre">Accessoires</h3>
+            <p>Protège-cartes, classeurs et boîtes de rangement pour protéger et ranger vos cartes.</p>
+          </li>
+          <li class="lp-format lp-format--pas">
+            <span class="lp-format__num" aria-hidden="true">—</span>
+            <h3 class="lp-format__titre">Pas au lancement</h3>
+            <p>Cartes à l'unité, cartes gradées, rachat de cartes et autres langues que le français.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- =========================================================== 05 · LE SOIN (Braise au-dessus d'un classeur, une photo du propriétaire raccordée au fil) -->
+    <section class="lp-chapitre lp-soin" id="soin" aria-labelledby="titre-soin">
+      <div class="lp-cadre">
+        <div class="lp-grille lp-soin__ouverture">
+          <div class="lp-soin__entete" data-apparition>
+            <p class="lp-numero" data-fil-chapitre><span class="lp-numero__chiffre">05</span> Notre façon de travailler</p>
+            <h2 id="titre-soin" class="da-title lp-h2">Le soin, <em class="lp-accent">sans</em> effet d'annonce.</h2>
+            <p class="lp-intro">Des produits identifiés sans ambiguïté, une disponibilité écrite en toutes lettres, des colis préparés à la main à Genève.</p>
+          </div>
+          <figure class="lp-media lp-media--fondu lp-soin__renard" data-apparition>
+            <img alt="Illustration : notre renard passe la tête au-dessus d'un classeur ouvert rempli de cartes vierges." sizes="(min-width: 900px) 46vw, 100vw" loading="lazy" decoding="async" data-visuel="renard-classeur" src="assets/visuels/renard-classeur-1280.webp" srcset="assets/visuels/renard-classeur-640.webp 640w, assets/visuels/renard-classeur-960.webp 960w, assets/visuels/renard-classeur-1280.webp 1280w, assets/visuels/renard-classeur-1728.webp 1728w" width="1728" height="977">
+          </figure>
+        </div>
+        <div class="lp-grille lp-soin__atelier">
+          <figure class="lp-media lp-media--photo lp-soin__boite" data-fil-ancre="branche" data-apparition>
+            <img alt="Photo d'ambiance : une boîte noire, des étuis transparents et des cartes vierges sur un papier crème, dans la lumière d'une fenêtre." sizes="(min-width: 900px) 76vw, 92vw" loading="lazy" decoding="async" data-visuel="photo-boite-etuis" src="assets/visuels/photo-boite-etuis-1280.webp" srcset="assets/visuels/photo-boite-etuis-640.webp 640w, assets/visuels/photo-boite-etuis-960.webp 960w, assets/visuels/photo-boite-etuis-1280.webp 1280w, assets/visuels/photo-boite-etuis-2000.webp 2000w" width="2000" height="1131" data-fil="0 0.918 0.998 0.918" data-fil-ep="0.0389" data-fil-couleurs="#F4722D #E76622">
+          </figure>
+          <p class="lp-legende lp-soin__legende">Photos d'ambiance : boîte, étuis, pochettes et cartes vierges, sans marque. Sur la boutique, chaque fiche montre la photo réelle du produit vendu.</p>
+        </div>
+        <div class="lp-grille lp-soin__pied">
+          <figure class="lp-media lp-media--photo lp-soin__mains" data-fil-ancre="branche" data-apparition>
+            <img alt="Photo d'ambiance : deux mains glissent une carte vierge dans une pochette transparente." sizes="(min-width: 900px) 30vw, 100vw" loading="lazy" decoding="async" data-visuel="photo-mains-sleeve" src="assets/visuels/photo-mains-sleeve-1200.webp" srcset="assets/visuels/photo-mains-sleeve-480.webp 480w, assets/visuels/photo-mains-sleeve-800.webp 800w, assets/visuels/photo-mains-sleeve-1200.webp 1200w, assets/visuels/photo-mains-sleeve-1600.webp 1600w" width="1600" height="2000" data-fil="0 0.253 0.517 0.148" data-fil-ep="0.0102" data-fil-couleurs="#F17223 #EF6F1C">
+          </figure>
+          <ol class="lp-manifeste">
+            <li class="lp-manifeste__ligne" data-apparition>
+              <span class="lp-manifeste__num" aria-hidden="true">I</span>
+              <h3 class="lp-manifeste__titre">Stock réel.</h3>
+              <p>Un produit marqué « Stock local » est chez nous, à Genève, contrôlé et prêt à partir. Rien n'est affiché comme disponible s'il ne l'est pas.</p>
+            </li>
+            <li class="lp-manifeste__ligne" data-apparition>
+              <span class="lp-manifeste__num" aria-hidden="true">II</span>
+              <h3 class="lp-manifeste__titre">Français, vérifié.</h3>
+              <p>Chaque titre indique le format, l'extension et la langue. À réception, nous vérifions la langue, le scellé et le contenu annoncé sur l'emballage, sans ouvrir le produit. En cas de doute, le produit n'est pas publié.</p>
+            </li>
+            <li class="lp-manifeste__ligne" data-apparition>
+              <span class="lp-manifeste__num" aria-hidden="true">III</span>
+              <h3 class="lp-manifeste__titre">Un service qui répond.</h3>
+              <p>Une adresse email où nous vous répondons : les réponses courantes sont préparées et envoyées par des outils automatisés, à partir de modèles que nous validons, et une personne reprend votre demande dès que vous le souhaitez. Une politique de retour et une garantie écrites noir sur blanc.</p>
+            </li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================== 06 · EXPÉDIÉ DEPUIS GENÈVE (scène pleine : le titre dans le ciel, le fil ressort de la corde) -->
+    <section class="lp-chapitre lp-geneve" id="geneve" aria-labelledby="titre-promesse">
+      <div class="lp-geneve__scene">
+        <div class="lp-cadre lp-geneve__entete">
+          <div class="lp-geneve__texte lp-voile" data-apparition>
+            <p class="lp-numero" data-fil-chapitre><span class="lp-numero__chiffre">06</span> Au bord du Léman</p>
+            <h2 id="titre-promesse" class="da-title lp-h2">Préparé à Genève, <em class="lp-accent">livré</em> en Suisse.</h2>
+            <p class="lp-intro lp-geneve__intro">Chaque colis part de Genève et n'est livré qu'en Suisse. Prix en francs suisses ; frais de livraison affichés avant le paiement.</p>
+          </div>
+        </div>
+        <figure class="lp-media lp-geneve__image" data-fil-ancre="corde">
+          <img alt="Illustration : notre renard assis sur un quai de Genève, avec le Jet d'eau, le lac et les Alpes dans la lumière du matin." sizes="(max-width: 699px) 195vw, 100vw" loading="lazy" decoding="async" data-visuel="renard-leman" src="assets/visuels/renard-leman-1280.webp" srcset="assets/visuels/renard-leman-640.webp 640w, assets/visuels/renard-leman-960.webp 960w, assets/visuels/renard-leman-1280.webp 1280w, assets/visuels/renard-leman-1920.webp 1920w, assets/visuels/renard-leman-2688.webp 2688w" width="2688" height="1152" data-fil="0.852 0.845 0.836 0.862" data-fil-ep="0.03" data-fil-couleurs="#BE4814 #D8622A">
+        </figure>
+      </div>
+    </section>
+
+    <!-- =========================================================== 07 · ALERTES (l'illustration pleine largeur, le formulaire posé dans l'espace libre) -->
+    <section class="lp-chapitre lp-alertes" id="alertes" aria-labelledby="titre-alertes">
+      <div class="lp-plein lp-alertes__grille">
+        <figure class="lp-media lp-media--fondu lp-alertes__image" data-fil-ancre data-apparition>
+          <img alt="Illustration : notre renard assis, oreilles dressées, lève les yeux, attentif." sizes="(min-width: 900px) 98vw, 120vw" loading="lazy" decoding="async" data-visuel="renard-alertes" src="assets/visuels/renard-alertes-1280.webp" srcset="assets/visuels/renard-alertes-640.webp 640w, assets/visuels/renard-alertes-960.webp 960w, assets/visuels/renard-alertes-1280.webp 1280w, assets/visuels/renard-alertes-1920.webp 1920w" width="1920" height="1086" data-fil="0 0.908 0.483 1" data-fil-ep="0.0101" data-fil-couleurs="#FBA45A #FE9144">
+        </figure>
+        <div class="lp-alertes__entete lp-voile" data-apparition>
+          <p class="lp-numero" data-fil-chapitre><span class="lp-numero__chiffre">07</span> Alerte d'ouverture</p>
+          <h2 id="titre-alertes" class="da-title lp-h2">L'ouverture, <em class="lp-accent">sans</em> la guetter.</h2>
+          <p class="lp-intro">Un email quand la boutique ouvre, puis, si vous le souhaitez, les alertes de stock qui correspondent à vos choix.</p>
+        </div>
+        <div class="lp-alertes__aside">
+          <h3 class="lp-h3">Ce que vous recevrez</h3>
+          <ol class="lp-recevrez">
+            <li><strong>L'alerte d'ouverture</strong>, quand les produits sont reçus et contrôlés.</li>
+            <li><strong>Les alertes de stock</strong> des formats que vous choisissez.</li>
+            <li><strong>Au plus un récapitulatif</strong> par semaine, jamais plus.</li>
+          </ol>
+          <p class="lp-note">Aucun paiement, aucune réservation : cette inscription ne réserve aucun produit.</p>
+        </div>
+        <form class="lp-formulaire" id="lp-formulaire" method="post" action="" novalidate>
+          <div class="lp-formulaire__ligne">
+            <div class="lp-champ">
+              <label for="lp-email">Adresse email <span class="lp-requis">(obligatoire)</span></label>
+              <input id="lp-email" name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" required aria-describedby="lp-email-erreur">
+              <p class="lp-erreur" id="lp-email-erreur" hidden></p>
+            </div>
+            <div class="lp-champ">
+              <label for="lp-prenom">Prénom <span class="lp-facultatif">(facultatif)</span></label>
+              <input id="lp-prenom" name="prenom" type="text" autocomplete="given-name" maxlength="60">
+            </div>
+          </div>
+          <details class="lp-preciser">
+            <summary><span class="lp-preciser__titre">Préciser mes alertes <span class="lp-facultatif">(facultatif : formats, budget, pour qui, canton)</span></span></summary>
+            <div class="lp-preciser__corps">
+              <fieldset class="lp-groupe">
+                <legend>Ce qui vous intéresse <span class="lp-facultatif">(facultatif)</span></legend>
+                <div class="lp-options">
+                  <label class="lp-option"><input type="checkbox" name="formats" value="displays"> Displays</label>
+                  <label class="lp-option"><input type="checkbox" name="formats" value="etb"> Coffrets Dresseur d'élite (ETB)</label>
+                  <label class="lp-option"><input type="checkbox" name="formats" value="bundles-tripacks"> Bundles et tripacks</label>
+                  <label class="lp-option"><input type="checkbox" name="formats" value="coffrets"> Coffrets cadeaux</label>
+                  <label class="lp-option"><input type="checkbox" name="formats" value="accessoires"> Accessoires</label>
+                  <label class="lp-option"><input type="checkbox" name="formats" value="nouveautes"> Nouvelles extensions</label>
+                </div>
+              </fieldset>
+              <fieldset class="lp-groupe">
+                <legend>Budget habituel par achat <span class="lp-facultatif">(facultatif)</span></legend>
+                <div class="lp-options lp-options--budget">
+                  <label class="lp-option"><input type="radio" name="budget" value="moins-30"> Moins de 30 CHF</label>
+                  <label class="lp-option"><input type="radio" name="budget" value="30-60"> De 30 à 60 CHF</label>
+                  <label class="lp-option"><input type="radio" name="budget" value="60-120"> De 60 à 120 CHF</label>
+                  <label class="lp-option"><input type="radio" name="budget" value="120-250"> De 120 à 250 CHF</label>
+                  <label class="lp-option"><input type="radio" name="budget" value="plus-250"> Plus de 250 CHF</label>
+                </div>
+              </fieldset>
+              <div class="lp-formulaire__ligne">
+                <div class="lp-champ">
+                  <label for="lp-pour-qui">Pour qui achetez-vous ? <span class="lp-facultatif">(facultatif)</span></label>
+                  <select id="lp-pour-qui" name="pour_qui">
+                    <option value="">Je préfère ne pas le dire</option>
+                    <option value="collection">Pour ma collection</option>
+                    <option value="jeu">Pour jouer</option>
+                    <option value="cadeau">Pour offrir (enfant, cadeau)</option>
+                  </select>
+                </div>
+                <div class="lp-champ">
+                  <label for="lp-canton">Canton <span class="lp-facultatif">(facultatif)</span></label>
+                  <select id="lp-canton" name="canton" aria-describedby="lp-canton-aide">
+                    <option value="">Je préfère ne pas le dire</option>
+                    <option value="AG">Argovie</option>
+                    <option value="AI">Appenzell Rhodes-Intérieures</option>
+                    <option value="AR">Appenzell Rhodes-Extérieures</option>
+                    <option value="BE">Berne</option>
+                    <option value="BL">Bâle-Campagne</option>
+                    <option value="BS">Bâle-Ville</option>
+                    <option value="FR">Fribourg</option>
+                    <option value="GE">Genève</option>
+                    <option value="GL">Glaris</option>
+                    <option value="GR">Grisons</option>
+                    <option value="JU">Jura</option>
+                    <option value="LU">Lucerne</option>
+                    <option value="NE">Neuchâtel</option>
+                    <option value="NW">Nidwald</option>
+                    <option value="OW">Obwald</option>
+                    <option value="SG">Saint-Gall</option>
+                    <option value="SH">Schaffhouse</option>
+                    <option value="SO">Soleure</option>
+                    <option value="SZ">Schwytz</option>
+                    <option value="TG">Thurgovie</option>
+                    <option value="TI">Tessin</option>
+                    <option value="UR">Uri</option>
+                    <option value="VD">Vaud</option>
+                    <option value="VS">Valais</option>
+                    <option value="ZG">Zoug</option>
+                    <option value="ZH">Zurich</option>
+                    <option value="hors-suisse">Hors de Suisse</option>
+                  </select>
+                  <p class="lp-aide" id="lp-canton-aide">Nous livrons uniquement en Suisse.</p>
+                </div>
+              </div>
+            </div>
+          </details>
+          <div class="lp-champ lp-champ--consentement">
+            <div class="lp-option lp-option--consentement">
+              <input id="lp-consentement" name="consentement" type="checkbox" value="oui" required aria-describedby="lp-consentement-aide lp-consentement-erreur">
+              <label for="lp-consentement" id="lp-consentement-texte">J'accepte de recevoir l'alerte d'ouverture, les alertes de stock correspondant à mes choix et, au plus, un email récapitulatif par semaine. Je peux me désinscrire en un clic dans chaque email.</label>
+            </div>
+            <p class="lp-aide" id="lp-consentement-aide">Votre email sert à ces envois. Vos réponses facultatives (prénom, formats, budget, pour qui, canton) et l'origine de votre visite servent à adapter vos alertes et, de façon agrégée, à choisir notre assortiment, nos contenus et nos canaux. Nous ne vendons jamais vos données. Détails : <a href="confidentialite.html">déclaration de confidentialité</a>.</p>
+            <p class="lp-erreur" id="lp-consentement-erreur" hidden></p>
+          </div>
+          <div class="lp-piege" aria-hidden="true">
+            <label for="lp-site-web">Ne pas remplir ce champ</label>
+            <input id="lp-site-web" name="site_web" type="text" tabindex="-1" autocomplete="off">
+          </div>
+          <input type="hidden" name="consentement_version" value="alertes-v1-2026-10-04">
+          <input type="hidden" name="source" value="landing">
+          <input type="hidden" name="utm_source" value="">
+          <input type="hidden" name="utm_medium" value="">
+          <input type="hidden" name="utm_campaign" value="">
+          <div class="lp-actions">
+            <button class="da-btn lp-btn lp-btn--plein" type="submit" id="lp-envoyer" disabled>M'inscrire aux alertes</button>
+          </div>
+          <p class="lp-statut" id="lp-statut" role="status" aria-live="polite"></p>
+          <!-- APERCU:DEBUT -->
+          <noscript><p class="lp-statut lp-statut--info">Aperçu : le formulaire n'envoie rien tant que l'adresse d'envoi n'est pas posée à la publication. Vous pouvez aussi écrire à {{EMAIL_SUPPORT}} pour recevoir l'alerte d'ouverture.</p></noscript>
+          <!-- APERCU:FIN -->
+          <!-- PUBLICATION:NOSCRIPT -->
+          <p class="lp-note">Après l'envoi, vous recevrez un email de confirmation. Tant que vous n'avez pas cliqué sur son lien, nous ne vous écrirons pas.</p>
+        </form>
+      </div>
+    </section>
+
+    <!-- =========================================================== 08 · QUESTIONS FRÉQUENTES -->
+    <section class="lp-chapitre lp-faq-zone" id="faq" aria-labelledby="titre-faq">
+      <div class="lp-cadre lp-grille">
+        <div class="lp-faq-intro" data-apparition>
+          <p class="lp-numero" data-fil-chapitre><span class="lp-numero__chiffre">08</span> Questions</p>
+          <h2 id="titre-faq" class="da-title lp-h2">Questions <em class="lp-accent">fréquentes</em>.</h2>
+          <p>Une autre question ? Écrivez-nous à <a href="mailto:{{EMAIL_SUPPORT}}">{{EMAIL_SUPPORT}}</a>.</p>
+          <figure class="lp-faq-photo">
+            <div class="lp-media lp-media--photo"><img alt="Photo d'ambiance : un classeur ouvert rempli de cartes vierges, vu de dessus, sur un bureau clair." sizes="(min-width: 900px) 34vw, 1px" loading="lazy" decoding="async" data-visuel="photo-classeur" src="assets/visuels/photo-classeur-1280.webp" srcset="assets/visuels/photo-classeur-640.webp 640w, assets/visuels/photo-classeur-960.webp 960w, assets/visuels/photo-classeur-1280.webp 1280w, assets/visuels/photo-classeur-2000.webp 2000w" width="2000" height="1328"></div>
+            <figcaption class="lp-legende">Photo d'ambiance : classeur et cartes vierges, sans marque. Sur la boutique, chaque fiche montre la photo réelle du produit vendu.</figcaption>
+          </figure>
+        </div>
+        <div class="lp-faq" data-apparition>
+          <details>
+            <summary>Quand la boutique ouvre-t-elle ?</summary>
+            <p>L'ouverture est prévue en {{MOIS_OUVERTURE}}. Nous l'annoncerons aux inscrits lorsque les produits seront reçus et contrôlés, pas avant.</p>
+          </details>
+          <details>
+            <summary>Puis-je précommander ou réserver dès maintenant ?</summary>
+            <p>Non. Cette page ne prend ni réservation, ni précommande, ni paiement. Les réservations garanties s'ouvriront sur la boutique, avec leurs conditions complètes. Une précommande ne sera ouverte que lorsque la quantité qui nous est attribuée sera confirmée par écrit.</p>
+          </details>
+          <details id="faq-reservation">
+            <summary>Qu'est-ce que la réservation garantie ?</summary>
+            <p>Pour certains produits, une réservation ouverte avant leur réception, au prix du drop augmenté d'un supplément (au plus 10&nbsp;%). Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit. Les réservations garanties sont servies avant toute vente au prix du drop, dans l'ordre de leur paiement, et préparées dès la réception et le contrôle du produit.</p>
+          </details>
+          <details>
+            <summary>Et si vous ne pouvez pas me servir ?</summary>
+            <p>Nous vous remboursons intégralement, supplément compris, avec les frais de livraison payés pour la réservation, et nous vous prévenons par email.</p>
+          </details>
+          <details>
+            <summary>Que ne garantit pas le supplément ?</summary>
+            <p>Une livraison à une date précise (la date du drop est une date estimée : pas de garantie de livraison le jour du drop), un contenu, une carte ou une rareté, ni qu'il ne restera aucune unité au drop. Pas besoin de garantie ? Attendez le drop : même produit, au prix du drop, s'il en reste.</p>
+          </details>
+          <details>
+            <summary>S'il reste des unités au drop, la différence est-elle remboursée ?</summary>
+            <p>Non. Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.</p>
+          </details>
+          <details id="faq-statuts">
+            <summary>Que voudront dire les mentions de disponibilité ?</summary>
+            <p>« Stock local » : le produit est à Genève, contrôlé, prêt à être expédié. « Précommande » : ouverte seulement quand la quantité qui nous est attribuée est confirmée par écrit ; la date de sortie est affichée telle qu'elle nous est communiquée, estimée ou confirmée. « Rupture » : plus d'unité disponible ; vous pouvez demander une alerte de réassort, nous n'inventons pas de date de retour.</p>
+          </details>
+          <details>
+            <summary>Êtes-vous une boutique officielle Pokémon ?</summary>
+            <p>Non. Quai des Cartes est une boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus. Nous utilisons le nom « Pokémon » uniquement pour désigner les produits que nous revendons.</p>
+          </details>
+          <details>
+            <summary>Les produits seront-ils authentiques et en français ?</summary>
+            <p>Oui : des produits neufs et scellés, en langue française. Chaque livraison est contrôlée à réception (langue, emballage, scellé) avant la mise en vente.</p>
+          </details>
+          <details>
+            <summary>Pouvez-vous garantir une carte rare ?</summary>
+            <p>Non. Le contenu des boosters est aléatoire et décidé par le fabricant. Personne ne peut garantir une carte précise, une rareté ou une valeur future.</p>
+          </details>
+          <details>
+            <summary>Livrez-vous hors de Suisse ?</summary>
+            <p>Non. Nous livrons uniquement en Suisse.</p>
+          </details>
+          <details>
+            <summary>Qui est Braise ?</summary>
+            <p>Notre mascotte, un renard original créé pour la boutique ; son nom est provisoire. Ce n'est pas un personnage Pokémon : c'est une illustration originale, sans lien avec la licence, qui ne représente aucun produit.</p>
+          </details>
+          <details>
+            <summary>Que faites-vous de mon adresse email ?</summary>
+            <p>Nous l'utilisons pour les envois que vous avez choisis, après votre confirmation ; si vous vous désinscrivez, nous la gardons seulement dans une liste d'exclusion pour ne plus vous écrire. Vos réponses facultatives (prénom, formats, budget, pour qui, canton) et l'origine de votre visite servent aussi, de façon agrégée, à choisir notre assortiment, nos contenus et nos canaux. Nous ne vendons jamais vos données. Chaque email contient un lien de désinscription en un clic. Détails : <a href="confidentialite.html">déclaration de confidentialité</a>.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="lp-pied">
+    <figure class="lp-media lp-pied__image" data-fil-ancre="arrivee">
+      <img alt="" sizes="(max-width: 699px) 156vw, 100vw" loading="lazy" decoding="async" data-visuel="renard-pied-de-page" src="assets/visuels/renard-pied-de-page-1280.webp" srcset="assets/visuels/renard-pied-de-page-640.webp 640w, assets/visuels/renard-pied-de-page-960.webp 960w, assets/visuels/renard-pied-de-page-1280.webp 1280w, assets/visuels/renard-pied-de-page-1920.webp 1920w, assets/visuels/renard-pied-de-page-2688.webp 2688w" width="2688" height="1152" data-fil="0 0.793 0.999 0.993" data-fil-ep="0.0138" data-fil-couleurs="#F79B5C #FD893D">
+    </figure>
+    <div class="lp-pied__charbon">
+      <div class="lp-cadre lp-grille lp-pied__grille">
+        <div class="lp-pied__marque">
+          <img class="lp-pied__logo" src="assets/da/logo-horizontal-fond-sombre.svg" alt="Quai des Cartes" width="1083" height="140" loading="lazy">
+          <p class="lp-pied__devise">Pokémon JCC en français, expédié depuis Genève.</p>
+          <a class="da-btn lp-btn lp-btn--clair" href="#alertes">Recevoir l'alerte d'ouverture</a>
+        </div>
+        <div class="lp-pied__legal">
+          <p class="lp-pied__mention" id="mention-independance">Quai des Cartes est une boutique indépendante. Elle n'est ni affiliée, ni sponsorisée, ni approuvée par The Pokémon Company, Nintendo, Creatures Inc. ou GAME FREAK inc. Pokémon et les noms associés sont des marques de leurs titulaires respectifs ; nous les utilisons uniquement pour désigner les produits authentiques que nous revendons.</p>
+          <p>Exploitant : {{RAISON_SOCIALE}}, {{ADRESSE_POSTALE}}, Suisse. Contact : <a href="mailto:{{EMAIL_SUPPORT}}">{{EMAIL_SUPPORT}}</a></p>
+          <p><a href="confidentialite.html">Déclaration de confidentialité</a> <button type="button" class="lp-lien-bouton" data-pause-animations aria-pressed="false" hidden>Pause des animations</button></p>
+          <p class="lp-pied__credits">Illustrations : créations originales pour la boutique, sans élément sous licence. Braise, notre renard mascotte : nom provisoire, création originale sans lien avec Pokémon. Photos d'ambiance : objets vierges, sans marque.</p>
+        </div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

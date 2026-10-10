@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fr-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>Réservations garanties : {{ $json.produit_titre }}, d&#x27;abord pour vous</title>
+  <!--
+    FICHIER GÉNÉRÉ par docs/06-contenu/outils/generer_emails.py depuis EMAILS/source/emails.yaml — ne pas modifier.
+    Email 16-pre-drop-acces-prioritaire — Pré-drop : accès prioritaire des inscrits aux alertes — canal : n8n
+    Objet : Réservations garanties : [[produit_titre]], d'abord pour vous
+    Pré-en-tête : Vous suivez ce produit : vous pouvez réserver avant l'ouverture à tous. Rien ne presse.
+    Déclencheur : Pré-drop ouvert, fenêtre prioritaire (étape « prioritaire » calculée par le moteur, GET /predrop/offers)
+    Segment : Inscrits confirmés AVANT l'ouverture qui suivent ce produit (alerte sur la fiche), non désinscrits, dont le compte de la boutique est relié à l'inscription (étiquette alerte-produit posée) : sans compte relié, aucun email pendant la fenêtre prioritaire (email 17 à l'ouverture à tous)
+    Base : Consentement confirmé (alerte demandée sur ce produit)
+    Fréquence : Une annonce par pré-drop et par personne ; pas de seconde annonce à l'ouverture à tous
+    Variables :
+      - salutation : Salutation calculée par le workflow
+      - produit_titre : Titre exact de la fiche normale (lu sur la page publique)
+      - date_drop : Date du drop du moteur (jj.mm.aaaa)
+      - url_reservation : Chemin de la fiche « Réservation garantie », complété par l'adresse du site
+      - url_preferences : Page de préférences
+      - url_desinscription : Désinscription en un clic
+      - date_consentement : Date de confirmation
+    Champs fixes (MAJUSCULES entre doubles accolades) : registre docs/04-legal/champs_a_remplir.yaml, plus URL_LOGO_PNG
+    (PNG du logo hébergé, docs/05-da/logo/png/). Pour Shopify, coller la copie produite par --integration, jamais ce fichier.
+    Règles : aucune donnée interne ; prix publics relus à l'envoi ; aucune fausse urgence.
+  -->
+</head>
+<body style="margin:0;padding:0;background:#F6F5F1;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Vous suivez ce produit : vous pouvez réserver avant l&#x27;ouverture à tous. Rien ne presse.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="{{URL_LOGO_PNG}}" width="200" alt="{{NOM_BOUTIQUE}}" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Accès prioritaire aux réservations garanties</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">{{ $json.salutation }}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Vous avez demandé une alerte pour {{ $json.produit_titre }}. Les réservations garanties sont ouvertes, d'abord aux personnes inscrites aux alertes de ce produit, puis à tous.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;">{{ $json.produit_titre }}</strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E6E9FB;border:2px solid #2B3990;color:#2B3990;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">RÉSERVATION GARANTIE</span> <span style="font-size:13px;color:#55534E;">Drop le {{ $json.date_drop }} (date estimée)</span></div></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <ul style="margin:0 0 12px 20px;padding:0;font-size:15px;line-height:22px;color:#111111;"><li style="margin:0 0 6px 0;">Pour réserver pendant l'accès prioritaire, connectez-vous à votre compte client avec l'adresse de cet email ; votre compte doit accepter nos emails (consentement confirmé).</li><li style="margin:0 0 6px 0;">Le prix de la réservation garantie et le prix du drop sont affichés côte à côte sur la fiche ; le prix affiché au moment de votre commande fait foi.</li><li style="margin:0 0 6px 0;">La limite par foyer, toutes commandes confondues, figure sur la fiche.</li></ul>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;">Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.<br><br>Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.</td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Rien ne presse : vous pouvez aussi attendre le drop et acheter au prix du drop, s'il reste des unités. Nous n'affichons ni minuteur ni nombre d'unités restantes.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="{{URL_SITE}}{{ $json.url_reservation }}" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Voir la réservation garantie</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.<br>{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que cette adresse est inscrite à nos alertes (inscription confirmée le {{ $json.date_consentement }}).<br><a href="{{ $json.url_preferences }}" style="color:#B33F00;">Modifier mes préférences</a> · <a href="{{ $json.url_desinscription }}" style="color:#B33F00;">Me désinscrire en un clic</a><br>Confidentialité : {{URL_CONFIDENTIALITE}}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

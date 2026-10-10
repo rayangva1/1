@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr-CH" data-da="a">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bannières — composants DA</title>
+  <meta name="description" content="Bandeau d'annonce, bannière d'accueil, bannière de collection et bannière d'alertes.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&amp;family=Inter:opsz,wght@14..32,400..700&amp;family=IBM+Plex+Mono:wght@500;600&amp;family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Space+Grotesk:wght@500;700&amp;display=swap">
+  <link rel="stylesheet" href="../tokens/tokens.css">
+  <link rel="stylesheet" href="components.css">
+  <link rel="icon" href="../logo/a/favicon.svg" type="image/svg+xml">
+  <script src="apercu.js" defer></script>
+</head>
+<body class="da-root">
+  <div class="da-preview-bar" role="toolbar" aria-label="Options d'aperçu">
+    <strong>Aperçu</strong>
+    <button type="button" data-set-da="a" aria-pressed="true">Direction A — Quai</button>
+    <button type="button" data-set-da="b" aria-pressed="false">Direction B — Pochette</button>
+    <span aria-hidden="true">·</span>
+    <button type="button" data-set-theme="auto" aria-pressed="true">Auto</button>
+    <button type="button" data-set-theme="light" aria-pressed="false">Clair</button>
+    <button type="button" data-set-theme="dark" aria-pressed="false">Sombre</button>
+  </div>
+  <style>
+    html:not([data-da="b"]) [data-only="b"] { display: none !important; }
+  </style>
+  <div class="da-annonce" role="note">
+    <span><svg class="da-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg> Livraison en Suisse uniquement</span>
+    <span>Frais de livraison affichés avant paiement</span>
+    <span><a href="#">Retours : nos conditions</a></span>
+  </div>
+  <main class="da-container" style="display:grid;gap:var(--da-space-7);padding-block:var(--da-space-6)">
+    <p class="da-fictif">Textes d'exemple (FICTIF) ; toute promesse (délai, stock, prix) doit être vraie au moment de la publication.</p>
+
+    <section class="da-banner" aria-labelledby="hero-titre">
+      <svg class="da-banner__deco" data-only="b" width="220" height="220" viewBox="0 0 220 220" aria-hidden="true" focusable="false" style="right:-40px;top:-30px">
+          <rect x="60" y="30" width="110" height="154" rx="14" transform="rotate(12 115 107)" fill="none" stroke="var(--da-color-accent)" stroke-width="12"/>
+        </svg>
+      <div style="display:grid;gap:var(--da-space-4);position:relative">
+        <p class="da-badges" style="margin:0"><span class="da-badge da-badge--fr"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M7 9v6M7 9h3M7 12h2.5M13 15V9h2.5a1.5 1.5 0 0 1 0 3H13M15.5 12l1.5 3"/></svg>FR</span><span class="da-badge da-badge--local"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 15l2 2 4-4"/></svg>Stock local</span></p>
+        <h1 class="da-title da-banner__title" id="hero-titre">Pokémon JCC en français, expédié depuis la Suisse.</h1>
+        <p class="da-banner__text">Stock réel affiché, prix en CHF, précommandes uniquement sur allocation confirmée.</p>
+        <div class="da-banner__actions">
+          <a class="da-btn da-btn--primary" href="carte-produit.html">Voir le stock local</a>
+          <a class="da-btn da-btn--secondary" href="#alertes">Recevoir les alertes</a>
+        </div>
+      </div>
+      <div class="da-banner__media">
+        <div class="da-photo" role="img" aria-label="Emplacement : photo réelle de produits FR en stock" style="aspect-ratio:4/3">Photo réelle des boîtes en stock<br>(prise lors de la session photo groupée)</div>
+      </div>
+    </section>
+
+    <section aria-labelledby="col-titre" style="display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:var(--da-space-3);padding-bottom:var(--da-space-3);border-bottom:3px solid var(--da-color-ink)">
+      <div>
+        <p class="da-muted" style="margin:0;font-size:var(--da-text-sm)">Collection</p>
+        <h2 class="da-title" id="col-titre" style="font-size:var(--da-text-xl)">Nouveautés en stock local</h2>
+      </div>
+      <a href="carte-produit.html" style="font-weight:700">Tout voir ({{N_REFERENCES}})</a>
+    </section>
+
+    <section class="da-panel" id="alertes" aria-labelledby="alerte-titre" style="display:grid;gap:var(--da-space-3);max-width:40rem">
+      <h2 class="da-title" id="alerte-titre" style="font-size:var(--da-text-lg)"><svg class="da-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg> Alerte réassort par email</h2>
+      <p style="margin:0">Choisissez vos formats (displays, ETB, coffrets, accessoires). Un récapitulatif par semaine au maximum, plus les alertes que vous demandez.</p>
+      <form style="display:flex;flex-wrap:wrap;gap:var(--da-space-2)" onsubmit="return false">
+        <label for="email-alerte" class="da-visually-hidden">Adresse email</label>
+        <input id="email-alerte" type="email" autocomplete="email" placeholder="vous@exemple.ch" style="flex:1 1 220px;min-height:var(--da-touch-target);padding:8px 12px;border:2px solid var(--da-color-line-strong);border-radius:var(--da-radius-md);background:var(--da-color-surface);color:var(--da-color-ink);font:inherit">
+        <button type="submit" class="da-btn da-btn--primary">M'inscrire</button>
+      </form>
+      <p class="da-muted" style="margin:0;font-size:var(--da-text-sm)">Désinscription en un clic dans chaque email. Confidentialité : {{URL_CONFIDENTIALITE}} (texte de consentement à valider).</p>
+    </section>
+    <footer class="da-footer">
+      <p>{{NOM_BOUTIQUE}} — boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus. Pokémon est une marque de ses détenteurs respectifs (mention à faire valider par le juriste).</p>
+      <p>Page de démonstration DA — données d'exemple : FICTIF — <a href="../CHARTE.html">retour à la charte</a>.</p>
+    </footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="fr-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>Confirmation de commande {{NUMERO_COMMANDE}} — Quai des Cartes (direction B)</title>
+  <!--
+    GABARIT EMAIL TRANSACTIONNEL — direction B — FICHIER GÉNÉRÉ par tools/generer_da.py
+    Données d'exemple FICTIVES. Les {{CHAMPS}} sont à relier aux variables Liquid des notifications
+    Shopify lors de l'intégration (à vérifier dans la documentation Shopify en vigueur).
+    Règles : afficher exactement ce qui a été acheté ; aucune donnée interne (voir README DA, règle n° 1) ;
+    statut de chaque ligne explicite (stock local / précommande) ; pas de contenu promotionnel.
+    Logo : PNG hébergé (Gmail n'affiche pas les SVG) — exporter logo/png/logo-b-email.png.
+    Bloc TVA : n'afficher la ligne TVA que si l'entité est assujettie (décision fiduciaire).
+  -->
+</head>
+<body style="margin:0;padding:0;background:#F4F4F7;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Commande {{NUMERO_COMMANDE}} confirmée : récapitulatif, statut de chaque article et suivi.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F4F4F7;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;border-radius:12px;">
+          <tr>
+            <td style="padding:24px 20px 8px 20px;">
+              <img src="{{URL_LOGO_PNG}}" width="220" alt="Quai des Cartes" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#0B0B12;">
+            </td>
+          </tr>
+          
+          <tr>
+            <td style="padding:20px 20px 0 20px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 8px 0;font-size:22px;line-height:28px;font-weight:bold;word-break:break-word;color:#0B0B12;">Merci, votre commande est confirmée</h1>
+              <p style="margin:0;font-size:15px;line-height:22px;color:#0B0B12;">Bonjour {{PRENOM}}, nous avons bien reçu votre paiement. Voici exactement ce que vous avez commandé.</p>
+              <p style="margin:12px 0 0 0;font-family:Arial, Helvetica, sans-serif;font-size:15px;line-height:22px;color:#0B0B12;word-break:break-word;"><strong>Commande {{NUMERO_COMMANDE}}</strong> · {{DATE_COMMANDE}}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 20px 0 20px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:14px 0;border-top:1px solid #D8D8E2;font-family:Arial, Helvetica, sans-serif;font-size:15px;line-height:21px;color:#0B0B12;word-break:break-word;">
+                  <strong>Display — Extension exemple — FR</strong> <span style="font-size:13px;color:#545466;">(FICTIF)</span><br>
+                  <span style="display:inline-block;margin-top:6px;padding:2px 8px;border-radius:999px;background:#DFF5E7;color:#0C5A2C;font-size:12px;font-weight:bold;">stock local</span>
+                  <span style="font-size:13px;color:#545466;">&nbsp;Expédition sous {{DELAI_EXPEDITION}}</span>
+                </td>
+                <td align="right" valign="top" style="padding:14px 0 14px 12px;border-top:1px solid #D8D8E2;font-family:Arial, Helvetica, sans-serif;font-size:15px;line-height:21px;color:#0B0B12;white-space:nowrap;">
+                  1 × 209.90<br><strong>CHF 209.90</strong>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:14px 0;border-top:1px solid #D8D8E2;font-family:Arial, Helvetica, sans-serif;font-size:15px;line-height:21px;color:#0B0B12;word-break:break-word;">
+                  <strong>Pochettes de protection ×100 (exemple)</strong> <span style="font-size:13px;color:#545466;">(FICTIF)</span><br>
+                  <span style="display:inline-block;margin-top:6px;padding:2px 8px;border-radius:999px;background:#DFF5E7;color:#0C5A2C;font-size:12px;font-weight:bold;">stock local</span>
+                  <span style="font-size:13px;color:#545466;">&nbsp;Expédition sous {{DELAI_EXPEDITION}}</span>
+                </td>
+                <td align="right" valign="top" style="padding:14px 0 14px 12px;border-top:1px solid #D8D8E2;font-family:Arial, Helvetica, sans-serif;font-size:15px;line-height:21px;color:#0B0B12;white-space:nowrap;">
+                  2 × 9.90<br><strong>CHF 19.80</strong>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:14px 0;border-top:1px solid #D8D8E2;font-family:Arial, Helvetica, sans-serif;font-size:15px;line-height:21px;color:#0B0B12;word-break:break-word;">
+                  <strong>Coffret — Extension exemple 2 — FR</strong> <span style="font-size:13px;color:#545466;">(FICTIF)</span><br>
+                  <span style="display:inline-block;margin-top:6px;padding:2px 8px;border-radius:999px;background:#E3ECFA;color:#1D3F8A;font-size:12px;font-weight:bold;">précommande</span>
+                  <span style="font-size:13px;color:#545466;">&nbsp;Sortie prévue le {{DATE_SORTIE}} · expédiée à part</span>
+                </td>
+                <td align="right" valign="top" style="padding:14px 0 14px 12px;border-top:1px solid #D8D8E2;font-family:Arial, Helvetica, sans-serif;font-size:15px;line-height:21px;color:#0B0B12;white-space:nowrap;">
+                  1 × 59.90<br><strong>CHF 59.90</strong>
+                </td>
+              </tr>
+                <tr>
+                  <td style="padding:12px 0 4px 0;border-top:2px solid #0B0B12;font-family:Arial, Helvetica, sans-serif;font-size:15px;color:#0B0B12;">Sous-total articles</td>
+                  <td align="right" style="padding:12px 0 4px 0;border-top:2px solid #0B0B12;font-family:Arial, Helvetica, sans-serif;font-size:15px;color:#0B0B12;">CHF 289.60</td>
+                </tr>
+                <tr>
+                  <td style="padding:4px 0;font-family:Arial, Helvetica, sans-serif;font-size:15px;color:#0B0B12;">Livraison ({{MODE_LIVRAISON}})</td>
+                  <td align="right" style="padding:4px 0;font-family:Arial, Helvetica, sans-serif;font-size:15px;color:#0B0B12;word-break:break-word;">CHF {{FRAIS_LIVRAISON}}</td>
+                </tr>
+                <tr>
+                  <td style="padding:8px 0 4px 0;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#0B0B12;">Total payé</td>
+                  <td align="right" style="padding:8px 0 4px 0;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#0B0B12;">CHF {{TOTAL_PAYE}}</td>
+                </tr>
+                <!-- SI ENTITÉ ASSUJETTIE À LA TVA (décision fiduciaire) -->
+                <tr>
+                  <td colspan="2" style="padding:0 0 4px 0;font-family:Arial, Helvetica, sans-serif;font-size:13px;color:#545466;">{{MENTION_TVA}}</td>
+                </tr>
+                <!-- FIN SI -->
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 20px 0 20px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#0B0B12;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#E9E9F0;border-radius:12px;">
+                <tr>
+                  <td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#0B0B12;word-break:break-word;">
+                    <strong>Commande mixte :</strong> les articles en stock local partent dès qu'ils sont prêts ;
+                    la précommande est expédiée séparément à réception de l'allocation, à la date annoncée ou dès qu'elle est confirmée.
+                    Nous vous écrivons si une date change.<br><br>
+                    <strong>Livraison :</strong> {{ADRESSE_LIVRAISON}} (Suisse uniquement)<br>
+                    <strong>Paiement :</strong> {{MOYEN_PAIEMENT}}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td align="left" style="padding:24px 20px 8px 20px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="border-radius:999px;background:#5A31F4;">
+                    <a href="{{URL_SUIVI_COMMANDE}}" style="display:inline-block;padding:14px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;border-radius:999px;">Voir ma commande</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 20px 24px 20px;font-family:Arial, Helvetica, sans-serif;font-size:13px;line-height:19px;color:#545466;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}} en indiquant votre numéro de commande.<br>
+              Conditions de vente, livraison et retours : <a href="{{URL_CGV}}" style="color:#5A31F4;">{{URL_CGV}}</a><br><br>
+              {{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}} · {{NUMERO_IDE}}<br>
+              Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>
+              Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

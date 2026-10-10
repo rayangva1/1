@@ -1,0 +1,34 @@
+{%- comment -%}
+  Accès au bouton d'achat d'une fiche de réservation pré-drop : écrit « oui » ou « non » (à capturer), rien d'autre.
+  Paramètres : product (obligatoire), customer (objet Liquid du client connecté, absent sinon).
+  Usage (sections/main-product.liquid, STRUCTURE_BOUTIQUE.md §7) :
+    {% capture acces_reservation %}{% render 'da-reservation-acces', product: product, customer: customer %}{% endcapture %}
+    bouton d'ajout au panier seulement si acces_reservation == 'oui' ; sinon l'encart da-reservation-garantie.
+  Règles (fermé par défaut) :
+    - fiche normale (autre type) : « oui » (l'inventaire Shopify décide, comme avant) ;
+    - fiche de réservation non achetable, ou réservations fermées : « non » ;
+    - réservations ouvertes : « oui » ;
+    - fenêtre prioritaire (boutique.reservation_statut = prioritaire) : « oui » seulement pour un client connecté
+      inscrit aux alertes de la fiche normale (étiquette « alerte-produit:<handle> », posée par da-formulaire-alertes)
+      et consentant (inscription confirmée, double opt-in). Le workflow 02 atteste le même critère à chaque paiement :
+      un paiement hors critère pendant la fenêtre n'est pas servi et il est remboursé intégralement.
+{%- endcomment -%}
+{%- liquid
+  assign acces = 'oui'
+  if product.type == 'Réservation garantie'
+    assign acces = 'non'
+    assign resa_statut = product.metafields.boutique.reservation_statut.value
+    assign fiche_liee = product.metafields.boutique.fiche_liee.value
+    if product.available == true
+      if resa_statut == 'ouvertes'
+        assign acces = 'oui'
+      elsif resa_statut == 'prioritaire' and customer and fiche_liee and fiche_liee != ''
+        assign etiquette = 'alerte-produit:' | append: fiche_liee
+        if customer.tags contains etiquette and customer.accepts_marketing == true
+          assign acces = 'oui'
+        endif
+      endif
+    endif
+  endif
+  echo acces
+-%}

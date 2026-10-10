@@ -1,0 +1,1978 @@
+{
+  "id": "pkshp02CmdLivrai",
+  "name": "Pokeshop 02 — Commande vers livraison",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 02 — Commande vers livraison (BP §12)\nPaiement confirmé (webhook Shopify **orders/paid**, signature vérifiée) → **contrôle de doublon** (idempotence n8n)\n→ anomalies (CHF, Suisse, payée) → réservation (route moteur attendue) → **bon de préparation**\n→ **tâche colis HUMAINE** : un robot ne prépare pas un colis (picking, emballage, scan, dépôt : la propriétaire).\nSuivi : la propriétaire saisit le numéro dans Shopify, qui envoie l'email 07 ; colis en retard signalés chaque matin.\nRapprochement hebdomadaire : frais PSP réels **sans commande** (abonnement, versement) → étoile polaire\n(`POST /northstar/entries`) ; les frais d'une commande viennent de `POST /orders/shipped` (`payment_fees`, BL-199) :\njamais comptés deux fois (le moteur refuse un PAYMENT portant l'`order_id` d'une commande enregistrée).\nDonnées personnelles : aucune conservée (exécutions réussies non sauvegardées).\n**Pré-drop** : une ligne « Réservation garantie » (SKU `-RESA-<date>`) = réservation **payée** enregistrée au moteur\n(`POST /predrop/reservations`, empreinte **HMAC-SHA256** de l'identifiant client avec la clé `cle_empreinte_client`,\nfrais de livraison au prorata, accès prioritaire attesté : étiquette `alerte-produit:<handle>` + consentement confirmé\nantérieur à l'ouverture) ; jamais refusée : hors quota, limite ou fenêtre => non servie, remboursement intégral préparé.\nRemboursements **approuvés** (propriétaire en un clic aux niveaux 1-2, moteur dès le niveau 3) : exécution chez le\nprestataire (désactivée) puis relevé `POST /predrop/refunds/{id}/executed` ; emails 15 (réservation confirmée) et 18\n(remboursement : montant et motif du moteur), désactivés.\n**Activation** : niveau 2 (l'activation inscrit le webhook chez Shopify) ; remboursements : niveau 2 + recette du PSP.\n**Validation humaine requise** : délai d'expédition (DELAI_EXPEDITION), jours de dépôt, route moteur de réservation,\nmutation de remboursement Shopify (à revérifier sur la version 2026-10).",
+        "height": 520,
+        "width": 680,
+        "color": 4
+      },
+      "id": "7ef56c54-d3d6-5cfd-a59d-fe168137f401",
+      "name": "Note — à lire",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        -480
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "topic": "orders/paid"
+      },
+      "id": "319a0c78-c70f-59be-833b-9301adaadf3e",
+      "name": "Shopify : commande payée (orders/paid)",
+      "type": "n8n-nodes-base.shopifyTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "c3dd22eb-f83b-51d1-a25e-035daba5c016",
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "pkshpShopifyAdm1",
+          "name": "Shopify Admin — app personnalisée"
+        }
+      },
+      "notes": "L'activation du workflow inscrit ce webhook chez Shopify (écriture) : activer au niveau 2 seulement.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "0b63d8c2-76d9-5214-9a55-264658a8b89b",
+              "name": "workflow",
+              "value": "commande-livraison",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            },
+            {
+              "id": "8e3bda4f-bcf0-5aea-99f3-9ac6980679e8",
+              "name": "delai_expedition_jours_ouvres",
+              "value": 3,
+              "type": "number"
+            },
+            {
+              "id": "8bd169f8-02ff-56a8-8114-2aebd201d673",
+              "name": "cle_empreinte_client",
+              "value": "A_REMPLIR_DANS_N8N_CLE_SECRETE_EMPREINTE_CLIENT",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "36e87165-2cd9-5740-a7a2-dd6efbb6cb3d",
+      "name": "Paramètres — commande",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        0
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "logic": "removeItemsWithAlreadySeenKeyValues",
+        "dedupeValue": "={{ $json.id }}",
+        "options": {
+          "scope": "workflow",
+          "historySize": 10000
+        }
+      },
+      "id": "befa32df-7a56-54c5-be83-8d512ad41eaf",
+      "name": "Contrôle doublon (idempotence)",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ],
+      "notes": "Shopify peut livrer un webhook plusieurs fois : une commande n'est traitée qu'une fois.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Montants décimaux en centimes entiers (aucun float pour un montant ; arrondi interdit).\nfunction cents(value) {\n  const text = String(value === undefined || value === null ? '' : value).trim();\n  if (!/^-?\\d+(\\.\\d{1,2})?$/.test(text)) throw new Error(`montant non décimal ou plus de 2 décimales : ${text}`);\n  const negative = text.startsWith('-');\n  const [intPart, frac = ''] = text.replace('-', '').split('.');\n  const total = Number(intPart) * 100 + Number((frac + '00').slice(0, 2));\n  return negative ? -total : total;\n}\nfunction chf(c) {\n  const sign = c < 0 ? '-' : '';\n  const a = Math.abs(c);\n  return `${sign}${Math.trunc(a / 100)}.${String(a % 100).padStart(2, '0')}`;\n}\n\n// Commande Shopify payée -> données utiles à la préparation, SANS donnée personnelle (ni nom, ni adresse,\n// ni email : seul le code pays est lu pour vérifier « livraison Suisse uniquement »).\nconst out = [];\nfor (const item of $input.all()) {\n  const o = item.json;\n  const anomalies = [];\n  const currency = o.currency || o.presentment_currency || null;\n  if (currency !== 'CHF') anomalies.push(`devise ${currency} (CHF attendu)`);\n  const country = o.shipping_address && o.shipping_address.country_code ? o.shipping_address.country_code : null;\n  if (country !== 'CH') anomalies.push(`livraison hors Suisse ou pays inconnu (${country})`);\n  if (o.financial_status !== 'paid') anomalies.push(`statut de paiement ${o.financial_status}`);\n  if (o.test === true) anomalies.push('commande de test Shopify');\n  const lines = (o.line_items || []).map((l) => ({ sku: l.sku || null, quantity: l.quantity, title: l.title }));\n  if (!lines.length) anomalies.push('commande sans ligne');\n  if (lines.some((l) => !l.sku)) anomalies.push('ligne sans SKU (identité produit inconnue)');\n  const tags = String(o.tags || '').split(',').map((t) => t.trim().toLowerCase());\n  let total = 0;\n  let tax = 0;\n  try {\n    total = cents(o.current_total_price !== undefined ? o.current_total_price : o.total_price);\n    tax = cents(o.current_total_tax !== undefined ? o.current_total_tax : o.total_tax);\n  } catch (error) {\n    anomalies.push(error.message);\n  }\n  out.push({\n    json: {\n      order_id: String(o.id),\n      order_name: o.name,\n      paid_at: o.processed_at || o.created_at,\n      currency,\n      preorder: tags.includes('precommande'),\n      lines,\n      lines_count: lines.length,\n      total_ttc: chf(total),\n      tax: chf(tax),\n      net_ht: chf(total - tax),\n      anomalies,\n      anomalies_count: anomalies.length,\n    },\n  });\n}\nreturn out;\n"
+      },
+      "id": "2b1c02a7-1478-5e6e-82d0-950194ebc5b0",
+      "name": "Normaliser la commande (centimes, sans donnée personnelle)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "54859b90-a834-56a5-9f82-6ef229d98914",
+              "leftValue": "={{ $json.anomalies_count }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "8c688b8d-5e16-5700-a782-fa824dfa752d",
+      "name": "Anomalie ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — commande').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Commande ' + $json.order_name + ' : ' + $json.anomalies.join(' ; '), kind: 'COMMANDE_ANOMALIE', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: '02-commande:' + $json.order_name, proposed_action: 'Vérifier la commande dans Shopify (pays, devise, paiement) ; aucune préparation tant que l’anomalie n’est pas levée ; ne jamais modifier le prix d’une commande conclue.', actor: 'n8n:02-commande-livraison', simulation: $('Paramètres — commande').first().json.simulation, details: { order_ref: $json.order_name, anomalies: $json.anomalies } }) }}"
+      },
+      "id": "bd3b6717-7c6e-58d9-9463-33d1dff9b366",
+      "name": "Ouvrir un incident commande",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        -120
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n02Cmd",
+          "name": "Pokeshop API — jeton nommé n8n-02-commandes"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — commande').first().json.api_base_url }}/orders/paid",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ order_id: $json.order_id, order_ref: $json.order_name, paid_at: $json.paid_at, lines: $json.lines, net_ht: $json.net_ht }) }}"
+      },
+      "id": "44a8bba7-6cd8-5b8c-aed6-8151117c15c2",
+      "name": "Réserver le stock local — route moteur attendue (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        80
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n02Cmd",
+          "name": "Pokeshop API — jeton nommé n8n-02-commandes"
+        }
+      },
+      "disabled": true,
+      "notes": "Route à créer (agent integrations) : StockRegistry.reserve (contrôle de concurrence), survente => INC-06, écriture NET_SALES de l'étoile polaire. Ne pas activer avant.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0eac513f-6856-5e68-baa7-bc69ffe15957",
+              "name": "sujet",
+              "value": "=[COLIS] {{ $json.order_name }}{{ $json.preorder ? ' — PRÉCOMMANDE' : '' }}",
+              "type": "string"
+            },
+            {
+              "id": "1b1bf765-37c2-51b2-86d9-222e894d1f26",
+              "name": "texte",
+              "value": "=Commande {{ $json.order_name }} payée le {{ $json.paid_at }}.\n{{ $json.lines.map(l => '- ' + l.quantity + ' × ' + l.sku + ' — ' + l.title).join('\\n') }}\n\n{{ $json.preorder ? 'PRÉCOMMANDE : ne pas préparer avant réception du stock alloué.' : 'Remise au transporteur sous ' + $('Paramètres — commande').first().json.delai_expedition_jours_ouvres + ' jours ouvrés (hypothèse DELAI_EXPEDITION).' }}\nTâche HUMAINE (SOP_PREPARATION_COLIS.md) : picking, contrôle langue et scellé, scan, emballage, étiquette, dépôt ; puis « Traiter la commande » dans Shopify avec le numéro de suivi (Shopify envoie l'email 07).",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "dea9922c-c4e6-5b56-9dc4-aba200fb95ad",
+      "name": "Bon de préparation",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1680,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — commande').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "197e8e7c-5e94-5747-81cb-f3a44efbbe3b",
+      "name": "Tâche colis HUMAINE — notifier la responsable (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1960,
+        80
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "a77d4dcb-b6d4-5c56-b29c-da3cc2ad5322",
+      "name": "Journal : commande prise en charge",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2240,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6eb1d1d0-e069-5caf-a4d7-5b89d87ef513",
+              "leftValue": "={{ $json.lines.some(l => String(l.sku || '').includes('-RESA-')) }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "2002e15e-5a54-5da7-9f00-69010f6b8518",
+      "name": "Réservation pré-drop dans la commande ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1400,
+        280
+      ],
+      "notes": "Ligne d'une fiche « Réservation garantie » : réservation payée à enregistrer au moteur (dette jusqu'à l'expédition, chiffre d'affaires reconnu à l'expédition).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "07c75302-8429-5c13-a48e-5a1893a68f0c",
+      "name": "Aucune réservation pré-drop",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — commande').first().json.api_base_url }}/predrop/offers",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "cdd8ab00-0739-577d-bb10-86f98ecbb127",
+      "name": "Pré-drops du moteur (GET /predrop/offers)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        240
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n02Cmd",
+          "name": "Pokeshop API — jeton nommé n8n-02-commandes"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Montants décimaux en centimes entiers (aucun float pour un montant ; arrondi interdit).\nfunction cents(value) {\n  const text = String(value === undefined || value === null ? '' : value).trim();\n  if (!/^-?\\d+(\\.\\d{1,2})?$/.test(text)) throw new Error(`montant non décimal ou plus de 2 décimales : ${text}`);\n  const negative = text.startsWith('-');\n  const [intPart, frac = ''] = text.replace('-', '').split('.');\n  const total = Number(intPart) * 100 + Number((frac + '00').slice(0, 2));\n  return negative ? -total : total;\n}\nfunction chf(c) {\n  const sign = c < 0 ? '-' : '';\n  const a = Math.abs(c);\n  return `${sign}${Math.trunc(a / 100)}.${String(a % 100).padStart(2, '0')}`;\n}\n\n// Commande payée qui porte une ou plusieurs fiches « Réservation garantie » (SKU <SKU>-RESA-<AAAAMMJJ>) : une\n// réservation PAR PRÉ-DROP -> POST /predrop/reservations, jamais refusée pour un motif métier (hors quota, limite,\n// fenêtre prioritaire ou montant : « non servie », remboursement intégral préparé). Une commande à plusieurs pré-drops\n// est enregistrée <commande>, <commande>#2… ; chaque entrée est servie par SA ligne (SKU -RESA- de son pré-drop).\n// Frais de livraison (revue pré-drop ARG-06 / PDL-04) : commande composée SEULEMENT de réservations => frais payés\n// répartis au prorata des montants entre les entrées (shipping_paid_ttc), remboursés avec une réservation non servie.\n// Données personnelles (PDL-09) : l'identifiant client (ou, à défaut, l'email) n'est lu que pour être passé au nœud\n// HMAC-SHA256 suivant, avec la clé secrète du paramètre « cle_empreinte_client » (jamais dans le dépôt) ; clé absente :\n// rien n'est envoyé au moteur, incident. Accès prioritaire (PDL-08) : étiquette « alerte-produit:<handle> » ET\n// consentement marketing CONFIRMÉ (double opt-in) donné AVANT l'ouverture des réservations.\nconst order = $('Contrôle doublon (idempotence)').first().json;\nconst params = $('Paramètres — commande').first().json || {};\nconst key = String(params.cle_empreinte_client || '');\nconst keyOk = key.length >= 32 && !key.startsWith('A_REMPLIR');\nconst data = $input.first().json || {};\nconst internal = Array.isArray(data.internal) ? data.internal : [];\nconst bySku = {};\nfor (const p of internal) if (p && p.reservation_sku && p.status !== 'PENDING_OWNER') bySku[p.reservation_sku] = p;\nconst customer = order.customer || {};\nconst tags = String(customer.tags || '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);\nconst consentInfo = customer.email_marketing_consent || {};\nconst consent = consentInfo.state === 'subscribed' && consentInfo.opt_in_level === 'confirmed_opt_in';\nconst consentAt = consentInfo.consent_updated_at ? Date.parse(consentInfo.consent_updated_at) : NaN;\nconst customerKey = customer.id ? `shopify-customer:${customer.id}`\n  : order.email ? `shopify-email:${String(order.email).trim().toLowerCase()}` : `shopify-order:${order.id}`;\nconst groups = {};\nconst unknown = [];\nlet otherLines = 0;\nfor (const line of order.line_items || []) {\n  const sku = String(line.sku || '');\n  if (!/-RESA-\\d{8}$/.test(sku)) { otherLines += 1; continue; }\n  const p = bySku[sku];\n  if (!p) { unknown.push(sku); continue; }\n  const qty = Number.isInteger(line.quantity) ? line.quantity : 0;\n  const discount = (line.discount_allocations || []).reduce((sum, d) => sum + cents(d.amount), 0);\n  const g = groups[p.predrop_id] || (groups[p.predrop_id] = { p, qty: 0, amount: 0 });\n  g.qty += qty;\n  g.amount += cents(line.price) * qty - discount;\n}\n// Frais de livraison payés (après remises de livraison) : seulement si la commande n'a QUE des réservations.\nlet shipping = 0;\nif (otherLines === 0 && unknown.length === 0) {\n  const set = order.total_shipping_price_set && order.total_shipping_price_set.shop_money;\n  shipping = set && set.amount !== undefined ? cents(set.amount)\n    : (order.shipping_lines || []).reduce((sum, l) => sum + cents(l.price)\n      - (l.discount_allocations || []).reduce((d, a) => d + cents(a.amount), 0), 0);\n  if (shipping < 0) shipping = 0;\n}\nconst ids = Object.keys(groups).sort();\nconst totalAmount = ids.reduce((sum, id) => sum + Math.max(0, groups[id].amount), 0);\nlet shippingLeft = shipping;\nconst out = [];\nids.forEach((id, i) => {\n  const g = groups[id];\n  const last = i === ids.length - 1;\n  const share = last ? shippingLeft\n    : (totalAmount > 0 ? Math.floor(shipping * Math.max(0, g.amount) / totalAmount) : Math.floor(shipping / ids.length));\n  shippingLeft -= share;\n  const opensAt = g.p.opens_at ? Date.parse(g.p.opens_at) : NaN;\n  const before = Number.isFinite(consentAt) && Number.isFinite(opensAt) && consentAt <= opensAt;\n  out.push({ json: {\n    rattachee: keyOk,\n    motif: keyOk ? null : 'clé d’empreinte client non configurée (paramètre cle_empreinte_client) : rien n’est envoyé',\n    sku: g.p.reservation_sku,\n    predrop_id: id,\n    order_id: i === 0 ? String(order.id) : `${order.id}#${i + 1}`,\n    order_name: order.name,\n    customer_key: customerKey,\n    qty: g.qty,\n    amount_paid_ttc: chf(Math.max(0, g.amount)),\n    shipping_paid_ttc: chf(Math.max(0, share)),\n    paid_at: order.processed_at || order.created_at,\n    priority_access: consent && before && !!g.p.alert_tag && tags.includes(String(g.p.alert_tag).toLowerCase()),\n    date_drop: g.p.drop_date || null, // variable de l'email 15 (aucun prix, aucune quantité restante)\n  } });\n});\nunknown.forEach((sku) => out.push({ json: { rattachee: false, motif: 'SKU de réservation inconnu du moteur', sku,\n  order_name: order.name, order_id: String(order.id) } }));\nreturn out;\n"
+      },
+      "id": "40f0d341-e5b7-5c90-95c2-a1762a256dd7",
+      "name": "Préparer les réservations (une par pré-drop)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        240
+      ],
+      "notes": "Identifiant client lu seulement pour être haché au nœud suivant ; accès prioritaire = étiquette alerte-produit:<handle> et consentement marketing confirmé (attestation de la boutique).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "538b13f3-376f-524e-8461-248335d8d004",
+              "leftValue": "={{ $json.rattachee }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "1f94f7a6-463c-55a2-8da5-0bb753b37859",
+      "name": "Réservation rattachée à un pré-drop ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2240,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $json.customer_key }}",
+        "dataPropertyName": "customer_ref",
+        "secret": "={{ $('Paramètres — commande').first().json.cle_empreinte_client }}",
+        "encoding": "hex"
+      },
+      "id": "536ec905-4bc6-5e95-860d-d1d6352724c4",
+      "name": "Empreinte client (HMAC-SHA256, clé secrète)",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        2520,
+        180
+      ],
+      "notes": "Revue pré-drop (PDL-09) : HMAC avec la clé secrète du paramètre cle_empreinte_client (jamais dans le dépôt, renouvelée après chaque pré-drop soldé : les anciennes empreintes ne sont alors plus rattachables à personne) ; le moteur ne reçoit que l'empreinte (limite par client) : jamais l'identifiant, l'email ni le nom.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — commande').first().json.api_base_url }}/predrop/reservations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ predrop_id: $json.predrop_id, order_id: $json.order_id, customer_ref: $json.customer_ref, qty: $json.qty, amount_paid_ttc: $json.amount_paid_ttc, shipping_paid_ttc: $json.shipping_paid_ttc, paid_at: $json.paid_at, priority_access: $json.priority_access }) }}"
+      },
+      "id": "98d5c662-3c4e-5763-a343-9e3cc63f073c",
+      "name": "Enregistrer la réservation payée (POST /predrop/reservations)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2800,
+        180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n02Cmd",
+          "name": "Pokeshop API — jeton nommé n8n-02-commandes"
+        }
+      },
+      "notes": "Idempotente par commande (rejeu du webhook : sans effet). Jamais refusée pour un motif métier : non servie => remboursement intégral préparé (validation de la propriétaire aux niveaux 1 et 2).",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6fc13e78-ebb0-5304-aa19-cca2f5440c5e",
+              "leftValue": "={{ ($json.reservation || {}).status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "CONFIRMED"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "99b1ea2d-18d7-5608-8eef-c55fbbbb6c80",
+      "name": "Réservation servie ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3080,
+        120
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "75f65841-5317-570b-8399-9171e4656d8c",
+      "name": "Journal : réservation confirmée (servie en premier)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3360,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a0f0459e-654f-5a5a-9ab3-b09ff1bd54c6",
+              "leftValue": "={{ $json.created }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "a0e8b53e-21fe-57e4-8c89-8bdc7f1a375c",
+      "name": "Réservation nouvellement enregistrée ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3640,
+        60
+      ],
+      "notes": "Rejeu du webhook (réservation déjà enregistrée) : aucun second email.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ template: '15-pre-drop-reservation-confirmee', shopify_order_id: String($json.reservation.order_id).split('#')[0], variables: { date_drop: $('Préparer les réservations (une par pré-drop)').item.json.date_drop } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "8de17bdd-0dad-51f6-81d7-3bfaad0d284c",
+      "name": "Email au client : réservation garantie confirmée — outil d’emailing (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3920,
+        20
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Email 15 (docs/06-contenu/EMAILS) : en plus de la confirmation de commande Shopify ; garantie, aucune différence remboursée, ordre de service, annulation ; aucun prix ni quantité dans les variables (le montant payé figure dans la confirmation de commande). Destinataire retrouvé par la commande dans l'outil.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "64d09b0f-2d60-5dd0-99bb-45977fcbc77a",
+      "name": "Rejeu : email déjà envoyé",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3920,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d1aafe32-21d7-5ebd-916f-02d4ae0d813e",
+              "name": "sujet",
+              "value": "=[PRÉ-DROP] Réservation {{ $json.reservation.order_id }} non servie : remboursement intégral préparé",
+              "type": "string"
+            },
+            {
+              "id": "69f537a5-4bed-5e2d-bcc5-ca2bfc9edf06",
+              "name": "texte",
+              "value": "=Motif : {{ $json.reservation.not_served_reason }}. Remboursement {{ ($json.refund || {}).refund_id }} ({{ ($json.refund || {}).status }}) : intégral, supplément compris. Niveaux 1 et 2 : validation en un clic depuis votre terminal (POST /predrop/refunds/<id>/approve, votre jeton) ; le workflow 02 l'exécute ensuite.\nINTERNE — ne jamais transférer ni publier.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "4d488a86-ea58-5dcc-85ff-028e4ec3c1f7",
+      "name": "Préparer l’avis : réservation non servie (remboursement préparé)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3360,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — commande').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b7201e14-a465-5a8d-84d1-9db6a81c1dcd",
+      "name": "Avis : réservation non servie (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        3640,
+        180
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — commande').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Commande ' + $('Préparer les réservations (une par pré-drop)').first().json.order_name + ' : réservation pré-drop payée NON enregistrée par le moteur (' + (($json.error && ($json.error.message || $json.error.description)) || 'erreur') + ')', kind: 'PREDROP_RESERVATION_NON_ENREGISTREE', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: '02-commande:' + $('Préparer les réservations (une par pré-drop)').first().json.order_name, proposed_action: 'Une commande payée n’est jamais perdue : la rattacher à la main (propriétaire) ou la rembourser intégralement ; vérifier la dette de la photo du stop-loss.', actor: 'n8n:02-commande-livraison', simulation: $('Paramètres — commande').first().json.simulation }) }}"
+      },
+      "id": "685fbf28-5a0c-540b-b06b-9c0c4ac4de96",
+      "name": "Incident : réservation pré-drop non enregistrée",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        280
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n02Cmd",
+          "name": "Pokeshop API — jeton nommé n8n-02-commandes"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — commande').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Commande ' + $json.order_name + ' : réservation ' + $json.sku + ' non enregistrée (' + $json.motif + ')', kind: 'PREDROP_RESERVATION_NON_RATTACHEE', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: '02-commande:' + $json.order_name, proposed_action: 'Commande payée : configurer la clé d’empreinte client dans n8n puis rejouer, ou rattacher la réservation au bon pré-drop (propriétaire, toute quantité acceptée) ou rembourser intégralement (frais de livraison compris) ; retirer une fiche orpheline.', actor: 'n8n:02-commande-livraison', simulation: $('Paramètres — commande').first().json.simulation }) }}"
+      },
+      "id": "3f291af8-4e3d-539d-9508-834235c3d6b4",
+      "name": "Incident : réservation non rattachée (SKU inconnu ou clé d’empreinte absente)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2520,
+        320
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n02Cmd",
+          "name": "Pokeshop API — jeton nommé n8n-02-commandes"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 7 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "aa93fa61-44b9-5749-b343-50cbbb365d46",
+      "name": "Chaque jour ouvré 07:30 — colis à remettre",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "0b63d8c2-76d9-5214-9a55-264658a8b89b",
+              "name": "workflow",
+              "value": "commande-livraison",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            },
+            {
+              "id": "8e3bda4f-bcf0-5aea-99f3-9ac6980679e8",
+              "name": "delai_expedition_jours_ouvres",
+              "value": 3,
+              "type": "number"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "b3531be9-68c1-5bd4-b899-778e9996cbea",
+      "name": "Paramètres — suivi",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        400
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-boutique.myshopify.com/admin/api/2026-10/graphql.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyAccessTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: 'query { orders(first: 100, query: \"financial_status:paid fulfillment_status:unfulfilled\") { nodes { name processedAt createdAt } } }' }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b59d4144-d0ea-5bb4-b34a-0a085a62fc7c",
+      "name": "Lire les commandes payées non expédiées — Shopify (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        400
+      ],
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "pkshpShopifyAdm1",
+          "name": "Shopify Admin — app personnalisée"
+        }
+      },
+      "disabled": true,
+      "notes": "Lecture seule (Admin GraphQL). Activer avec le credential Shopify, après recette.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Commandes payées non expédiées au-delà du délai annoncé (jours ouvrés, jours fériés non comptés).\nconst params = $('Paramètres — suivi').first().json;\nconst data = $input.first().json;\nconst nodes = data && data.data && data.data.orders ? data.data.orders.nodes : null;\nif (!Array.isArray(nodes)) return []; // lecture Shopify non configurée : rien à signaler\nfunction businessDays(fromIso, to) {\n  const day = new Date(fromIso);\n  day.setUTCHours(12, 0, 0, 0);\n  const end = new Date(to);\n  end.setUTCHours(12, 0, 0, 0);\n  let count = 0;\n  while (day < end) {\n    day.setUTCDate(day.getUTCDate() + 1);\n    const w = day.getUTCDay();\n    if (w !== 0 && w !== 6) count += 1;\n  }\n  return count;\n}\nconst now = new Date();\nconst late = nodes\n  .map((o) => ({ order_name: o.name, paid_at: o.processedAt || o.createdAt, age: businessDays(o.processedAt || o.createdAt, now) }))\n  .filter((o) => o.age > Number(params.delai_expedition_jours_ouvres));\nif (!late.length) return [];\nconst lines = late.map((o) => `- ${o.order_name} : payée le ${o.paid_at}, ${o.age} jours ouvrés`);\nreturn [{ json: {\n  sujet: `[COLIS] ${late.length} commande(s) au-delà du délai d'expédition`,\n  texte: `Commandes payées non remises au transporteur :\\n${lines.join('\\n')}\\n\\nAction : préparer et déposer (SOP_PREPARATION_COLIS.md) ou informer le client du délai réel.`,\n} }];\n"
+      },
+      "id": "c7599505-814f-570c-a3bc-f7cc06c1457c",
+      "name": "Colis en retard ?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — suivi').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b681f325-f61c-5721-9243-56b6230ebb1b",
+      "name": "Alerter : colis en retard (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1120,
+        400
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 6 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "6c9adfa7-179b-56dd-a769-6e8884c72069",
+      "name": "Chaque lundi 06:30 — rapprochement des versements",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "0b63d8c2-76d9-5214-9a55-264658a8b89b",
+              "name": "workflow",
+              "value": "commande-livraison",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "e8579913-a93c-56e4-b6b2-aba3c911129a",
+      "name": "Paramètres — rapprochement",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        640
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-boutique.myshopify.com/admin/api/2026-10/graphql.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyAccessTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: 'query { shopifyPaymentsAccount { balanceTransactions(first: 100) { nodes { id type transactionDate fee { amount currencyCode } associatedOrder { id } } } } }' }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "63c65f8e-328f-597f-8f91-644a6e7cc08f",
+      "name": "Lire les transactions de versement — Shopify Payments (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        640
+      ],
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "pkshpShopifyAdm1",
+          "name": "Shopify Admin — app personnalisée"
+        }
+      },
+      "disabled": true,
+      "notes": "Lecture seule ; champs GraphQL à revérifier sur la version 2026-10 avant activation.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Frais réels du prestataire de paiement -> écritures PAYMENT de l'étoile polaire (montants en chaînes).\nconst data = $input.first().json;\nconst account = data && data.data ? data.data.shopifyPaymentsAccount : null;\nconst txs = account && account.balanceTransactions ? account.balanceTransactions.nodes : null;\nif (!Array.isArray(txs)) return []; // lecture non configurée : aucune écriture\nconst entries = txs\n  // Frais positifs seulement (revue R3) : un rôle ne déclare jamais un montant négatif ; un remboursement de\n  // frais passe par l'avoir de la commande (POST /orders/{id}/refunds) ou par la propriétaire.\n  // Revue R4 (R3-DOC-03) : UNE SEULE SOURCE PAR FRAIS — les frais d'une commande sont portés par POST /orders/shipped\n  // (payment_fees) ; ici, seulement les frais sans commande (abonnement, frais de versement). Le moteur refuse en\n  // plus tout PAYMENT portant l'order_id d'une commande enregistrée.\n  .filter((t) => !t.associatedOrder)\n  .filter((t) => t.fee && t.fee.currencyCode === 'CHF' && /^\\d+(\\.\\d{1,2})?$/.test(String(t.fee.amount)) && !/^0+(\\.0+)?$/.test(String(t.fee.amount)))\n  .map((t) => ({\n    entry_id: `psp:${t.id}:PAYMENT`,\n    at: t.transactionDate,\n    post: 'PAYMENT',\n    amount: String(t.fee.amount),\n    ref: String(t.id),\n    source: 'psp',\n    order_id: t.associatedOrder ? String(t.associatedOrder.id) : null,\n  }));\nif (!entries.length) return [];\nreturn [{ json: { entries, count: entries.length } }];\n"
+      },
+      "id": "71056c45-9ac8-5afd-b8ef-a9c0b49f3f38",
+      "name": "Frais de paiement réels vers écritures",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — rapprochement').first().json.api_base_url }}/northstar/entries",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ entries: $json.entries }) }}"
+      },
+      "id": "e859499d-12c3-579d-be83-da27508c993f",
+      "name": "Enregistrer les frais réels (étoile polaire)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        640
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n02Cmd",
+          "name": "Pokeshop API — jeton nommé n8n-02-commandes"
+        }
+      },
+      "notes": "Écritures idempotentes (entry_id psp:<transaction>) : un rejeu ne double rien. Identifiants order:, refund:, cost: réservés au moteur ; frais d'une commande : POST /orders/shipped seulement.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "06680f15-b793-579b-8416-aeb4e1ea0eac",
+              "name": "sujet",
+              "value": "=[RAPPROCHEMENT] {{ $json.added }} écriture(s) de frais PSP ajoutée(s)",
+              "type": "string"
+            },
+            {
+              "id": "3e16ca04-4087-5081-b8db-4cbd8bc283e9",
+              "name": "texte",
+              "value": "=Frais PSP réels enregistrés : {{ $json.added }} nouvelle(s) sur {{ $json.received }} reçue(s).\nÉcart paiement / versement : à expliquer dans la revue hebdomadaire (BL-166).",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "dd1183f7-5ec9-54ac-9155-5cd0558a94a1",
+      "name": "Résumé du rapprochement",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1400,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — rapprochement').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "fe01cd9a-0042-544a-aaad-e2281cc36d8d",
+      "name": "Envoyer le résumé du rapprochement (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1680,
+        640
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/30 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "693fbfdd-eda2-50de-8707-491d26e561ab",
+      "name": "Toutes les 30 min — remboursements pré-drop approuvés",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        919
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "0b63d8c2-76d9-5214-9a55-264658a8b89b",
+              "name": "workflow",
+              "value": "commande-livraison",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "20298fc4-5c28-55da-8ee4-e44703b46f23",
+      "name": "Paramètres — remboursements pré-drop",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        919
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — remboursements pré-drop').first().json.api_base_url }}/incidents?open_only=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "41d96518-83d0-5574-9a43-4daa00961612",
+      "name": "Garde : incidents ouverts (remboursements)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        919
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n02Cmd",
+          "name": "Pokeshop API — jeton nommé n8n-02-commandes"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "bcb1a531-847e-572e-964b-88fd95737c4e",
+              "leftValue": "={{ Object.keys($json.suspended || {}).some(t => t === $('Paramètres — remboursements pré-drop').first().json.workflow || t === '*') }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "e88b47a9-4922-55d4-9139-1255b184ab7a",
+      "name": "Workflow suspendu ? (remboursements)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        919
+      ],
+      "notes": "Suspension = incident ouvert sur ce workflow ou suspension globale de toutes les écritures (SOP_INCIDENTS §2).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "45419959-35f7-5aa6-ab0d-4c7ff8dedd09",
+      "name": "Remboursements suspendus (incident ouvert)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — remboursements pré-drop').first().json.api_base_url }}/predrop/refunds?status=APPROVED",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "f84a8b96-9cd5-56b7-a609-5caa7aec910d",
+      "name": "Remboursements approuvés (GET /predrop/refunds)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        919
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n02Cmd",
+          "name": "Pokeshop API — jeton nommé n8n-02-commandes"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Remboursements pré-drop APPROUVÉS (par la propriétaire en un clic aux niveaux 1-2, par le moteur à partir du\n// niveau 3) à exécuter chez le prestataire : montant INTÉGRAL (supplément et part des frais de livraison compris) lu\n// dans le moteur, jamais recalculé ; la part « livraison » est remboursée comme telle (shipping_ttc). Montant nul (bon\n// d'achat à 100 %) : rien à rembourser chez le prestataire, jamais envoyé.\nconst data = $input.first().json || {};\nconst refunds = Array.isArray(data.refunds) ? data.refunds : [];\nreturn refunds\n  .filter((r) => r && r.status === 'APPROVED' && Number(r.amount_ttc) > 0)\n  .map((r) => ({ json: {\n    refund_id: String(r.refund_id),\n    shopify_order_id: String(r.order_id).split('#')[0].replace(/\\D/g, ''),\n    amount_ttc: String(r.amount_ttc),\n    shipping_ttc: String(r.shipping_ttc || '0.00'),\n    reason: r.reason,\n  } }));\n"
+      },
+      "id": "4f0748d0-6d39-566d-879b-0e417d0ebcc5",
+      "name": "Un remboursement par élément",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        919
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-boutique.myshopify.com/admin/api/2026-10/graphql.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyAccessTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: 'mutation($input: RefundInput!, $key: String!) { refundCreate(input: $input) @idempotent(key: $key) { refund { id createdAt } userErrors { field message } } }', variables: { key: $json.refund_id, input: { orderId: 'gid://shopify/Order/' + $json.shopify_order_id, notify: false, note: 'Remboursement intégral pré-drop (supplément et frais de livraison compris) : ' + $json.refund_id, shipping: { amount: $json.shipping_ttc }, transactions: [{ orderId: 'gid://shopify/Order/' + $json.shopify_order_id, kind: 'REFUND', gateway: 'shopify_payments', amount: $json.amount_ttc }] } } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "6138978d-b672-5f08-a04b-3b6ef16ee3f0",
+      "name": "Rembourser intégralement — Shopify refundCreate (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        919
+      ],
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "pkshpShopifyAdm1",
+          "name": "Shopify Admin — app personnalisée"
+        }
+      },
+      "disabled": true,
+      "notes": "Écriture d'argent : activer au niveau 2 seulement, après recette (forme de refundCreate, transaction parente et passerelle à revérifier sur la version 2026-10). @idempotent (clé = identifiant du remboursement) : jamais deux remboursements, même rejoué. Montant intégral lu dans le moteur (frais de livraison payés compris, part « livraison » dans shipping).",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Bilan du remboursement chez le prestataire : seul un remboursement CONFIRMÉ (identifiant renvoyé, aucune erreur)\n// est relevé au moteur ; nœud désactivé, erreur ou réponse non conforme => rien n'est relevé (nouvel essai au passage\n// suivant, même clé d'idempotence : jamais deux remboursements).\nconst source = $('Un remboursement par élément').all();\nreturn $input.all().map((item, i) => {\n  const j = item.json || {};\n  const base = (source[i] || {}).json || {};\n  const r = j.data && j.data.refundCreate;\n  const ok = !j.error && !!r && !!r.refund && !!r.refund.id && Array.isArray(r.userErrors) && r.userErrors.length === 0;\n  let motif = 'réponse non conforme';\n  if (ok) motif = 'remboursement confirmé par le prestataire';\n  else if (j.error) motif = `échec (${(j.error && j.error.message) || 'erreur'})`;\n  else if (!j.data && j.refund_id) motif = 'non branché (nœud désactivé)';\n  return { json: Object.assign({}, base, {\n    confirme: ok,\n    psp_refund_ref: ok ? String(r.refund.id) : null,\n    executed_at: ok ? String(r.refund.createdAt || new Date().toISOString()) : null,\n    motif,\n  }) };\n});\n"
+      },
+      "id": "367a0b52-ade4-56b7-b12a-48b2c59423c8",
+      "name": "Bilan du remboursement (prestataire)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        919
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a2479d83-8edc-53c4-8b7e-d3b7673b64c8",
+              "leftValue": "={{ $json.confirme }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "aff053a9-5b15-5de2-8db0-e6ae2513fe29",
+      "name": "Remboursement confirmé par le prestataire ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2240,
+        919
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "3ee4ffd9-d6bc-56aa-afc8-a2ecc87e8d66",
+      "name": "Non confirmé : rien n’est relevé (nouvel essai au passage suivant)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2520,
+        1040
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — remboursements pré-drop').first().json.api_base_url }}/predrop/refunds/{{ encodeURIComponent($json.refund_id) }}/executed",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ executed_at: $json.executed_at, psp_refund_ref: $json.psp_refund_ref }) }}"
+      },
+      "id": "5c3142b6-6de5-5fb2-813f-863a34279d8e",
+      "name": "Relever le remboursement exécuté (POST /predrop/refunds/{id}/executed)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2520,
+        880
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n02Cmd",
+          "name": "Pokeshop API — jeton nommé n8n-02-commandes"
+        }
+      },
+      "notes": "Seule sortie de la dette d'une réservation remboursée (photo du stop-loss) ; même référence : sans effet.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "645a7678-4c8a-50ab-bbee-e4cf30133073",
+              "leftValue": "={{ $json.changed }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "f4ab7b82-2361-5eb8-9770-7ee5b5267697",
+      "name": "Premier relevé ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2800,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-outil-emailing.exemple.invalid/api/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ template: '18-pre-drop-remboursement', shopify_order_id: String($json.refund.order_id).split('#')[0], variables: { montant_rembourse: $json.refund.amount_ttc, motif_remboursement: $json.refund.reason_fr } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "914ff5e8-af13-545f-b3a6-166d258bd074",
+      "name": "Email au client : remboursement intégral — outil d’emailing (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        840
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpEmailing001",
+          "name": "Outil d'emailing — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Email 18 (docs/06-contenu/EMAILS) : montant intégral (supplément compris) et motif en français lus dans le moteur (reason_fr, sans terme interne), jamais recalculés ; le destinataire est retrouvé par la commande dans l'outil (aucune adresse ici). Le brouillon du moteur (email_draft) reste la référence de la propriétaire.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "b1d3e7a0-3081-5d8b-9984-fa6afe0923ee",
+      "name": "Déjà relevé : aucun nouvel email",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3080,
+        960
+      ]
+    }
+  ],
+  "connections": {
+    "Shopify : commande payée (orders/paid)": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — commande",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — commande": {
+      "main": [
+        [
+          {
+            "node": "Contrôle doublon (idempotence)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contrôle doublon (idempotence)": {
+      "main": [
+        [
+          {
+            "node": "Normaliser la commande (centimes, sans donnée personnelle)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliser la commande (centimes, sans donnée personnelle)": {
+      "main": [
+        [
+          {
+            "node": "Anomalie ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anomalie ?": {
+      "main": [
+        [
+          {
+            "node": "Ouvrir un incident commande",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Réserver le stock local — route moteur attendue (désactivé)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Réservation pré-drop dans la commande ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Réserver le stock local — route moteur attendue (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Bon de préparation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bon de préparation": {
+      "main": [
+        [
+          {
+            "node": "Tâche colis HUMAINE — notifier la responsable (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tâche colis HUMAINE — notifier la responsable (email, désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Journal : commande prise en charge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Réservation pré-drop dans la commande ?": {
+      "main": [
+        [
+          {
+            "node": "Pré-drops du moteur (GET /predrop/offers)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aucune réservation pré-drop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pré-drops du moteur (GET /predrop/offers)": {
+      "main": [
+        [
+          {
+            "node": "Préparer les réservations (une par pré-drop)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer les réservations (une par pré-drop)": {
+      "main": [
+        [
+          {
+            "node": "Réservation rattachée à un pré-drop ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Réservation rattachée à un pré-drop ?": {
+      "main": [
+        [
+          {
+            "node": "Empreinte client (HMAC-SHA256, clé secrète)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Incident : réservation non rattachée (SKU inconnu ou clé d’empreinte absente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Empreinte client (HMAC-SHA256, clé secrète)": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer la réservation payée (POST /predrop/reservations)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer la réservation payée (POST /predrop/reservations)": {
+      "main": [
+        [
+          {
+            "node": "Réservation servie ?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Incident : réservation pré-drop non enregistrée",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Réservation servie ?": {
+      "main": [
+        [
+          {
+            "node": "Journal : réservation confirmée (servie en premier)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Préparer l’avis : réservation non servie (remboursement préparé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Journal : réservation confirmée (servie en premier)": {
+      "main": [
+        [
+          {
+            "node": "Réservation nouvellement enregistrée ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Réservation nouvellement enregistrée ?": {
+      "main": [
+        [
+          {
+            "node": "Email au client : réservation garantie confirmée — outil d’emailing (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejeu : email déjà envoyé",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer l’avis : réservation non servie (remboursement préparé)": {
+      "main": [
+        [
+          {
+            "node": "Avis : réservation non servie (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chaque jour ouvré 07:30 — colis à remettre": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — suivi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — suivi": {
+      "main": [
+        [
+          {
+            "node": "Lire les commandes payées non expédiées — Shopify (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire les commandes payées non expédiées — Shopify (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Colis en retard ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Colis en retard ?": {
+      "main": [
+        [
+          {
+            "node": "Alerter : colis en retard (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chaque lundi 06:30 — rapprochement des versements": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — rapprochement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — rapprochement": {
+      "main": [
+        [
+          {
+            "node": "Lire les transactions de versement — Shopify Payments (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire les transactions de versement — Shopify Payments (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Frais de paiement réels vers écritures",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Frais de paiement réels vers écritures": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer les frais réels (étoile polaire)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer les frais réels (étoile polaire)": {
+      "main": [
+        [
+          {
+            "node": "Résumé du rapprochement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Résumé du rapprochement": {
+      "main": [
+        [
+          {
+            "node": "Envoyer le résumé du rapprochement (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Garde : incidents ouverts (remboursements)": {
+      "main": [
+        [
+          {
+            "node": "Workflow suspendu ? (remboursements)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Toutes les 30 min — remboursements pré-drop approuvés": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — remboursements pré-drop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — remboursements pré-drop": {
+      "main": [
+        [
+          {
+            "node": "Garde : incidents ouverts (remboursements)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow suspendu ? (remboursements)": {
+      "main": [
+        [
+          {
+            "node": "Remboursements suspendus (incident ouvert)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Remboursements approuvés (GET /predrop/refunds)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remboursements approuvés (GET /predrop/refunds)": {
+      "main": [
+        [
+          {
+            "node": "Un remboursement par élément",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Un remboursement par élément": {
+      "main": [
+        [
+          {
+            "node": "Rembourser intégralement — Shopify refundCreate (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rembourser intégralement — Shopify refundCreate (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Bilan du remboursement (prestataire)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bilan du remboursement (prestataire)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bilan du remboursement (prestataire)": {
+      "main": [
+        [
+          {
+            "node": "Remboursement confirmé par le prestataire ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remboursement confirmé par le prestataire ?": {
+      "main": [
+        [
+          {
+            "node": "Relever le remboursement exécuté (POST /predrop/refunds/{id}/executed)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Non confirmé : rien n’est relevé (nouvel essai au passage suivant)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relever le remboursement exécuté (POST /predrop/refunds/{id}/executed)": {
+      "main": [
+        [
+          {
+            "node": "Premier relevé ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Premier relevé ?": {
+      "main": [
+        [
+          {
+            "node": "Email au client : remboursement intégral — outil d’emailing (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Déjà relevé : aucun nouvel email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Zurich",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "saveExecutionProgress": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "pkshp04Incidents"
+  },
+  "pinData": {},
+  "staticData": null,
+  "tags": [],
+  "versionId": "bfc652bf-cff0-52c5-9806-fd8947abcf5a",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

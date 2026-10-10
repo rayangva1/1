@@ -1,0 +1,1855 @@
+"""Construction des charges ``productSet`` publiques depuis le catalogue validé (agent integrations).
+
+Principes (BP §5-§7, SPEC §0.2 et §2.6) :
+
+* **Liste blanche stricte** (:data:`PRODUCT_INPUT_SCHEMA`) : titre exact (format + extension +
+  langue), description, images autorisées, prix CHF, SKU boutique, code-barres, statut
+  ``DRAFT`` / ``ACTIVE``, SEO, métachamps ``boutique.*`` et tags miroirs **exactement** comme
+  le contrat du thème (``site/shopify/STRUCTURE_BOUTIQUE.md`` §2 : statut de stock, langue,
+  extension, format, contenu validé, date de sortie et statut, délai, quantité maximale,
+  alerte réassort, fin de série ; tags ``statut:*``, ``ext:<slug>``, ``nouveaute``,
+  ``cadeau``). Tout autre champ est refusé par :func:`assert_no_sensitive_fields`, appelée à la
+  construction **et** par le client Shopify avant tout envoi.
+* Aucune donnée de coût, marge, fournisseur, prix B2B ni donnée personnelle (clés et valeurs
+  analysées ; termes internes fournis par l'appelant : identifiants et SKU fournisseurs).
+* Aucun stock dans la fiche : la quantité passe uniquement par ``inventorySetQuantities`` avec
+  contrôle de concurrence ; ``inventoryPolicy = DENY`` (aucune vente à découvert).
+* **Nouvelle référence -> brouillon.** Publication automatique (niveau 3) seulement si la règle
+  de catégorie est validée, tous les champs présents, les droits d'images acquis, le contenu
+  validé et la décision de prix ``OK`` (BP §6).
+* **Prix** : celui de la décision ``OK`` du moteur, ou celui d'une **approbation de la
+  propriétaire** enregistrée côté moteur (:class:`PriceApprovalBook`, route propriétaire
+  ``POST /pricing/approvals`` ; jamais un champ libre de requête). Une approbation lève le
+  plafond de 5 %/jour et la revue, **jamais** le plancher dur 12 % / 8 CHF (sauf exception
+  écrite C18 référencée) ni le contrôle ×10. Variation au-delà du plafond journalier (5 %) ou ×10 :
+  aucun nouveau prix sans approbation ; décision ``DRAFT`` ou ``BLOCKED`` : aucun nouveau prix
+  public. Ce module ne produit **aucune** écriture de commande : le prix d'une commande conclue
+  n'est jamais modifié (il est figé dans ses lignes).
+* Référence en quarantaine ou bloquée par le stop-loss produit : dépubliée par une charge
+  **minimale** ``{"status": "DRAFT"}`` (ni prix, ni contenu, possible sans prix courant) ;
+  dernier prix validé conservé.
+* **Registres du moteur seulement** (revue R3, SEC-09 et R2-NEW-02, R2-NEW-05) : identifiant Shopify,
+  statut publié et dernier prix réellement publié viennent du registre des fiches publiées
+  (:class:`PublishedState`, journal ``shop_publications``), jamais de la fiche ; quand le prix du
+  moteur est écarté, le prix renvoyé est ce **dernier prix publié** (jamais un « prix courant »
+  déclaré), sinon rien n'est publié actif. Les validations humaines (fiche approuvée, contenu
+  validé, règle de catégorie) viennent du registre de la propriétaire (:class:`CatalogApprovalBook`,
+  ``POST /catalog/approvals``), liées au contenu exact de la fiche (:func:`listing_digest`).
+* **Statut de stock** recalculé par le moteur (stock local vendable, allocation ferme) : le statut
+  déclaré par l'appelant n'est jamais publié tel quel ; nouvelle référence sans stock : brouillon.
+* **Petits produits** (règle active seulement avec un minimum de commande imposé par la boutique) :
+  étiquette ``petit-produit`` lue par la validation de panier.
+* Contenu public filtré : vocabulaire coûts/marges/fournisseurs (FR, DE, IT, EN), montants,
+  pourcentages, données personnelles, noms de fournisseurs ; étiquette ``ext:`` = métachamp
+  ``boutique.extension``.
+* **Pré-drop** (décision de la propriétaire du 6.10.2026, :mod:`pokeshop.predrop`) : la réservation garantie est
+  publiée comme une **fiche jumelle** « Réservation garantie — <titre> » (:func:`build_predrop_publication`) :
+  prix = prix pré-drop figé du moteur (planchers revérifiés au coût rendu connu), SKU
+  ``<SKU>-RESA-<AAAAMMJJ>`` (date du drop), inventaire = réservations encore ouvertes (poussé à part, jamais écrit
+  dans la fiche), **dépubliée au drop** (ou à la fermeture, ou sur blocage). La fiche normale n'est jamais
+  restructurée par le pré-drop : ``productSet`` a une sémantique « ensemble » ; ajouter puis retirer une variante
+  changerait ses options et pourrait recréer sa variante (et son article d'inventaire) le jour même où elle reçoit
+  le stock. Elle ne reçoit que des métachamps d'information (``boutique.date_drop``,
+  ``boutique.reservation_statut``, ``boutique.fiche_liee``, et les deux prix **figés** ``boutique.prix_drop`` et
+  ``boutique.prix_reservation`` affichés par l'encart). Revue pré-drop (PDL-02) : jusqu'au jour du drop inclus, son
+  **prix est figé au prix du drop** du pré-drop (planchers revérifiés) et la fiche de réservation est retirée tant que
+  la fiche normale écrite ne pratique pas ce prix ; son stock local est **retenu jusqu'au drop** et les unités des
+  réservations non expédiées restent hors vente (PDL-01). Aucun quota, compte à rebours, coût ni marge publiés :
+  statut « prioritaire / ouvertes / fermées » et date du drop seulement.
+"""
+
+from __future__ import annotations
+
+import re
+import threading
+import unicodedata
+import uuid
+from collections.abc import Collection, Mapping, Sequence
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+from enum import Enum
+from typing import Any, Literal
+
+from pydantic import Field, field_validator, model_validator
+
+from .catalog import (
+    FORMAT_LABELS_FR,
+    NO_EXTENSION,
+    CatalogError,
+    ExtensionTable,
+    ProductFormat,
+    expected_language_for,
+    is_fictitious_gtin,
+    product_title_fr,
+    validate_gtin,
+)
+from .audit import StateJournal, StateStoreError
+from .errors import PokeshopError
+from .models import (
+    AvailabilityPromise,
+    DecisionStatus,
+    FrozenModel,
+    PriceDecision,
+    PricingParams,
+    ProductIdentity,
+    PromiseKind,
+    canonical_hash,
+)
+from .pricing import is_price_anomaly, price_floor_violations, q2, small_product_rule_active
+
+__all__ = [
+    "HARD_BLOCKER_CODES",
+    "PUBLIC_METAFIELD_NAMESPACE",
+    "PUBLIC_METAFIELDS",
+    "PRODUCT_INPUT_SCHEMA",
+    "SENSITIVE_KEY_FRAGMENTS",
+    "PublishError",
+    "SensitiveFieldError",
+    "ImageRights",
+    "PublicImage",
+    "StockStatus",
+    "stock_status_from_promise",
+    "stock_status_for",
+    "ReleaseDateStatus",
+    "ShopStatus",
+    "CatalogListing",
+    "ENGINE_OWNED_LISTING_FIELDS",
+    "HUMAN_VALIDATION_FIELDS",
+    "refuse_declared_listing_fields",
+    "listing_digest",
+    "PublishedState",
+    "ListingApproval",
+    "CatalogApprovalBook",
+    "CatalogApprovalPersistenceError",
+    "PriceValidation",
+    "PriceApprovalBook",
+    "PriceApprovalPersistenceError",
+    "MAX_APPROVAL_VALIDITY",
+    "PublishBlocker",
+    "BLOCKER_LABELS_FR",
+    "PlanOutcome",
+    "PublicationPlan",
+    "assert_no_sensitive_fields",
+    "assert_metafields_public",
+    "assert_protective_payload",
+    "sensitive_violations",
+    "SMALL_PRODUCT_TAG",
+    "forbidden_claims",
+    "slugify",
+    "build_publication",
+    "listing_handle",
+    "PREDROP_TAG",
+    "PREDROP_TITLE_PREFIX",
+    "PREDROP_PRODUCT_TYPE",
+    "PREDROP_PUBLICATION_SUFFIX",
+    "ReservationPhase",
+    "PredropPublication",
+    "predrop_reservation_sku",
+    "predrop_reservation_handle",
+    "reservation_sku_of",
+    "reservation_publication_key",
+    "build_predrop_publication",
+]
+
+PUBLIC_METAFIELD_NAMESPACE = "boutique"
+"""Espace de noms lu par le thème (``site/shopify/STRUCTURE_BOUTIQUE.md`` §2)."""
+PUBLIC_METAFIELDS: dict[str, str] = {
+    "statut_stock": "single_line_text_field",
+    "langue": "single_line_text_field",
+    "extension": "single_line_text_field",
+    "format": "single_line_text_field",
+    "contenu_valide": "multi_line_text_field",
+    "date_sortie": "date",
+    "date_sortie_statut": "single_line_text_field",
+    "delai_expedition": "single_line_text_field",
+    "quantite_max": "number_integer",
+    "alerte_reassort": "boolean",
+    "fin_de_serie": "boolean",
+    "date_drop": "date",
+    "reservation_statut": "single_line_text_field",
+    "fiche_liee": "single_line_text_field",
+    "prix_drop": "single_line_text_field",
+    "prix_reservation": "single_line_text_field",
+}
+"""Seuls métachamps publiables (clé -> type Shopify), contrat du thème. Pré-drop : date du drop, statut des
+réservations (``prioritaire`` · ``ouvertes`` · ``fermees``), handle de la fiche jumelle et les deux prix **figés** du
+moteur en texte décimal (``prix_drop``, ``prix_reservation`` : affichés « CHF 209.90 » par l'encart, égaux aux prix
+natifs vérifiés des deux fiches) — jamais un quota."""
+
+_S = "str"
+_B = "bool"
+PRODUCT_INPUT_SCHEMA: dict[str, Any] = {
+    "title": _S,
+    "handle": _S,
+    "status": _S,
+    "descriptionHtml": _S,
+    "productType": _S,
+    "tags": [_S],
+    "productOptions": [{"name": _S, "values": [{"name": _S}]}],
+    "variants": [
+        {
+            "optionValues": [{"optionName": _S, "name": _S}],
+            "price": _S,
+            "barcode": _S,
+            "inventoryPolicy": _S,
+            "inventoryItem": {"sku": _S, "tracked": _B},
+        }
+    ],
+    "files": [{"originalSource": _S, "alt": _S, "contentType": _S}],
+    "metafields": [{"namespace": _S, "key": _S, "type": _S, "value": _S}],
+    "seo": {"title": _S, "description": _S},
+}
+"""Structure exacte autorisée d'un ``ProductSetInput`` public (toute autre clé = violation)."""
+
+SENSITIVE_KEY_FRAGMENTS: tuple[str, ...] = (
+    "cost",
+    "cout",
+    "marg",
+    "supplier",
+    "fournisseur",
+    "b2b",
+    "purchase",
+    "achat",
+    "landed",
+    "contribution",
+    "floor",
+    "plancher",
+    "wholesale",
+    "grossiste",
+    "profit",
+    "vendor",
+    "internal",
+    "interne",
+    "unitcost",
+    "fx",
+    "invoice",
+    "facture",
+    "customer",
+    "client",
+    "email",
+    "phone",
+    "telephone",
+    "address",
+    "adresse",
+)
+"""Fragments de nom de clé révélant une donnée interne ou personnelle (comparaison sans accents ni casse)."""
+
+_SENSITIVE_VALUE_RE = re.compile(
+    r"\b(prix\s+d\W?achat|prix\s+net|prix\s+de\s+revient|revient|couts?|marges?|margins?|margine|"
+    r"fournisseurs?|fornitor[ei]|grossistes?|grossista|b2b|wholesale|landed|contributions?|costs?|suppliers?|"
+    r"purchase|prix\s+plancher|coefficient|benefices?|profits?|rendements?|distributeurs?|distributors?|"
+    r"distrib|revendeurs?|resellers?|remises?\s+(revendeur|grossiste|fournisseur|pro)|tarifs?\s+pro|"
+    r"prix\s+pro|mark\W?up|ricarico|guadagno|prezzo\s+d\W?acquisto|einkauf\w*|lieferant\w*|"
+    r"handler\w*|grosshandel\w*|gewinn\w*|selbstkosten|haendler\w*|bon\s+de\s+livraison|"
+    r"bon\s+de\s+commande|purchase\s+order|commande\s+n\W?\s*po|po-\d+)\b"
+)
+"""Vocabulaire interne (coûts, marges, fournisseurs, conditions d'achat ; FR, DE, IT, EN), texte replié sans accents."""
+_INTERNAL_PRICE_RE = re.compile(
+    r"\bp[av]\s*[:=]?\s*(chf\s*|eur\s*)?\d{1,6}[.,]\d{2}\b|\d\s*(chf\s*)?ht\b|\bprix\s+ht\b|\bhors\s+taxes?\b"
+)
+"""Abréviations d'achat/vente suivies d'un montant (« PA 98.50 », « PV 154.90 ») et montants HT."""
+_AMOUNT_RE = re.compile(
+    r"(?<![\d.,])\d{1,6}[.,]\d{2}(?![\d.,])|\d\s*(chf|eur|usd|fr\.|€|\$)|(chf|eur|usd|€|\$)\s*\d|\d\s*%"
+)
+"""Montant, devise ou pourcentage dans un texte public : le prix public passe **uniquement** par ``variants[].price``."""
+_SLUG_AMOUNT_RE = re.compile(r"\b(pa|pv|prix|chf|eur|usd)( \d+)+\b|\b(\d+ )+(chf|eur|usd)\b")
+_EMAIL_RE = re.compile(
+    r"[\w.+-]+@[\w-]+(\.[\w-]+)+|[\w.+-]+\s*(\[at\]|\(at\)|\{at\}|\s(at|arobase)\s)\s*[\w-]+\s*"
+    r"(\[dot\]|\(dot\)|\{dot\}|\.|\s(dot|point)\s)\s*\w{2,}",
+    re.IGNORECASE,
+)
+_PHONE_RE = re.compile(
+    r"(?<!\d)(\+|00)\d{1,3}[\s./-]?\(?\d{1,4}\)?([\s./-]?\d{2,4}){2,5}(?!\d)"
+    r"|(?<!\d)0\d{2}[\s./-]?\d{3}[\s./-]?\d{2}[\s./-]?\d{2}(?!\d)"
+)
+_ADDRESS_RE = re.compile(
+    r"\b(rue|avenue|av\.|chemin|ch\.|route|boulevard|bd|impasse|quai|strasse|str\.|gasse|weg|platz|via|viale)"
+    r"\s+[^,<]{1,40}?\s\d{1,4}\w?\s*,?\s*(ch-)?\d{4}\b"
+)
+"""Adresse postale (voie + numéro + NPA à 4 chiffres) : donnée personnelle."""
+_IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}(?:\s?[A-Z0-9]{1,3})?\b")
+_PRICE_RE = re.compile(r"^\d{1,6}\.\d{2}$")
+_HANDLE_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+_TAG_RE = re.compile(
+    r"^(statut:(stock-local|precommande|rupture)|ext:[a-z0-9]+(-[a-z0-9]+)*|nouveaute|cadeau|petit-produit"
+    r"|reservation-garantie)$"
+)
+SMALL_PRODUCT_TAG = "petit-produit"
+"""Étiquette des petits produits (règle « frais par commande exclus ») : la validation de panier de la
+boutique refuse un panier composé uniquement de ces produits sous ``small_product_min_order_ttc``."""
+_TEXT_METAFIELDS = frozenset({"contenu_valide", "delai_expedition", "extension", "format"})
+_SKU_RE = re.compile(r"^[A-Z0-9][A-Z0-9._-]{2,60}$")
+_UNSAFE_HTML_RE = re.compile(r"<\s*(script|iframe|object|embed|form)|javascript:|\son\w+\s*=", re.IGNORECASE)
+_TAG_STRIP_RE = re.compile(r"<[^>]+>")
+_CLAIMS: tuple[str, ...] = (
+    "investissement",
+    "investir",
+    "placement",
+    "valeur future",
+    "prendra de la valeur",
+    "plus-value",
+    "plus value",
+    "rentabilite garantie",
+    "carte rare garantie",
+    "hit garanti",
+    "rare garanti",
+    "boutique officielle",
+    "revendeur officiel",
+    "partenaire officiel",
+    "distributeur officiel",
+    "stock illimite",
+)
+"""Promesses interdites (BP §7 : ni carte rare ni valeur financière promises ; BP §8 : pas de statut officiel)."""
+
+
+class PublishError(PokeshopError, ValueError):
+    """Charge de publication invalide."""
+
+
+class SensitiveFieldError(PublishError):
+    """Champ interne, sensible ou hors liste blanche dans une charge publique (SPEC §2.6)."""
+
+    def __init__(self, violations: Sequence[str]) -> None:
+        self.violations = tuple(violations)
+        super().__init__("Charge publique refusée : " + " ; ".join(self.violations))
+
+
+def _fold(text: str) -> str:
+    norm = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in norm if not unicodedata.combining(c)).lower()
+
+
+def _key_fold(key: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", _fold(key))
+
+
+def slugify(text: str) -> str:
+    """Handle Shopify : minuscules ASCII, chiffres et tirets."""
+    slug = re.sub(r"[^a-z0-9]+", "-", _fold(text)).strip("-")
+    return re.sub(r"-{2,}", "-", slug)[:200].strip("-")
+
+
+def forbidden_claims(*texts: str | None) -> list[str]:
+    """Promesses interdites trouvées dans les textes publics (vide = conforme)."""
+    found: list[str] = []
+    for text in texts:
+        if not text:
+            continue
+        folded = _fold(_TAG_STRIP_RE.sub(" ", text))
+        for claim in _CLAIMS:
+            if claim in folded and claim not in found:
+                found.append(claim)
+    return found
+
+
+_STRUCTURAL_KEYS = frozenset(
+    {"price", "barcode", "sku", "originalSource", "contentType", "namespace", "key", "type", "status",
+     "inventoryPolicy", "handle", "tags"}
+)
+"""Champs structurés (validés par format) : seuls vocabulaire et références internes y sont cherchés."""
+
+
+def _scan_value(value: str, path: str, terms: Sequence[str], out: list[str], *, free_text: bool = True) -> None:
+    folded = _fold(value)
+    plain = _fold(_TAG_STRIP_RE.sub(" ", value))
+    for pattern in (_SENSITIVE_VALUE_RE, _INTERNAL_PRICE_RE):
+        match = pattern.search(plain)
+        if match:
+            out.append(f"{path} : terme interne « {match.group(0)} »")
+    for term in terms:
+        t = _fold(term).strip()
+        if len(t) >= 3 and (t in folded or t in plain):
+            out.append(f"{path} : référence interne « {term} »")
+    if not free_text:
+        return
+    if _EMAIL_RE.search(value):
+        out.append(f"{path} : adresse email (donnée personnelle)")
+    if _PHONE_RE.search(value) and not value.startswith("https://"):
+        out.append(f"{path} : numéro de téléphone (donnée personnelle)")
+    if _ADDRESS_RE.search(plain):
+        out.append(f"{path} : adresse postale (donnée personnelle)")
+    if _IBAN_RE.search(value.upper()) and not value.startswith("https://"):
+        out.append(f"{path} : IBAN ou numéro de compte")
+
+
+def _scan_slug(value: str, path: str, terms: Sequence[str], out: list[str]) -> None:
+    """Handle ou étiquette : mêmes contrôles sur le texte « dé-slugifié » (tirets -> espaces)."""
+    words = value.replace("-", " ").replace(":", " ")
+    _scan_value(words, path, terms, out)
+    if _SLUG_AMOUNT_RE.search(words):
+        out.append(f"{path} : montant dans un identifiant public")
+
+
+def _scan_amounts(value: str, path: str, out: list[str]) -> None:
+    """Texte public libre : aucun montant, devise ni pourcentage (prix uniquement dans ``variants[].price``)."""
+    match = _AMOUNT_RE.search(_fold(_TAG_STRIP_RE.sub(" ", value)))
+    if match:
+        out.append(f"{path} : montant ou pourcentage « {match.group(0).strip()} » dans un texte public")
+
+
+def _walk(obj: Any, schema: Any, path: str, terms: Sequence[str], out: list[str]) -> None:
+    if isinstance(schema, dict):
+        if not isinstance(obj, Mapping):
+            out.append(f"{path or 'racine'} : objet attendu")
+            return
+        for key, value in obj.items():
+            sub = f"{path}.{key}" if path else str(key)
+            folded = _key_fold(str(key))
+            if any(frag in folded for frag in SENSITIVE_KEY_FRAGMENTS):
+                out.append(f"{sub} : champ sensible (coût, marge, fournisseur ou donnée personnelle)")
+                continue
+            if key not in schema:
+                out.append(f"{sub} : champ hors liste blanche")
+                continue
+            _walk(value, schema[key], sub, terms, out)
+        return
+    if isinstance(schema, list):
+        if not isinstance(obj, (list, tuple)):
+            out.append(f"{path} : liste attendue")
+            return
+        for i, item in enumerate(obj):
+            _walk(item, schema[0], f"{path}[{i}]", terms, out)
+        return
+    if schema == _B:
+        if not isinstance(obj, bool):
+            out.append(f"{path} : booléen attendu")
+        return
+    if not isinstance(obj, str):
+        out.append(f"{path} : texte attendu (montants en chaîne, jamais de nombre flottant)")
+        return
+    leaf = re.sub(r"\[\d+\]$", "", path).rsplit(".", 1)[-1]
+    _scan_value(obj, path, terms, out, free_text=leaf not in _STRUCTURAL_KEYS)
+
+
+_METAFIELD_VALUES: dict[str, re.Pattern[str]] = {
+    "statut_stock": re.compile(r"^(stock_local|precommande|rupture)$"),
+    "date_sortie": re.compile(r"^\d{4}-\d{2}-\d{2}$"),
+    "date_sortie_statut": re.compile(r"^(confirmee|estimee|inconnue)$"),
+    "quantite_max": re.compile(r"^[1-9]\d{0,2}$"),
+    "alerte_reassort": re.compile(r"^(true|false)$"),
+    "fin_de_serie": re.compile(r"^(true|false)$"),
+    "langue": re.compile(r"^(FR|DE|IT|EN|JP)$"),
+    "date_drop": re.compile(r"^\d{4}-\d{2}-\d{2}$"),
+    "reservation_statut": re.compile(r"^(prioritaire|ouvertes|fermees)$"),
+    "fiche_liee": re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$"),
+    "prix_drop": re.compile(r"^[1-9]\d{0,5}\.\d{2}$"),
+    "prix_reservation": re.compile(r"^[1-9]\d{0,5}\.\d{2}$"),
+}
+
+
+def _check_metafield(mf: Mapping[str, Any], path: str, require_owner: bool, out: list[str]) -> None:
+    ns, key, typ = mf.get("namespace"), mf.get("key"), mf.get("type")
+    if ns != PUBLIC_METAFIELD_NAMESPACE or key not in PUBLIC_METAFIELDS:
+        out.append(f"{path} : métachamp non public ({ns}.{key})")
+    elif typ != PUBLIC_METAFIELDS[str(key)]:
+        out.append(f"{path} : type {typ!r} attendu {PUBLIC_METAFIELDS[str(key)]!r}")
+    else:
+        pattern = _METAFIELD_VALUES.get(str(key))
+        value = mf.get("value")
+        if pattern is not None and (not isinstance(value, str) or not pattern.match(value)):
+            out.append(f"{path} : valeur {value!r} invalide pour {ns}.{key}")
+    if require_owner and not re.match(r"^gid://shopify/Product/\d+$", str(mf.get("ownerId", ""))):
+        out.append(f"{path}.ownerId : gid://shopify/Product/<n> attendu")
+
+
+def sensitive_violations(product_input: Mapping[str, Any], *, sensitive_terms: Collection[str] = ()) -> list[str]:
+    """Liste des violations d'une charge ``ProductSetInput`` (vide = conforme)."""
+    out: list[str] = []
+    terms = tuple(sensitive_terms)
+    _walk(product_input, PRODUCT_INPUT_SCHEMA, "", terms, out)
+    if not isinstance(product_input, Mapping):
+        return out
+    status = product_input.get("status")
+    if status is not None and status not in ("DRAFT", "ACTIVE"):
+        out.append("status : DRAFT ou ACTIVE uniquement")
+    handle = product_input.get("handle")
+    if handle is not None and (not isinstance(handle, str) or not _HANDLE_RE.match(handle)):
+        out.append("handle : minuscules, chiffres et tirets")
+    elif isinstance(handle, str):
+        _scan_slug(handle, "handle", terms, out)
+    extension_values = [
+        mf.get("value")
+        for mf in product_input.get("metafields") or ()
+        if isinstance(mf, Mapping) and mf.get("namespace") == PUBLIC_METAFIELD_NAMESPACE and mf.get("key") == "extension"
+    ]
+    allowed_ext = {"ext:" + slugify(v) for v in extension_values if isinstance(v, str)}
+    ext_tags = 0
+    for i, tag in enumerate(product_input.get("tags") or ()):
+        if not isinstance(tag, str) or not _TAG_RE.match(tag):
+            out.append(f"tags[{i}] : étiquette invalide")
+            continue
+        _scan_slug(tag, f"tags[{i}]", terms, out)
+        if tag.startswith("ext:"):
+            ext_tags += 1
+            if tag not in allowed_ext:
+                out.append(f"tags[{i}] : étiquette d'extension différente du métachamp boutique.extension")
+    if ext_tags > 1:
+        out.append("tags : une seule étiquette d'extension")
+    free_texts: list[tuple[str, Any]] = [
+        ("title", product_input.get("title")),
+        ("descriptionHtml", product_input.get("descriptionHtml")),
+    ]
+    seo = product_input.get("seo")
+    if isinstance(seo, Mapping):
+        free_texts += [(f"seo.{k}", v) for k, v in seo.items()]
+    for i, f in enumerate(product_input.get("files") or ()):
+        if isinstance(f, Mapping):
+            free_texts.append((f"files[{i}].alt", f.get("alt")))
+    for i, mf in enumerate(product_input.get("metafields") or ()):
+        if isinstance(mf, Mapping) and mf.get("key") in _TEXT_METAFIELDS:
+            free_texts.append((f"metafields[{i}].value", mf.get("value")))
+    for path, text in free_texts:
+        if isinstance(text, str):
+            _scan_amounts(text, path, out)
+    for i, variant in enumerate(product_input.get("variants") or ()):
+        if not isinstance(variant, Mapping):
+            continue
+        price = variant.get("price")
+        if price is not None and (not isinstance(price, str) or not _PRICE_RE.match(price) or Decimal(price) <= 0):
+            out.append(f"variants[{i}].price : prix CHF > 0 au format 0.00")
+        if variant.get("inventoryPolicy") not in (None, "DENY"):
+            out.append(f"variants[{i}].inventoryPolicy : DENY obligatoire (aucune vente à découvert)")
+        barcode = variant.get("barcode")
+        if barcode is not None and (not isinstance(barcode, str) or not validate_gtin(barcode)):
+            out.append(f"variants[{i}].barcode : GTIN invalide")
+        sku = (
+            (variant.get("inventoryItem") or {}).get("sku")
+            if isinstance(variant.get("inventoryItem"), Mapping)
+            else None
+        )
+        if sku is not None and (not isinstance(sku, str) or not _SKU_RE.match(sku)):
+            out.append(f"variants[{i}].inventoryItem.sku : SKU boutique invalide")
+    for i, f in enumerate(product_input.get("files") or ()):
+        if not isinstance(f, Mapping):
+            continue
+        if not str(f.get("originalSource", "")).startswith("https://"):
+            out.append(f"files[{i}].originalSource : URL https obligatoire")
+        if f.get("contentType") not in (None, "IMAGE"):
+            out.append(f"files[{i}].contentType : IMAGE uniquement")
+    for i, mf in enumerate(product_input.get("metafields") or ()):
+        if isinstance(mf, Mapping):
+            _check_metafield(mf, f"metafields[{i}]", False, out)
+    for field in ("descriptionHtml",):
+        value = product_input.get(field)
+        if isinstance(value, str) and _UNSAFE_HTML_RE.search(value):
+            out.append(f"{field} : HTML actif interdit (script, iframe, gestionnaire d'événement)")
+    return list(dict.fromkeys(out))
+
+
+def assert_no_sensitive_fields(product_input: Mapping[str, Any], *, sensitive_terms: Collection[str] = ()) -> None:
+    """Lève :class:`SensitiveFieldError` si la charge contient autre chose que des champs publics."""
+    violations = sensitive_violations(product_input, sensitive_terms=sensitive_terms)
+    if violations:
+        raise SensitiveFieldError(violations)
+
+
+def assert_metafields_public(
+    metafields: Sequence[Mapping[str, Any]], *, sensitive_terms: Collection[str] = (), require_owner: bool = False
+) -> None:
+    """Contrôle d'une liste ``MetafieldsSetInput`` (métachamps publics uniquement)."""
+    out: list[str] = []
+    allowed = {"namespace", "key", "type", "value"} | ({"ownerId"} if require_owner else set())
+    for i, mf in enumerate(metafields):
+        path = f"metafields[{i}]"
+        if not isinstance(mf, Mapping):
+            out.append(f"{path} : objet attendu")
+            continue
+        for key in mf:
+            if key not in allowed:
+                out.append(f"{path}.{key} : champ hors liste blanche")
+        value = mf.get("value")
+        if not isinstance(value, str):
+            out.append(f"{path}.value : texte attendu")
+        else:
+            _scan_value(value, f"{path}.value", tuple(sensitive_terms), out)
+            if mf.get("key") in _TEXT_METAFIELDS:
+                _scan_amounts(value, f"{path}.value", out)
+        _check_metafield(mf, path, require_owner, out)
+    if out:
+        raise SensitiveFieldError(list(dict.fromkeys(out)))
+
+
+# --------------------------------------------------------------------- entrées
+
+
+class ImageRights(str, Enum):
+    """Droit d'usage d'une image (BP §7 : photos officielles autorisées ou photos propres)."""
+
+    SUPPLIER_WRITTEN_AUTHORIZATION = "SUPPLIER_WRITTEN_AUTHORIZATION"
+    OWN_PHOTO = "OWN_PHOTO"
+    UNKNOWN = "UNKNOWN"
+
+
+class PublicImage(FrozenModel):
+    """Image candidate ; seules les images autorisées entrent dans la charge."""
+
+    url: str
+    alt: str = Field(min_length=1, max_length=512)
+    rights: ImageRights = ImageRights.UNKNOWN
+    rights_ref: str | None = None
+    """Référence de l'autorisation écrite (email, contrat) pour une photo fournisseur."""
+
+    @field_validator("url")
+    @classmethod
+    def _https(cls, v: str) -> str:
+        if not v.startswith("https://"):
+            raise ValueError("URL d'image https obligatoire")
+        return v
+
+    @property
+    def authorized(self) -> bool:
+        """Photo propre, ou photo fournisseur avec autorisation écrite référencée."""
+        if self.rights is ImageRights.OWN_PHOTO:
+            return True
+        return self.rights is ImageRights.SUPPLIER_WRITTEN_AUTHORIZATION and bool(self.rights_ref)
+
+
+class StockStatus(str, Enum):
+    """Statut public de stock (``boutique.statut_stock``), issu de :func:`pokeshop.stock.availability_promise`."""
+
+    STOCK_LOCAL = "stock_local"
+    PRECOMMANDE = "precommande"
+    RUPTURE = "rupture"
+
+
+def stock_status_from_promise(promise: AvailabilityPromise) -> StockStatus:
+    """``LOCAL_STOCK`` -> stock_local ; ``PREORDER`` -> precommande ; ``UNAVAILABLE`` -> rupture (aucun faux stock)."""
+    return {
+        PromiseKind.LOCAL_STOCK: StockStatus.STOCK_LOCAL,
+        PromiseKind.PREORDER: StockStatus.PRECOMMANDE,
+        PromiseKind.UNAVAILABLE: StockStatus.RUPTURE,
+    }[promise.kind]
+
+
+class ReleaseDateStatus(str, Enum):
+    """Statut de la date de sortie (``boutique.date_sortie_statut``)."""
+
+    CONFIRMEE = "confirmee"
+    ESTIMEE = "estimee"
+    INCONNUE = "inconnue"
+
+
+class ShopStatus(str, Enum):
+    """Statuts publiables d'une fiche."""
+
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+
+
+class CatalogListing(FrozenModel):
+    """Fiche du catalogue validé destinée à la publication (aucun coût ni fournisseur ici)."""
+
+    product_key: str = Field(min_length=1)
+    identity: ProductIdentity
+    public_sku: str
+    """SKU boutique stable (``{FMT}-{CODEEXT}-{LANGUE}[-PRECO]``), jamais un SKU fournisseur."""
+    handle: str | None = None
+    description_html: str | None = Field(default=None, max_length=20_000)
+    images: tuple[PublicImage, ...] = ()
+    stock_status: StockStatus = StockStatus.RUPTURE
+    content_text: str | None = Field(default=None, max_length=2_000)
+    """Contenu confirmé par écrit (``boutique.contenu_valide``)."""
+    release_date: date | None = None
+    release_date_status: ReleaseDateStatus = ReleaseDateStatus.INCONNUE
+    shipping_delay: str | None = Field(default=None, max_length=60)
+    max_qty: int | None = Field(default=None, ge=1, le=999)
+    restock_alert: bool = False
+    end_of_series: bool = False
+    new_arrival: bool = False
+    gift: bool = False
+    shopify_inventory_item_id: str | None = None
+    """Interne (poussée du stock) : jamais accepté d'un appelant de l'API (422)."""
+    fictif: bool = False
+
+    @field_validator("public_sku")
+    @classmethod
+    def _sku(cls, v: str) -> str:
+        if not _SKU_RE.match(v):
+            raise ValueError("SKU boutique : majuscules, chiffres et tirets (3 à 41 caractères)")
+        return v
+
+    @field_validator("handle")
+    @classmethod
+    def _handle(cls, v: str | None) -> str | None:
+        if v is not None and not _HANDLE_RE.match(v):
+            raise ValueError("handle : minuscules, chiffres et tirets")
+        return v
+
+    @model_validator(mode="after")
+    def _shop(self) -> CatalogListing:
+        preco = self.public_sku.endswith("-PRECO")
+        if self.stock_status is StockStatus.PRECOMMANDE and not preco:
+            raise ValueError("fiche de précommande : SKU suffixé -PRECO (fiche distincte du stock local)")
+        if self.stock_status is StockStatus.STOCK_LOCAL and preco:
+            raise ValueError("SKU -PRECO réservé à la fiche de précommande")
+        if self.release_date is None and self.release_date_status is not ReleaseDateStatus.INCONNUE:
+            raise ValueError("statut de date de sortie sans date")
+        return self
+
+
+ENGINE_OWNED_LISTING_FIELDS: frozenset[str] = frozenset(
+    {"shopify_product_id", "shopify_status", "shopify_inventory_item_id", "current_price_chf"}
+)
+"""Champs du **moteur** (registre des fiches publiées, historique des prix) : refusés dans toute entrée (422)."""
+HUMAN_VALIDATION_FIELDS: frozenset[str] = frozenset({"approved", "category_rule_validated", "content_validated"})
+"""Validations humaines : uniquement ``POST /catalog/approvals`` (jeton propriétaire), jamais dans une fiche."""
+
+
+def refuse_declared_listing_fields(data: Any) -> Any:
+    """Refuse (ValueError => 422) une fiche d'entrée qui déclare un champ du moteur ou une validation humaine."""
+    if isinstance(data, Mapping):
+        engine = sorted(ENGINE_OWNED_LISTING_FIELDS & set(data))
+        human = sorted(HUMAN_VALIDATION_FIELDS & set(data))
+        problems: list[str] = []
+        if engine:
+            problems.append(
+                f"{', '.join(engine)} : champ(s) du moteur (registre des fiches publiées, historique des prix), "
+                "jamais déclaré(s) par l'appelant"
+            )
+        if human:
+            problems.append(
+                f"{', '.join(human)} : validation humaine réservée à la propriétaire (POST /catalog/approvals, "
+                "jeton propriétaire), jamais déclarée dans une fiche"
+            )
+        if problems:
+            raise ValueError(" ; ".join(problems))
+    return data
+
+
+def listing_digest(listing: CatalogListing) -> str:
+    """Empreinte du contenu d'une fiche (hors statut de stock déclaré, recalculé par le moteur).
+
+    Une validation de la propriétaire porte sur **ce** contenu : une fiche modifiée ensuite par
+    l'agent catalogue n'est plus approuvée (« catalogue ne valide pas ses propres fiches »).
+    """
+    return canonical_hash(listing.model_dump(mode="json", exclude={"stock_status", "shopify_inventory_item_id"}))
+
+
+class PublishedState(FrozenModel):
+    """État **réellement écrit et vérifié** sur la boutique, lu dans le registre du moteur (jamais la fiche)."""
+
+    shopify_product_id: str = Field(pattern=r"^gid://shopify/Product/\d+$")
+    status: ShopStatus
+    price_chf: Decimal | None = Field(default=None, gt=0)
+    """Dernier prix réellement publié et vérifié (None : inconnu, rien n'est renvoyé actif sans prix du moteur)."""
+
+
+class CatalogApprovalPersistenceError(StateStoreError):
+    """Registre des validations de fiches non enregistré ou non relu : aucune validation utilisable."""
+
+
+class ListingApproval(FrozenModel):
+    """Validations humaines d'une fiche, **par la propriétaire** (journal ``catalog_approvals``).
+
+    Portent sur le contenu exact de la fiche (``listing_sha256``) : une fiche modifiée ensuite n'est
+    plus validée. La dernière inscription d'une référence l'emporte (retrait = valeurs ``false``).
+    """
+
+    product_key: str = Field(min_length=1, max_length=120)
+    listing_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    approved: bool = False
+    """Fiche approuvée (mises à jour automatiques au niveau 2)."""
+    content_validated: bool = False
+    """Contenu confirmé par écrit par le fournisseur, vérifié par la propriétaire (BP §7)."""
+    category_rule_validated: bool = False
+    """Règle de catégorie validée par la propriétaire (publication automatique au niveau 3)."""
+    reason: str = Field(min_length=10, max_length=500)
+    approved_by: Literal["propriétaire"] = "propriétaire"
+    approved_at: datetime
+
+    @field_validator("approved_at")
+    @classmethod
+    def _aware(cls, v: datetime) -> datetime:
+        if v.tzinfo is None or v.utcoffset() is None:
+            raise ValueError("horodatage avec fuseau horaire obligatoire")
+        return v
+
+    def applies_to(self, listing: CatalogListing) -> bool:
+        """Vrai si la validation porte sur ce contenu exact de fiche."""
+        return self.listing_sha256 == listing_digest(listing)
+
+
+class CatalogApprovalBook:
+    """Registre des validations de fiches de la propriétaire (écrit d'abord, appliqué ensuite ; relu au démarrage)."""
+
+    STREAM = "catalog_approvals"
+
+    def __init__(self, *, store: StateJournal | None = None) -> None:
+        self._lock = threading.RLock()
+        self._items: dict[str, ListingApproval] = {}
+        self._store = store
+
+    @classmethod
+    def restore(cls, store: StateJournal) -> CatalogApprovalBook:
+        """Relit le registre (:class:`CatalogApprovalPersistenceError` s'il est illisible)."""
+        book = cls()
+        try:
+            records = store.load()
+        except StateStoreError as exc:
+            raise CatalogApprovalPersistenceError(f"validations de fiches : {exc}") from exc
+        for n, record in enumerate(records, start=1):
+            try:
+                item = ListingApproval.model_validate(record["approval"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise CatalogApprovalPersistenceError(f"validations de fiches : enregistrement {n} illisible") from exc
+            book._items[item.product_key] = item
+        book._store = store
+        return book
+
+    def record(self, approval: ListingApproval) -> ListingApproval:
+        """Inscrit une validation (route propriétaire)."""
+        with self._lock:
+            if self._store is not None:
+                try:
+                    self._store.append({"approval": approval.model_dump(mode="json")})
+                except StateStoreError as exc:
+                    raise CatalogApprovalPersistenceError(f"validation de fiche non enregistrée ({exc})") from exc
+            self._items[approval.product_key] = approval
+            return approval
+
+    def get(self, product_key: str) -> ListingApproval | None:
+        """Dernière validation inscrite (quel que soit le contenu)."""
+        with self._lock:
+            return self._items.get(product_key)
+
+    def effective_for(self, listing: CatalogListing, *keys: str) -> ListingApproval | None:
+        """Validation applicable à cette fiche (même contenu), cherchée par ``keys`` puis ``product_key``."""
+        with self._lock:
+            for key in (*keys, listing.product_key):
+                item = self._items.get(key)
+                if item is not None:
+                    return item if item.applies_to(listing) else None
+        return None
+
+    def all(self) -> tuple[ListingApproval, ...]:
+        """Validations en vigueur, par référence."""
+        with self._lock:
+            return tuple(self._items[k] for k in sorted(self._items))
+
+
+MAX_APPROVAL_VALIDITY = timedelta(days=7)
+"""Durée maximale d'une approbation de prix (au-delà : nouvelle approbation de la propriétaire)."""
+
+
+class PriceApprovalPersistenceError(PublishError, StateStoreError):
+    """Registre des approbations de prix non enregistré ou non relu : aucune approbation utilisable."""
+
+
+class PriceValidation(FrozenModel):
+    """Approbation d'un prix public par la **propriétaire**, enregistrée côté moteur (BP §5, C18).
+
+    Jamais un champ libre d'une requête : seule la route ``POST /pricing/approvals`` (jeton de la
+    propriétaire vérifié) en crée, et le moteur la relit dans son registre (:class:`PriceApprovalBook`).
+    Elle remplace le prix du moteur (décision ``REVIEW`` ou variation au-delà du plafond de 5 %/jour),
+    mais **jamais** le plancher dur 12 % / 8 CHF, sauf référence d'exception C18 explicite
+    (``floor_exception_ref``) ; elle expire (``expires_at``, 7 jours au plus).
+    """
+
+    approval_id: str = Field(min_length=8, max_length=64)
+    product_key: str = Field(min_length=1)
+    price: Decimal = Field(gt=0, le=Decimal("100000"))
+    approved_by: Literal["propriétaire"] = "propriétaire"
+    approved_at: datetime
+    expires_at: datetime
+    reason: str = Field(min_length=10, max_length=500)
+    floor_exception_ref: str | None = Field(default=None, min_length=3, max_length=120)
+    """Référence de l'exception écrite C18 : seule voie d'un prix sous le plancher dur."""
+
+    @field_validator("approved_at", "expires_at")
+    @classmethod
+    def _aware(cls, v: datetime) -> datetime:
+        if v.tzinfo is None or v.utcoffset() is None:
+            raise ValueError("horodatage avec fuseau horaire obligatoire")
+        return v
+
+    @field_validator("price")
+    @classmethod
+    def _cents(cls, v: Decimal) -> Decimal:
+        if not v.is_finite() or v != q2(v):
+            raise ValueError("prix au centime (0.00)")
+        return v
+
+    @model_validator(mode="after")
+    def _window(self) -> PriceValidation:
+        if not self.approved_at < self.expires_at <= self.approved_at + MAX_APPROVAL_VALIDITY:
+            raise ValueError("validité : après l'approbation et 7 jours au plus")
+        return self
+
+    def active(self, now: datetime) -> bool:
+        """Vrai si l'approbation est en vigueur à ``now``."""
+        return self.approved_at <= now < self.expires_at
+
+    @classmethod
+    def new(
+        cls,
+        *,
+        product_key: str,
+        price: Decimal,
+        reason: str,
+        now: datetime,
+        valid_for: timedelta = timedelta(hours=48),
+        floor_exception_ref: str | None = None,
+    ) -> PriceValidation:
+        """Nouvelle approbation (identifiant aléatoire)."""
+        return cls(
+            approval_id=f"PA-{now:%Y%m%d}-{uuid.uuid4().hex[:12].upper()}",
+            product_key=product_key,
+            price=price,
+            approved_at=now,
+            expires_at=now + valid_for,
+            reason=reason,
+            floor_exception_ref=floor_exception_ref,
+        )
+
+
+class PriceApprovalBook:
+    """Registre des approbations de prix de la propriétaire (journal d'état ``price_approvals``).
+
+    Écriture d'abord, application ensuite ; relu au démarrage (illisible =>
+    :class:`PriceApprovalPersistenceError`, le service est gelé par l'appelant). La dernière
+    approbation en vigueur d'une référence l'emporte (à horodatage égal : la dernière inscrite) ;
+    une révocation (acte protecteur) la retire.
+    """
+
+    STREAM = "price_approvals"
+
+    def __init__(self, *, store: StateJournal | None = None) -> None:
+        self._lock = threading.RLock()
+        self._items: dict[str, PriceValidation] = {}
+        self._revoked: set[str] = set()
+        self._store = store
+
+    @classmethod
+    def restore(cls, store: StateJournal) -> PriceApprovalBook:
+        """Relit le registre."""
+        book = cls()
+        try:
+            records = store.load()
+        except StateStoreError as exc:
+            raise PriceApprovalPersistenceError(f"approbations de prix : {exc}") from exc
+        for n, record in enumerate(records, start=1):
+            try:
+                if "revoked" in record:
+                    book._revoked.add(str(record["revoked"]))
+                else:
+                    item = PriceValidation.model_validate(record["approval"])
+                    book._items[item.approval_id] = item
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PriceApprovalPersistenceError(f"approbations de prix : enregistrement {n} illisible") from exc
+        book._store = store
+        return book
+
+    def _append(self, record: dict[str, Any]) -> None:
+        if self._store is None:
+            return
+        try:
+            self._store.append(record)
+        except StateStoreError as exc:
+            raise PriceApprovalPersistenceError(f"approbation de prix non enregistrée ({exc})") from exc
+
+    def record(self, approval: PriceValidation) -> PriceValidation:
+        """Enregistre une approbation (créée par la route propriétaire)."""
+        with self._lock:
+            if approval.approval_id in self._items:
+                raise PublishError(f"approbation {approval.approval_id} déjà enregistrée")
+            self._append({"approval": approval.model_dump(mode="json")})
+            self._items[approval.approval_id] = approval
+            return approval
+
+    def revoke(self, approval_id: str) -> bool:
+        """Retire une approbation (acte protecteur) ; False si inconnue ou déjà retirée."""
+        with self._lock:
+            if approval_id not in self._items or approval_id in self._revoked:
+                return False
+            self._append({"revoked": approval_id})
+            self._revoked.add(approval_id)
+            return True
+
+    def active_for(self, product_key: str, now: datetime) -> PriceValidation | None:
+        """Dernière approbation en vigueur de la référence (None sinon)."""
+        with self._lock:
+            items = [
+                a
+                for a in self._items.values()
+                if a.product_key == product_key and a.approval_id not in self._revoked and a.active(now)
+            ]
+        if not items:
+            return None
+        return sorted(items, key=lambda a: a.approved_at)[-1]  # tri stable : à égalité, la dernière inscrite
+
+    def active(self, now: datetime) -> dict[str, PriceValidation]:
+        """Approbations en vigueur par référence."""
+        with self._lock:
+            keys = {a.product_key for a in self._items.values()}
+        out = {k: self.active_for(k, now) for k in sorted(keys)}
+        return {k: v for k, v in out.items() if v is not None}
+
+
+class PublishBlocker(str, Enum):
+    """Motifs stables du plan de publication."""
+
+    IDENTITY_INCOMPLETE = "IDENTITY_INCOMPLETE"
+    NOT_SEALED = "NOT_SEALED"
+    LANGUAGE_NOT_FR = "LANGUAGE_NOT_FR"
+    INVALID_GTIN = "INVALID_GTIN"
+    FICTITIOUS_GTIN = "FICTITIOUS_GTIN"
+    FICTIF_DATA = "FICTIF_DATA"
+    QUARANTINED = "QUARANTINED"
+    STOPLOSS_PRODUCT = "STOPLOSS_PRODUCT"
+    FORBIDDEN_CLAIM = "FORBIDDEN_CLAIM"
+    UNSAFE_HTML = "UNSAFE_HTML"
+    SENSITIVE_FIELD = "SENSITIVE_FIELD"
+    NOT_APPROVED = "NOT_APPROVED"
+    DECISION_MISSING = "DECISION_MISSING"
+    DECISION_DRAFT = "DECISION_DRAFT"
+    DECISION_BLOCKED = "DECISION_BLOCKED"
+    DECISION_REVIEW = "DECISION_REVIEW"
+    PRICE_CHANGE_ABOVE_CAP = "PRICE_CHANGE_ABOVE_CAP"
+    PRICE_ANOMALY = "PRICE_ANOMALY"
+    PRICE_UNKNOWN = "PRICE_UNKNOWN"
+    PRICE_APPROVAL_INVALID = "PRICE_APPROVAL_INVALID"
+    APPROVED_PRICE_BELOW_FLOOR = "APPROVED_PRICE_BELOW_FLOOR"
+    STOCK_STATUS_CORRECTED = "STOCK_STATUS_CORRECTED"
+    NO_SELLABLE_STOCK = "NO_SELLABLE_STOCK"
+    CATEGORY_RULE_NOT_VALIDATED = "CATEGORY_RULE_NOT_VALIDATED"
+    CONTENT_NOT_VALIDATED = "CONTENT_NOT_VALIDATED"
+    VALIDATION_OUTDATED = "VALIDATION_OUTDATED"
+    PUBLISHED_PRICE_BELOW_FLOOR = "PUBLISHED_PRICE_BELOW_FLOOR"
+    MAX_QTY_MISSING = "MAX_QTY_MISSING"
+    RELEASE_DATE_MISSING = "RELEASE_DATE_MISSING"
+    DESCRIPTION_MISSING = "DESCRIPTION_MISSING"
+    NO_AUTHORIZED_IMAGE = "NO_AUTHORIZED_IMAGE"
+    IMAGE_RIGHTS_MISSING = "IMAGE_RIGHTS_MISSING"
+    PREDROP_LISTING_MISMATCH = "PREDROP_LISTING_MISMATCH"
+    PREDROP_ON_PREORDER_LISTING = "PREDROP_ON_PREORDER_LISTING"
+    PREDROP_PRICE_INVALID = "PREDROP_PRICE_INVALID"
+    PREDROP_PRICE_BELOW_FLOOR = "PREDROP_PRICE_BELOW_FLOOR"
+    PREDROP_COST_UNKNOWN = "PREDROP_COST_UNKNOWN"
+    PREDROP_RETIRED = "PREDROP_RETIRED"
+    PREDROP_CLOSED = "PREDROP_CLOSED"
+    PREDROP_NORMAL_PRICE_MISMATCH = "PREDROP_NORMAL_PRICE_MISMATCH"
+    PREDROP_NORMAL_NOT_PUBLISHED = "PREDROP_NORMAL_NOT_PUBLISHED"
+    PREDROP_DROP_PRICE_BELOW_FLOOR = "PREDROP_DROP_PRICE_BELOW_FLOOR"
+
+
+BLOCKER_LABELS_FR: dict[PublishBlocker, str] = {
+    PublishBlocker.IDENTITY_INCOMPLETE: "Identité incomplète ou ambiguë : brouillon, aucun titre public.",
+    PublishBlocker.NOT_SEALED: "Produit non scellé ou état inconnu : hors périmètre de lancement.",
+    PublishBlocker.LANGUAGE_NOT_FR: "Langue différente du français : hors périmètre (FR uniquement).",
+    PublishBlocker.INVALID_GTIN: "GTIN absent ou invalide.",
+    PublishBlocker.FICTITIOUS_GTIN: "GTIN interne 200… : ne peut pas être publié comme un EAN réel.",
+    PublishBlocker.FICTIF_DATA: "Donnée FICTIVE : jamais publiée sur une boutique réelle.",
+    PublishBlocker.QUARANTINED: "Référence en quarantaine : non achetable, dernier prix validé conservé.",
+    PublishBlocker.STOPLOSS_PRODUCT: "Stop-loss produit : vente et promotion bloquées.",
+    PublishBlocker.FORBIDDEN_CLAIM: "Promesse interdite (valeur future, rareté garantie, statut officiel).",
+    PublishBlocker.UNSAFE_HTML: "HTML actif dans la description.",
+    PublishBlocker.SENSITIVE_FIELD: "Champ interne ou donnée personnelle dans la charge : envoi refusé.",
+    PublishBlocker.NOT_APPROVED: "Fiche non approuvée : reste en brouillon.",
+    PublishBlocker.DECISION_MISSING: "Aucune décision de prix : aucun nouveau prix public.",
+    PublishBlocker.DECISION_DRAFT: "Décision DRAFT (champ inconnu) : aucun nouveau prix public.",
+    PublishBlocker.DECISION_BLOCKED: "Décision BLOCKED : aucun nouveau prix public.",
+    PublishBlocker.DECISION_REVIEW: "Décision REVIEW : validation humaine requise avant tout nouveau prix.",
+    PublishBlocker.PRICE_CHANGE_ABOVE_CAP: "Variation au-delà du plafond journalier : validation requise.",
+    PublishBlocker.PRICE_ANOMALY: "Nouveau prix ×10 ou ÷10 par rapport à la veille : bloqué.",
+    PublishBlocker.PRICE_UNKNOWN: "Aucun prix public connu ni calculé.",
+    PublishBlocker.PRICE_APPROVAL_INVALID: (
+        "Approbation de prix inutilisable (autre référence, expirée ou plancher non vérifiable) : aucun nouveau prix."
+    ),
+    PublishBlocker.APPROVED_PRICE_BELOW_FLOOR: (
+        "Prix approuvé sous le plancher dur 12 % / 8 CHF sans exception écrite C18 : non publié."
+    ),
+    PublishBlocker.STOCK_STATUS_CORRECTED: "Statut de stock déclaré ≠ stock réel du moteur : statut recalculé.",
+    PublishBlocker.NO_SELLABLE_STOCK: "Nouvelle référence sans stock vendable ni allocation ferme : brouillon.",
+    PublishBlocker.CATEGORY_RULE_NOT_VALIDATED: "Règle de catégorie non validée : nouvelle référence en brouillon.",
+    PublishBlocker.CONTENT_NOT_VALIDATED: "Contenu non confirmé par écrit (boutique.contenu_valide).",
+    PublishBlocker.VALIDATION_OUTDATED: (
+        "Validation de la propriétaire portant sur un autre contenu de fiche : fiche modifiée depuis, à revalider."
+    ),
+    PublishBlocker.PUBLISHED_PRICE_BELOW_FLOOR: (
+        "Dernier prix publié sous le plancher du coût rendu actuel : rien n'est renvoyé, revue humaine."
+    ),
+    PublishBlocker.MAX_QTY_MISSING: "Quantité maximale obligatoire pour une nouveauté ou une précommande.",
+    PublishBlocker.RELEASE_DATE_MISSING: "Précommande sans date de sortie confirmée ou estimée.",
+    PublishBlocker.DESCRIPTION_MISSING: "Description absente.",
+    PublishBlocker.NO_AUTHORIZED_IMAGE: "Aucune image autorisée.",
+    PublishBlocker.IMAGE_RIGHTS_MISSING: "Au moins une image sans droit d'usage (exclue de la fiche).",
+    PublishBlocker.PREDROP_LISTING_MISMATCH: "Pré-drop d'une autre référence que la fiche : rien n'est publié.",
+    PublishBlocker.PREDROP_ON_PREORDER_LISTING: (
+        "Pré-drop sur une fiche de précommande (-PRECO) : jamais deux promesses de livraison sur la même référence."
+    ),
+    PublishBlocker.PREDROP_PRICE_INVALID: (
+        "Prix pré-drop hors bornes (sous le prix drop ou plus de 10 % au-dessus) : fiche de réservation non publiée."
+    ),
+    PublishBlocker.PREDROP_PRICE_BELOW_FLOOR: (
+        "Prix pré-drop sous les planchers durs au coût rendu actuel : réservations retirées, revue humaine."
+    ),
+    PublishBlocker.PREDROP_COST_UNKNOWN: (
+        "Coût rendu inconnu : planchers du prix pré-drop non revérifiables, fiche de réservation non publiée."
+    ),
+    PublishBlocker.PREDROP_RETIRED: "Drop atteint, pré-drop fermé ou désactivé : fiche de réservation retirée.",
+    PublishBlocker.PREDROP_CLOSED: "Réservations fermées : une fiche de réservation n'est jamais créée fermée.",
+    PublishBlocker.PREDROP_NORMAL_PRICE_MISMATCH: (
+        "Fiche normale hors ligne ou à un autre prix que le prix du drop figé : fiche de réservation retirée (« Au drop » "
+        "n'annonce jamais un prix non pratiqué)."
+    ),
+    PublishBlocker.PREDROP_NORMAL_NOT_PUBLISHED: (
+        "Fiche normale pas encore publiée et vérifiée au prix du drop figé : fiche de réservation non publiée."
+    ),
+    PublishBlocker.PREDROP_DROP_PRICE_BELOW_FLOOR: (
+        "Prix du drop figé sous les planchers durs au coût rendu actuel : prix de la fiche normale non modifié, revue "
+        "humaine (la fiche de réservation est retirée tant que la fiche normale ne pratique pas ce prix)."
+    ),
+}
+
+_HARD = frozenset(
+    {
+        PublishBlocker.IDENTITY_INCOMPLETE,
+        PublishBlocker.NOT_SEALED,
+        PublishBlocker.LANGUAGE_NOT_FR,
+        PublishBlocker.INVALID_GTIN,
+        PublishBlocker.FICTITIOUS_GTIN,
+        PublishBlocker.FICTIF_DATA,
+        PublishBlocker.QUARANTINED,
+        PublishBlocker.STOPLOSS_PRODUCT,
+        PublishBlocker.FORBIDDEN_CLAIM,
+        PublishBlocker.UNSAFE_HTML,
+        PublishBlocker.PREDROP_LISTING_MISMATCH,
+        PublishBlocker.PREDROP_ON_PREORDER_LISTING,
+        PublishBlocker.PREDROP_PRICE_INVALID,
+        PublishBlocker.PREDROP_PRICE_BELOW_FLOOR,
+        PublishBlocker.PREDROP_COST_UNKNOWN,
+        PublishBlocker.PREDROP_NORMAL_PRICE_MISMATCH,
+        PublishBlocker.PREDROP_NORMAL_NOT_PUBLISHED,
+    }
+)
+HARD_BLOCKER_CODES: frozenset[str] = frozenset(b.value for b in _HARD)
+"""Codes des blocages durs (quarantaine, stop-loss produit, identité…) : jamais publiés, dépubliés si actifs."""
+_CONTENT = frozenset(
+    {
+        PublishBlocker.CONTENT_NOT_VALIDATED,
+        PublishBlocker.DESCRIPTION_MISSING,
+        PublishBlocker.NO_AUTHORIZED_IMAGE,
+        PublishBlocker.IMAGE_RIGHTS_MISSING,
+        PublishBlocker.MAX_QTY_MISSING,
+        PublishBlocker.RELEASE_DATE_MISSING,
+    }
+)
+
+
+class PlanOutcome(str, Enum):
+    """Ce que le plan fait sur la boutique."""
+
+    SEND_ACTIVE = "SEND_ACTIVE"
+    SEND_DRAFT = "SEND_DRAFT"
+    UNPUBLISH = "UNPUBLISH"
+    NOT_SENT = "NOT_SENT"
+
+
+class PublicationPlan(FrozenModel):
+    """Plan de publication : charge publique + motifs. Ne contient ni coût ni marge."""
+
+    product_key: str
+    handle: str
+    outcome: PlanOutcome
+    target_status: ShopStatus | None
+    action: str | None
+    """Action d'écriture (:class:`pokeshop.autonomy.WriteAction`) à soumettre à la porte de gouvernance."""
+    price_chf: Decimal | None
+    price_source: Literal["ENGINE", "HUMAN_VALIDATED", "UNCHANGED"] | None
+    product_input: dict[str, Any] | None
+    identifier: dict[str, str] | None
+    blockers: tuple[str, ...] = ()
+    reviews: tuple[str, ...] = ()
+    messages: tuple[str, ...] = ()
+    violations: tuple[str, ...] = ()
+    decision_status: str | None = None
+    rules_version: str | None = None
+    inputs_hash: str | None = None
+    price_approval_id: str | None = None
+    """Approbation de la propriétaire appliquée (registre du moteur), si le prix vient d'elle."""
+    stock_status: str | None = None
+    """Statut de stock publié (recalculé par le moteur quand il est fourni)."""
+
+    @property
+    def send(self) -> bool:
+        """Vrai si une écriture ``productSet`` est prévue."""
+        return self.outcome is not PlanOutcome.NOT_SENT and self.product_input is not None
+
+    @property
+    def price_changed(self) -> bool:
+        """Vrai si le prix public change (prix moteur ou validé différent du prix actuel)."""
+        return self.price_source in ("ENGINE", "HUMAN_VALIDATED")
+
+
+# ---------------------------------------------------------------------- construction
+
+
+def _price_text(price: Decimal) -> str:
+    return f"{q2(price):.2f}"
+
+
+def _plain(text: str | None) -> str:
+    if not text:
+        return ""
+    return " ".join(_TAG_STRIP_RE.sub(" ", text).split())
+
+
+def _mf(key: str, value: str) -> dict[str, str]:
+    return {"namespace": PUBLIC_METAFIELD_NAMESPACE, "key": key, "type": PUBLIC_METAFIELDS[key], "value": value}
+
+
+def _metafields(listing: CatalogListing, fmt: ProductFormat, extension_name: str | None) -> list[dict[str, str]]:
+    mf = _mf
+    out = [mf("statut_stock", listing.stock_status.value), mf("format", FORMAT_LABELS_FR[fmt])]
+    if listing.identity.language and listing.identity.language != "NA":
+        out.append(mf("langue", listing.identity.language))
+    if extension_name:
+        out.append(mf("extension", extension_name))
+    if listing.content_text:
+        out.append(mf("contenu_valide", listing.content_text))
+    if listing.release_date is not None:
+        out.append(mf("date_sortie", listing.release_date.isoformat()))
+    out.append(mf("date_sortie_statut", listing.release_date_status.value))
+    if listing.shipping_delay:
+        out.append(mf("delai_expedition", listing.shipping_delay))
+    if listing.max_qty is not None:
+        out.append(mf("quantite_max", str(listing.max_qty)))
+    out.append(mf("alerte_reassort", "true" if listing.restock_alert else "false"))
+    out.append(mf("fin_de_serie", "true" if listing.end_of_series else "false"))
+    return out
+
+
+def _tags(listing: CatalogListing, extension_name: str | None, target: ShopStatus, small: bool = False) -> list[str]:
+    tags = {"statut:" + listing.stock_status.value.replace("_", "-")}
+    if small:
+        tags.add(SMALL_PRODUCT_TAG)  # validation de panier de la boutique (minimum de commande)
+    if extension_name:
+        tags.add("ext:" + slugify(extension_name))
+    if listing.new_arrival and target is ShopStatus.ACTIVE and listing.stock_status is not StockStatus.RUPTURE:
+        tags.add("nouveaute")  # posé seulement sur un produit achetable (contrat du thème)
+    if listing.gift:
+        tags.add("cadeau")
+    return sorted(t for t in tags if _TAG_RE.match(t))
+
+
+def _extension_name(identity: ProductIdentity, table: ExtensionTable | None) -> str | None:
+    if identity.extension in (None, NO_EXTENSION):
+        return None
+    if table is None:
+        from .catalog import load_extension_table
+
+        table = load_extension_table()
+    return table.name_fr(identity.extension or "") or identity.extension or ""
+
+
+def assert_protective_payload(product_input: Mapping[str, Any]) -> None:
+    """Charge d'une action **protectrice** (dépublication) : ``{"status": "DRAFT"}`` uniquement.
+
+    Les actions protectrices sont permises pendant un gel et au niveau 1 : elles ne doivent jamais
+    réécrire contenu, images ou prix (SEC-15). Toute autre clé => :class:`SensitiveFieldError`.
+    """
+    if dict(product_input) != {"status": ShopStatus.DRAFT.value}:
+        raise SensitiveFieldError(["action protectrice : seule la charge {'status': 'DRAFT'} est admise"])
+
+
+def stock_status_for(
+    listing: CatalogListing, *, local_sellable: int, firm_allocation: int = 0
+) -> StockStatus:
+    """Statut public **calculé** (jamais celui déclaré par l'appelant), cohérent avec le SKU.
+
+    Fiche de stock local : ``stock_local`` si stock vendable local > 0, sinon ``rupture``.
+    Fiche de précommande (SKU ``-PRECO``) : ``precommande`` seulement avec une allocation ferme
+    connue du moteur (offres fraîches), sinon ``rupture`` (SPEC §0.3).
+    """
+    if listing.public_sku.endswith("-PRECO"):
+        return StockStatus.PRECOMMANDE if firm_allocation > 0 else StockStatus.RUPTURE
+    return StockStatus.STOCK_LOCAL if local_sellable > 0 else StockStatus.RUPTURE
+
+
+def _identity_blockers(
+    listing: CatalogListing,
+    *,
+    table: ExtensionTable | None,
+    real_shop: bool,
+    quarantined: bool,
+    stoploss_blocked: bool,
+) -> tuple[str | None, ProductFormat, list[PublishBlocker]]:
+    """Titre public, format et blocages durs d'une fiche (identité, scellé, langue, GTIN, FICTIF, quarantaine,
+    stop-loss produit, promesses interdites, HTML actif) — communs à la fiche normale et à sa fiche de réservation."""
+    blockers: list[PublishBlocker] = []
+    ident = listing.identity
+    try:
+        title = product_title_fr(ident, table)
+    except CatalogError:
+        title = None
+    if title is None:
+        blockers.append(PublishBlocker.IDENTITY_INCOMPLETE)
+    if ident.sealed is not True:
+        blockers.append(PublishBlocker.NOT_SEALED)
+    fmt = ProductFormat(ident.format) if ident.format in ProductFormat.__members__ else ProductFormat.UNKNOWN
+    if ident.language != expected_language_for(fmt):
+        blockers.append(PublishBlocker.LANGUAGE_NOT_FR)
+    if not validate_gtin(ident.gtin):
+        blockers.append(PublishBlocker.INVALID_GTIN)
+    elif is_fictitious_gtin(ident.gtin) and not listing.fictif:
+        blockers.append(PublishBlocker.FICTITIOUS_GTIN)
+    if listing.fictif and real_shop:
+        blockers.append(PublishBlocker.FICTIF_DATA)
+    if quarantined:
+        blockers.append(PublishBlocker.QUARANTINED)
+    if stoploss_blocked:
+        blockers.append(PublishBlocker.STOPLOSS_PRODUCT)
+    if forbidden_claims(title, listing.description_html, listing.content_text, *(img.alt for img in listing.images)):
+        blockers.append(PublishBlocker.FORBIDDEN_CLAIM)
+    if listing.description_html and _UNSAFE_HTML_RE.search(listing.description_html):
+        blockers.append(PublishBlocker.UNSAFE_HTML)
+    return title, fmt, blockers
+
+
+def listing_handle(listing: CatalogListing, title: str | None) -> str:
+    """Handle public de la fiche normale : celui de la fiche, sinon dérivé du titre et du SKU boutique."""
+    return listing.handle or slugify(f"{title or listing.product_key}-{listing.public_sku}")
+
+
+# ------------------------------------------------------------------------------- pré-drop
+
+PREDROP_TAG = "reservation-garantie"
+"""Étiquette miroir d'une fiche de réservation **ouverte** (collection « Réservations garanties »)."""
+PREDROP_TITLE_PREFIX = "Réservation garantie — "
+PREDROP_PRODUCT_TYPE = "Réservation garantie"
+"""Type de produit de la fiche jumelle : hors des collections par format (jamais un doublon de la fiche normale)."""
+PREDROP_PUBLICATION_SUFFIX = "#reservation-garantie"
+"""Suffixe de la clé de la fiche jumelle dans le registre des fiches publiées (identifiant Shopify, statut, prix)."""
+_RESA_SKU_RE = re.compile(r"^(?P<base>[A-Z0-9][A-Z0-9._-]{2,60})-RESA-(?P<day>\d{8})$")
+
+ReservationPhase = Literal["prioritaire", "ouvertes", "fermees"]
+
+
+def predrop_reservation_sku(public_sku: str, drop_date: date) -> str:
+    """SKU de la fiche de réservation : ``<SKU boutique>-RESA-<AAAAMMJJ>`` (un pré-drop = une date de drop par référence)."""
+    return f"{public_sku}-RESA-{drop_date:%Y%m%d}"
+
+
+def reservation_sku_of(public_sku: str, predrop: Any) -> str:
+    """SKU de la fiche de réservation d'un pré-drop : celui **figé à l'ouverture** (stable après un report de la date),
+    sinon ``<SKU boutique>-RESA-<date du drop>``."""
+    frozen = getattr(predrop, "reservation_sku", None)
+    return frozen or predrop_reservation_sku(public_sku, predrop.drop_date)
+
+
+def predrop_reservation_handle(normal_handle: str) -> str:
+    """Handle de la fiche de réservation, dérivé de celui de la fiche normale."""
+    return f"{normal_handle}-reservation-garantie"
+
+
+def reservation_publication_key(product_key: str) -> str:
+    """Clé de la fiche jumelle dans le registre des fiches publiées (distincte de celle de la fiche normale)."""
+    return f"{product_key}{PREDROP_PUBLICATION_SUFFIX}"
+
+
+class PredropPublication(FrozenModel):
+    """Pré-drop vu par la publication (construit par le moteur depuis son registre, jamais reçu d'un appelant).
+
+    Champs publiés : statut des réservations (``phase``), date du drop, prix pré-drop (prix de la fiche de
+    réservation). ``reservations_available`` et ``reservations_committed`` servent **seulement** à l'inventaire de la
+    fiche de réservation (``inventorySetQuantities``) : jamais écrits dans une charge publique, jamais en texte.
+    """
+
+    predrop_id: str = Field(min_length=1, max_length=120)
+    product_key: str = Field(min_length=1, max_length=120)
+    drop_date: date
+    phase: ReservationPhase
+    retired: bool = False
+    """Drop atteint, pré-drop fermé par un acte, paramètres non signés, blocage ou fiche normale qui ne pratique pas le
+    prix du drop figé : fiche de réservation retirée (DRAFT)."""
+    retired_reason: str | None = None
+    """Motif interne du retrait (jamais publié)."""
+    predrop_price: Decimal = Field(gt=0)
+    drop_price: Decimal = Field(gt=0)
+    per_customer_limit: int = Field(ge=1, le=2)
+    reservations_available: int = Field(ge=0, default=0)
+    reservations_committed: int = Field(ge=0, default=0)
+    """Unités des réservations confirmées **non encore expédiées** (grandeur homogène avec « committed » de Shopify)."""
+    reservation_sku: str | None = None
+    """SKU de la fiche de réservation figé à l'ouverture (stable après un report) ; None : calculé."""
+    held_units: int = Field(ge=0, default=0)
+    """Unités réservées non expédiées : retenues hors du stock vendable de la fiche normale (jamais au prix du drop)."""
+    hold_until_drop: bool = False
+    """Avant le jour du drop : stock local de la fiche normale retenu (rien n'est vendu au prix du drop avant le drop)."""
+    pin_drop_price: bool = False
+    """Jusqu'au jour du drop inclus : prix de la fiche normale figé au prix du drop du pré-drop (« Au drop » pratiqué)."""
+
+    @model_validator(mode="after")
+    def _coherent(self) -> PredropPublication:
+        if self.retired and self.phase != "fermees":
+            raise ValueError("pré-drop retiré : réservations fermées")
+        if self.phase == "fermees" and self.reservations_available:
+            raise ValueError("réservations fermées : aucune unité à publier")
+        return self
+
+    @property
+    def accepting(self) -> bool:
+        """Vrai si des réservations peuvent être payées (phase prioritaire ou ouverte, non retirée)."""
+        return self.phase != "fermees" and not self.retired
+
+
+def build_publication(
+    listing: CatalogListing,
+    decision: PriceDecision | None,
+    *,
+    max_daily_change: Decimal,
+    reference_price_24h: Decimal | None = None,
+    price_validation: PriceValidation | None = None,
+    params: PricingParams | None = None,
+    now: datetime | None = None,
+    stoploss_blocked: bool = False,
+    quarantined: bool = False,
+    sensitive_terms: Collection[str] = (),
+    table: ExtensionTable | None = None,
+    real_shop: bool = False,
+    stock_status: StockStatus | None = None,
+    published: PublishedState | None = None,
+    validations: ListingApproval | None = None,
+    predrop: PredropPublication | None = None,
+) -> PublicationPlan:
+    """Plan de publication d'une fiche selon les règles BP §5-§7 (voir l'en-tête du module).
+
+    ``predrop`` : pré-drop de la référence (registre du moteur) ; la fiche normale reçoit seulement les métachamps
+    d'information ``date_drop``, ``reservation_statut`` et ``fiche_liee`` (handle de la fiche de réservation) — sa
+    structure (options, variante, SKU) ne change jamais. Ignoré sur une fiche de précommande ``-PRECO``.
+
+    ``published`` : état écrit et vérifié lu dans le **registre du moteur** (identifiant Shopify, statut,
+    dernier prix réellement publié) ; None = référence jamais publiée par le moteur. ``validations`` :
+    validations de la **propriétaire** (registre ``catalog_approvals``), prises en compte seulement si
+    elles portent sur ce contenu exact de fiche. Aucun champ de la fiche ne remplace ces registres.
+
+    ``reference_price_24h`` : prix public d'il y a 24 h (base du plafond journalier).
+    ``price_validation`` : approbation de la propriétaire **lue dans le registre du moteur**
+    (:class:`PriceApprovalBook`) ; utilisable seulement pour la même référence, en vigueur à ``now``,
+    avec ``params`` et le coût rendu de la décision pour revérifier le plancher dur (fermé par défaut).
+    ``stock_status`` : statut calculé par le moteur (stock local réel, allocation ferme) ; il remplace
+    le statut déclaré par la fiche. Les appelants de production (synchronisation, aperçu de l'API)
+    le fournissent toujours.
+    ``real_shop`` : vrai pour une écriture réelle (refuse les données FICTIVES).
+    """
+    blockers: list[PublishBlocker] = []
+    reviews: list[PublishBlocker] = []
+    content: list[PublishBlocker] = []
+    flags = validations
+    if flags is not None and not flags.applies_to(listing):
+        reviews.append(PublishBlocker.VALIDATION_OUTDATED)
+        flags = None
+    # Fiche publiée sous une règle de catégorie validée par la propriétaire : tenue pour approuvée pour ses mises
+    # à jour (sinon la publication automatique du niveau 3 serait dépubliée au cycle suivant).
+    approved = flags is not None and (flags.approved or flags.category_rule_validated)
+    content_ok = flags is not None and flags.content_validated
+    category_ok = flags is not None and flags.category_rule_validated
+    if stock_status is not None and stock_status is not listing.stock_status:
+        reviews.append(PublishBlocker.STOCK_STATUS_CORRECTED)
+        listing = listing.model_copy(update={"stock_status": stock_status})
+    ident = listing.identity
+    title, fmt, blockers = _identity_blockers(
+        listing, table=table, real_shop=real_shop, quarantined=quarantined, stoploss_blocked=stoploss_blocked
+    )
+
+    # -- prix : dernier prix **réellement publié** (registre du moteur), jamais un prix déclaré par l'appelant
+    current = published.price_chf if published is not None else None
+    new_price: Decimal | None = None
+    source: Literal["ENGINE", "HUMAN_VALIDATED", "UNCHANGED"] | None = None
+    approval = price_validation
+    if approval is not None and (
+        approval.product_key != listing.product_key
+        or now is None
+        or not approval.active(now)
+        or params is None
+        or decision is None
+        or decision.landed_cost is None
+    ):
+        reviews.append(PublishBlocker.PRICE_APPROVAL_INVALID)
+        approval = None
+    if decision is None:
+        reviews.append(PublishBlocker.DECISION_MISSING)
+    elif decision.status is DecisionStatus.BLOCKED:
+        reviews.append(PublishBlocker.DECISION_BLOCKED)
+    elif decision.status is DecisionStatus.DRAFT:
+        reviews.append(PublishBlocker.DECISION_DRAFT)
+    elif decision.status is DecisionStatus.REVIEW:
+        if approval is not None:
+            new_price, source = approval.price, "HUMAN_VALIDATED"
+        else:
+            reviews.append(PublishBlocker.DECISION_REVIEW)
+    else:
+        engine_price = decision.evaluated_price or decision.recommended_price
+        if approval is not None and approval.price != engine_price:
+            new_price, source = approval.price, "HUMAN_VALIDATED"
+        elif engine_price is not None:
+            new_price = engine_price
+            source = "HUMAN_VALIDATED" if approval is not None else "ENGINE"
+    if source == "HUMAN_VALIDATED" and new_price is not None:
+        assert approval is not None and params is not None and decision is not None and decision.landed_cost is not None
+        below = price_floor_violations(new_price, decision.landed_cost, params, small_product=decision.small_product)
+        if below and not approval.floor_exception_ref:
+            reviews.append(PublishBlocker.APPROVED_PRICE_BELOW_FLOOR)
+            new_price, source, approval = None, None, None
+    # Revue pré-drop (PDL-02) : pendant un pré-drop et jusqu'au jour du drop inclus, le prix de la fiche normale est
+    # **figé** au prix du drop du pré-drop (le prix « Au drop » annoncé est celui pratiqué), planchers durs revérifiés
+    # au coût rendu actuel ; sous plancher : prix inchangé, revue humaine (la fiche de réservation est alors retirée).
+    pinned = (
+        predrop is not None
+        and predrop.pin_drop_price
+        and predrop.product_key == listing.product_key
+        and not listing.public_sku.endswith("-PRECO")
+    )
+    if pinned:
+        assert predrop is not None
+        frozen = q2(predrop.drop_price)
+        cost = decision.landed_cost if decision is not None else None
+        if cost is None or params is None or decision is None:
+            new_price, source, approval = None, None, None
+        elif price_floor_violations(frozen, cost, params, small_product=decision.small_product):
+            reviews.append(PublishBlocker.PREDROP_DROP_PRICE_BELOW_FLOOR)
+            new_price, source, approval = None, None, None
+        else:
+            new_price, source, approval = frozen, "ENGINE", None
+    if new_price is not None and reference_price_24h is not None and reference_price_24h > 0:
+        if is_price_anomaly(new_price, reference_price_24h):
+            reviews.append(PublishBlocker.PRICE_ANOMALY)
+            new_price, source = None, None
+        elif (
+            source == "ENGINE"
+            and not pinned  # prix du drop figé : vérifié à l'ouverture du pré-drop, jamais plafonné ici
+            and abs(new_price - reference_price_24h) / reference_price_24h > max_daily_change
+        ):
+            reviews.append(PublishBlocker.PRICE_CHANGE_ABOVE_CAP)
+            new_price, source = None, None
+    if source != "HUMAN_VALIDATED":
+        approval = None
+    if new_price is not None and current is not None and q2(new_price) == q2(current):
+        source = "UNCHANGED"
+    if (
+        new_price is None
+        and current is not None
+        and decision is not None
+        and decision.landed_cost is not None
+        and params is not None
+        and price_floor_violations(current, decision.landed_cost, params, small_product=decision.small_product)
+    ):
+        reviews.append(PublishBlocker.PUBLISHED_PRICE_BELOW_FLOOR)
+        current = None
+    price = new_price if new_price is not None else current
+    if new_price is None and current is not None:
+        source = "UNCHANGED"
+
+    # -- contenu
+    authorized = [img for img in listing.images if img.authorized]
+    if not content_ok or not (listing.content_text or "").strip():
+        content.append(PublishBlocker.CONTENT_NOT_VALIDATED)
+    if listing.max_qty is None and (listing.new_arrival or listing.stock_status is StockStatus.PRECOMMANDE):
+        content.append(PublishBlocker.MAX_QTY_MISSING)
+    if listing.stock_status is StockStatus.PRECOMMANDE and listing.release_date_status is ReleaseDateStatus.INCONNUE:
+        content.append(PublishBlocker.RELEASE_DATE_MISSING)
+    if not _plain(listing.description_html):
+        content.append(PublishBlocker.DESCRIPTION_MISSING)
+    if not authorized:
+        content.append(PublishBlocker.NO_AUTHORIZED_IMAGE)
+    if len(authorized) != len(listing.images):
+        content.append(PublishBlocker.IMAGE_RIGHTS_MISSING)
+
+    # -- issue
+    existing = published is not None
+    hard = [b for b in blockers if b in _HARD]
+    outcome = PlanOutcome.NOT_SENT
+    target: ShopStatus | None = None
+    action: str | None = None
+    if existing:
+        assert published is not None
+        if hard or not approved:
+            if not approved and not hard:
+                reviews.append(PublishBlocker.NOT_APPROVED)
+            if published.status is ShopStatus.ACTIVE:
+                # Dépublication protectrice : statut seulement, jamais de prix ni de contenu (SEC-09, SEC-15).
+                outcome, target, action = PlanOutcome.UNPUBLISH, ShopStatus.DRAFT, "UNPUBLISH_PRODUCT"
+                price, source, approval = None, None, None
+            elif not hard and price is not None:
+                outcome, target, action = PlanOutcome.SEND_DRAFT, ShopStatus.DRAFT, "SAVE_DRAFT_PRODUCT"
+        elif content:
+            pass  # fiche approuvée devenue incomplète : rien n'est écrasé, revue humaine
+        elif price is not None:
+            outcome, target, action = PlanOutcome.SEND_ACTIVE, ShopStatus.ACTIVE, "UPDATE_APPROVED_PRODUCT"
+    elif not hard and new_price is not None:
+        auto = (
+            category_ok
+            and not content
+            and decision is not None
+            and decision.status in (DecisionStatus.OK, DecisionStatus.REVIEW)
+            and listing.stock_status is not StockStatus.RUPTURE
+        )
+        if auto:
+            outcome, target, action = PlanOutcome.SEND_ACTIVE, ShopStatus.ACTIVE, "PUBLISH_NEW_PRODUCT"
+        else:
+            if not category_ok:
+                reviews.append(PublishBlocker.CATEGORY_RULE_NOT_VALIDATED)
+            if listing.stock_status is StockStatus.RUPTURE:
+                reviews.append(PublishBlocker.NO_SELLABLE_STOCK)
+            outcome, target, action = PlanOutcome.SEND_DRAFT, ShopStatus.DRAFT, "SAVE_DRAFT_PRODUCT"
+    if outcome not in (PlanOutcome.NOT_SENT, PlanOutcome.UNPUBLISH) and price is None:
+        reviews.append(PublishBlocker.PRICE_UNKNOWN)
+        outcome, target, action = PlanOutcome.NOT_SENT, None, None
+    if outcome is PlanOutcome.NOT_SENT and price is None and PublishBlocker.PRICE_UNKNOWN not in reviews:
+        reviews.append(PublishBlocker.PRICE_UNKNOWN)
+
+    handle = listing_handle(listing, title)
+    product_input: dict[str, Any] | None = None
+    identifier: dict[str, str] | None = None
+    violations: list[str] = []
+    if outcome is PlanOutcome.UNPUBLISH and published is not None:
+        product_input = {"status": ShopStatus.DRAFT.value}
+        identifier = {"id": published.shopify_product_id}
+    elif outcome is not PlanOutcome.NOT_SENT and title is not None and price is not None and target is not None:
+        ext_name = _extension_name(ident, table)
+        small = decision.small_product if decision is not None else (
+            params is not None and small_product_rule_active(params)
+        )
+        option, value = (
+            ("Disponibilité", "Précommande")
+            if listing.stock_status is StockStatus.PRECOMMANDE
+            else ("Title", "Default Title")
+        )
+        product_input = {
+            "title": title,
+            "handle": handle,
+            "status": target.value,
+            "productType": FORMAT_LABELS_FR[fmt],
+            "tags": _tags(listing, ext_name, target, small),
+            "productOptions": [{"name": option, "values": [{"name": value}]}],
+            "variants": [
+                {
+                    "optionValues": [{"optionName": option, "name": value}],
+                    "price": _price_text(price),
+                    "barcode": ident.gtin or "",
+                    "inventoryPolicy": "DENY",
+                    "inventoryItem": {"sku": listing.public_sku, "tracked": True},
+                }
+            ],
+            "files": [{"originalSource": img.url, "alt": img.alt, "contentType": "IMAGE"} for img in authorized],
+            "metafields": _metafields(listing, fmt, ext_name),
+            "seo": {"title": title[:70], "description": _plain(listing.description_html)[:320]},
+        }
+        if (
+            predrop is not None
+            and predrop.product_key == listing.product_key
+            and not listing.public_sku.endswith("-PRECO")
+        ):
+            # Information seulement (statut, date, fiche liée, deux prix figés du moteur) : jamais une variante ni un
+            # quota ajoutés ; le prix natif de la fiche normale est lui-même figé au prix du drop (ci-dessus).
+            product_input["metafields"] += [
+                _mf("date_drop", predrop.drop_date.isoformat()),
+                _mf("reservation_statut", predrop.phase),
+                _mf("fiche_liee", predrop_reservation_handle(handle)),
+                _mf("prix_drop", _price_text(q2(predrop.drop_price))),
+                _mf("prix_reservation", _price_text(q2(predrop.predrop_price))),
+            ]
+        if listing.description_html:
+            product_input["descriptionHtml"] = listing.description_html
+        identifier = {"id": published.shopify_product_id} if published is not None else {"handle": handle}
+        violations = sensitive_violations(product_input, sensitive_terms=sensitive_terms)
+        if violations:
+            blockers.append(PublishBlocker.SENSITIVE_FIELD)
+            product_input, identifier = None, None
+            outcome, target, action = PlanOutcome.NOT_SENT, None, None
+    elif outcome is PlanOutcome.UNPUBLISH:  # pragma: no cover - fiche existante = identifiant connu
+        outcome, target, action = PlanOutcome.NOT_SENT, None, None
+    all_codes = list(dict.fromkeys([*blockers, *reviews, *content]))
+    sent = outcome is not PlanOutcome.NOT_SENT
+    return PublicationPlan(
+        product_key=listing.product_key,
+        handle=handle,
+        outcome=outcome,
+        target_status=target,
+        action=action,
+        price_chf=q2(price) if price is not None and sent else None,
+        price_source=source if sent else None,
+        product_input=product_input,
+        identifier=identifier,
+        blockers=tuple(b.value for b in dict.fromkeys(blockers)),
+        reviews=tuple(r.value for r in dict.fromkeys([*reviews, *content])),
+        messages=tuple(BLOCKER_LABELS_FR[c] for c in all_codes),
+        violations=tuple(violations),
+        decision_status=decision.status.value if decision is not None else None,
+        rules_version=decision.rules_version if decision is not None else None,
+        inputs_hash=decision.inputs_hash if decision is not None else None,
+        price_approval_id=approval.approval_id if approval is not None and sent else None,
+        stock_status=listing.stock_status.value,
+    )
+
+
+def build_predrop_publication(
+    listing: CatalogListing,
+    predrop: PredropPublication,
+    *,
+    params: PricingParams,
+    landed_cost: Decimal | None,
+    stoploss_blocked: bool = False,
+    quarantined: bool = False,
+    sensitive_terms: Collection[str] = (),
+    table: ExtensionTable | None = None,
+    real_shop: bool = False,
+    published: PublishedState | None = None,
+    validations: ListingApproval | None = None,
+    normal_handle: str | None = None,
+    normal_published: PublishedState | None = None,
+) -> PublicationPlan:
+    """Plan de la **fiche jumelle « Réservation garantie »** d'un pré-drop (fermé par défaut).
+
+    ``normal_published`` : état écrit et vérifié de la **fiche normale** (registre du moteur). Revue pré-drop (PDL-02) :
+    un prix connu ≠ prix du drop figé => blocage dur (retrait si en ligne) ; en boutique réelle, fiche normale jamais
+    écrite => blocage dur (« Au drop » n'annonce jamais un prix que la fiche normale ne pratique pas).
+
+    ``normal_handle`` : handle de la fiche normale **réellement publiée** (registre du moteur) ; à défaut, celui que
+    :func:`build_publication` calcule. La fiche de réservation et la fiche normale se citent par ces handles
+    (``boutique.fiche_liee``).
+
+    * Prix = prix pré-drop **figé** du moteur (jamais un prix déclaré), revérifié : ≥ prix drop et ≤ prix drop × 1,10,
+      planchers durs au **coût rendu connu** (``landed_cost``, frais par commande inclus) ; coût inconnu : non publiée.
+    * Mêmes blocages durs que la fiche normale (identité, langue, GTIN, FICTIF en boutique réelle, quarantaine,
+      stop-loss produit, promesses interdites), validations de la propriétaire sur le **contenu exact** de la fiche
+      (fiche approuvée et contenu validé), jamais sur une fiche ``-PRECO``.
+    * Retirée (``{"status": "DRAFT"}``, action protectrice) au drop, à la fermeture par un acte, sur paramètres non
+      signés ou sur blocage ; quota épuisé : reste en ligne « Réservations fermées » (inventaire 0) jusqu'au drop ;
+      jamais **créée** fermée.
+    * Charge : titre « Réservation garantie — <titre> », type « Réservation garantie », une variante (SKU
+      ``-RESA-<date>``, ``DENY``), métachamps publics seulement (statut ``precommande`` ouvert / ``rupture`` fermé,
+      ``date_drop``, ``reservation_statut``, ``fiche_liee``, quantité maximale = limite par client) ; aucun quota,
+      compte à rebours, coût ni marge (liste blanche :func:`sensitive_violations`).
+    """
+    blockers: list[PublishBlocker] = []
+    reviews: list[PublishBlocker] = []
+    content: list[PublishBlocker] = []
+    flags = validations
+    if flags is not None and not flags.applies_to(listing):
+        reviews.append(PublishBlocker.VALIDATION_OUTDATED)
+        flags = None
+    approved = flags is not None and (flags.approved or flags.category_rule_validated)
+    content_ok = flags is not None and flags.content_validated
+    title, fmt, hard_found = _identity_blockers(
+        listing, table=table, real_shop=real_shop, quarantined=quarantined, stoploss_blocked=stoploss_blocked
+    )
+    blockers += hard_found
+    if predrop.product_key != listing.product_key:
+        blockers.append(PublishBlocker.PREDROP_LISTING_MISMATCH)
+    if listing.public_sku.endswith("-PRECO"):
+        blockers.append(PublishBlocker.PREDROP_ON_PREORDER_LISTING)
+    price = q2(predrop.predrop_price)
+    drop = q2(predrop.drop_price)
+    if price < drop or price > drop * Decimal("1.10"):
+        blockers.append(PublishBlocker.PREDROP_PRICE_INVALID)
+    if normal_published is not None:
+        if normal_published.price_chf is None or q2(normal_published.price_chf) != drop:
+            blockers.append(PublishBlocker.PREDROP_NORMAL_PRICE_MISMATCH)
+    elif real_shop:
+        blockers.append(PublishBlocker.PREDROP_NORMAL_NOT_PUBLISHED)
+    if landed_cost is None or landed_cost <= 0:
+        blockers.append(PublishBlocker.PREDROP_COST_UNKNOWN)
+    elif price_floor_violations(price, landed_cost, params, small_product=False):
+        blockers.append(PublishBlocker.PREDROP_PRICE_BELOW_FLOOR)
+    authorized = [img for img in listing.images if img.authorized]
+    if not content_ok or not (listing.content_text or "").strip():
+        content.append(PublishBlocker.CONTENT_NOT_VALIDATED)
+    if not _plain(listing.description_html):
+        content.append(PublishBlocker.DESCRIPTION_MISSING)
+    if not authorized:
+        content.append(PublishBlocker.NO_AUTHORIZED_IMAGE)
+    if len(authorized) != len(listing.images):
+        content.append(PublishBlocker.IMAGE_RIGHTS_MISSING)
+    if predrop.retired:
+        reviews.append(PublishBlocker.PREDROP_RETIRED)
+
+    normal_handle = normal_handle or listing_handle(listing, title)
+    handle = predrop_reservation_handle(normal_handle)
+    hard = [b for b in blockers if b in _HARD]
+    active = published is not None and published.status is ShopStatus.ACTIVE
+    outcome = PlanOutcome.NOT_SENT
+    target: ShopStatus | None = None
+    action: str | None = None
+    if hard or predrop.retired or not approved:
+        if not approved and not hard:
+            reviews.append(PublishBlocker.NOT_APPROVED)
+        if active:
+            outcome, target, action = PlanOutcome.UNPUBLISH, ShopStatus.DRAFT, "UNPUBLISH_PRODUCT"
+    elif content:
+        pass  # fiche incomplète : rien n'est créé ni écrasé, revue humaine (une fiche en ligne garde son état)
+    elif published is None and not predrop.accepting:
+        reviews.append(PublishBlocker.PREDROP_CLOSED)
+    else:
+        action = "UPDATE_APPROVED_PRODUCT" if published is not None else "PUBLISH_NEW_PRODUCT"
+        outcome, target = PlanOutcome.SEND_ACTIVE, ShopStatus.ACTIVE
+
+    product_input: dict[str, Any] | None = None
+    identifier: dict[str, str] | None = None
+    violations: list[str] = []
+    if outcome is PlanOutcome.UNPUBLISH and published is not None:
+        product_input = {"status": ShopStatus.DRAFT.value}
+        identifier = {"id": published.shopify_product_id}
+    elif outcome is PlanOutcome.SEND_ACTIVE and title is not None and target is not None:
+        ident = listing.identity
+        ext_name = _extension_name(ident, table)
+        status_now = StockStatus.PRECOMMANDE if predrop.accepting else StockStatus.RUPTURE
+        view = listing.model_copy(update={
+            "stock_status": status_now, "max_qty": predrop.per_customer_limit, "restock_alert": False,
+            "end_of_series": False, "new_arrival": False, "gift": False,
+        })  # fmt: skip
+        tags = _tags(view, ext_name, target) + ([PREDROP_TAG] if predrop.accepting else [])
+        full_title = f"{PREDROP_TITLE_PREFIX}{title}"
+        product_input = {
+            "title": full_title,
+            "handle": handle,
+            "status": target.value,
+            "productType": PREDROP_PRODUCT_TYPE,
+            "tags": sorted(t for t in tags if _TAG_RE.match(t)),
+            "productOptions": [{"name": "Title", "values": [{"name": "Default Title"}]}],
+            "variants": [
+                {
+                    "optionValues": [{"optionName": "Title", "name": "Default Title"}],
+                    "price": _price_text(price),
+                    "barcode": ident.gtin or "",
+                    "inventoryPolicy": "DENY",
+                    "inventoryItem": {"sku": reservation_sku_of(listing.public_sku, predrop), "tracked": True},
+                }
+            ],
+            "files": [{"originalSource": img.url, "alt": img.alt, "contentType": "IMAGE"} for img in authorized],
+            "metafields": [
+                *_metafields(view, fmt, ext_name),
+                _mf("date_drop", predrop.drop_date.isoformat()),
+                _mf("reservation_statut", predrop.phase),
+                _mf("fiche_liee", normal_handle),
+                _mf("prix_drop", _price_text(drop)),
+                _mf("prix_reservation", _price_text(price)),
+            ],
+            "seo": {"title": full_title[:70], "description": _plain(listing.description_html)[:320]},
+        }
+        if listing.description_html:
+            product_input["descriptionHtml"] = listing.description_html
+        identifier = {"id": published.shopify_product_id} if published is not None else {"handle": handle}
+        violations = sensitive_violations(product_input, sensitive_terms=sensitive_terms)
+        if violations:
+            blockers.append(PublishBlocker.SENSITIVE_FIELD)
+            product_input, identifier = None, None
+            outcome, target, action = PlanOutcome.NOT_SENT, None, None
+    all_codes = list(dict.fromkeys([*blockers, *reviews, *content]))
+    sent = outcome is not PlanOutcome.NOT_SENT
+    return PublicationPlan(
+        product_key=listing.product_key,
+        handle=handle,
+        outcome=outcome,
+        target_status=target,
+        action=action,
+        price_chf=price if sent and outcome is not PlanOutcome.UNPUBLISH else None,
+        price_source="UNCHANGED" if sent and outcome is not PlanOutcome.UNPUBLISH else None,
+        product_input=product_input,
+        identifier=identifier,
+        blockers=tuple(b.value for b in dict.fromkeys(blockers)),
+        reviews=tuple(r.value for r in dict.fromkeys([*reviews, *content])),
+        messages=tuple(BLOCKER_LABELS_FR[c] for c in all_codes),
+        violations=tuple(violations),
+        stock_status=(StockStatus.PRECOMMANDE if predrop.accepting else StockStatus.RUPTURE).value,
+    )

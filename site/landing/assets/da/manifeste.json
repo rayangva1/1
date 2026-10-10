@@ -1,0 +1,44 @@
+{
+  "avertissement": "Copies générées par site/outils/da_sync.py depuis docs/05-da : ne pas modifier ici.",
+  "direction": "a",
+  "ambiance": "atelier",
+  "google_fonts": "https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@400..600&family=Instrument+Serif:ital@0;1&display=swap",
+  "fichiers": {
+    "ambiance.css": {
+      "source": "docs/05-da/tokens/tokens-atelier.css",
+      "sha256": "094570351dc40018870db62cfb6af331b8ad3f258282d043236dad252b9ddf58"
+    },
+    "apple-touch-icon.png": {
+      "source": "docs/05-da/logo/png/favicon-a-180.png",
+      "sha256": "d9c661f9740fa322c47fc7c52dc609be9138b1b9d3cd7c4a32d7a893c51059de"
+    },
+    "components.css": {
+      "source": "docs/05-da/components/components.css",
+      "sha256": "7beedb2096020ed912d9058df4c2b091e9aff5c6c695f53049e5316653309c4c"
+    },
+    "favicon-32.png": {
+      "source": "docs/05-da/logo/png/favicon-a-32.png",
+      "sha256": "59ef5422cacb9b1d17d8a320006bc622ae6d2d2a3f67ce8d6fd8d150d250c9f6"
+    },
+    "favicon.svg": {
+      "source": "docs/05-da/logo/a/favicon-atelier.svg",
+      "sha256": "e2717840418359b1f5425109ed9a7ea683ce72053055163c7e29d441a907df99"
+    },
+    "logo-1200.png": {
+      "source": "docs/05-da/logo/png/logo-a-principal-1200.png",
+      "sha256": "881a1bce00ac9a8a96fa99fe90bc192b54688c1e3eb755ce2bb81c8b89d4d87b"
+    },
+    "logo-horizontal-fond-sombre.svg": {
+      "source": "docs/05-da/logo/a/logo-a-atelier-fond-sombre.svg",
+      "sha256": "253863936c896b4a4065df240d81ae7e5036c7a85103b012e4b5e9dd0535127f"
+    },
+    "logo-horizontal.svg": {
+      "source": "docs/05-da/logo/a/logo-a-atelier.svg",
+      "sha256": "64c9125e5166632e3d476d4a4b03e300c8bbd7e6555872bc9232034dc3778957"
+    },
+    "tokens.css": {
+      "source": "docs/05-da/tokens/tokens.css",
+      "sha256": "58b8094f358ed061da7915f555041ef8bd42d3ebcfcc628ccfaef0caf4a6b417"
+    }
+  }
+}

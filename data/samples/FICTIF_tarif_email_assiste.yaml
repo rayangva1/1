@@ -1,0 +1,96 @@
+# FICTIF — fiche d'un tarif reçu par email, recopiée pour import ASSISTÉ (aucune donnée réelle).
+supplier_id: fictif_grossiste_d
+source_kind: EMAIL
+source_ref: FICTIF-tarif-0001@exemple.invalid
+document_sha256: 6417eb44254c654114372d1bf3e49c490fbc937dc77b786f0f21d4b15d29e2a4
+received_at: '2026-10-04T07:00:00+02:00'
+document_date: '2026-10-04'
+currency: EUR
+price_basis: HT
+vat_rate: '0'
+decimal_separator: ','
+declared_total: 1 316,80
+declared_shipping: 35,00
+extracted_by: FICTIF — saisie manuelle de démonstration
+ship_from_country: FR
+fictif: true
+extension_tables:
+- data/samples/FICTIF_extensions_aliases.yaml
+lines:
+- line_no: 1
+  supplier_sku: FICTIF-D-001
+  designation: Display 36 boosters Fictive Alpha
+  gtin: '2000000004013'
+  language: FR
+  extension: Fictive Alpha
+  format: Display
+  content: 36 boosters
+  sealed: true
+  quantity: '2'
+  unit_basis: unité
+  unit_price: 95,00
+  line_total: 190,00
+- line_no: 2
+  supplier_sku: FICTIF-D-002
+  designation: ETB Fictive Alpha
+  gtin: '2000000004020'
+  language: FR
+  extension: Fictive Alpha
+  format: ETB
+  content: 9 boosters
+  sealed: true
+  quantity: '10'
+  unit_basis: unité
+  unit_price: 38,00
+  line_total: 380,00
+- line_no: 3
+  supplier_sku: FICTIF-D-003
+  designation: Bundle Fictive Bêta
+  gtin: '2000000004037'
+  language: Français
+  extension: Fictive Bêta
+  format: Bundle
+  content: 6 boosters
+  sealed: true
+  quantity: '12'
+  unit_basis: unité
+  unit_price: 21,00
+  line_total: 252,00
+- line_no: 4
+  supplier_sku: FICTIF-D-004
+  designation: Carton 24 tripacks Fictive Bêta
+  gtin: '2000000004044'
+  language: FR
+  extension: Fictive Bêta
+  format: Tripack
+  content: 3 boosters
+  sealed: true
+  quantity: '1'
+  unit_basis: carton
+  units_per_pack: '24'
+  unit_price: 268,80
+  line_total: 268,80
+- line_no: 5
+  supplier_sku: FICTIF-D-005
+  designation: Protège-cartes x65
+  gtin: '2000000004051'
+  format: Protège-cartes
+  content: 65 protège-cartes
+  sealed: true
+  quantity: '20'
+  unit_basis: unité
+  unit_price: 4,10
+  line_total: 80,00
+- line_no: 6
+  supplier_sku: FICTIF-D-006
+  designation: Coffret Fictive Gamma
+  gtin: null
+  language: FR
+  extension: Fictive Gamma
+  format: Coffret
+  content: 4 boosters
+  sealed: true
+  quantity: '6'
+  unit_basis: unité
+  unit_price: 18,50
+  line_total: 111,00

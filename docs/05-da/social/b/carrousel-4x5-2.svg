@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1350" width="1080" height="1350" role="img" aria-labelledby="titre desc">
+  <title id="titre">Carrousel 4x5 — slide 2/3 — direction B — Quai des Cartes</title>
+  <desc id="desc">Template FICTIF à compléter. Remplacer ZONE_PHOTO par une photo réelle du produit (langue FR visible). Les {{CHAMPS}} viennent du catalogue validé ; le prix doit être le prix validé au moment de la publication. Aucune donnée interne (voir README DA). Zones sûres : social/guides/.</desc>
+  <rect id="FOND" width="1080" height="1350" fill="#F4F4F7"/>
+  <text x="1008" y="102" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="30" font-weight="700" fill="#0B0B12" text-anchor="end">2/3</text>
+  <text x="72" y="182" font-family="'Bricolage Grotesque', 'Trebuchet MS', Arial, sans-serif" font-size="72" font-weight="800" fill="#0B0B12" letter-spacing="-0.72">la différence</text>
+  <text x="322" y="272" font-family="'Bricolage Grotesque', 'Trebuchet MS', Arial, sans-serif" font-size="44" font-weight="800" fill="#0B0B12">ETB</text>
+  <text x="665" y="272" font-family="'Bricolage Grotesque', 'Trebuchet MS', Arial, sans-serif" font-size="44" font-weight="800" fill="#0B0B12">Display</text>
+  <rect x="72" y="302" width="936" height="3" fill="#83839A"/>
+  <text x="72" y="364" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="700" fill="#0B0B12">Pour qui</text>
+  <text x="322" y="364" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="400" fill="#0B0B12">Débuter,</text>
+  <text x="322" y="407.2" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="400" fill="#0B0B12">offrir</text>
+  <text x="665" y="364" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="400" fill="#0B0B12">Collectionner</text>
+  <text x="665" y="407.2" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="400" fill="#0B0B12">une extension</text>
+  <rect x="72" y="552" width="936" height="3" fill="#83839A"/>
+  <text x="72" y="614" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="700" fill="#0B0B12">Dans la boîte</text>
+  <text x="322" y="614" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="400" fill="#0B0B12">Boosters +</text>
+  <text x="322" y="657.2" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="400" fill="#0B0B12">accessoires de jeu</text>
+  <text x="665" y="614" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="400" fill="#0B0B12">Boosters scellés</text>
+  <text x="665" y="657.2" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="400" fill="#0B0B12">uniquement</text>
+  <rect x="72" y="802" width="936" height="3" fill="#83839A"/>
+  <text x="72" y="864" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="700" fill="#0B0B12">À vérifier</text>
+  <text x="322" y="864" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="400" fill="#0B0B12">Contenu exact :</text>
+  <text x="322" y="907.2" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="400" fill="#0B0B12">voir la fiche</text>
+  <text x="665" y="864" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="400" fill="#0B0B12">Nb de boosters :</text>
+  <text x="665" y="907.2" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="400" fill="#0B0B12">voir la fiche</text>
+  <text x="72" y="1278" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="400" fill="#545466">Les contenus varient selon l'extension : la fiche produit fait foi.</text>
+</svg>

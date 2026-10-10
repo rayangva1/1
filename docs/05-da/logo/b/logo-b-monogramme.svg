@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-labelledby="titre desc">
+  <title id="titre">Quai des Cartes — monogramme cartes, direction B</title>
+  <desc id="desc">Nom de travail NON VALIDÉ. Lettrage original construit à la main en contours pleins (aucune police, aucun personnage, symbole ou typographie de licence). Voir logo/REGLES_LOGO.md.</desc>
+  <path fill="#0B0B12" d="M51.05 13.49L92.64 19.33A9 9 0 0 1 100.3 29.5L91.12 94.85A9 9 0 0 1 80.95 102.51L39.36 96.67A9 9 0 0 1 31.7 86.5L40.88 21.15A9 9 0 0 1 51.05 13.49ZM51.2 19.57A4 4 0 0 0 46.69 22.97L37.78 86.35A4 4 0 0 0 41.18 90.87L80.8 96.43A4 4 0 0 0 85.31 93.03L94.22 29.65A4 4 0 0 0 90.82 25.13L51.2 19.57Z"/>
+  <path fill="#5A31F4" d="M27.36 23.33L68.95 17.49A9 9 0 0 1 79.12 25.15L88.3 90.5A9 9 0 0 1 80.64 100.67L39.05 106.51A9 9 0 0 1 28.88 98.85L19.7 33.5A9 9 0 0 1 27.36 23.33Z"/>
+  <path fill="#FFFFFF" d="M73 55.5A19 19 0 1 1 35 55.5A19 19 0 1 1 73 55.5ZM64 55.5A10 10 0 1 0 44 55.5A10 10 0 1 0 64 55.5ZM64 41L73 41L73 83L64 83ZM73 41A4.5 4.5 0 1 1 64 41A4.5 4.5 0 1 1 73 41ZM73 83A4.5 4.5 0 1 1 64 83A4.5 4.5 0 1 1 73 83Z"/>
+</svg>

@@ -1,0 +1,19 @@
+{%- comment -%}
+  Pictogramme de la DA (docs/05-da/components/icones.svg), en ligne, décoratif (aria-hidden).
+  Paramètres : nom = 'local' | 'precommande' | 'rupture' | 'alerte' | 'fr' | 'nouveaute' | 'garantie' | 'drop' | 'info' ;
+  taille (défaut 14). 'garantie' = pictogramme « scellé contrôlé » (bouclier), 'drop' = calendrier (pré-drop).
+  Le sens est toujours porté par le texte voisin, jamais par l'icône seule.
+{%- endcomment -%}
+{%- assign taille = taille | default: 14 -%}
+<svg class="da-icon" width="{{ taille }}" height="{{ taille }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
+  {%- case nom -%}
+    {%- when 'local' -%}<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 15l2 2 4-4"/>
+    {%- when 'precommande', 'drop' -%}<rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/>
+    {%- when 'garantie' -%}<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5L16 9"/>
+    {%- when 'rupture' -%}<circle cx="12" cy="12" r="9"/><path d="M7 17L17 7"/>
+    {%- when 'alerte' -%}<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>
+    {%- when 'fr' -%}<rect x="3" y="5" width="18" height="14" rx="1"/><path d="M7 9v6M7 9h3M7 12h2.5M13 15V9h2.5a1.5 1.5 0 0 1 0 3H13M15.5 12l1.5 3"/>
+    {%- when 'nouveaute' -%}<path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><path d="M12 9l3 3-3 3-3-3z"/>
+    {%- else -%}<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/>
+  {%- endcase -%}
+</svg>

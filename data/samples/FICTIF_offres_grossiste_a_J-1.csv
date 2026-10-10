@@ -1,0 +1,23 @@
+sku;ean;designation;langue;extension;format;contenu;scelle;prix;devise;base_prix;taux_tva;unite_prix;unites_par_colis;colisage;moq;disponibilite;stock;allocation;palier1_qte;palier1_prix;palier2_qte;palier2_remise;date_sortie;pays_expedition;date_maj;fictif
+FICTIF-A-001;2000000001012;Display 36 boosters Extension Fictive Alpha;Français;Fictive Alpha;Display;36 boosters;oui;95,00;EUR;HT;0;unité;;6;6;en stock;24;;12;92,00;24;5 %;17.07.2026;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-002;2000000001029;Coffret Dresseur d'Élite Fictive Alpha;Français;Fictive Alpha;ETB;9 boosters + accessoires;oui;38,50;EUR;HT;0;unité;;10;10;en stock;40;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-003;2000000001036;Bundle 6 boosters Fictive Alpha;Français;Fictive Alpha;Bundle;6 boosters;oui;21,00;EUR;HT;0;unité;;12;12;en stock;36;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-004;2000000001043;Tripack Fictive Alpha;Français;Fictive Alpha;Tripack;3 boosters + carte promo;oui;11,20;EUR;HT;0;unité;;24;24;en stock;48;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-005;2000000001050;Coffret collection Fictive Bêta;Français;Fictive Bêta;Coffret;4 boosters + promo;oui;18,90;EUR;HT;0;unité;;6;6;en stock;18;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-006;2000000001067;Display 36 boosters Fictive Bêta;Français;Fictive Bêta;Display;36 boosters;oui;98,00;EUR;HT;0;unité;;6;6;en stock;12;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-007;2000000001074;ETB Fictive Bêta;Français;Fictive Bêta;ETB;9 boosters;oui;39,00;EUR;HT;0;unité;;10;10;en stock;20;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-008;2000000001081;Protège-cartes standard x65;n/a;;Protège-cartes;65 protège-cartes;oui;4,20;EUR;HT;0;unité;;20;20;en stock;200;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-009;2000000001098;Classeur 9 cases;n/a;;Classeur;1 classeur 360 cartes;oui;9,80;EUR;HT;0;unité;;10;10;en stock;30;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-016;2000000001166;Bundle 6 boosters Fictive Bêta;Français;Fictive Bêta;Bundle;6 boosters;oui;21,50;EUR;HT;0;unité;;12;12;en stock;24;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-025;;Booster Fictive Gamma;Français;Fictive Gamma;Booster;1 booster;oui;3,80;EUR;HT;0;unité;;36;36;en stock;360;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-026;2000000001265;Booster Fictive Alpha;Français;Fictive Alpha;Booster;1 booster;oui;3,90;EUR;HT;0;unité;;36;36;en stock;720;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-027;2000000001012;Carton 6 displays Fictive Alpha;Français;Fictive Alpha;Display;36 boosters;oui;570,00;EUR;HT;0;carton;6;;;en stock;4;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-028;2000000001289;Display 36 boosters Fictive Gamma;Français;Fictive Gamma;Display;36 boosters;oui;97,00;EUR;HT;0;unité;;6;6;sur allocation;;12;;;;;06.11.2026;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-033;2000000001333;ETB Fictive Alpha édition 11 boosters;Français;Fictive Alpha;ETB;11 boosters;oui;49,00;EUR;HT;0;unité;;10;10;en stock;10;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-034;2000000001340;Display 36 boosters Fictive Gamma (lot B);Français;Fictive Gamma;Display;36 boosters;oui;99,00;EUR;HT;0;unité;;6;6;en stock;6;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-038;2000000001388;Display 30 boosters Fictive Alpha (JP);Japonais;Fictive Alpha;Display;30 boosters;oui;72,00;EUR;HT;0;unité;;12;12;en stock;12;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-040;2000000001401;ETB Fictive Gamma;Français;Fictive Gamma;ETB;9 boosters;oui;38,90;EUR;HT;0;unité;;10;10;en stock;15;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-041;2000000001418;Bundle Fictive Gamma;Français;Fictive Gamma;Bundle;6 boosters;oui;21,20;EUR;HT;0;unité;;12;12;en stock;12;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-042;2000000001425;Coffret Fictive Gamma;Français;Fictive Gamma;Coffret;4 boosters;oui;19,40;EUR;HT;0;unité;;6;6;en stock;6;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-043;2000000001432;Tripack Fictive Gamma;Français;Fictive Gamma;Tripack;3 boosters;oui;11,30;EUR;HT;0;unité;;24;24;en stock;24;;;;;;;FR;2026-10-03T06:00:00+02:00;true
+FICTIF-A-099;2000000001999;Tripack Fictive Bêta;Français;Fictive Bêta;Tripack;3 boosters;oui;11,40;EUR;HT;0;unité;;24;24;en stock;24;;;;;;;FR;2026-10-03T06:00:00+02:00;true

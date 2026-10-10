@@ -1,0 +1,19 @@
+Objet : Confirmez votre alerte {{NOM_BOUTIQUE}}
+
+CONFIRMEZ VOTRE INSCRIPTION
+
+{{ $json.salutation }}
+
+Vous avez demandé à recevoir l'alerte d'ouverture de {{NOM_BOUTIQUE}} et, si vous l'avez choisi, nos alertes de stock et au plus un email récapitulatif par semaine.
+
+Confirmer mon inscription : {{ $json.url_confirmation }}
+
+Ce lien est valable {{ $json.duree_validite_lien }}.
+
+Vous n'êtes pas à l'origine de cette demande ? Ignorez simplement cet email : sans clic de votre part, votre adresse n'est pas inscrite.
+
+--
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email unique parce que cette adresse a été saisie sur notre page d'inscription.
+Confidentialité : {{URL_CONFIDENTIALITE}}

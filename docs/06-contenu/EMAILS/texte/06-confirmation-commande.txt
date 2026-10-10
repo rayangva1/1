@@ -1,0 +1,25 @@
+Objet : Commande {{ order_name }} confirmée
+
+MERCI, VOTRE COMMANDE EST CONFIRMÉE
+
+Bonjour{% if customer.first_name %} {{ customer.first_name }}{% endif %},
+
+Nous avons bien reçu votre paiement. Voici exactement ce que vous avez commandé.
+
+{% for line in subtotal_line_items %}- {{ line.title }} × {{ line.quantity }} : {{ line.final_line_price | money }}{% if line.sku contains '-RESA-' %} (réservation garantie : servie en premier, expédiée à part dès réception){% elsif line.title contains 'Précommande' %} (précommande, expédiée à part){% endif %}
+{% endfor %}Sous-total : {{ subtotal_price | money }}
+{% if discounts_amount > 0 %}Réductions : − {{ discounts_amount | money }}
+{% endif %}Livraison : {{ shipping_price | money }}
+Total payé : {{ total_price | money }}
+{{MENTION_TVA}}
+
+Livraison (Suisse uniquement) : {{ shipping_address.name }}, {{ shipping_address.address1 }}, {{ shipping_address.zip }} {{ shipping_address.city }}
+
+Voir ma commande : {{ order_status_url }}
+
+--
+Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
+Conditions de vente : {{URL_CGV}} · Livraison et retours : {{URL_RETOURS}}
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.

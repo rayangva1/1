@@ -1,0 +1,98 @@
+# TEMPLATE — à compléter dès réception d'un fichier réel ; aucun format confirmé.
+#
+# Dictionnaire de champs GÉNÉRIQUE (modèle de départ pour un nouveau fournisseur).
+# Lu par engine/pokeshop/importers/mapping.py (load_mapping). Mode d'emploi :
+# data/supplier_mappings/README.md.
+#
+# Règles d'or
+# - Une colonne = un champ normalisé. Les listes donnent les en-têtes ACCEPTÉS (comparaison
+#   sans casse, sans accents, ponctuation ignorée). Deux colonnes du fichier qui répondent au
+#   même champ => import en échec (MAPPING_MISMATCH) : on ne choisit jamais au hasard.
+# - Les « defaults » ne se remplissent qu'avec une confirmation ÉCRITE du fournisseur
+#   (référence à noter dans notes). Inconnu = null => quarantaine ou brouillon, jamais deviné.
+# - Statut TEMPLATE / FICTIF = simulation uniquement. Passage à VALIDE : nom de la personne,
+#   date et sha256 du fichier réel sur lequel le dictionnaire a été vérifié.
+
+supplier_id: generic
+supplier_name: "Modèle générique"
+mapping_version: "generic-template-2026-10-04"
+status: TEMPLATE
+fictif: false
+description: "TEMPLATE — à compléter dès réception d'un fichier réel ; aucun format confirmé"
+notes:
+  - "Copier ce fichier en <supplier_id>.yaml puis remplacer les en-têtes par ceux du fichier reçu."
+  - "Confirmer par écrit : devise, prix HT ou TTC, prix à l'unité ou au carton, unités par carton, langue, TVA facturée."
+
+file_format: csv          # csv | xlsx | xml
+csv:
+  delimiter: ";"
+  quotechar: '"'
+  encoding: "utf-8-sig"   # « cp1252 » pour un export Excel Windows ancien
+  skip_rows: 0            # lignes de titre avant l'en-tête
+xlsx:
+  sheet: null             # première feuille si null
+  header_row: 1
+  source_ts_cell: null    # ex. "B2" si la date d'export figure dans une cellule
+xml:
+  record_path: ".//offre"
+  source_ts_attribute: null
+  namespaces: {}
+numbers:
+  decimal_separator: ","  # "," (FR/CH romand) ou "." — un nombre ambigu part en quarantaine
+  thousands_separators: [" ", "'", "’", " ", " "]
+dates:
+  formats: ["%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"]
+  timezone: "Europe/Zurich"
+
+columns:
+  supplier_sku: [sku, ref, reference, "référence", code_article, article]
+  gtin: [ean, gtin, ean13, code_barre, "code-barres"]
+  designation: [designation, "désignation", libelle, "libellé", description, produit]
+  language: [langue, language, version]
+  extension: [extension, serie, "série", set]
+  format: [format, type, type_produit]
+  content: [contenu, composition]
+  sealed: [scelle, "scellé", etat, "état"]
+  price: [prix, prix_net, tarif, prix_unitaire]
+  currency: [devise, monnaie, currency]
+  price_basis: [base_prix, ht_ttc, "HT/TTC"]
+  vat_rate: [tva, taux_tva]
+  unit_basis: [unite_prix, "unité de prix", par]
+  units_per_pack: [unites_par_colis, "unités par carton", pcb, conditionnement]
+  carton_qty: [colisage, qte_carton]
+  moq: [moq, minimum, minimum_commande]
+  availability: [disponibilite, "disponibilité", statut]
+  available_qty: [stock, quantite_disponible, qte_dispo]
+  allocation_qty: [allocation, quota]
+  release_date: [date_sortie, sortie]
+  incoterm: [incoterm]
+  ship_from_country: [pays_expedition, origine_expedition]
+  source_ts: [date_maj, maj, mise_a_jour]
+required_fields: [supplier_sku, price]
+
+tiers: []                 # ex. - {min_qty_column: palier1_qte, price_column: palier1_prix}
+quantities:
+  stock: UNIT             # UNIT (unité de vente) ou PACK (cartons)
+  moq: UNIT
+  tiers: UNIT
+  allocation: UNIT
+defaults:
+  currency: null
+  price_basis: null       # HT | TTC
+  unit_basis: null        # UNIT | PACK
+  units_per_pack: null
+  vat_rate: null
+  sealed: null
+  language: null
+  ship_from_country: null
+  vat_country: null
+  stock_pool_id: null
+  incoterm: null
+value_maps: {}            # ex. price_basis: {"prix pro": "HT"} — seulement sur confirmation écrite
+allowed_currencies: [CHF, EUR]
+allocation_is_firm: false # true seulement avec accord écrit (allocation_evidence)
+allocation_evidence: null
+
+# Validation humaine requise
+# - [ ] Ce modèle n'est jamais utilisé tel quel pour un import réel.
+# - [ ] Chaque copie fournisseur passe au statut VALIDE après contrôle sur un fichier réel.

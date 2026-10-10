@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="fr-CH" data-da="a" data-ambiance="atelier" data-animations="pause">
+<head>
+  <meta charset="utf-8">
+  <!-- Gabarit de l'image de partage (1200 × 630), ambiance « Atelier » — rendu par site/outils/generer_og.py
+       (JPEG d'au plus 300 Ko, visé autour de 150 Ko : site/landing/assets/og-image.jpg).
+       Visuel local (renard-heros, variante WebP de site/landing/assets/visuels/ : renard original « Braise », nom
+       provisoire, aucun élément sous licence). Texte posé dans la moitié libre de l'illustration, sur un voile papier.
+       Règles (IP-02) : aucune affirmation que la boutique ne peut pas encore tenir (pas de « stock réel » : elle n'a
+       pas encore de stock ; « ouverture prochaine ») et la mention de non-affiliation lisible à côté du titre qui nomme
+       Pokémon, puisque le renard y est accolé (contrôlé par site/outils/verifier_site.py).
+       Nom de travail NON VALIDÉ. -->
+  <title>Image de partage — Quai des Cartes</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&amp;family=Geist+Mono:wght@400..600&amp;family=Instrument+Serif:ital@0;1&amp;display=swap">
+  <link rel="stylesheet" href="../../landing/assets/da/tokens.css">
+  <link rel="stylesheet" href="../../landing/assets/da/components.css">
+  <link rel="stylesheet" href="../../landing/assets/da/ambiance.css">
+  <link rel="stylesheet" href="../../landing/css/landing.css">
+  <style>
+    html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+    .og { position: relative; width: 1200px; height: 630px; overflow: hidden; background: var(--da-color-papier-chaud); }
+    .og .og__image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 100% 100%; }
+    .og__texte { position: absolute; left: 64px; top: 52px; width: 560px; isolation: isolate; }
+    .og__texte::before {
+      content: ""; position: absolute; inset: -48px -64px; z-index: -1; background: var(--lp-voile);
+      mask-image: linear-gradient(90deg, transparent, black 56px, black calc(100% - 56px), transparent), linear-gradient(180deg, transparent, black 48px, black calc(100% - 48px), transparent);
+      mask-composite: intersect;
+    }
+    .og .og__logo { display: block; width: auto; height: 24px; margin-bottom: 32px; }
+    .og__titre { margin: 0; font-size: 58px; line-height: 0.98; }
+    .og__preuves { margin: 22px 0 0; font-family: var(--da-font-price); font-size: 15px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--da-color-ink); }
+    /* Non-affiliation : lisible même en vignette (charbon sur voile papier, corps 19 px, jamais en gris clair) ; le bloc
+       s'arrête au-dessus de la boîte noire de l'illustration. */
+    .og__independance { margin: 16px 0 0; max-width: 30em; font-size: 19px; font-weight: 500; line-height: 1.35; color: var(--da-color-ink); }
+  </style>
+</head>
+<body class="da-root">
+  <div class="og">
+    <img class="og__image" src="../../landing/assets/visuels/renard-heros-1920.webp" alt="" width="2688" height="1152">
+    <div class="og__texte">
+      <img class="og__logo" src="../../landing/assets/da/logo-horizontal.svg" alt="Quai des Cartes" width="1083" height="140">
+      <h1 class="da-title og__titre">Pokémon JCC en français, <em class="lp-accent">expédié</em> depuis Genève.</h1>
+      <p class="og__preuves">Produits scellés · ouverture prochaine</p>
+      <p class="og__independance">Boutique indépendante · non affiliée à Pokémon / Nintendo / The Pokémon Company</p>
+    </div>
+  </div>
+</body>
+</html>

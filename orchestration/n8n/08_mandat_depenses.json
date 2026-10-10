@@ -1,0 +1,1539 @@
+{
+  "id": "pkshp08MandatDep",
+  "name": "Pokeshop 08 — Mandat de dépense",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 08 — Mandat de dépense (passerelle CONN-PAYPAL, DELEGATION_AUTONOMIE.md)\nToute demande d'achat ou de paiement d'un agent arrive ici par **son** webhook (`pokeshop-depense-<rôle>`, un secret par\nagent : le demandeur est fixé par le webhook, jamais par le corps) → **`POST /mandate/check`** (enregistrée au\nregistre, idempotente par clé) :\n- **APPROVED_WITHIN_MANDATE** → réponse à l'agent, paiement PayPal **préparé** (nœud d'exécution désactivé), journal ;\n- **NEEDS_HUMAN_APPROVAL** → email de **validation en 1 clic** (formulaire protégé, 24 h ; sans réponse : refus = statu quo) ;\n  un virement est **préparé**, la propriétaire le signe dans son e-banking ;\n- **REJECTED** → réponse avec les motifs (interdits, stop-loss, réserve cash…).\nContrôle impossible (mandat illisible, stop-loss non évalué) → **refus par défaut**.\n**Activation** : niveau 1 (contrôle et validation) ; exécution PayPal après mandat signé et recette CONN-PAYPAL.\n**Validation humaine requise** : signature du mandat (B01), empreinte au coffre, recette PayPal, routes moteur d'exécution.",
+        "height": 430,
+        "width": 700,
+        "color": 4
+      },
+      "id": "62581d6b-2c8c-5ab7-a3cf-f6429c7037dc",
+      "name": "Note — à lire",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        -520
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "e07fc346-a9b4-5b4b-9e95-04d75d4a7363",
+      "name": "Demande de dépense (passerelle agents)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "notes": "Point de jonction des webhooks par agent : corps {request} avec requested_by imposé par le webhook.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-acquisition",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "6c8ea7dd-e7eb-58fe-82ba-63b8c4fce905",
+      "name": "Demande de dépense — acquisition (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        -640
+      ],
+      "webhookId": "add566cc-280b-5b37-99cb-3d8470beb34a",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw08Acqui10",
+          "name": "Passerelle 08 dépense — secret de l'agent 10 (acquisition)"
+        }
+      },
+      "notes": "Secret remis au seul agent « acquisition ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'acquisition' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'acquisition' } }];\n"
+      },
+      "id": "56bea168-b927-5799-b0e7-fc30e0e98163",
+      "name": "Demandeur imposé : acquisition",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        -640
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-chef-de-projet",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "70bac509-6899-5abb-8000-1493824466f7",
+      "name": "Demande de dépense — chef-de-projet (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        -480
+      ],
+      "webhookId": "d988da52-5940-587b-888e-f96eddf83825",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw08Chef001",
+          "name": "Passerelle 08 dépense — secret de l'agent 01 (chef-de-projet)"
+        }
+      },
+      "notes": "Secret remis au seul agent « chef-de-projet ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'chef-de-projet' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'chef-de-projet' } }];\n"
+      },
+      "id": "64e0c94d-4d73-5ed1-ae09-4559d361b361",
+      "name": "Demandeur imposé : chef-de-projet",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        -480
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-communication",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "b67c54f5-81e2-546a-96eb-53cc78d8f46d",
+      "name": "Demande de dépense — communication (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        -320
+      ],
+      "webhookId": "a05a4074-bce9-5a03-a17d-2b998bb39b3f",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw08Commu09",
+          "name": "Passerelle 08 dépense — secret de l'agent 09 (communication)"
+        }
+      },
+      "notes": "Secret remis au seul agent « communication ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'communication' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'communication' } }];\n"
+      },
+      "id": "d10ef04c-0c6a-571a-b0e6-6ed9b3925b31",
+      "name": "Demandeur imposé : communication",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        -320
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-direction-artistique",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "7b9f36e6-363c-56b5-911b-86df1f0786e3",
+      "name": "Demande de dépense — direction-artistique (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        -159
+      ],
+      "webhookId": "6f9b396c-4070-5cbb-b354-551c73d05265",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw08DirAr06",
+          "name": "Passerelle 08 dépense — secret de l'agent 06 (direction-artistique)"
+        }
+      },
+      "notes": "Secret remis au seul agent « direction-artistique ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'direction-artistique' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'direction-artistique' } }];\n"
+      },
+      "id": "fc3d2dad-f4db-5e4b-b8c6-e36e9661295b",
+      "name": "Demandeur imposé : direction-artistique",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        -159
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-operations-sav",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "8564594c-012d-5b88-8942-1da87f600f75",
+      "name": "Demande de dépense — operations-sav (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        0
+      ],
+      "webhookId": "41583937-f14f-50cf-8569-af293f3ea7b0",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw08OpSav11",
+          "name": "Passerelle 08 dépense — secret de l'agent 11 (operations-sav)"
+        }
+      },
+      "notes": "Secret remis au seul agent « operations-sav ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'operations-sav' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'operations-sav' } }];\n"
+      },
+      "id": "3d4f0610-0fff-5f1e-bf81-86f47d8ac017",
+      "name": "Demandeur imposé : operations-sav",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        0
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-site-integrations",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "05fbe672-5474-599d-b729-79d4461df9e6",
+      "name": "Demande de dépense — site-integrations (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        159
+      ],
+      "webhookId": "74a5b743-61f4-5ab2-9146-54958c2410e8",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw08SiteI07",
+          "name": "Passerelle 08 dépense — secret de l'agent 07 (site-integrations)"
+        }
+      },
+      "notes": "Secret remis au seul agent « site-integrations ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'site-integrations' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'site-integrations' } }];\n"
+      },
+      "id": "63402590-b21c-5b35-814d-defb54c01c41",
+      "name": "Demandeur imposé : site-integrations",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        159
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-depense-sourcing",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "fbcfa6de-a19d-5559-8010-922b8935b1e4",
+      "name": "Demande de dépense — sourcing (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        320
+      ],
+      "webhookId": "64259669-d0bc-5c62-800f-7565a3163ba2",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw08Sourc02",
+          "name": "Passerelle 08 dépense — secret de l'agent 02 (sourcing)"
+        }
+      },
+      "notes": "Secret remis au seul agent « sourcing ». Corps : {\"request\": SpendRequest} — montants en chaînes ; aucune trésorerie (le moteur la lit dans ses registres).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passerelle 08 (revue R4) : le demandeur est celui du webhook appelé (secret propre à l'agent), jamais le corps.\nconst body = $input.first().json.body || {};\nconst request = Object.assign({}, body.request || {}, { requested_by: 'sourcing' });\nreturn [{ json: { body: Object.assign({}, body, { request }), demandeur: 'sourcing' } }];\n"
+      },
+      "id": "76702829-a895-5459-97de-9a9408bda486",
+      "name": "Demandeur imposé : sourcing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        320
+      ],
+      "notes": "requested_by = rôle du webhook (secret propre à l'agent), jamais celui déclaré dans le corps.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "51e7abfa-42e2-51bb-a82c-59e5f603979c",
+              "name": "workflow",
+              "value": "mandat-depenses",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "f5fa4c8f-6acf-5d0a-9e02-11d4a1551757",
+      "name": "Paramètres",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        0
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/incidents?open_only=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "cda6aa29-d4af-5f8f-8668-6a69a38d9969",
+      "name": "Garde : incidents ouverts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n08Man",
+          "name": "Pokeshop API — jeton nommé n8n-08-mandat"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1cd59f88-9599-5cbf-b85b-862556018fac",
+              "leftValue": "={{ Object.keys($json.suspended || {}).some(t => t === $('Paramètres').first().json.workflow || t === '*') }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "44d1e56d-d2df-54c8-b8d7-d5b6c544d2fd",
+      "name": "Workflow suspendu ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        0
+      ],
+      "notes": "Suspension = incident ouvert sur ce workflow ou suspension globale de toutes les écritures (SOP_INCIDENTS §2).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ outcome: 'REJECTED', motif: 'Workflow de dépense suspendu par un incident ouvert : aucune dépense.' }) }}",
+        "options": {
+          "responseCode": 423
+        }
+      },
+      "id": "de2b10ab-7ade-5153-9236-81552a1ff667",
+      "name": "Répondre : dépenses suspendues",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/mandate/check",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ request: $('Demande de dépense (passerelle agents)').first().json.body.request, record: true }) }}"
+      },
+      "id": "b668ad32-836e-5e5d-96b4-87cd9d368de5",
+      "name": "Contrôle du mandat (POST /mandate/check)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        40
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n08Man",
+          "name": "Pokeshop API — jeton nommé n8n-08-mandat"
+        }
+      },
+      "notes": "Décision tracée au registre (record: true), idempotente par clé ; aucune exécution ici. Jeton nommé n8n-08-mandat (relais) : requested_by = rôle de l'agent (.claude/agents), non authentifié => trésorerie jamais vérifiable, validation humaine (TREASURY_UNVERIFIED) ; incident ouvert sur « mandat-depenses » => 423 (refus).",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ outcome: 'REJECTED', motif: 'Contrôle du mandat impossible (mandat illisible, stop-loss non évalué ou demande invalide) : refus par défaut.' }) }}",
+        "options": {
+          "responseCode": 503
+        }
+      },
+      "id": "51dde5f4-d087-5b02-8cbc-3c997270500f",
+      "name": "Répondre : contrôle impossible (refus par défaut)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1400,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "47d67c11-cea1-5719-8151-f6d574ea6818",
+              "name": "sujet",
+              "value": "=[MANDAT] Contrôle impossible : {{ $('Demande de dépense (passerelle agents)').first().json.body.request.idempotency_key }}",
+              "type": "string"
+            },
+            {
+              "id": "b9f7214f-96c0-5fe4-93c4-78d637f12988",
+              "name": "texte",
+              "value": "=La demande a été refusée par défaut. Vérifier le mandat (signature, empreinte) et la photo du stop-loss.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "94ab3e66-aed6-5375-aa1b-043a953457ec",
+      "name": "Préparer l’alerte contrôle impossible",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1680,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "efa7113e-082b-53ae-bef9-92477c327254",
+      "name": "Alerte : contrôle du mandat impossible (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1960,
+        280
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "ab569056-f4da-5c32-ad36-d1350efbba4b",
+                    "leftValue": "={{ $json.decision.outcome }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "APPROVED_WITHIN_MANDATE"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "APPROVED_WITHIN_MANDATE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "a29d1c3b-e5c7-5527-b3b9-46b2504a1116",
+                    "leftValue": "={{ $json.decision.outcome }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "NEEDS_HUMAN_APPROVAL"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "NEEDS_HUMAN_APPROVAL"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0eec6b4b-f333-5881-bafc-e18b183f64d2",
+                    "leftValue": "={{ $json.decision.outcome }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "REJECTED"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "REJECTED"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Issue inconnue"
+        }
+      },
+      "id": "d560e7f4-6bdc-5ab4-8b6b-2926563c1a0b",
+      "name": "Issue de la décision",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1400,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ outcome: $json.decision.outcome, decision_ref: $json.decision.idempotency_key, montant_chf: $json.decision.amount_chf, cout_effectif_chf: $json.decision.effective_cost_chf }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "33bd80c8-2847-5990-a774-88ed8958a23b",
+      "name": "Répondre : approuvée dans le mandat",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "39b849d4-144d-5063-b1ac-5b774ef9b7e9",
+              "name": "sender_batch_id",
+              "value": "={{ $('Demande de dépense (passerelle agents)').first().json.body.request.idempotency_key }}",
+              "type": "string"
+            },
+            {
+              "id": "7d2d5b7d-3370-57d9-9111-ea1c29d1a124",
+              "name": "montant",
+              "value": "={{ $('Demande de dépense (passerelle agents)').first().json.body.request.amount }}",
+              "type": "string"
+            },
+            {
+              "id": "1bd3507b-41df-58df-9254-b3e0c129d573",
+              "name": "devise",
+              "value": "={{ $('Demande de dépense (passerelle agents)').first().json.body.request.currency }}",
+              "type": "string"
+            },
+            {
+              "id": "a08325d7-3785-5d61-a429-5fb285b54057",
+              "name": "beneficiaire_ref",
+              "value": "={{ $('Demande de dépense (passerelle agents)').first().json.body.request.supplier_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "010cf2c5-0f16-5dd8-aef2-12629b0e8164",
+      "name": "Préparer le paiement PayPal (Payouts)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1960,
+        -240
+      ],
+      "notes": "Coordonnées du bénéficiaire : référence au coffre (payee_ref du mandat), jamais dans ce workflow.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api-m.paypal.com/v1/payments/payouts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ sender_batch_header: { sender_batch_id: $json.sender_batch_id, email_subject: 'Paiement fournisseur' }, items: [ { recipient_type: 'PAYPAL_ID', amount: { value: $json.montant, currency: $json.devise }, receiver: 'REMPLACER-par-la-reference-du-coffre', sender_item_id: $json.sender_batch_id } ] }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "96da8623-fa7c-5ccc-9e67-a9af13dd720a",
+      "name": "Exécuter le paiement PayPal — DÉSACTIVÉ",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        -240
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "pkshpPaypalOAuth",
+          "name": "PayPal compte dédié — OAuth2 client credentials"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer seulement : mandat signé (B01), empreinte au coffre, recette CONN-PAYPAL. sender_batch_id = clé d'idempotence.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/mandate/executed",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ idempotency_key: $('Demande de dépense (passerelle agents)').first().json.body.request.idempotency_key }) }}"
+      },
+      "id": "1c6dd73c-4b19-51f3-b088-db0040ae8530",
+      "name": "Marquer exécuté — route moteur attendue (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2520,
+        -240
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n08Man",
+          "name": "Pokeshop API — jeton nommé n8n-08-mandat"
+        }
+      },
+      "disabled": true,
+      "notes": "Route à créer : SpendLedger.mark_executed (idempotent) puis rapprochement du relevé.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {},
+      "id": "d4db6375-ae52-5d4e-90e1-4d60452be70b",
+      "name": "Journal : dépense approuvée",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2800,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ outcome: $json.decision.outcome, motifs: $json.labels_fr, statut: 'en attente de la propriétaire (24 h)' }) }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "ca83a7e2-85f5-596b-bb77-6a110d306287",
+      "name": "Répondre : en attente de validation humaine",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e3c273f4-e6b6-583a-b5a2-493f005a0208",
+              "name": "sujet",
+              "value": "=[À VALIDER] {{ $('Demande de dépense (passerelle agents)').first().json.body.request.purpose }} — {{ $('Contrôle du mandat (POST /mandate/check)').first().json.decision.amount_chf }} CHF",
+              "type": "string"
+            },
+            {
+              "id": "0a422953-03ae-5fff-a84b-97f5dfc928d7",
+              "name": "texte",
+              "value": "=Demande de {{ $('Demande de dépense (passerelle agents)').first().json.body.request.requested_by }} : {{ $('Demande de dépense (passerelle agents)').first().json.body.request.purpose }}\nBénéficiaire : {{ $('Demande de dépense (passerelle agents)').first().json.body.request.supplier_id }} ; source du montant : {{ $('Demande de dépense (passerelle agents)').first().json.body.request.amount_source }}\nMontant : {{ $('Contrôle du mandat (POST /mandate/check)').first().json.decision.amount_chf }} CHF (coût effectif {{ $('Contrôle du mandat (POST /mandate/check)').first().json.decision.effective_cost_chf }} CHF)\nMotifs : {{ $('Contrôle du mandat (POST /mandate/check)').first().json.labels_fr.join(' ; ') }}\nVirement préparé : {{ $('Contrôle du mandat (POST /mandate/check)').first().json.decision.transfer_draft ? 'oui, à signer dans votre e-banking (aucune coordonnée ici)' : 'non' }}\n\nDécider en 1 clic : {{ $execution.resumeFormUrl }}\nSans réponse sous 24 h : refus (statu quo sûr).\nINTERNE — ne jamais transférer.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "56077f18-afb9-5783-80d7-0660fbe54f93",
+      "name": "Préparer l’email de validation 1 clic",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1960,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "d99ca84e-696d-5f81-a77d-463f1d97b7ed",
+      "name": "Email de validation 1 clic à la propriétaire (désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2240,
+        -40
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "resume": "form",
+        "incomingAuthentication": "basicAuth",
+        "formTitle": "Validation d'une dépense hors mandat",
+        "formDescription": "={{ $('Demande de dépense (passerelle agents)').first().json.body.request.purpose }} — montant et motifs dans l'email ; aucune coordonnée bancaire ici.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Décision",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Approuver"
+                  },
+                  {
+                    "option": "Refuser"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Motif",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        },
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 24,
+        "resumeUnit": "hours",
+        "options": {}
+      },
+      "id": "59b9331b-eb96-5648-b857-e863b0202f76",
+      "name": "Validation de la propriétaire (formulaire, 24 h)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2520,
+        -40
+      ],
+      "webhookId": "fb7746db-6cc8-5481-9b8e-264ef9137fe7",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "pkshpOwnerForm01",
+          "name": "Formulaires propriétaire — Basic Auth"
+        }
+      },
+      "notes": "Sans réponse sous 24 h : la branche « non » s'applique (statu quo sûr).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "38d697d9-75a5-551a-87f5-a51016a20faf",
+              "leftValue": "={{ $json['Décision'] }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "Approuver"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "3a97eeef-5962-5091-a9b0-e402105eca96",
+      "name": "Approuvée par la propriétaire ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2800,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "26d1c78a-3cca-594e-8335-233f30290ab9",
+              "name": "sujet",
+              "value": "=[À ENREGISTRER] Validation de {{ $('Demande de dépense (passerelle agents)').first().json.body.request.idempotency_key }}",
+              "type": "string"
+            },
+            {
+              "id": "fe947fa1-6feb-5f4f-91dd-1ed33fc55178",
+              "name": "texte",
+              "value": "=Depuis votre terminal (jeton propriétaire, jamais dans n8n) : POST /mandate/human-decision avec idempotency_key = {{ $('Demande de dépense (passerelle agents)').first().json.body.request.idempotency_key }} et decision = APPROVE, en-tête X-Pokeshop-Owner-Token, dans les 24 h. Sans cet enregistrement, la dépense n'est ni payable ni comptée dans le stop-loss pub.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "6dca9a87-8f1b-5075-adf3-c0176802ab3b",
+      "name": "Rappel : enregistrer la validation au moteur (propriétaire, son jeton)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3080,
+        -120
+      ],
+      "notes": "POST /mandate/human-decision : jeton propriétaire seul (matrice authz) — n8n ne le détient pas.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api-m.paypal.com/v1/payments/payouts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ sender_batch_header: { sender_batch_id: $('Demande de dépense (passerelle agents)').first().json.body.request.idempotency_key }, items: [] }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "aa2bc758-b963-583b-96aa-b0de83783edc",
+      "name": "Exécuter : PayPal ou virement signé dans l’e-banking (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3360,
+        -120
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "pkshpPaypalOAuth",
+          "name": "PayPal compte dédié — OAuth2 client credentials"
+        }
+      },
+      "disabled": true,
+      "notes": "Virement : la propriétaire signe l'ordre préparé dans son e-banking ; PayPal : après recette et enregistrement de la validation au moteur (HUMAN_APPROVED, moins d'une heure).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "01313b25-e540-5b63-97e6-e6634bb9718a",
+      "name": "Journal : validée par la propriétaire",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3640,
+        -120
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "ede6c86e-9336-5af9-a4a9-285cc4a56355",
+      "name": "Refus ou expiration : rien à payer (statu quo sûr)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3080,
+        40
+      ],
+      "notes": "Facultatif : la propriétaire peut enregistrer le refus (POST /mandate/human-decision, decision REFUSE, son jeton) ; sinon la demande expire au registre après 24 h et n'est jamais engagée.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "5c55d366-9291-5573-b896-8e4d03d7823a",
+      "name": "Journal : refus ou expiration (statu quo sûr)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3360,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ outcome: $json.decision.outcome, motifs: $json.labels_fr, codes: $json.decision.reasons }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "a9520742-d4b1-5589-8efb-21189433d07c",
+      "name": "Répondre : refusée (motifs)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        120
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "8bedc845-8f2b-52c0-9b56-79523eeb2d5c",
+      "name": "Journal : refus du mandat",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1960,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ outcome: 'REJECTED', motif: 'Issue de contrôle inconnue : refus par défaut.' }) }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "0b49a30e-8ec6-541a-83ce-5b61c6a71b08",
+      "name": "Répondre : issue inconnue (refus par défaut)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Demande de dépense — acquisition (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : acquisition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : acquisition": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de dépense — chef-de-projet (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : chef-de-projet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : chef-de-projet": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de dépense — communication (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : communication",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : communication": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de dépense — direction-artistique (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : direction-artistique",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : direction-artistique": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de dépense — operations-sav (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : operations-sav",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : operations-sav": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de dépense — site-integrations (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : site-integrations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : site-integrations": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de dépense — sourcing (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Demandeur imposé : sourcing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demandeur imposé : sourcing": {
+      "main": [
+        [
+          {
+            "node": "Demande de dépense (passerelle agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Garde : incidents ouverts": {
+      "main": [
+        [
+          {
+            "node": "Workflow suspendu ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de dépense (passerelle agents)": {
+      "main": [
+        [
+          {
+            "node": "Paramètres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres": {
+      "main": [
+        [
+          {
+            "node": "Garde : incidents ouverts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow suspendu ?": {
+      "main": [
+        [
+          {
+            "node": "Répondre : dépenses suspendues",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Contrôle du mandat (POST /mandate/check)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contrôle du mandat (POST /mandate/check)": {
+      "main": [
+        [
+          {
+            "node": "Issue de la décision",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Répondre : contrôle impossible (refus par défaut)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Répondre : contrôle impossible (refus par défaut)": {
+      "main": [
+        [
+          {
+            "node": "Préparer l’alerte contrôle impossible",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer l’alerte contrôle impossible": {
+      "main": [
+        [
+          {
+            "node": "Alerte : contrôle du mandat impossible (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Issue de la décision": {
+      "main": [
+        [
+          {
+            "node": "Répondre : approuvée dans le mandat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Répondre : en attente de validation humaine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Répondre : refusée (motifs)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Répondre : issue inconnue (refus par défaut)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Répondre : approuvée dans le mandat": {
+      "main": [
+        [
+          {
+            "node": "Préparer le paiement PayPal (Payouts)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer le paiement PayPal (Payouts)": {
+      "main": [
+        [
+          {
+            "node": "Exécuter le paiement PayPal — DÉSACTIVÉ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Exécuter le paiement PayPal — DÉSACTIVÉ": {
+      "main": [
+        [
+          {
+            "node": "Marquer exécuté — route moteur attendue (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marquer exécuté — route moteur attendue (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Journal : dépense approuvée",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Répondre : en attente de validation humaine": {
+      "main": [
+        [
+          {
+            "node": "Préparer l’email de validation 1 clic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer l’email de validation 1 clic": {
+      "main": [
+        [
+          {
+            "node": "Email de validation 1 clic à la propriétaire (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email de validation 1 clic à la propriétaire (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Validation de la propriétaire (formulaire, 24 h)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation de la propriétaire (formulaire, 24 h)": {
+      "main": [
+        [
+          {
+            "node": "Approuvée par la propriétaire ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approuvée par la propriétaire ?": {
+      "main": [
+        [
+          {
+            "node": "Rappel : enregistrer la validation au moteur (propriétaire, son jeton)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Refus ou expiration : rien à payer (statu quo sûr)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rappel : enregistrer la validation au moteur (propriétaire, son jeton)": {
+      "main": [
+        [
+          {
+            "node": "Exécuter : PayPal ou virement signé dans l’e-banking (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Exécuter : PayPal ou virement signé dans l’e-banking (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Journal : validée par la propriétaire",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refus ou expiration : rien à payer (statu quo sûr)": {
+      "main": [
+        [
+          {
+            "node": "Journal : refus ou expiration (statu quo sûr)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Répondre : refusée (motifs)": {
+      "main": [
+        [
+          {
+            "node": "Journal : refus du mandat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Zurich",
+    "saveManualExecutions": false,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "saveExecutionProgress": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "pkshp04Incidents"
+  },
+  "pinData": {},
+  "staticData": null,
+  "tags": [],
+  "versionId": "f7e9ea94-b464-5870-b3bf-8aad46a0a9d5",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

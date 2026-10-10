@@ -1,0 +1,29 @@
+Objet : Réservations garanties : {{ $json.produit_titre }}, d'abord pour vous
+
+ACCÈS PRIORITAIRE AUX RÉSERVATIONS GARANTIES
+
+{{ $json.salutation }}
+
+Vous avez demandé une alerte pour {{ $json.produit_titre }}. Les réservations garanties sont ouvertes, d'abord aux personnes inscrites aux alertes de ce produit, puis à tous.
+
+{{ $json.produit_titre }}
+Réservation garantie · Drop le {{ $json.date_drop }} (date estimée)
+
+- Pour réserver pendant l'accès prioritaire, connectez-vous à votre compte client avec l'adresse de cet email ; votre compte doit accepter nos emails (consentement confirmé).
+- Le prix de la réservation garantie et le prix du drop sont affichés côte à côte sur la fiche ; le prix affiché au moment de votre commande fait foi.
+- La limite par foyer, toutes commandes confondues, figure sur la fiche.
+
+> Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.
+> Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.
+
+Rien ne presse : vous pouvez aussi attendre le drop et acheter au prix du drop, s'il reste des unités. Nous n'affichons ni minuteur ni nombre d'unités restantes.
+
+Voir la réservation garantie : {{URL_SITE}}{{ $json.url_reservation }}
+
+--
+Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que cette adresse est inscrite à nos alertes (inscription confirmée le {{ $json.date_consentement }}).
+Modifier mes préférences : {{ $json.url_preferences }} · Me désinscrire en un clic : {{ $json.url_desinscription }}
+Confidentialité : {{URL_CONFIDENTIALITE}}

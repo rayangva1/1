@@ -1,0 +1,73 @@
+{%- comment -%}
+  Badges d'un produit (DA : .da-badge--fr | --local | --preorder | --new | --out | --restock | --reservation | --drop).
+  Au plus 3, dans l'ordre : langue, statut, puis « Drop le JJ.MM (date estimée) » (pré-drop à venir), « Nouveauté » (seulement si
+  achetable) ou « Alerte réassort » (seulement en rupture).
+  Paramètre : product (obligatoire).
+  Sources : métachamps boutique.* et tag « nouveaute » écrits par la publication (site/shopify/STRUCTURE_BOUTIQUE.md §2).
+  Règle : l'inventaire Shopify décide de la vente. Produit non achetable => statut « Rupture », quoi que dise le métachamp.
+  Pré-drop (fiche jumelle de type « Réservation garantie ») : « Réservation garantie » seulement si les réservations
+  sont ouvertes et la fiche achetable ; « Drop le JJ.MM (date estimée) » tant que la date du drop n'est pas passée
+  (revue pré-drop PDL-07 : la date du drop est une estimation, jamais présentée comme certaine). Un statut et une
+  date : jamais de quota, de compteur ni de minuteur.
+  Jamais « Stock local » et « Précommande » ensemble ; jamais « Dernières pièces », compteur ou minuteur.
+{%- endcomment -%}
+{%- liquid
+  assign langue = product.metafields.boutique.langue.value
+  assign statut = product.metafields.boutique.statut_stock.value | default: 'inconnu'
+  if product.available != true
+    assign statut = 'rupture'
+  elsif statut != 'stock_local' and statut != 'precommande'
+    assign statut = 'inconnu'
+  endif
+  assign alerte = product.metafields.boutique.alerte_reassort.value
+  assign fin_serie = product.metafields.boutique.fin_de_serie.value
+  assign resa_statut = product.metafields.boutique.reservation_statut.value
+  assign date_drop = product.metafields.boutique.date_drop.value
+  assign est_reservation = false
+  if product.type == 'Réservation garantie'
+    assign est_reservation = true
+  endif
+  if est_reservation and statut == 'precommande'
+    if resa_statut == 'ouvertes' or resa_statut == 'prioritaire'
+      assign statut = 'reservation'
+    else
+      assign statut = 'rupture'
+    endif
+  endif
+  assign drop_a_venir = false
+  if date_drop and date_drop != '' and statut != 'stock_local'
+    assign jour = 'now' | date: '%Y%m%d' | plus: 0
+    assign jour_drop = date_drop | date: '%Y%m%d' | plus: 0
+    if jour_drop >= jour
+      assign drop_a_venir = true
+    endif
+  endif
+  assign nouveaute = false
+  if product.tags contains 'nouveaute'
+    if statut == 'stock_local' or statut == 'precommande'
+      assign nouveaute = true
+    endif
+  endif
+-%}
+<div class="da-badges" role="list" data-statut="{{ statut }}">
+  {%- if langue == 'FR' -%}
+    <span class="da-badge da-badge--fr" role="listitem">{% render 'da-icone', nom: 'fr' %}FR</span>
+  {%- endif -%}
+  {%- case statut -%}
+    {%- when 'stock_local' -%}
+      <span class="da-badge da-badge--local" role="listitem">{% render 'da-icone', nom: 'local' %}Stock local</span>
+    {%- when 'precommande' -%}
+      <span class="da-badge da-badge--preorder" role="listitem">{% render 'da-icone', nom: 'precommande' %}Précommande</span>
+    {%- when 'reservation' -%}
+      <span class="da-badge da-badge--reservation" role="listitem">{% render 'da-icone', nom: 'garantie' %}Réservation garantie</span>
+    {%- when 'rupture' -%}
+      <span class="da-badge da-badge--out" role="listitem">{% render 'da-icone', nom: 'rupture' %}Rupture</span>
+  {%- endcase -%}
+  {%- if drop_a_venir -%}
+    <span class="da-badge da-badge--drop" role="listitem">{% render 'da-icone', nom: 'drop' %}Drop le {{ date_drop | date: '%d.%m' }} (date estimée)</span>
+  {%- elsif nouveaute -%}
+    <span class="da-badge da-badge--new" role="listitem">{% render 'da-icone', nom: 'nouveaute' %}Nouveauté</span>
+  {%- elsif statut == 'rupture' and alerte == true and fin_serie != true -%}
+    <span class="da-badge da-badge--restock" role="listitem">{% render 'da-icone', nom: 'alerte' %}Alerte réassort</span>
+  {%- endif -%}
+</div>

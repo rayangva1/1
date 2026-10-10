@@ -1,0 +1,60 @@
+# FICTIF — dictionnaire de champs du jeu d'essai Excel « grossiste B » (aucun fournisseur réel).
+# Fichier : data/samples/FICTIF_tarif_grossiste_b.xlsx (généré par data/samples/generate_samples.py).
+# Profil imité : distributeur suisse, feuille « Tarif » avec 3 lignes de titre, date d'export
+# en B2, prix en CHF TTC (TVA suisse facturée), nombres Excel, point décimal, apostrophe
+# des milliers dans certaines cellules texte.
+
+supplier_id: fictif_grossiste_b
+supplier_name: "FICTIF Grossiste B (jeu d'essai Excel)"
+mapping_version: "fictif_grossiste_b-v1"
+status: FICTIF
+fictif: true
+description: "FICTIF — jeux d'essai uniquement, simulation"
+
+file_format: xlsx
+xlsx:
+  sheet: "Tarif"
+  header_row: 4
+  source_ts_cell: "B2"
+numbers:
+  decimal_separator: "."
+  thousands_separators: ["'", "’", " ", " "]
+dates:
+  formats: ["%d.%m.%Y", "%Y-%m-%d"]
+  timezone: "Europe/Zurich"
+
+columns:
+  supplier_sku: ["Référence"]
+  gtin: [EAN]
+  designation: [Article]
+  language: [Langue]
+  extension: ["Série"]
+  format: [Type]
+  content: [Contenu]
+  price: ["Prix CHF TTC"]
+  vat_rate: [TVA]
+  unit_basis: ["Unité de prix"]
+  carton_qty: ["Unités/carton"]   # taille du carton ; pour un prix « carton », nombre d'unités couvertes
+  moq: [Minimum]
+  available_qty: [Stock]
+  availability: [Statut]
+  release_date: [Sortie]
+  fictif: [Fictif]
+required_fields: [supplier_sku, price, unit_basis]
+
+quantities:
+  stock: UNIT
+  moq: UNIT
+  tiers: UNIT
+  allocation: UNIT
+defaults:
+  currency: CHF           # FICTIF : « tarif en CHF » écrit dans l'en-tête de colonne
+  price_basis: TTC        # FICTIF
+  sealed: true            # FICTIF
+  ship_from_country: CH   # FICTIF
+  vat_country: CH         # FICTIF
+allowed_currencies: [CHF, EUR]
+extension_tables: ["data/samples/FICTIF_extensions_aliases.yaml"]
+
+# Validation humaine requise
+# - [ ] Aucune : dictionnaire d'essai.

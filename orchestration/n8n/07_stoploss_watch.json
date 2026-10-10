@@ -1,0 +1,877 @@
+{
+  "id": "pkshp07StopLossW",
+  "name": "Pokeshop 07 — Surveillance du stop-loss",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 07 — Surveillance du stop-loss (toutes les heures)\n`POST /stoploss/state/refresh` : le **moteur construit la photo d'activité** à partir de ses registres (apports\nattestés par la propriétaire, soldes PayPal et banque relevés par les connecteurs, stock au coût historique,\ncatalogue, prix publics, publicité) ; puis `GET /stoploss/status` → si l'état **change** :\n- gel global → **`POST /stoploss/freeze`** (action protectrice : autonomie niveau 1, incident INC-09) ;\n- campagnes à couper → plateforme publicitaire (nœud désactivé tant que le connecteur n'est pas recetté) ;\n- **notification immédiate** à la propriétaire : cause, chiffres (mesure / seuil), action, **comment réarmer**.\nUne alerte par changement (empreinte mémorisée ; un état qui revient est de nouveau signalé).\nBranche « relevés de trésorerie » (désactivée) : PayPal et banque → `/treasury/*-balance` (connecteurs à recetter).\nJetons **nommés** : photo `n8n-07-stoploss` ; soldes `connecteur-tresorerie` — jamais le jeton qui demande une dépense.\nAucun réarmement ici : seule la propriétaire réarme, avec son jeton, depuis son terminal.\n**Activation** : niveau 1, **après C19** (BL-191, J27 : point zéro posé avec la première photo, `with_photo: true`),\njamais avant — une première photo sans point zéro gèlerait tout. Avant C19, les soldes de B26 sont déposés par la\npropriétaire avec son jeton (`/treasury/*-balance`), ou par une exécution manuelle de la seule branche :05.\n**Validation humaine requise** : canal d'alerte immédiate ; apports déclarés (votre jeton) ; point zéro C19 ; recette des connecteurs PayPal, banque et publicité.",
+        "height": 460,
+        "width": 700,
+        "color": 4
+      },
+      "id": "00b8fc46-c418-54cb-87b0-72ac834e1930",
+      "name": "Note — à lire",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        -520
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1,
+              "triggerAtMinute": 10
+            }
+          ]
+        }
+      },
+      "id": "4ff7938b-7ec1-5292-8134-28ba935bbdfa",
+      "name": "Toutes les heures — stop-loss",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "47870683-7e2c-5827-96d6-839c163c9fa9",
+              "name": "workflow",
+              "value": "stoploss-watch",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "0a8e466a-81ab-5010-b9a0-3141c7153edd",
+      "name": "Paramètres",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        0
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/stoploss/state/refresh",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "f56b52b0-dbb4-5647-aec7-8ed03c8abc5f",
+      "name": "Construire la photo (POST /stoploss/state/refresh)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiPhoto007",
+          "name": "Pokeshop API — jeton nommé n8n-07-stoploss"
+        }
+      },
+      "notes": "Photo tirée des registres du moteur. Source manquante ou périmée : 409 (la photo précédente reste et se périme) ; l'état est quand même lu et signalé « non évaluable ».",
+      "notesInFlow": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/stoploss/status",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "52877880-76bb-5e55-a510-a0ed2d27f2b7",
+      "name": "État du stop-loss (GET /stoploss/status)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiPhoto007",
+          "name": "Pokeshop API — jeton nommé n8n-07-stoploss"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Analyse de GET /stoploss/status : cause, chiffres, action, comment réarmer ; empreinte pour n'alerter qu'au changement.\nconst s = $input.first().json;\nconst refresh = $('Construire la photo (POST /stoploss/state/refresh)').first().json || {};\nconst built = refresh.origin === 'registres du moteur';\nconst refreshNote = built\n  ? `photo construite par le moteur à partir de ses registres (relevés du ${(refresh.sources || {}).as_of || '?'})`\n  : `photo NON construite : ${refresh.erreur || (refresh.error && (refresh.error.description || refresh.error.message)) || 'erreur inconnue'}`;\nconst triggers = Array.isArray(s.triggers) ? s.triggers : [];\nconst status = s.status || {};\nconst freeze = s.global_frozen === true || triggers.some((t) => t.action === 'FREEZE_ALL');\nconst cut = Array.isArray(status.cut_campaigns) ? status.cut_campaigns : [];\nconst LEVELS = { PRODUCT: 'Produit', EXTENSION: 'Extension', ADS: 'Publicité', CASH: 'Trésorerie', GLOBAL: 'Global', TIME: 'Temps' };\nconst ACTIONS = {\n  BLOCK_SALE: 'vente et promotion bloquées', NO_REORDER: 'plus de réassort', PROPOSE_MARKDOWN: 'démarque proposée (à valider)',\n  CUT_CAMPAIGN: 'campagne coupée', FREEZE_PURCHASES_AND_ADS: \"plus d'achat ni de publicité\",\n  FREEZE_ALL: 'TOUT GELÉ, autonomie ramenée au niveau 1', DECISION_REPORT: 'dossier continuer / ajuster / arrêter',\n};\nconst lines = triggers.map((t) => `- [${LEVELS[t.level] || t.level}] ${t.scope} — cause : ${t.reason} | mesure : ${t.value === null || t.value === undefined ? '—' : t.value} ; seuil : ${t.threshold === null || t.threshold === undefined ? '—' : t.threshold} | action : ${ACTIONS[t.action] || t.action}`);\nconst text = [];\nif (!s.available) text.push(`Stop-loss NON ÉVALUABLE : ${s.error || 'photo absente'}. Le mandat refuse toute dépense tant que la photo d'activité manque.`,\n  `Photo d'activité : ${refreshNote}. Sources : apports (POST /capital/movements, votre jeton), soldes PayPal et banque (connecteurs), stock au coût (POST /costs/movements).`);\nif (freeze) text.push('GEL GLOBAL : tout est gelé, autonomie au niveau 1. Ce workflow a appliqué le gel (POST /stoploss/freeze).');\nif (lines.length) text.push('Déclencheurs :', ...lines);\nif (cut.length || status.ads_globally_cut) text.push(`Campagnes à couper : ${status.ads_globally_cut ? 'toutes' : cut.join(', ')} (nœud de coupure : à activer après recette).`);\nif (freeze) {\n  text.push('', 'Comment réarmer (vous seule) :',\n    '1. Lire GET /stoploss/status : la cause, rearm_reference.net_worth_chf (valeur nette) et rearm_reference.photo_sha256 ; écrire votre motif (docs/00-pilotage/STOP_LOSS.md §5).',\n    '2. Depuis votre terminal : POST /stoploss/rearm avec les en-têtes X-Pokeshop-Token et X-Pokeshop-Owner-Token (votre jeton, jamais transmis à un agent) et le corps {\"reason\": \"…\", \"rebase\": true, \"reference_chf\": \"<rearm_reference.net_worth_chf>\", \"photo_sha256\": \"<rearm_reference.photo_sha256>\"} : vous attestez la valeur nette (écart > 1 CHF ou photo remplacée => refus 409).',\n    \"3. L'autonomie reste au niveau 1 : la remonter est une décision distincte (POST /autonomy).\");\n}\nif (s.report_markdown) text.push('', s.report_markdown);\ntext.push('', 'INTERNE — contient coûts et marges : ne jamais transférer ni publier.');\nconst fingerprint = [status.triggers_hash || '', s.available ? 'ok' : `ko:${s.error || ''}`, freeze ? 'gel' : 'libre'].join('|');\nreturn [{ json: {\n  available: s.available === true,\n  photo_built: built,\n  global_frozen: freeze,\n  has_triggers: triggers.length > 0,\n  has_freeze_all: freeze,\n  cut_campaigns: status.ads_globally_cut ? ['*'] : cut,\n  must_cut: cut.length > 0 || status.ads_globally_cut === true,\n  blocked_products: status.blocked_products || [],\n  fingerprint,\n  freeze_reason: freeze ? `Stop-loss global constaté par n8n:07 (${triggers.filter((t) => t.action === 'FREEZE_ALL').map((t) => t.reason).join(' ; ') || 'gel verrouillé'})` : '',\n  sujet: `[STOP-LOSS] ${freeze ? 'GEL GLOBAL' : !s.available ? 'NON ÉVALUABLE' : `${triggers.length} déclencheur(s)`}`,\n  texte: text.join('\\n'),\n} }];\n"
+      },
+      "id": "3923399a-5dd1-5b20-b827-d3839f5f8ccc",
+      "name": "Analyser l’état (cause, chiffres, action, réarmement)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fb91b1ab-ac2b-5e12-9e1d-a1d609650157",
+              "leftValue": "={{ $json.has_triggers }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            },
+            {
+              "id": "2f0053dd-9e54-5baa-a1b5-3545f2de2340",
+              "leftValue": "={{ $json.global_frozen }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            },
+            {
+              "id": "be90a513-d5e9-53af-83ce-218d99e53d45",
+              "leftValue": "={{ $json.available }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "or"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "da3edb82-2849-5a7c-bc87-e422998152aa",
+      "name": "À signaler ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aucun déclencheur : l'état signalé est oublié, pour qu'une réapparition (même empreinte) soit de nouveau alertée.\nconst memo = $getWorkflowStaticData('global');\nmemo.dernier_etat = 'aucun';\nreturn $input.all();\n"
+      },
+      "id": "f3716252-4322-5494-81d0-a70d0cee7fe3",
+      "name": "Aucun déclencheur : oublier l’état signalé",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        160
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "bc9a1e6c-f7a8-5084-b45b-10bc0b2d0ac3",
+      "name": "Aucun déclencheur : rien à faire",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1960,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Une alerte par CHANGEMENT d'état (et non « jamais vu ») : l'empreinte est comparée à la dernière signalée,\n// mémorisée dans les données statiques du workflow (exécutions de production ; une exécution manuelle ne les\n// conserve pas). Un état qui disparaît puis réapparaît est donc de nouveau signalé, gel et coupure compris.\nconst memo = $getWorkflowStaticData('global');\nconst item = $input.first();\nif (memo.dernier_etat === item.json.fingerprint) return [];\nmemo.dernier_etat = item.json.fingerprint;\nreturn [item];\n"
+      },
+      "id": "d70523f1-451b-5d22-b3bc-467a7974d479",
+      "name": "Nouvel état ? (une alerte par changement)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        -40
+      ],
+      "notes": "Compare l'empreinte à la dernière signalée (données statiques du workflow) : alerte au changement, pas seulement à la première apparition.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d946aa04-81ef-59e1-9e97-05b598f94d62",
+              "leftValue": "={{ $json.has_freeze_all }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "33934b99-43b6-5ed3-823f-6cb20b0f03cc",
+      "name": "Gel global à appliquer ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1960,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/stoploss/freeze",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actor: 'n8n:07-stoploss-watch', reason: $json.freeze_reason || 'Gel global constaté par n8n:07' }) }}"
+      },
+      "id": "a07fe14d-9979-5c13-a74d-70d5ad812313",
+      "name": "Appliquer le gel global (POST /stoploss/freeze)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        -200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiPhoto007",
+          "name": "Pokeshop API — jeton nommé n8n-07-stoploss"
+        }
+      },
+      "notes": "Action protectrice ouverte à tous ; le réarmement reste réservé à la propriétaire.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d2dc1382-2e57-5b7a-a69f-0a8fc633e504",
+              "leftValue": "={{ $json.must_cut }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "6fbfb7cd-ec2a-5a05-beb1-db4360fab0f6",
+      "name": "Campagnes à couper ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1960,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REMPLACER-plateforme-publicitaire.exemple.invalid/campaigns/pause",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ campaigns: $json.cut_campaigns, reason: 'stop-loss pub (CAC > contribution 7 j ou plafond jour)' }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "4c158302-8ca0-51b2-bb88-fc5eb48eefb8",
+      "name": "Couper les campagnes — plateforme publicitaire (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        -40
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpAdsPlatfm01",
+          "name": "Plateforme publicitaire — jeton API"
+        }
+      },
+      "disabled": true,
+      "notes": "Protecteur (niveau 1 admis) mais externe : activer après recette du connecteur CONN-PUB.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "4cd8c0e9-d336-56c7-ae78-d8ccc44da4b5",
+      "name": "Notification immédiate à la propriétaire (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1960,
+        120
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#pokeshop-alertes",
+          "mode": "name"
+        },
+        "text": "={{ $json.texte }}",
+        "otherOptions": {}
+      },
+      "id": "31e4b1a4-6409-5445-ac08-750684b62fd4",
+      "name": "Notification immédiate (Slack, désactivé)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        1960,
+        240
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "pkshpSlackAlert1",
+          "name": "Slack alertes propriétaire"
+        }
+      },
+      "disabled": true,
+      "notes": "Canal facultatif : la propriétaire choisit le canal d'alerte immédiate (SOP_INCIDENTS.md §1).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1,
+              "triggerAtMinute": 5
+            }
+          ]
+        }
+      },
+      "id": "14aa0daa-bf65-575b-be6a-9ffce318db62",
+      "name": "Toutes les heures (:05) — relevés de trésorerie (désactivé)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        480
+      ],
+      "disabled": true,
+      "notes": "Activer avec les connecteurs PayPal et banque recettés (CONN-PAYPAL, connecteur bancaire) : la photo du stop-loss exige des soldes de moins de 24 h, et le mandat de moins de 60 min.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "47870683-7e2c-5827-96d6-839c163c9fa9",
+              "name": "workflow",
+              "value": "stoploss-watch",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "bc350c50-f518-530d-96ab-ca7e8ebc8565",
+      "name": "Paramètres — trésorerie",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        480
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api-m.paypal.com/v1/reporting/balances?currency_code=CHF",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "205fe3b8-f5b4-54ac-abc5-96be39831d0d",
+      "name": "Lire le solde PayPal — API PayPal (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        400
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "pkshpPaypalLect1",
+          "name": "PayPal compte dédié — lecture des soldes (lecture seule)"
+        }
+      },
+      "disabled": true,
+      "notes": "Lecture seule du compte PayPal dédié (scope reporting) avec le credential « PayPal compte dédié — lecture des soldes », distinct du credential de paiement de 08 ; activer après recette CONN-PAYPAL.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Réponse PayPal « List all balances » (GET v1/reporting/balances) -> relevé CHF du compte dédié.\n// Aucun montant inventé : sans réponse, sans solde CHF ou sans date du relevé, rien n'est déposé.\nconst data = $input.first().json || {};\nconst balances = Array.isArray(data.balances) ? data.balances : null;\nif (!balances || !data.as_of_time) return [];\nconst chf = balances.find((b) => b.currency === 'CHF' || (b.total_balance || {}).currency_code === 'CHF');\nconst amount = chf && chf.available_balance ? String(chf.available_balance.value) : '';\nif (!/^\\d+(\\.\\d{1,2})?$/.test(amount)) return [];\nreturn [{ json: { as_of: data.as_of_time, balance_chf: amount, source: 'API PayPal v1/reporting/balances (compte dédié)' } }];\n"
+      },
+      "id": "b5d95e05-1a1e-5017-ac70-dc14871c497d",
+      "name": "Normaliser le solde PayPal",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — trésorerie').first().json.api_base_url }}/treasury/paypal-balance",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ as_of: $json.as_of, balance_chf: $json.balance_chf, source: $json.source }) }}"
+      },
+      "id": "225a6490-5f70-5b35-8122-70b97676140a",
+      "name": "Déposer le solde PayPal (POST /treasury/paypal-balance)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiTresor01",
+          "name": "Pokeshop API — jeton nommé connecteur-tresorerie"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://REMPLACER-connecteur-bancaire.exemple.invalid/solde",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "f1b1eeda-5a53-5fec-9c55-9f6be4daa50b",
+      "name": "Lire le solde bancaire — connecteur bancaire (désactivé)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        560
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpBanqueSolde",
+          "name": "Banque — relevé de solde (lecture seule)"
+        }
+      },
+      "disabled": true,
+      "notes": "Connecteur en lecture seule du compte de l'activité (banque à choisir) ; contrat de réponse dans le nœud suivant.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Connecteur bancaire (contrat à adapter à la banque retenue) : { currency: 'CHF', balance_chf: '1234.56', as_of: ISO }.\n// Aucun montant inventé : réponse absente, devise autre que CHF ou date manquante => rien n'est déposé.\nconst data = $input.first().json || {};\nconst amount = String(data.balance_chf === undefined || data.balance_chf === null ? '' : data.balance_chf);\nif (data.currency !== 'CHF' || !data.as_of || !/^-?\\d+(\\.\\d{1,2})?$/.test(amount)) return [];\nreturn [{ json: { as_of: data.as_of, balance_chf: amount, source: 'connecteur bancaire (compte de l’activité)' } }];\n"
+      },
+      "id": "266dbc0b-4551-589e-956d-0f697e0a2563",
+      "name": "Normaliser le solde bancaire",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — trésorerie').first().json.api_base_url }}/treasury/bank-balance",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ as_of: $json.as_of, balance_chf: $json.balance_chf, source: $json.source }) }}"
+      },
+      "id": "fb9ff950-1965-510a-9dfc-7631944f7450",
+      "name": "Déposer le solde bancaire (POST /treasury/bank-balance)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        560
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiTresor01",
+          "name": "Pokeshop API — jeton nommé connecteur-tresorerie"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Toutes les heures — stop-loss": {
+      "main": [
+        [
+          {
+            "node": "Paramètres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres": {
+      "main": [
+        [
+          {
+            "node": "Construire la photo (POST /stoploss/state/refresh)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construire la photo (POST /stoploss/state/refresh)": {
+      "main": [
+        [
+          {
+            "node": "État du stop-loss (GET /stoploss/status)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "État du stop-loss (GET /stoploss/status)": {
+      "main": [
+        [
+          {
+            "node": "Analyser l’état (cause, chiffres, action, réarmement)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyser l’état (cause, chiffres, action, réarmement)": {
+      "main": [
+        [
+          {
+            "node": "À signaler ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "À signaler ?": {
+      "main": [
+        [
+          {
+            "node": "Nouvel état ? (une alerte par changement)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aucun déclencheur : oublier l’état signalé",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aucun déclencheur : oublier l’état signalé": {
+      "main": [
+        [
+          {
+            "node": "Aucun déclencheur : rien à faire",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nouvel état ? (une alerte par changement)": {
+      "main": [
+        [
+          {
+            "node": "Gel global à appliquer ?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Campagnes à couper ?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notification immédiate à la propriétaire (email, désactivé)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notification immédiate (Slack, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gel global à appliquer ?": {
+      "main": [
+        [
+          {
+            "node": "Appliquer le gel global (POST /stoploss/freeze)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Campagnes à couper ?": {
+      "main": [
+        [
+          {
+            "node": "Couper les campagnes — plateforme publicitaire (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Toutes les heures (:05) — relevés de trésorerie (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — trésorerie",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — trésorerie": {
+      "main": [
+        [
+          {
+            "node": "Lire le solde PayPal — API PayPal (désactivé)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Lire le solde bancaire — connecteur bancaire (désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire le solde PayPal — API PayPal (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Normaliser le solde PayPal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliser le solde PayPal": {
+      "main": [
+        [
+          {
+            "node": "Déposer le solde PayPal (POST /treasury/paypal-balance)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire le solde bancaire — connecteur bancaire (désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Normaliser le solde bancaire",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliser le solde bancaire": {
+      "main": [
+        [
+          {
+            "node": "Déposer le solde bancaire (POST /treasury/bank-balance)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Zurich",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "pkshp04Incidents"
+  },
+  "pinData": {},
+  "staticData": null,
+  "tags": [],
+  "versionId": "8a0dbfa7-48ac-5989-a3d6-6c08d5f6daa3",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

@@ -1,0 +1,253 @@
+/*
+ * Design tokens — Quai des Cartes (nom de travail, non validé)
+ * FICHIER GÉNÉRÉ par docs/05-da/tools/generer_da.py depuis tokens.json — ne pas éditer à la main.
+ * Direction : data-da="a" (défaut) | "b" sur <html> ou sur une section.
+ * Mode : suit prefers-color-scheme ; forcer avec data-theme="dark" | "light" sur <html>.
+ * Polices Google Fonts à charger séparément (URL dans tokens.json > directions > googleFonts).
+ */
+:root {
+  --da-space-0: 0px;
+  --da-space-1: 4px;
+  --da-space-2: 8px;
+  --da-space-3: 12px;
+  --da-space-4: 16px;
+  --da-space-5: 24px;
+  --da-space-6: 32px;
+  --da-space-7: 48px;
+  --da-space-8: 64px;
+  --da-space-9: 96px;
+  --da-text-xs: 0.75rem;
+  --da-text-sm: 0.875rem;
+  --da-text-base: 1rem;
+  --da-text-md: 1.125rem;
+  --da-text-lg: 1.375rem;
+  --da-text-xl: 1.75rem;
+  --da-text-2xl: 2.25rem;
+  --da-text-display: clamp(2.25rem, 1.5rem + 3.5vw, 4rem);
+  --da-leading-tight: 1.1;
+  --da-leading-snug: 1.25;
+  --da-leading-base: 1.5;
+  --da-max-width: 1200px;
+  --da-gutter-mobile: 16px;
+  --da-gutter-desktop: 24px;
+  --da-margin-mobile: 16px;
+  --da-margin-tablet: 32px;
+  --da-touch-target: 44px;
+}
+
+/* Direction A — Quai (signal) : clair */
+:root,
+[data-da="a"] {
+  --da-font-display: "Archivo", "Arial Narrow", Arial, sans-serif;
+  --da-font-text: "Inter", "Helvetica Neue", Arial, sans-serif;
+  --da-font-price: "IBM Plex Mono", "Courier New", monospace;
+  --da-title-weight: 800;
+  --da-title-transform: uppercase;
+  --da-title-tracking: 0.01em;
+  --da-title-stretch: 112%;
+  --da-radius-sm: 2px;
+  --da-radius-md: 4px;
+  --da-radius-lg: 8px;
+  --da-radius-pill: 999px;
+  --da-border-width: 1px;
+  --da-shadow-card: none;
+  --da-shadow-raised: 0 0 0 1px rgba(17, 17, 17, 0.08), 0 6px 0 0 rgba(17, 17, 17, 0.06);
+  color-scheme: light;
+  --da-color-bg: #F6F5F1;
+  --da-color-surface: #FFFFFF;
+  --da-color-surface-alt: #ECEAE4;
+  --da-color-ink: #111111;
+  --da-color-ink-muted: #55534E;
+  --da-color-on-ink: #FFFFFF;
+  --da-color-line: #D9D6CF;
+  --da-color-line-strong: #8A867E;
+  --da-color-accent: #FF5B14;
+  --da-color-on-accent: #111111;
+  --da-color-accent-text: #B33F00;
+  --da-color-accent-soft: #FFE4D6;
+  --da-color-focus: #111111;
+  --da-color-error: #B42318;
+  --da-color-status-local-bg: #E3F4E8;
+  --da-color-status-local-fg: #0F5A2A;
+  --da-color-status-preorder-bg: #E6E9FB;
+  --da-color-status-preorder-fg: #2B3990;
+  --da-color-status-new-bg: #FF5B14;
+  --da-color-status-new-fg: #111111;
+  --da-color-status-out-bg: #E7E5E0;
+  --da-color-status-out-fg: #4A4843;
+  --da-color-status-restock-bg: #FFF1CC;
+  --da-color-status-restock-fg: #6B4A00;
+  --da-color-lang-fr-bg: #111111;
+  --da-color-lang-fr-fg: #FFFFFF;
+}
+
+/* Direction B — Pochette (collection) : clair */
+[data-da="b"] {
+  --da-font-display: "Bricolage Grotesque", "Trebuchet MS", Arial, sans-serif;
+  --da-font-text: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  --da-font-price: "Space Grotesk", "DM Sans", Arial, sans-serif;
+  --da-title-weight: 800;
+  --da-title-transform: none;
+  --da-title-tracking: -0.01em;
+  --da-title-stretch: 100%;
+  --da-radius-sm: 6px;
+  --da-radius-md: 12px;
+  --da-radius-lg: 20px;
+  --da-radius-pill: 999px;
+  --da-border-width: 1px;
+  --da-shadow-card: 0 1px 2px rgba(11, 11, 18, 0.06), 0 8px 24px rgba(11, 11, 18, 0.08);
+  --da-shadow-raised: 0 2px 4px rgba(11, 11, 18, 0.08), 0 16px 40px rgba(11, 11, 18, 0.12);
+  color-scheme: light;
+  --da-color-bg: #F4F4F7;
+  --da-color-surface: #FFFFFF;
+  --da-color-surface-alt: #E9E9F0;
+  --da-color-ink: #0B0B12;
+  --da-color-ink-muted: #545466;
+  --da-color-on-ink: #FFFFFF;
+  --da-color-line: #D8D8E2;
+  --da-color-line-strong: #83839A;
+  --da-color-accent: #5A31F4;
+  --da-color-on-accent: #FFFFFF;
+  --da-color-accent-text: #5A31F4;
+  --da-color-accent-soft: #ECE7FF;
+  --da-color-focus: #5A31F4;
+  --da-color-error: #B42318;
+  --da-color-status-local-bg: #DFF5E7;
+  --da-color-status-local-fg: #0C5A2C;
+  --da-color-status-preorder-bg: #E3ECFA;
+  --da-color-status-preorder-fg: #1D3F8A;
+  --da-color-status-new-bg: #5A31F4;
+  --da-color-status-new-fg: #FFFFFF;
+  --da-color-status-out-bg: #E6E6EC;
+  --da-color-status-out-fg: #46465A;
+  --da-color-status-restock-bg: #FFF0C7;
+  --da-color-status-restock-fg: #674700;
+  --da-color-lang-fr-bg: #0B0B12;
+  --da-color-lang-fr-fg: #FFFFFF;
+}
+
+/* Mode sombre automatique (sauf data-theme="light" sur <html>) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]),
+  :root:not([data-theme="light"]) [data-da="a"] {
+    color-scheme: dark;
+    --da-color-bg: #121212;
+    --da-color-surface: #1C1C1B;
+    --da-color-surface-alt: #262624;
+    --da-color-ink: #F2F1ED;
+    --da-color-ink-muted: #A9A6A0;
+    --da-color-on-ink: #121212;
+    --da-color-line: #34332F;
+    --da-color-line-strong: #7A7770;
+    --da-color-accent: #FF6A2B;
+    --da-color-on-accent: #111111;
+    --da-color-accent-text: #FF8A55;
+    --da-color-accent-soft: #3A1E10;
+    --da-color-focus: #F2F1ED;
+    --da-color-error: #FF8A80;
+    --da-color-status-local-bg: #12331F;
+    --da-color-status-local-fg: #8EE0A8;
+    --da-color-status-preorder-bg: #1C2250;
+    --da-color-status-preorder-fg: #B7C0FF;
+    --da-color-status-new-bg: #FF6A2B;
+    --da-color-status-new-fg: #111111;
+    --da-color-status-out-bg: #2C2B28;
+    --da-color-status-out-fg: #C9C6BF;
+    --da-color-status-restock-bg: #3A2C05;
+    --da-color-status-restock-fg: #FFD978;
+    --da-color-lang-fr-bg: #F2F1ED;
+    --da-color-lang-fr-fg: #111111;
+  }
+  :root:not([data-theme="light"])[data-da="b"],
+  :root:not([data-theme="light"]) [data-da="b"] {
+    color-scheme: dark;
+    --da-color-bg: #0F0F17;
+    --da-color-surface: #181824;
+    --da-color-surface-alt: #222232;
+    --da-color-ink: #F1F1F7;
+    --da-color-ink-muted: #A6A6BA;
+    --da-color-on-ink: #0F0F17;
+    --da-color-line: #2E2E40;
+    --da-color-line-strong: #74748E;
+    --da-color-accent: #6A4BFF;
+    --da-color-on-accent: #FFFFFF;
+    --da-color-accent-text: #A797FF;
+    --da-color-accent-soft: #231C4D;
+    --da-color-focus: #A797FF;
+    --da-color-error: #FF8A80;
+    --da-color-status-local-bg: #10301E;
+    --da-color-status-local-fg: #8EE0A8;
+    --da-color-status-preorder-bg: #17264A;
+    --da-color-status-preorder-fg: #AFC6FF;
+    --da-color-status-new-bg: #6A4BFF;
+    --da-color-status-new-fg: #FFFFFF;
+    --da-color-status-out-bg: #2A2A38;
+    --da-color-status-out-fg: #C6C6D4;
+    --da-color-status-restock-bg: #382A06;
+    --da-color-status-restock-fg: #FFD978;
+    --da-color-lang-fr-bg: #F1F1F7;
+    --da-color-lang-fr-fg: #0F0F17;
+  }
+}
+
+/* Mode sombre forcé : data-theme="dark" sur <html> */
+:root[data-theme="dark"],
+:root[data-theme="dark"] [data-da="a"] {
+  color-scheme: dark;
+  --da-color-bg: #121212;
+  --da-color-surface: #1C1C1B;
+  --da-color-surface-alt: #262624;
+  --da-color-ink: #F2F1ED;
+  --da-color-ink-muted: #A9A6A0;
+  --da-color-on-ink: #121212;
+  --da-color-line: #34332F;
+  --da-color-line-strong: #7A7770;
+  --da-color-accent: #FF6A2B;
+  --da-color-on-accent: #111111;
+  --da-color-accent-text: #FF8A55;
+  --da-color-accent-soft: #3A1E10;
+  --da-color-focus: #F2F1ED;
+  --da-color-error: #FF8A80;
+  --da-color-status-local-bg: #12331F;
+  --da-color-status-local-fg: #8EE0A8;
+  --da-color-status-preorder-bg: #1C2250;
+  --da-color-status-preorder-fg: #B7C0FF;
+  --da-color-status-new-bg: #FF6A2B;
+  --da-color-status-new-fg: #111111;
+  --da-color-status-out-bg: #2C2B28;
+  --da-color-status-out-fg: #C9C6BF;
+  --da-color-status-restock-bg: #3A2C05;
+  --da-color-status-restock-fg: #FFD978;
+  --da-color-lang-fr-bg: #F2F1ED;
+  --da-color-lang-fr-fg: #111111;
+}
+:root[data-theme="dark"][data-da="b"],
+:root[data-theme="dark"] [data-da="b"] {
+  color-scheme: dark;
+  --da-color-bg: #0F0F17;
+  --da-color-surface: #181824;
+  --da-color-surface-alt: #222232;
+  --da-color-ink: #F1F1F7;
+  --da-color-ink-muted: #A6A6BA;
+  --da-color-on-ink: #0F0F17;
+  --da-color-line: #2E2E40;
+  --da-color-line-strong: #74748E;
+  --da-color-accent: #6A4BFF;
+  --da-color-on-accent: #FFFFFF;
+  --da-color-accent-text: #A797FF;
+  --da-color-accent-soft: #231C4D;
+  --da-color-focus: #A797FF;
+  --da-color-error: #FF8A80;
+  --da-color-status-local-bg: #10301E;
+  --da-color-status-local-fg: #8EE0A8;
+  --da-color-status-preorder-bg: #17264A;
+  --da-color-status-preorder-fg: #AFC6FF;
+  --da-color-status-new-bg: #6A4BFF;
+  --da-color-status-new-fg: #FFFFFF;
+  --da-color-status-out-bg: #2A2A38;
+  --da-color-status-out-fg: #C6C6D4;
+  --da-color-status-restock-bg: #382A06;
+  --da-color-status-restock-fg: #FFD978;
+  --da-color-lang-fr-bg: #F1F1F7;
+  --da-color-lang-fr-fg: #0F0F17;
+}

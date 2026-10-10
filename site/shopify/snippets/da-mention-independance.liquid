@@ -1,0 +1,11 @@
+{%- comment -%}
+  Mention de non-affiliation (docs/04-legal/USAGE_MARQUES.md §3, texte à faire valider par le juriste).
+  Paramètre : version = 'courte' (défaut : pied de page, emails, packaging) | 'complete' (mentions légales, À propos).
+  « Pokémon » désigne les produits, jamais la boutique.
+{%- endcomment -%}
+{%- assign version = version | default: 'courte' -%}
+{%- if version == 'complete' -%}
+  <p class="da-mention">{{ shop.name | escape }} est une boutique indépendante. Elle n'est ni affiliée, ni sponsorisée, ni approuvée par The Pokémon Company, Nintendo, Creatures Inc. ou GAME FREAK inc. Pokémon et les noms associés sont des marques de leurs titulaires respectifs&#8239;; nous les utilisons uniquement pour désigner les produits authentiques que nous revendons.</p>
+{%- else -%}
+  <p class="da-mention">Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.</p>
+{%- endif -%}

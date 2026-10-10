@@ -1,0 +1,16 @@
+Objet : Désinscription enregistrée
+
+DÉSINSCRIPTION ENREGISTRÉE
+
+Bonjour,
+
+Votre adresse est retirée de nos alertes et de nos récapitulatifs, dans tous nos outils. Nous la conservons uniquement dans une liste d'exclusion, pour ne plus vous écrire.
+
+Les emails liés à une commande (confirmation, expédition) restent envoyés si vous commandez.
+
+Une erreur ? Vous pouvez vous réinscrire : page d'inscription : {{ $json.url_reinscription }}.
+
+--
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Confidentialité : {{URL_CONFIDENTIALITE}}

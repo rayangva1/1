@@ -1,0 +1,573 @@
+# FICTIF — résultats attendus (générés), lus par tests/test_importers.py
+version: '2026-10-04'
+statut: FICTIF — résultats attendus des jeux d'essai
+FICTIF_offres_grossiste_a_J-1.csv:
+  mapping: fictif_grossiste_a
+  now: '2026-10-03T08:00:00+02:00'
+  status: ACCEPTED
+  rows_read: 22
+  offers: 22
+FICTIF_offres_grossiste_a.csv:
+  mapping: fictif_grossiste_a
+  now: '2026-10-04T08:00:00+02:00'
+  baseline: FICTIF_offres_grossiste_a_J-1.csv
+  status: PARTIAL
+  rows_read: 45
+  lines:
+  - line: 2
+    sku: FICTIF-A-001
+    note: Ligne propre, deux paliers (prix et %)
+    quarantine: []
+    anomalies: []
+  - line: 3
+    sku: FICTIF-A-002
+    note: Ligne propre
+    quarantine: []
+    anomalies: []
+  - line: 4
+    sku: FICTIF-A-003
+    note: Ligne propre
+    quarantine: []
+    anomalies: []
+  - line: 5
+    sku: FICTIF-A-004
+    note: Hausse ×1,56 vs veille (signalée, pas bloquante)
+    quarantine: []
+    anomalies:
+    - PRICE_CHANGE_LARGE
+  - line: 6
+    sku: FICTIF-A-005
+    note: Ligne propre
+    quarantine: []
+    anomalies: []
+  - line: 7
+    sku: FICTIF-A-006
+    note: Prix ×10 vs veille (98,00)
+    quarantine:
+    - PRICE_ANOMALY
+    anomalies: []
+  - line: 8
+    sku: FICTIF-A-007
+    note: Prix ÷10 vs veille (39,00)
+    quarantine:
+    - PRICE_ANOMALY
+    anomalies: []
+  - line: 9
+    sku: FICTIF-A-008
+    note: Accessoire, langue « n/a » acceptée (langue NA)
+    quarantine: []
+    anomalies: []
+  - line: 10
+    sku: FICTIF-A-009
+    note: Accessoire sans extension (SANS_EXTENSION)
+    quarantine: []
+    anomalies: []
+  - line: 11
+    sku: FICTIF-A-010
+    note: Devise inconnue XYZ
+    quarantine:
+    - UNKNOWN_CURRENCY
+    anomalies: []
+  - line: 12
+    sku: FICTIF-A-011
+    note: Devise absente
+    quarantine:
+    - UNKNOWN_CURRENCY
+    anomalies: []
+  - line: 13
+    sku: FICTIF-A-012
+    note: HT/TTC absent
+    quarantine:
+    - UNKNOWN_VAT_BASIS
+    anomalies: []
+  - line: 14
+    sku: FICTIF-A-013
+    note: '« net » ≠ HT : base inconnue'
+    quarantine:
+    - UNKNOWN_VAT_BASIS
+    anomalies: []
+  - line: 15
+    sku: FICTIF-A-014
+    note: Prix zéro
+    quarantine:
+    - NON_POSITIVE_PRICE
+    anomalies: []
+  - line: 16
+    sku: FICTIF-A-015
+    note: Prix négatif
+    quarantine:
+    - NON_POSITIVE_PRICE
+    anomalies: []
+  - line: 17
+    sku: FICTIF-A-016
+    note: Doublon de SKU (valeurs différentes, 1/2)
+    quarantine:
+    - DUPLICATE_SKU
+    anomalies: []
+  - line: 18
+    sku: FICTIF-A-016
+    note: Doublon de SKU (valeurs différentes, 2/2)
+    quarantine:
+    - DUPLICATE_SKU
+    anomalies: []
+  - line: 19
+    sku: FICTIF-A-017
+    note: GTIN au checksum faux
+    quarantine:
+    - INVALID_GTIN
+    anomalies: []
+  - line: 20
+    sku: FICTIF-A-018
+    note: 'Langue « VO » : inconnue'
+    quarantine:
+    - UNKNOWN_LANGUAGE
+    anomalies: []
+  - line: 21
+    sku: FICTIF-A-019
+    note: Langues multiples
+    quarantine:
+    - UNKNOWN_LANGUAGE
+    anomalies: []
+  - line: 22
+    sku: FICTIF-A-020
+    note: 'Unité « palette » : unité/carton inconnue'
+    quarantine:
+    - UNKNOWN_UNIT_BASIS
+    anomalies: []
+  - line: 23
+    sku: FICTIF-A-021
+    note: Prix au carton sans nombre d'unités ni colisage
+    quarantine:
+    - UNKNOWN_UNIT_BASIS
+    anomalies: []
+  - line: 24
+    sku: FICTIF-A-022
+    note: Palier plus cher que le prix de base
+    quarantine:
+    - INVALID_TIER
+    anomalies: []
+  - line: 25
+    sku: FICTIF-A-023
+    note: Point décimal dans un fichier à virgule (ambigu)
+    quarantine:
+    - UNPARSEABLE_PRICE
+    anomalies: []
+  - line: 26
+    sku: FICTIF-A-024
+    note: Ligne datée de J-2 (> 24 h)
+    quarantine:
+    - STALE_SOURCE
+    anomalies: []
+  - line: 27
+    sku: FICTIF-A-025
+    note: 'GTIN absent : offre acceptée, fiche en brouillon'
+    quarantine: []
+    anomalies:
+    - MISSING_GTIN
+  - line: 28
+    sku: FICTIF-A-026
+    note: Devise EUR -> CHF depuis la veille
+    quarantine:
+    - CURRENCY_CHANGED
+    anomalies: []
+  - line: 29
+    sku: FICTIF-A-027
+    note: Prix au carton de 6 (570,00 = 6 × 95,00)
+    quarantine: []
+    anomalies: []
+  - line: 30
+    sku: FICTIF-A-028
+    note: 'Allocation annoncée sans accord écrit : ignorée'
+    quarantine: []
+    anomalies:
+    - ALLOCATION_NOT_FIRM
+  - line: 31
+    sku: null
+    note: SKU vide
+    quarantine:
+    - MISSING_SKU
+    anomalies: []
+  - line: 32
+    sku: FICTIF-A-004
+    note: 'Copie identique de la ligne FICTIF-A-004 : ignorée'
+    quarantine: []
+    anomalies:
+    - DUPLICATE_IDENTICAL_ROW
+  - line: 33
+    sku: FICTIF-A-030
+    note: 'Format « Blister » ambigu : offre en brouillon'
+    quarantine: []
+    anomalies:
+    - UNKNOWN_FORMAT
+  - line: 34
+    sku: FICTIF-A-031
+    note: Extension absente de la table d'alias
+    quarantine: []
+    anomalies:
+    - UNKNOWN_EXTENSION
+  - line: 35
+    sku: FICTIF-A-032
+    note: Ligne « non fictive » dans un jeu FICTIF
+    quarantine:
+    - FICTIF_FLAG_MISMATCH
+    anomalies: []
+  - line: 36
+    sku: FICTIF-A-033
+    note: 'Même nom que FICTIF-A-002 mais 11 boosters (catalogue : AMBIGUOUS)'
+    quarantine: []
+    anomalies: []
+  - line: 37
+    sku: FICTIF-A-034
+    note: HT -> TTC depuis la veille
+    quarantine:
+    - VAT_BASIS_CHANGED
+    anomalies: []
+  - line: 38
+    sku: FICTIF-A-035
+    note: Prix « unité » mais 6 unités par colis
+    quarantine:
+    - UNIT_CONFLICT
+    anomalies: []
+  - line: 39
+    sku: FICTIF-A-036
+    note: MOQ nul
+    quarantine:
+    - INVALID_QUANTITY
+    anomalies: []
+  - line: 40
+    sku: FICTIF-A-037
+    note: MOQ illisible
+    quarantine:
+    - UNPARSEABLE_VALUE
+    anomalies: []
+  - line: 41
+    sku: FICTIF-A-038
+    note: 'Langue JP : offre valide, bloquée ensuite par le pricing (FR attendu)'
+    quarantine: []
+    anomalies: []
+  - line: 42
+    sku: FICTIF-A-039
+    note: 'Produit non scellé : hors périmètre'
+    quarantine: []
+    anomalies:
+    - NOT_SEALED
+  - line: 43
+    sku: FICTIF-A-040
+    note: Ligne propre
+    quarantine: []
+    anomalies: []
+  - line: 44
+    sku: FICTIF-A-041
+    note: Ligne propre
+    quarantine: []
+    anomalies: []
+  - line: 45
+    sku: FICTIF-A-042
+    note: Ligne propre
+    quarantine: []
+    anomalies: []
+  - line: 46
+    sku: FICTIF-A-043
+    note: Ligne propre
+    quarantine: []
+    anomalies: []
+  import_anomalies:
+  - MISSING_SINCE_PREVIOUS
+  - NEW_SINCE_PREVIOUS
+  - QUARANTINE_RATIO_EXCEEDED
+FICTIF_offres_grossiste_a_incomplet.csv:
+  mapping: fictif_grossiste_a
+  now: '2026-10-04T08:00:00+02:00'
+  baseline: FICTIF_offres_grossiste_a_J-1.csv
+  status: QUARANTINED
+  rows_read: 5
+  import_anomalies:
+  - INCOMPLETE_IMPORT
+  - MISSING_SINCE_PREVIOUS
+FICTIF_tarif_grossiste_b.xlsx:
+  mapping: fictif_grossiste_b
+  now: '2026-10-04T08:00:00+02:00'
+  status: PARTIAL
+  rows_read: 23
+  lines:
+  - line: 5
+    sku: FICTIF-B-001
+    note: Ligne propre (nombres Excel, date Excel)
+    quarantine: []
+    anomalies: []
+  - line: 6
+    sku: FICTIF-B-002
+    note: EAN numérique ; stock « 10+ »
+    quarantine: []
+    anomalies:
+    - APPROXIMATE_STOCK
+  - line: 7
+    sku: FICTIF-B-003
+    note: Ligne propre
+    quarantine: []
+    anomalies: []
+  - line: 8
+    sku: FICTIF-B-004
+    note: Rupture déclarée (stock 0)
+    quarantine: []
+    anomalies: []
+  - line: 9
+    sku: FICTIF-B-005
+    note: Précommande, date texte
+    quarantine: []
+    anomalies: []
+  - line: 10
+    sku: FICTIF-B-006
+    note: Ligne propre
+    quarantine: []
+    anomalies: []
+  - line: 11
+    sku: FICTIF-B-007
+    note: Accessoire sans langue ni série
+    quarantine: []
+    anomalies: []
+  - line: 12
+    sku: FICTIF-B-008
+    note: 'Langue JP : valide ici, bloquée par le pricing FR'
+    quarantine: []
+    anomalies: []
+  - line: 13
+    sku: FICTIF-B-009
+    note: 'Carton : GTIN-14 de colis, prix « 1''299.00 »'
+    quarantine: []
+    anomalies:
+    - CASE_LEVEL_GTIN
+  - line: 14
+    sku: FICTIF-B-010
+    note: Prix zéro
+    quarantine:
+    - NON_POSITIVE_PRICE
+    anomalies: []
+  - line: 15
+    sku: FICTIF-B-011
+    note: Symbole € dans un tarif CHF
+    quarantine:
+    - CURRENCY_CONFLICT
+    anomalies: []
+  - line: 16
+    sku: FICTIF-B-012
+    note: Symbole $ ambigu
+    quarantine:
+    - UNKNOWN_CURRENCY
+    anomalies: []
+  - line: 17
+    sku: FICTIF-B-013
+    note: GTIN-8 au checksum faux
+    quarantine:
+    - INVALID_GTIN
+    anomalies: []
+  - line: 18
+    sku: FICTIF-B-014
+    note: Langue vide pour un produit de cartes
+    quarantine:
+    - UNKNOWN_LANGUAGE
+    anomalies: []
+  - line: 19
+    sku: FICTIF-B-015
+    note: 'Stock négatif : ignoré (pas de stock inventé)'
+    quarantine: []
+    anomalies:
+    - UNPARSEABLE_OPTIONAL
+  - line: 20
+    sku: FICTIF-B-016
+    note: 'Unité « display » pour un booster : ambiguë'
+    quarantine:
+    - UNKNOWN_UNIT_BASIS
+    anomalies: []
+  - line: 21
+    sku: FICTIF-B-017
+    note: TVA illisible
+    quarantine:
+    - UNPARSEABLE_VALUE
+    anomalies: []
+  - line: 22
+    sku: FICTIF-B-018
+    note: 'Date de sortie illisible : ignorée'
+    quarantine: []
+    anomalies:
+    - UNPARSEABLE_OPTIONAL
+  - line: 23
+    sku: FICTIF-B-019
+    note: Prix vide
+    quarantine:
+    - MISSING_PRICE
+    anomalies: []
+  - line: 24
+    sku: FICTIF-B-003
+    note: 'Copie identique de FICTIF-B-003 : ignorée'
+    quarantine: []
+    anomalies:
+    - DUPLICATE_IDENTICAL_ROW
+  - line: 26
+    sku: FICTIF-B-021
+    note: 'Langue IT : valide ici, bloquée par le pricing FR'
+    quarantine: []
+    anomalies: []
+  - line: 27
+    sku: FICTIF-B-022
+    note: Ligne « non fictive » dans un jeu FICTIF
+    quarantine:
+    - FICTIF_FLAG_MISMATCH
+    anomalies: []
+  - line: 28
+    sku: FICTIF-B-023
+    note: TVA en texte « 8.1 % »
+    quarantine: []
+    anomalies: []
+  import_anomalies:
+  - BLANK_ROWS
+  - QUARANTINE_RATIO_EXCEEDED
+FICTIF_flux_grossiste_c.xml:
+  mapping: fictif_grossiste_c
+  now: '2026-10-04T08:00:00+02:00'
+  status: PARTIAL
+  rows_read: 23
+  lines:
+  - line: 1
+    sku: FICTIF-C-001
+    note: Ligne propre, deux paliers
+    quarantine: []
+    anomalies: []
+  - line: 2
+    sku: FICTIF-C-002
+    note: Ligne propre
+    quarantine: []
+    anomalies: []
+  - line: 3
+    sku: FICTIF-C-003
+    note: Ligne propre
+    quarantine: []
+    anomalies: []
+  - line: 4
+    sku: FICTIF-C-004
+    note: Ligne propre
+    quarantine: []
+    anomalies: []
+  - line: 5
+    sku: FICTIF-C-005
+    note: Ligne propre
+    quarantine: []
+    anomalies: []
+  - line: 6
+    sku: FICTIF-C-006
+    note: 'Allocation annoncée sans accord écrit : ignorée'
+    quarantine: []
+    anomalies:
+    - ALLOCATION_NOT_FIRM
+  - line: 7
+    sku: FICTIF-C-007
+    note: Accessoire multilingue (langue NA)
+    quarantine: []
+    anomalies: []
+  - line: 8
+    sku: FICTIF-C-008
+    note: 'Langue EN : valide ici, bloquée par le pricing FR'
+    quarantine: []
+    anomalies: []
+  - line: 9
+    sku: FICTIF-C-009
+    note: Devise GBP non autorisée
+    quarantine:
+    - UNKNOWN_CURRENCY
+    anomalies: []
+  - line: 10
+    sku: FICTIF-C-010
+    note: Base HT/TTC vide
+    quarantine:
+    - UNKNOWN_VAT_BASIS
+    anomalies: []
+  - line: 11
+    sku: FICTIF-C-011
+    note: Prix zéro
+    quarantine:
+    - NON_POSITIVE_PRICE
+    anomalies: []
+  - line: 12
+    sku: FICTIF-C-012
+    note: Doublon de SKU (1/2)
+    quarantine:
+    - DUPLICATE_SKU
+    anomalies: []
+  - line: 13
+    sku: FICTIF-C-012
+    note: Doublon de SKU (2/2)
+    quarantine:
+    - DUPLICATE_SKU
+    anomalies: []
+  - line: 14
+    sku: FICTIF-C-013
+    note: GTIN au checksum faux
+    quarantine:
+    - INVALID_GTIN
+    anomalies: []
+  - line: 15
+    sku: FICTIF-C-014
+    note: « multilingue » refusé pour un produit de cartes
+    quarantine:
+    - UNKNOWN_LANGUAGE
+    anomalies: []
+  - line: 16
+    sku: FICTIF-C-015
+    note: 'Paliers : prix qui remonte'
+    quarantine:
+    - INVALID_TIER
+    anomalies: []
+  - line: 17
+    sku: FICTIF-C-016
+    note: Palier sans quantité
+    quarantine:
+    - INVALID_TIER
+    anomalies: []
+  - line: 18
+    sku: FICTIF-C-017
+    note: Prix illisible
+    quarantine:
+    - UNPARSEABLE_PRICE
+    anomalies: []
+  - line: 19
+    sku: FICTIF-C-018
+    note: Prix au carton sans nombre d'unités ni colisage
+    quarantine:
+    - UNKNOWN_UNIT_BASIS
+    anomalies: []
+  - line: 20
+    sku: null
+    note: Attribut sku absent
+    quarantine:
+    - MISSING_SKU
+    anomalies: []
+  - line: 21
+    sku: FICTIF-C-020
+    note: Prix au carton (6 displays)
+    quarantine: []
+    anomalies: []
+  - line: 22
+    sku: FICTIF-C-021
+    note: Coffret « Collection Classeur »
+    quarantine: []
+    anomalies: []
+  - line: 23
+    sku: FICTIF-C-022
+    note: « Coffret ETB » = ETB ; rupture
+    quarantine: []
+    anomalies: []
+  import_anomalies:
+  - QUARANTINE_RATIO_EXCEEDED
+FICTIF_flux_grossiste_c_perime.xml:
+  mapping: fictif_grossiste_c
+  now: '2026-10-04T08:00:00+02:00'
+  status: QUARANTINED
+  rows_read: 23
+  import_anomalies:
+  - STALE_SNAPSHOT
+FICTIF_tarif_email_assiste.yaml:
+  now: '2026-10-04T08:00:00+02:00'
+  blocking:
+  - LINE_TOTAL_MATCH@5
+  warnings:
+  - GTIN@6

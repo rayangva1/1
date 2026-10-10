@@ -1,0 +1,143 @@
+# Étoile polaire — contribution nette cumulée — {{NOM_BOUTIQUE}}
+
+> Décision de la propriétaire (4.10.2026) : **gagner de l'argent avec les cartes Pokémon**. Une seule métrique pilote tout le projet.
+> Calcul : `engine/pokeshop/northstar.py` (réalisé). Projection : `pokeshop.forecast.north_star` (agent finance). Stop-loss : `docs/00-pilotage/STOP_LOSS.md`.
+
+## 1. Définition
+
+**Contribution nette cumulée** = somme, depuis le lancement, de :
+
+```
+ventes nettes HT
+− coût historique des unités vendues
+− frais de paiement
+− logistique
+− SAV
+− acquisition
+− charges fixes
+```
+
+Elle répond à une seule question : **l'activité a-t-elle, à date, rapporté plus qu'elle n'a coûté ?** Elle se lit chaque semaine, en niveau (cumul) et en tendance (delta d'une semaine sur l'autre).
+
+## 2. Chaque poste, sa source, son piège
+
+| Poste | Ce qu'on compte | Source dans le système | Piège évité |
+|---|---|---|---|
+| Ventes nettes HT | Montant payé (produits + port facturé) − remises, hors TVA (TTC si l'entité n'est pas assujettie) ; remboursements en négatif | **Uniquement** les commandes enregistrées : `POST /orders/shipped` (rôle `n8n-02-commandes` : ventes nettes, frais de paiement, **coût transporteur réel** > 0 et référence d'étiquette, **lignes expédiées** SKU × quantité du catalogue validé, sinon refus ; enregistrement **atomique** : écritures dérivées contrôlées avant l'écriture de la commande ; **jamais refusée faute de stock valorisé** (revue R5) : le coût des ventes reste **en attente**, `cost_of_sales_pending`, étoile polaire `incomplete: true`, et il est dérivé dès l'inscription du coût de réception) et `POST /orders/{order_id}/refunds` (avoir cumulé ≤ ventes de la commande ; `lines` = unités retournées, base d'un retour en stock au coût) → `record_order`, `record_refund` ; une vente ou un avoir saisis à la main (`POST /northstar/entries`) exigent le jeton de la propriétaire | Une **précommande encaissée** n'est pas une vente tant qu'elle n'est pas livrée : c'est du cash, pas de la contribution ; une **réservation pré-drop** encore moins : sa vente (supplément compris) est **reconnue à l'expédition**, à la date posée par le moteur (`ShippedOrder.recognized_at`), jamais à l'encaissement (voir ci-dessous) ; aucune vente sans sa logistique réelle (jamais l'hypothèse L) |
+| Coût historique | Coût rendu des unités vendues au CMP, retours remis en stock déduits (au coût de la vente d'origine), casse, écart de facture sur unités déjà vendues | **Uniquement** le registre de coûts interne du moteur. **Sortie de vente dérivée** (revue R4, R3-NEW-05) : chaque commande expédiée porte ses lignes, le moteur en tire la sortie au CMP (`ISSUE`, référence `order:<id>`) — l'agent finance ne déclare plus jamais une sortie de vente (403) ; une commande dont le stock au coût ne couvre pas encore les lignes est **enregistrée quand même**, avec un coût des ventes **en attente** (`cost_of_sales_pending`, `incomplete: true`), dérivé dès l'inscription du coût de réception et au démarrage (revue R5, R4-NEW-01 : aucune vente perdue). Réceptions : `POST /costs/movements` (rôle `finance-pricing` ; lot au coût rendu **adossé** à une réception `POST /stock/receive` d'un autre jeton, de même quantité, valorisée une fois, et **coût unitaire à ± 2 % d'une référence du moteur** — ligne de la facture enregistrée `POST /costs/invoices` (workflow 03, après votre validation ; unités reçues au coût ≤ quantité facturée, fournisseur connu du moteur pour la référence), sinon coût rendu de l'offre évaluée avec des frais posés par la propriétaire — au-delà ou sans référence : jeton de la propriétaire) ; retour : cite la commande (`order:<id>`) et exige un avoir **à lignes** d'un montant au moins égal au coût des unités retournées, plus le retour physique déclaré par `operations-sav` (`return:<avoir>`) ; sinon jeton de la propriétaire (revue R5, R3-NEW-05) ; casse ; écart de facture > 2 % : jeton de la propriétaire → `HistoricalCostLedger` → `sync_cost_ledger`. Une sortie n'a **jamais** de coût déclaré : le moteur la sort au CMP. `POST /northstar/entries` (et `NorthStarLedger.record` / `add_entries`) **refuse** tout coût historique et toute source `HistoricalCostLedger` : l'étiquette n'est pas déclarable | Jamais le **coût de remplacement** : une offre moins chère ne change pas le coût des unités déjà achetées (BP §4) ; jamais un « avoir » inventé |
+| Paiement | Frais PSP réels (r × montant + b), frais remboursés seulement s'ils le sont vraiment | **Une seule source par frais** (revue R4, R3-DOC-03) : les frais d'une commande viennent de `POST /orders/shipped` (`payment_fees`) ; le rapprochement PSP du workflow 02 (`POST /northstar/entries`, `psp:<transaction>`) ne porte que les frais **sans commande** (abonnement, versement) ; le moteur refuse un PAYMENT externe portant l'`order_id` d'une commande enregistrée, et une commande enregistrée après des frais externes de la même commande n'en dérive que le complément ; remboursement : avoir | Frais d'une commande comptés deux fois (rapprochement + commande) : contribution sous-évaluée |
+| Logistique | Préparation, emballage, port réel des commandes | Commande ou dépense | Le port facturé n'est pas une marge (BP §3) : il est dans les ventes, le port réel ici |
+| SAV | Dépenses réelles : port retour, geste commercial, remplacement | `record_expense(…, Post.AFTER_SALES, …)` | La provision R du moteur de prix sert à fixer les prix, pas à remplir ce poste (sinon double compte) |
+| Acquisition | Publicité réellement dépensée, créateurs (produits offerts et commissions compris, BP §9) | `record_expense(…, Post.ACQUISITION, …)` | Le CAC attribué A du moteur de prix est une hypothèse, pas une dépense |
+| Charges fixes | Site, apps, comptabilité, assurance, stockage (400 CHF/mois au BP §3) | `accrue_fixed_costs` (réparti au jour, somme exacte au centime) | Les compter dès la semaine 1, même sans vente |
+
+**Pré-drop : chiffre d'affaires reconnu à l'expédition, jamais à l'encaissement (décision du 6.10.2026).** Une réservation pré-drop payée (`POST /predrop/reservations`, workflow 02) n'écrit **rien** dans l'étoile polaire : l'argent encaissé est une **dette** jusqu'à la livraison (photo du stop-loss, `STOP_LOSS.md` §1). Quand la commande est expédiée (`POST /orders/shipped`, un enregistrement par envoi : `<commande>` puis `<commande>/envoi-<n>`), le moteur reconnaît une réservation **par la ligne** (SKU `-RESA-<date>` d'une fiche de réservation, résolu par le moteur, que la réservation figure ou non à son registre : une ligne de réservation sans réservation enregistrée ouvre en plus un incident) ou par la commande (registre `predrop`, `<commande>` ou `<commande>#n`) et date **toutes** les écritures dérivées de cet envoi (ventes nettes, frais, logistique, sortie au CMP) du jour de l'**expédition** (`recognized_at`, posé par le moteur, relu tel quel au redémarrage, inchangé au rejeu), jamais du paiement ; une commande ordinaire reste datée de son paiement. La dette d'une réservation ne s'éteint qu'avec l'envoi de **sa** ligne (quantité cumulée au moins égale à la quantité réservée). Une réservation remboursée (non servie, réduction, annulation) ne produit **aucune** vente. `GET /northstar` expose en plus `predrop_collected_not_recognized_chf` : l'argent encaissé en pré-drop non encore reconnu (ni expédié ni remboursé), à lire avec le cumul, jamais à y ajouter. Le supplément fait partie des ventes nettes de la commande expédiée : il n'est pas un revenu distinct.
+
+Montants au centime exact (un montant à 3 décimales est refusé), écritures idempotentes (aucun double comptage si un import est rejoué), semaines du lundi au dimanche, fuseau Europe/Zurich. Un lot d'écritures (`POST /northstar/entries`) est **atomique** : une écriture refusée et rien n'est enregistré ; chaque lot accepté est journalisé avec l'acteur déduit du jeton. Les identifiants `order:`, `refund:`, `cost:`, `expense:`, `fixed:` (et les sources `commande`, `remboursement`, `depense`, `charges_fixes`, `HistoricalCostLedger`) sont **réservés** aux écritures dérivées par le moteur : une écriture externe qui les emprunte est refusée (422, revue R4, R3-NEW-04 : une écriture « squattant » `order:<id>:PAYMENT` bloquait la commande et, au redémarrage, tout le registre). Au redémarrage, une écriture dérivée impossible (conflit ancien, commande sans lignes) ne bloque plus le registre : `GET /northstar` répond `incomplete: true` avec `derivation_errors`, et les gates qui lisent l'étoile polaire la tiennent pour incomplète. **Qui écrit quoi** (matrice `docs/08-agents/MATRICE_API.md`) : les rôles `n8n-02-commandes` et `finance-pricing` n'écrivent que des montants **positifs** de paiement, SAV, acquisition et charges fixes ; ventes, avoirs et montants négatifs (correction référencée à une écriture positive du même poste, cumul ≤ montant d'origine) exigent le jeton de la propriétaire ; le jeton commun ne fait que lire.
+
+## 3. Exemple chiffré (FICTIF, calculé à la main et vérifié par les tests)
+
+Produits FICTIFS : un display (coût historique 140,00 CHF) et un ETB (60,00 CHF). Ventes nettes HT de l'exemple BP §4 : display 199,90 TTC ⇒ 184,92 HT ; ETB 95,00 TTC ⇒ 87,88 HT. Charges fixes : 400 × 12 / 52 = 92,31 CHF par semaine.
+
+**Semaine 2026-W45** : commandes A (display) et B (ETB) ; 20,00 CHF de publicité.
+
+| Poste | Calcul | CHF |
+|---|---|---:|
+| Ventes nettes HT | 184,92 + 87,88 | 272,80 |
+| Coût historique | 140,00 + 60,00 | − 200,00 |
+| Paiement | 5,30 + 2,68 | − 7,98 |
+| Logistique | 3,00 + 3,00 | − 6,00 |
+| SAV | — | 0,00 |
+| Acquisition | publicité | − 20,00 |
+| Charges fixes | 400 × 12 / 52 | − 92,31 |
+| **Contribution nette** | | **− 53,49** |
+
+**Semaine 2026-W46** : commandes C (display), D et E (ETB) ; remboursement de B avec retour en stock et 7,00 CHF de port retour ; 35,00 CHF de publicité.
+
+| Poste | Calcul | CHF |
+|---|---|---:|
+| Ventes nettes HT | 184,92 + 87,88 + 87,88 − 87,88 | 272,80 |
+| Coût historique | 140,00 + 60,00 + 60,00 − 60,00 | − 200,00 |
+| Paiement | 5,30 + 2,68 + 2,68 (non remboursés) | − 10,66 |
+| Logistique | 3 × 3,00 | − 9,00 |
+| SAV | port retour | − 7,00 |
+| Acquisition | publicité | − 35,00 |
+| Charges fixes | | − 92,31 |
+| **Contribution nette** | | **− 81,17** |
+
+| Semaine | Contribution nette | Delta vs semaine précédente | **Cumul** |
+|---|---:|---:|---:|
+| 2026-W45 | − 53,49 | − 53,49 | **− 53,49** |
+| 2026-W46 | − 81,17 | − 27,68 | **− 134,66** |
+
+Lecture : la contribution **avant charges fixes** est positive en W46 (11,14 CHF après publicité), mais trop faible pour couvrir 92,31 CHF de charges fixes. Au rythme de 3 commandes par semaine, l'activité perd de l'argent ; il faut plus de volume à marge égale, ou moins de publicité par commande. Le delta de − 27,68 s'explique poste par poste : + 2,68 de paiement, + 3,00 de logistique, + 7,00 de SAV, + 15,00 de publicité, ventes et coût inchangés.
+
+## 4. Revue hebdomadaire (lundi, 15 minutes)
+
+**Préparée par l'agent 05, lue par la propriétaire.**
+
+1. Vérifier que le registre de coûts interne a reçu les mouvements de la semaine close (`POST /costs/movements` : réceptions au coût rendu, retours, casse, ajustements de facture ; les **sorties de vente** n'y sont jamais saisies : le moteur les dérive des lignes des commandes au CMP), puis les commandes expédiées et avoirs (`POST /orders/shipped`, `POST /orders/{order_id}/refunds`) et les dépenses (`POST /northstar/entries`, sans coût historique ni vente) ; enfin que `GET /northstar` répond `incomplete: false` (sinon lire `derivation_errors` — la propriétaire corrige l'écriture dérivée — et `cost_of_sales_pending` — coût de réception à inscrire, `POST /costs/movements` ; d'ici là, l'étoile polaire de la semaine n'est pas décidable et toute dépense part en validation humaine). Une commande n'entre qu'avec sa **logistique réelle** (coût transporteur et référence d'étiquette) : jamais l'hypothèse L du BP — la règle « logistique supposée refusée » s'applique au chemin réel de l'API, pas seulement au panier Python.
+2. Produire le tableau : `NorthStarLedger.weekly_report(...).render_markdown()`.
+3. Répondre par écrit aux quatre questions :
+
+| Question | Où regarder |
+|---|---|
+| Le cumul monte-t-il ? | Colonne « Cumul », tendance sur 4 semaines |
+| Quel poste explique le delta ? | `delta_by_post` (écart poste par poste) |
+| La publicité paie-t-elle ? | Contribution après acquisition > 0 ; stop-loss publicité |
+| Le rythme couvre-t-il les charges fixes ? | Contribution avant charges fixes vs 92,31 CHF par semaine |
+
+4. Décider une seule action pour la semaine (prix, assortiment, publicité, réassort), avec son effet attendu en CHF sur la contribution nette.
+
+**Gabarit à coller dans le rapport de l'agent 05 :**
+
+```
+Semaine : AAAA-Wss | Contribution nette : … CHF | Delta : … CHF | Cumul : … CHF
+Poste principal du delta : …
+Contribution après pub : … CHF | Contribution avant charges fixes : … CHF
+Stop-loss actifs : …
+Action décidée : … | Effet attendu : … CHF/semaine | Revue : semaine suivante
+```
+
+## 5. Ce qui ne compte pas
+
+| Indicateur | Pourquoi il ne pilote pas |
+|---|---|
+| Chiffre d'affaires | Une vente à perte augmente le CA et diminue l'étoile polaire |
+| Followers, vues, inscrits | Le BP §9 : la première validation est un achat rentable et livré, pas une audience |
+| Stock « valorisé » au prix public ou à la cote | Un stock invendu immobilise du cash ; seul l'écoulement à marge compte |
+| Coût de remplacement | Sert à fixer les prix futurs, jamais à calculer la marge réalisée |
+| Provisions du moteur de prix (R, A) | Hypothèses de calcul ; ici seules les dépenses réelles comptent |
+| Précommandes encaissées non livrées | Du cash à rendre si l'allocation échoue, pas une vente |
+| Réservations pré-drop encaissées (`predrop_collected_not_recognized_chf`) | Une dette jusqu'à l'expédition ou au remboursement : la vente (supplément compris) n'est reconnue qu'à l'expédition |
+| Allocations rares obtenues | Un produit rare à faible marge n'est pas un motif d'achat (BP §1) |
+
+## 6. Liens avec les stop-loss et les gates
+
+- **Stop-loss temps** : il utilise la contribution **après publicité, avant charges fixes**, sur la fenêtre de validation (`NorthStarLedger.totals(début, fin).contribution_after_acquisition`), avec le seuil « > 0 » du BP §1.
+- **Stop-loss global** (définition unique : `docs/00-pilotage/STOP_LOSS.md` §3) : il ne se calcule **pas** sur la contribution cumulée mais sur la **valeur nette** (cash + stock prudent + créances − dettes) comparée au capital engagé de référence, parce que le stock acheté et non vendu est une perte potentielle que la contribution ne voit pas encore. Gel si la perte atteint 20 % de la référence : **840 CHF** avec le point zéro recommandé (option A, 4 200 CHF : décidé à J3 avec la décision de budget C03, posé dès la mise en service de l'API après vos apports, avec la première photo et avant le workflow 07, `STOP_LOSS.md` §5). La projection de l'agent finance (`pokeshop.forecast.north_star`) et le classeur `docs/03-finance/modele_financier.xlsx` n'en sont qu'une approximation, qui exclut les coûts de lancement : ils appliquent **par défaut** `capital_engaged=BP_STOPLOSS_REFERENCE` (4 200 CHF ⇒ seuil 840 CHF ; gel projeté en semaine 13 au rythme du jalon). Un seuil « −1 600 CHF de contribution cumulée » n'est pas le stop-loss du projet. Les apports et retraits qui fixent la référence viennent **uniquement** de votre registre (`POST /capital/movements`).
+- **Journal illisible** : si le journal de l'étoile polaire n'a pas pu être relu au démarrage, `GET /northstar` répond 503 et le tableau de bord (`GET /dashboard/*`) affiche l'étoile polaire « indisponible (journal non relu) », statut CRITIQUE, **jamais** « aucune écriture » ni un cumul à 0 ; réparer le stockage puis redémarrer.
+- **Plan vs réalisé** : `NorthStarReport.to_forecast_weeks()` convertit le réalisé au format de la projection pour comparer semaine par semaine.
+
+```python
+from decimal import Decimal
+from pokeshop.northstar import CostMovement, CostRegister, NorthStarLedger, Post
+
+ledger = NorthStarLedger()
+costs = CostRegister(ledger)                                 # registre de coûts interne (seule source du coût)
+ledger.record_basket("CMD-0001", paid_at, basket)          # ventes, paiement, logistique RÉELLE
+# basket = pricing.basket_contribution(..., shipping_cost_actual=coût_transporteur) : un panier calculé sur
+# l'hypothèse L ou un port offert sans coût réel (SHIPPING_COST_ASSUMED / _UNKNOWN) est refusé (NorthStarError).
+costs.apply(CostMovement(kind="RECEIPT", product_key="P1", at=received_at, ref="LOT-1", qty=4, unit_cost=Decimal("140")))
+costs.apply(CostMovement(kind="ISSUE", product_key="P1", at=paid_at, ref="CMD-0001", qty=1))  # coût au CMP
+ledger.record_expense("PUB-2026-11-08", day, Post.ACQUISITION, "20.00")
+ledger.accrue_fixed_costs("400", 2026, 11)
+print(ledger.weekly_report().render_markdown())
+```
+
+## Validation humaine requise
+
+- [ ] Confirmer la définition du §1 comme métrique unique de pilotage, et l'ordre des postes.
+- [ ] Confirmer les conventions : SAV et acquisition aux dépenses réelles (pas aux provisions) ; précommandes comptées à la livraison ; **réservations pré-drop reconnues à l'expédition** (supplément compris, jamais à l'encaissement) ; charges fixes réparties au jour.
+- [ ] Choisir le jour et le canal de la revue hebdomadaire (proposé : lundi, rapport de l'agent 05).
+- [ ] Valider avec la fiduciaire la méthode du coût historique (CMP, cf. `engine/pokeshop/costs.py`) et le traitement des montants en mode non assujetti (TTC).

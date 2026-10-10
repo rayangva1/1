@@ -1,0 +1,1695 @@
+{
+  "id": "pkshp03FactMarge",
+  "name": "Pokeshop 03 — Facture vers marge réelle",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 03 — Facture vers marge réelle (BP §12)\nL'agent 05 extrait la facture et le justificatif d'import (PDF/email) et l'envoie à **sa** passerelle (secret de l'agent 05 seul).\n**Contrôles déterministes** (centimes, total des lignes, devise + taux sourcé) → **validation humaine** de l'extraction\n(formulaire protégé, 72 h) → frais ventilés au coût rendu unitaire → **facture enregistrée au moteur**\n(`POST /costs/invoices`, jeton `n8n-03-factures`) : référence du coût d'une réception (± 2 %, sinon propriétaire) et dette\nde la photo du stop-loss jusqu'au paiement relevé (`POST /costs/invoices/{ref}/payments`, connecteur-tresorerie ou\npropriétaire) → **écarts > 2 %** signalés. Jamais de modification d'une commande client déjà conclue.\n**Pré-drop** : confirmation d'allocation **ferme** ou **réduction** extraite par l'agent 02 (sa passerelle, son secret)\n→ contrôles → réduction : réservations **fermées aussitôt** (acte protecteur) → **validation humaine** du justificatif\n(formulaire 72 h) → `POST /predrop/allocations` ou `/reduce` (pré-drop servi en premier, quota drop réduit d'abord,\ndernières réservations remboursées intégralement) → remboursements à valider **en un clic** par la propriétaire\n(niveaux 1-2, son jeton, depuis son terminal) ; rappel quotidien des remboursements en attente.\n**Activation** : niveau 1 (contrôles, validation, enregistrement de la facture et de l'allocation).\n**Validation humaine requise** : chaque extraction (A_VALIDER_HUMAINEMENT), seuil d'écart de 2 %, chaque allocation\nferme et chaque réduction (justificatif fournisseur), chaque remboursement pré-drop aux niveaux 1 et 2.",
+        "height": 480,
+        "width": 680,
+        "color": 4
+      },
+      "id": "b6dc7534-dc53-5ea8-b376-d85d59c8f1ca",
+      "name": "Note — à lire",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        -440
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-facture",
+        "responseMode": "onReceived",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "7ad25240-1046-5baf-ba38-86be2a5c639d",
+      "name": "Facture extraite par l’agent 05 (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "5809a979-8f1d-5685-b4d0-416ab5b816b5",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw03Factu05",
+          "name": "Passerelle 03 factures — secret de l'agent 05 (finance-pricing)"
+        }
+      },
+      "notes": "Secret remis au seul agent 05 (credential « Passerelle 03 factures »).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "6309fda0-ebb3-5e56-9a66-fd7abdd1b989",
+              "name": "workflow",
+              "value": "facture-marge",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "0470bf9d-cb48-5cd9-bf77-e32489f54198",
+      "name": "Paramètres",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        0
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Montants décimaux en centimes entiers (aucun float pour un montant ; arrondi interdit).\nfunction cents(value) {\n  const text = String(value === undefined || value === null ? '' : value).trim();\n  if (!/^-?\\d+(\\.\\d{1,2})?$/.test(text)) throw new Error(`montant non décimal ou plus de 2 décimales : ${text}`);\n  const negative = text.startsWith('-');\n  const [intPart, frac = ''] = text.replace('-', '').split('.');\n  const total = Number(intPart) * 100 + Number((frac + '00').slice(0, 2));\n  return negative ? -total : total;\n}\nfunction chf(c) {\n  const sign = c < 0 ? '-' : '';\n  const a = Math.abs(c);\n  return `${sign}${Math.trunc(a / 100)}.${String(a % 100).padStart(2, '0')}`;\n}\n\n// Contrôles déterministes de la facture extraite par l'agent 05 (l'IA extrait, elle ne décide pas).\n// Entrée : { invoice_ref, supplier_id, invoice_date, currency, fx: {rate, source, date}, goods_total_chf,\n//            lines: [{ lot_id, product_key, qty, unit_basis, estimated_unit_cost_chf, invoice_unit_cost_chf }],\n//            fees_chf: { freight, customs, import_vat }, documents: [...] }\n// Revue R5 (R2-NEW-01 c) : quantités et coûts PAR UNITÉ DE VENTE (unit_basis « unité ») ; une ligne facturée au\n// carton est convertie avant l'envoi (qty × contenu, coût ÷ contenu) — sinon anomalie, rien n'est enregistré.\nconst body = $input.first().json.body || {};\nconst anomalies = [];\nfor (const field of ['invoice_ref', 'supplier_id', 'invoice_date']) if (!body[field]) anomalies.push(`champ manquant : ${field}`);\nif (body.currency !== 'CHF') {\n  const fx = body.fx || {};\n  if (!fx.rate || !fx.source || !fx.date) anomalies.push('devise étrangère : taux, source et date obligatoires (aucun taux choisi par une IA)');\n}\nconst lines = Array.isArray(body.lines) ? body.lines : [];\nif (!lines.length) anomalies.push('aucune ligne de facture');\nlet goods = 0;\nconst variances = [];\nlines.forEach((line, i) => {\n  if (!line.lot_id || !line.product_key) anomalies.push(`ligne ${i + 1} : lot ou référence manquant`);\n  if (!Number.isInteger(line.qty) || line.qty <= 0) anomalies.push(`ligne ${i + 1} : quantité invalide`);\n  const basis = line.unit_basis === undefined ? 'unité' : String(line.unit_basis);\n  if (basis !== 'unité') anomalies.push(`ligne ${i + 1} : facturée « ${basis} » — convertir en unités de vente (quantité × contenu, coût ÷ contenu)`);\n  let est;\n  let act;\n  try {\n    est = cents(line.estimated_unit_cost_chf);\n    act = cents(line.invoice_unit_cost_chf);\n  } catch (error) {\n    anomalies.push(`ligne ${i + 1} : ${error.message}`);\n    return;\n  }\n  if (act <= 0) anomalies.push(`ligne ${i + 1} : coût facturé nul ou négatif`);\n  const qty = Number.isInteger(line.qty) ? line.qty : 0;\n  goods += act * qty;\n  // Écart > 2 % : comparaison entière exacte |réel − estimé| × 50 > estimé.\n  const flagged = est > 0 && Math.abs(act - est) * 50 > est;\n  variances.push({ lot_id: line.lot_id, product_key: line.product_key, qty, basis, estimated: chf(est), invoice: chf(act), value: act * qty, flagged });\n});\nif (body.goods_total_chf !== undefined) {\n  try {\n    if (cents(body.goods_total_chf) !== goods) anomalies.push(`total des lignes ${chf(goods)} ≠ total marchandise ${body.goods_total_chf}`);\n  } catch (error) {\n    anomalies.push(`total marchandise : ${error.message}`);\n  }\n} else {\n  anomalies.push('total marchandise absent : contrôle du total impossible');\n}\n// Frais affichés à la propriétaire (fret, douane, TVA d'import) et coût rendu unitaire calculé (hors TVA d'import).\nconst fees = body.fees_chf || {};\nconst feeOf = (k) => { try { return fees[k] ? cents(fees[k]) : 0; } catch (error) { anomalies.push(`frais ${k} : ${error.message}`); return 0; } };\nconst freight = feeOf('freight');\nconst customs = feeOf('customs');\nconst importVat = feeOf('import_vat');\nconst landed = (v) => (goods > 0 && v.qty > 0 ? chf(Math.round((v.value + Math.floor(((freight + customs) * v.value) / goods)) / v.qty)) : '?');\nconst flaggedLines = variances.filter((v) => v.flagged);\nreturn [{ json: {\n  invoice_ref: body.invoice_ref || null,\n  supplier_id: body.supplier_id || null,\n  goods_total_chf: chf(goods),\n  lines: lines.length,\n  variances: variances.map(({ value, ...v }) => v),\n  flagged_count: flaggedLines.length,\n  anomalies,\n  anomalies_count: anomalies.length,\n  fees_resume: `fret ${chf(freight)} CHF, douane ${chf(customs)} CHF, TVA d'import ${chf(importVat)} CHF (ventilée à part : comptée au coût selon le profil TVA du moteur)`,\n  resume: variances.map((v) => `${v.lot_id} ${v.product_key} : ${v.qty} × ${v.basis} — facturé ${v.invoice} CHF/unité (estimé ${v.estimated}), coût rendu ${landed(v)} CHF/unité hors TVA d'import${v.flagged ? ' (ÉCART > 2 %)' : ''}`).join('\\n'),\n} }];\n"
+      },
+      "id": "a4e9b7ff-f088-53f0-9515-5eaccfb93246",
+      "name": "Contrôles déterministes (centimes)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0ce522ce-bc22-5de6-a63c-f1cec7515415",
+              "leftValue": "={{ $json.anomalies_count }}",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "c1482cb7-b424-5123-935e-dd2d1a02e04f",
+      "name": "Extraction cohérente ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3e223902-0acc-518b-ab54-eabd4a84e9fb",
+              "name": "sujet",
+              "value": "=[FACTURE] Valider l'extraction {{ $json.invoice_ref }} ({{ $json.supplier_id }})",
+              "type": "string"
+            },
+            {
+              "id": "32bd3236-08c1-5943-9030-bf62a3a52260",
+              "name": "texte",
+              "value": "=Lignes extraites (quantité × unité de vente, coût facturé et coût rendu par unité) :\n{{ $json.resume }}\nTotal marchandise : {{ $json.goods_total_chf }} CHF. Frais : {{ $json.fees_resume }}.\nVérifier au PDF les QUANTITÉS (unités, jamais des cartons) et les montants, puis répondre : {{ $execution.resumeFormUrl }}\nINTERNE — contient coûts et marges : ne jamais transférer ni publier.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "f7e36a1d-4b96-5943-a86e-4bf635f1b312",
+      "name": "Préparer la demande de validation",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1120,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "445fa0ad-04b1-55c3-9496-73f201fdece9",
+      "name": "Demander la validation de l’extraction (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1400,
+        -100
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "resume": "form",
+        "incomingAuthentication": "basicAuth",
+        "formTitle": "Validation d'une facture fournisseur",
+        "formDescription": "=Facture {{ $('Contrôles déterministes (centimes)').first().json.invoice_ref }} : les quantités (unités de vente) et les montants extraits correspondent-ils au justificatif ? (aucune commande client ne sera modifiée)\n{{ $('Contrôles déterministes (centimes)').first().json.resume }}\nFrais : {{ $('Contrôles déterministes (centimes)').first().json.fees_resume }}",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Décision",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Conforme au justificatif"
+                  },
+                  {
+                    "option": "Non conforme"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Motif",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        },
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 72,
+        "resumeUnit": "hours",
+        "options": {}
+      },
+      "id": "af6b3054-203e-5939-8da6-22f90f381545",
+      "name": "Validation humaine de l’extraction (formulaire, 72 h)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        -100
+      ],
+      "webhookId": "ae7c0dbd-ff86-54f7-a2ab-d693ed565533",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "pkshpOwnerForm01",
+          "name": "Formulaires propriétaire — Basic Auth"
+        }
+      },
+      "notes": "Sans réponse sous 72 h : la branche « non » s'applique (statu quo sûr).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dcf0e87e-d9d1-5e6d-bbf3-a23117357da4",
+              "leftValue": "={{ $json['Décision'] }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "Conforme au justificatif"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "2ee6e812-358d-5f22-8e91-c256fc636ef3",
+      "name": "Extraction validée ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1960,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Montants décimaux en centimes entiers (aucun float pour un montant ; arrondi interdit).\nfunction cents(value) {\n  const text = String(value === undefined || value === null ? '' : value).trim();\n  if (!/^-?\\d+(\\.\\d{1,2})?$/.test(text)) throw new Error(`montant non décimal ou plus de 2 décimales : ${text}`);\n  const negative = text.startsWith('-');\n  const [intPart, frac = ''] = text.replace('-', '').split('.');\n  const total = Number(intPart) * 100 + Number((frac + '00').slice(0, 2));\n  return negative ? -total : total;\n}\nfunction chf(c) {\n  const sign = c < 0 ? '-' : '';\n  const a = Math.abs(c);\n  return `${sign}${Math.trunc(a / 100)}.${String(a % 100).padStart(2, '0')}`;\n}\n\n// Facture validée par la propriétaire -> registre des factures du moteur (POST /costs/invoices), revues R4 et R5.\n// Coût rendu unitaire ventilé : prix facturé HT + fret et douane répartis au prorata de la valeur. La TVA d'import est\n// ventilée À PART (import_vat_unit_chf) : le moteur la compte au coût selon SON profil TVA (méthode effective :\n// récupérable, hors coût ; non assujettie : coût) — jamais décidé ici (revue R5, R4-DOC-02).\nconst body = $('Facture extraite par l’agent 05 (passerelle)').first().json.body || {};\nconst lines = Array.isArray(body.lines) ? body.lines : [];\nconst fees = body.fees_chf || {};\nconst costFees = ['freight', 'customs'].reduce((sum, k) => sum + (fees[k] ? cents(fees[k]) : 0), 0);\nconst vatCents = fees.import_vat ? cents(fees.import_vat) : 0;\nconst goods = lines.reduce((sum, l) => sum + cents(l.invoice_unit_cost_chf) * l.qty, 0);\nif (goods <= 0) throw new Error('facture sans valeur marchandise : rien à enregistrer');\nconst allocate = (total) => {\n  let allocated = 0;\n  return lines.map((l, i) => {\n    const value = cents(l.invoice_unit_cost_chf) * l.qty;\n    const share = i === lines.length - 1 ? total - allocated : Math.floor((total * value) / goods);\n    allocated += share;\n    return share;\n  });\n};\nconst feeShares = allocate(costFees);\nconst vatShares = allocate(vatCents);\nconst out = lines.map((l, i) => ({\n  product_key: String(l.product_key),\n  qty: l.qty,\n  unit_cost_chf: chf(Math.round((cents(l.invoice_unit_cost_chf) * l.qty + feeShares[i]) / l.qty)),\n  import_vat_unit_chf: chf(Math.round(vatShares[i] / l.qty)),\n}));\n// Date d'émission jamais dans le futur (revue R5, R4-DOC-08) : minuit UTC du jour de la facture, ou maintenant si\n// la facture est validée avant cette heure (le moteur refuse une facture datée de plus de 5 min dans le futur).\nconst day = Date.parse(`${body.invoice_date}T00:00:00Z`);\nif (Number.isNaN(day)) throw new Error(`date de facture illisible : ${body.invoice_date}`);\nreturn [{ json: {\n  invoice_ref: String(body.invoice_ref),\n  supplier_id: String(body.supplier_id),\n  issued_at: new Date(Math.min(day, Date.now())).toISOString(),\n  total_chf: chf(goods + costFees + vatCents),\n  lines: out,\n  source: `facture ${body.invoice_ref} extraite par l'agent 05, validée par la propriétaire (formulaire 03)`,\n} }];\n"
+      },
+      "id": "b7381122-47e6-5da0-abf7-4924dcbb1d3d",
+      "name": "Préparer la facture validée (coût rendu ventilé)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2100,
+        -200
+      ],
+      "notes": "Lignes au coût rendu unitaire (fret et douane ventilés au prorata de la valeur), TVA d'import ventilée à part (le moteur la compte selon son profil TVA) ; total dû = marchandise + frais ; date d'émission jamais future.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/costs/invoices",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "a677525b-dfec-5875-aabb-ef00b6bc2849",
+      "name": "Enregistrer la facture validée (POST /costs/invoices)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        -200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "notes": "Registre des factures du moteur (revue R4) : référence du coût d'une réception (± 2 %, sinon propriétaire) et dette de la photo du stop-loss jusqu'au paiement relevé par connecteur-tresorerie. Jeton nommé n8n-03-factures, jamais l'agent 05 qui valorise les réceptions. Idempotente par facture (autre contenu : 409).",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "328fe7e1-9c5c-585a-a50b-da02cd894b46",
+              "leftValue": "={{ $('Contrôles déterministes (centimes)').first().json.flagged_count }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "4ac27149-2b11-5ad5-aeef-098665535550",
+      "name": "Écart > 2 % ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2520,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "69aed975-0676-573a-9096-8a8757ac481c",
+              "name": "sujet",
+              "value": "=[ÉCART DE COÛT] {{ $('Contrôles déterministes (centimes)').first().json.invoice_ref }}",
+              "type": "string"
+            },
+            {
+              "id": "f844823d-ace1-5d2c-9525-c2a6ba52f754",
+              "name": "texte",
+              "value": "=Écarts facture / estimation :\n{{ $('Contrôles déterministes (centimes)').first().json.resume }}\nÀ expliquer dans la revue hebdomadaire ; répercuter sur le coût de remplacement et la décision de prix.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "2caae857-7995-5707-a1a9-88659e0605ec",
+      "name": "Préparer le signalement d’écart",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2800,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "bcd57fa4-395f-5a18-80eb-b0365d4e6472",
+      "name": "Signaler les écarts (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        3080,
+        -300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "a392740c-41b6-552f-9f04-94552bec9e8c",
+      "name": "Journal : coût historique à jour",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2800,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Facture ' + $('Contrôles déterministes (centimes)').first().json.invoice_ref + ' jugée non conforme : ' + ($json['Motif'] || 'sans réponse sous 72 h'), kind: 'FACTURE_NON_CONFORME', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: '03-facture:' + $('Contrôles déterministes (centimes)').first().json.invoice_ref, proposed_action: 'Corriger l’extraction ou demander une facture rectificative ; aucun coût enregistré.', actor: 'n8n:03-facture-marge', simulation: $('Paramètres').first().json.simulation }) }}"
+      },
+      "id": "68a75adb-8efc-57b1-8c3e-8e99ce569cee",
+      "name": "Extraction refusée : incident",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        40
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Facture ' + ($json.invoice_ref || '?') + ' : ' + $json.anomalies.join(' ; '), kind: 'FACTURE_ANOMALIE', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: '03-facture:' + ($json.invoice_ref || 'inconnue'), proposed_action: 'Reprendre l’extraction (unités, total, devise et taux sourcé) puis renvoyer.', actor: 'n8n:03-facture-marge', simulation: $('Paramètres').first().json.simulation, details: { anomalies: $json.anomalies } }) }}"
+      },
+      "id": "6dc2b6db-38d7-58d0-895b-455f087f2656",
+      "name": "Ouvrir un incident facture",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-allocation",
+        "responseMode": "onReceived",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "ea65dcc4-b1a0-58cc-bbd8-02efbd6ebb66",
+      "name": "Confirmation d’allocation extraite par l’agent 02 (passerelle)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        520
+      ],
+      "webhookId": "1f14f564-fe0e-5ff1-8c99-8e2626052835",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw03Alloc02",
+          "name": "Passerelle 03 allocations — secret de l'agent 02 (sourcing)"
+        }
+      },
+      "notes": "Secret remis au SEUL agent 02 (sourcing), qui ne bénéficie pas du pré-drop. Corps : {\"kind\": \"allocation\" | \"reduction\", \"product_key\", \"supplier_id\", \"qty\" | \"new_qty\", \"supplier_confirmation_ref\", \"expected_delivery\", \"reason\" (réduction), \"document\" (justificatif)}.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "6309fda0-ebb3-5e56-9a66-fd7abdd1b989",
+              "name": "workflow",
+              "value": "facture-marge",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "2fe0e182-7c87-5614-a6d2-31abcdc30023",
+      "name": "Paramètres — allocations",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        520
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Confirmation fournisseur extraite par l'agent 02 (sourcing, sa passerelle) : allocation FERME ou RÉDUCTION annoncée.\n// Contrôles déterministes ; l'IA extrait, la propriétaire valide le justificatif (formulaire) ; jamais l'agent qui\n// bénéficie du pré-drop (chef de projet, finance) : la valeur décisive est posée par n8n-03-factures après validation.\nconst body = $input.first().json.body || {};\nconst anomalies = [];\nconst kind = body.kind === 'reduction' ? 'reduction' : body.kind === 'allocation' ? 'allocation' : null;\nif (!kind) anomalies.push(`nature inconnue : ${body.kind} (allocation ou reduction)`);\nconst ident = /^[A-Za-z0-9][A-Za-z0-9_.:#/-]{0,119}$/;\nif (!ident.test(String(body.product_key || ''))) anomalies.push('référence (product_key) manquante ou invalide');\nconst ref = String(body.supplier_confirmation_ref || '');\nif (ref.length < 3 || ref.length > 200) anomalies.push('référence de la confirmation fournisseur manquante');\nif (!body.document) anomalies.push('justificatif (document) manquant : rien sans pièce');\nconst qty = kind === 'reduction' ? body.new_qty : body.qty;\nconst minimum = kind === 'reduction' ? 0 : 1;\nif (!Number.isInteger(qty) || qty < minimum || qty > 100000) anomalies.push(`quantité invalide : ${qty}`);\nif (kind === 'allocation' && !ident.test(String(body.supplier_id || ''))) anomalies.push('fournisseur manquant');\nif (kind === 'allocation' && body.expected_delivery && !/^\\d{4}-\\d{2}-\\d{2}$/.test(String(body.expected_delivery))) {\n  anomalies.push('date de livraison attendue illisible');\n}\nif (kind === 'reduction' && String(body.reason || '').trim().length < 10) anomalies.push('motif de la réduction trop court');\nconst resume = kind === 'reduction'\n  ? `RÉDUCTION annoncée : ${body.product_key} ramenée à ${qty} unité(s) (confirmation ${ref}) — motif : ${body.reason || '?'}`\n  : `ALLOCATION FERME : ${qty} unité(s) de ${body.product_key} chez ${body.supplier_id} (confirmation ${ref}, livraison attendue ${body.expected_delivery || 'non précisée'})`;\nreturn [{ json: {\n  kind, product_key: body.product_key || null, supplier_id: body.supplier_id || null, qty,\n  supplier_confirmation_ref: ref || null, expected_delivery: body.expected_delivery || null,\n  reason: body.reason ? String(body.reason).trim() : null, document: body.document || null,\n  anomalies, anomalies_count: anomalies.length, resume,\n} }];\n"
+      },
+      "id": "029a674d-1405-5849-b043-ef0dc8b1bbfa",
+      "name": "Contrôles de la confirmation (déterministes)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0ce522ce-bc22-5de6-a63c-f1cec7515415",
+              "leftValue": "={{ $json.anomalies_count }}",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "54bf3b38-e872-5707-9387-59f7164e6202",
+      "name": "Confirmation cohérente ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — allocations').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Confirmation d’allocation ' + ($json.supplier_confirmation_ref || '?') + ' : ' + $json.anomalies.join(' ; '), kind: 'ALLOCATION_ANOMALIE', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: '03-allocation:' + ($json.product_key || 'inconnue'), proposed_action: 'Reprendre l’extraction (référence, quantité, justificatif) puis renvoyer ; aucune allocation enregistrée.', actor: 'n8n:03-facture-marge', simulation: $('Paramètres — allocations').first().json.simulation, details: { anomalies: $json.anomalies } }) }}"
+      },
+      "id": "551775c5-28e0-5bd0-84fe-08887ce63861",
+      "name": "Ouvrir un incident d’allocation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        680
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b46abcb1-88b0-526e-af22-a50fae3de4dd",
+              "leftValue": "={{ $json.kind }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "reduction"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "41d3c489-4a64-505d-bb70-9de2f10c2114",
+      "name": "Réduction annoncée ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — allocations').first().json.api_base_url }}/predrop/offers",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "4fed5d39-1bbb-5b59-8a3c-03c3bc5cffbf",
+      "name": "Pré-drops du moteur (GET /predrop/offers)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        360
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pré-drop OUVERT de la référence dont la réduction est annoncée (au plus un par référence) : il est fermé aussitôt\n// (acte protecteur) pour ne plus encaisser d'argent à rembourser ; aucun pré-drop ouvert : rien à fermer.\nconst want = $('Contrôles de la confirmation (déterministes)').first().json.product_key;\nconst data = $input.first().json || {};\nconst internal = Array.isArray(data.internal) ? data.internal : [];\nconst open = internal.find((p) => p && p.product_key === want && p.status === 'OPEN');\nreturn [{ json: { predrop_id: open ? String(open.predrop_id) : null, ouvert: !!open } }];\n"
+      },
+      "id": "a2aef24c-ecf5-5f4d-bb74-55577b656bd9",
+      "name": "Pré-drop ouvert de la référence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0e58101f-60bc-5d28-b008-abbe2a4b50a8",
+              "leftValue": "={{ $json.ouvert }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "1dd8e130-3131-5546-ba4f-f8b162dab0af",
+      "name": "Pré-drop ouvert ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1960,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — allocations').first().json.api_base_url }}/predrop/{{ encodeURIComponent($json.predrop_id) }}/close",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ reason: 'Réduction d’allocation annoncée par le fournisseur (workflow 03) : réservations fermées avant validation' }) }}"
+      },
+      "id": "24b07ef6-4e1c-5038-9dff-5e5034304d46",
+      "name": "Fermer les réservations (acte protecteur, POST /predrop/{id}/close)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        320
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "notes": "Protecteur (plus aucun argent encaissé à rembourser) : jamais une réouverture ; un nouveau pré-drop exige une nouvelle allocation ferme.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "46ace2e6-78ea-5b83-9fe5-47f7ad1fd8c4",
+              "name": "sujet",
+              "value": "=[PRÉ-DROP] Valider : {{ $('Contrôles de la confirmation (déterministes)').first().json.resume }}",
+              "type": "string"
+            },
+            {
+              "id": "2c9f4e92-0735-56ea-bcf9-79946c34cd1f",
+              "name": "texte",
+              "value": "={{ $('Contrôles de la confirmation (déterministes)').first().json.resume }}\nJustificatif : {{ $('Contrôles de la confirmation (déterministes)').first().json.document }}\nVérifier le document du fournisseur (référence, quantité ferme, date), puis répondre : {{ $execution.resumeFormUrl }}\nUne allocation ferme rend le pré-drop possible ; une réduction sert le pré-drop en premier (ordre de paiement), réduit d'abord le quota drop puis prépare le remboursement intégral des dernières réservations.\nINTERNE — ne jamais transférer ni publier.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "a041bf7b-6c73-5154-803d-ecfe0d85e123",
+      "name": "Préparer la demande de validation (allocation ou réduction)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2240,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — allocations').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "f0465fdb-db4d-5c23-8c50-afbff405a036",
+      "name": "Demander la validation de la confirmation (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2520,
+        520
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "resume": "form",
+        "incomingAuthentication": "basicAuth",
+        "formTitle": "Pré-drop : confirmation fournisseur",
+        "formDescription": "={{ $('Contrôles de la confirmation (déterministes)').first().json.resume }}\nJustificatif : {{ $('Contrôles de la confirmation (déterministes)').first().json.document }}\nLe document du fournisseur confirme-t-il exactement cette quantité ?",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Décision",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Conforme au justificatif"
+                  },
+                  {
+                    "option": "Non conforme"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Motif",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        },
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 72,
+        "resumeUnit": "hours",
+        "options": {}
+      },
+      "id": "65c1cb64-17d5-5c68-98a9-cc2f8cf6ce74",
+      "name": "Validation humaine de la confirmation fournisseur (formulaire, 72 h)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2800,
+        520
+      ],
+      "webhookId": "f4e9b776-edec-5953-bfd9-70f32ce61b1b",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "pkshpOwnerForm01",
+          "name": "Formulaires propriétaire — Basic Auth"
+        }
+      },
+      "notes": "Sans réponse sous 72 h : la branche « non » s'applique (statu quo sûr).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dcf0e87e-d9d1-5e6d-bbf3-a23117357da4",
+              "leftValue": "={{ $json['Décision'] }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "Conforme au justificatif"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "f371d365-5f92-5f14-b717-e40a1f092a11",
+      "name": "Confirmation validée ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3080,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "225f9d1e-6a97-5cae-a30b-d9bf233cf4a2",
+              "leftValue": "={{ $('Contrôles de la confirmation (déterministes)').first().json.kind }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "reduction"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "d8d7a66f-db70-5c16-b832-99b8d88bd17d",
+      "name": "Réduction validée ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3360,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — allocations').first().json.api_base_url }}/predrop/allocations/{{ encodeURIComponent($('Contrôles de la confirmation (déterministes)').first().json.product_key) }}/reduce",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ new_qty: $('Contrôles de la confirmation (déterministes)').first().json.qty, supplier_confirmation_ref: $('Contrôles de la confirmation (déterministes)').first().json.supplier_confirmation_ref, reason: $('Contrôles de la confirmation (déterministes)').first().json.reason }) }}"
+      },
+      "id": "e8427287-7eef-539e-bbf2-1f8318be74f5",
+      "name": "Enregistrer la réduction (POST /predrop/allocations/{référence}/reduce)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3640,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "notes": "Pré-drop servi en premier (ordre de paiement, réserve conservée), quota drop réduit d'abord, puis remboursement intégral des dernières réservations (préparé + brouillon d'email). Idempotente par confirmation.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Remboursements pré-drop préparés qui ATTENDENT la propriétaire (niveaux d'autonomie 1 et 2) : liste et commande de\n// validation en un clic (son jeton, depuis son terminal ; jamais dans n8n ni chez un agent). Rien à valider : rien.\nconst data = $input.first().json || {};\nconst all = Array.isArray(data.refunds) ? data.refunds : [];\nconst pending = all.filter((r) => r && r.status === 'PENDING_OWNER');\nif (!pending.length) return [];\nconst lines = pending.map((r) => `- ${r.refund_id} : commande ${r.order_id}, ${r.amount_ttc} CHF intégral (${r.reason})`);\nconst cmds = pending.map((r) => `curl -fsS -X POST -H \"X-Pokeshop-Owner-Token: $JETON\" \"$API/predrop/refunds/${encodeURIComponent(r.refund_id)}/approve\"`);\nreturn [{ json: {\n  sujet: `[PRÉ-DROP] ${pending.length} remboursement(s) intégral(aux) à valider`,\n  texte: ['Remboursements préparés par le moteur (réservations non servies, réduction d\\'allocation dans l\\'ordre de paiement,',\n    'annulations demandées par écrit par le client) :',\n    ...lines, '',\n    'Validation en un clic (corps vide), depuis votre terminal, avec VOTRE jeton (API = adresse du moteur) :', ...cmds, '',\n    'Le workflow 02 exécute ensuite le remboursement chez le prestataire et le relève au moteur ; l\\'email 18 au client',\n    'reprend le montant et le motif du moteur (remboursement intégral, supplément compris). Sans validation : rien ne part.',\n    'INTERNE — ne jamais transférer ni publier.'].join('\\n'),\n} }];\n"
+      },
+      "id": "bacedef6-f49f-532e-b612-36ff017bc8d8",
+      "name": "Remboursements à valider par la propriétaire ?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3920,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — allocations').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "eb9f8175-5308-58f5-8c53-46f33daa96b4",
+      "name": "Demander la validation des remboursements (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        4200,
+        400
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — allocations').first().json.api_base_url }}/predrop/allocations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ product_key: $('Contrôles de la confirmation (déterministes)').first().json.product_key, supplier_id: $('Contrôles de la confirmation (déterministes)').first().json.supplier_id, qty: $('Contrôles de la confirmation (déterministes)').first().json.qty, supplier_confirmation_ref: $('Contrôles de la confirmation (déterministes)').first().json.supplier_confirmation_ref, expected_delivery: $('Contrôles de la confirmation (déterministes)').first().json.expected_delivery || null, source: 'confirmation fournisseur extraite par l’agent 02, validée par la propriétaire (formulaire 03)' }) }}"
+      },
+      "id": "dc079598-43cf-53af-81ba-1b5485be962f",
+      "name": "Enregistrer l’allocation ferme (POST /predrop/allocations)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3640,
+        560
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "notes": "Valeur décisive posée par n8n-03-factures APRÈS la validation de la propriétaire ; fournisseur inconnu du moteur pour la référence : 409 (la propriétaire la pose elle-même). Une baisse passe par la réduction.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {},
+      "id": "a0a7e7d7-e985-5771-8090-b988bf8f6542",
+      "name": "Journal : allocation ferme enregistrée",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3920,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — allocations').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Confirmation ' + $('Contrôles de la confirmation (déterministes)').first().json.supplier_confirmation_ref + ' jugée non conforme : ' + ($json['Motif'] || 'sans réponse sous 72 h'), kind: 'ALLOCATION_NON_CONFORME', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: '03-allocation:' + $('Contrôles de la confirmation (déterministes)').first().json.product_key, proposed_action: 'Aucune allocation ni réduction enregistrée ; réservations déjà fermées par précaution le restent (nouveau pré-drop sur nouvelle confirmation).', actor: 'n8n:03-facture-marge', simulation: $('Paramètres — allocations').first().json.simulation }) }}"
+      },
+      "id": "506a0b72-fd46-51bb-a7eb-6900c94ef8b8",
+      "name": "Confirmation refusée : incident",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3360,
+        640
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "15 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "aa17c1b8-93b0-5e49-95b1-176c5ae6c7e5",
+      "name": "Chaque jour 08:15 — remboursements pré-drop à valider",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        840
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "6309fda0-ebb3-5e56-9a66-fd7abdd1b989",
+              "name": "workflow",
+              "value": "facture-marge",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "45242af5-5aa1-5cac-a7a8-77bad01de9d5",
+      "name": "Paramètres — remboursements à valider",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        840
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — remboursements à valider').first().json.api_base_url }}/predrop/refunds?status=PENDING_OWNER",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "f62cf0af-f937-5574-bc72-7682089f4a8c",
+      "name": "Remboursements en attente (GET /predrop/refunds)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        840
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n03Fac",
+          "name": "Pokeshop API — jeton nommé n8n-03-factures"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Remboursements pré-drop préparés qui ATTENDENT la propriétaire (niveaux d'autonomie 1 et 2) : liste et commande de\n// validation en un clic (son jeton, depuis son terminal ; jamais dans n8n ni chez un agent). Rien à valider : rien.\nconst data = $input.first().json || {};\nconst all = Array.isArray(data.refunds) ? data.refunds : [];\nconst pending = all.filter((r) => r && r.status === 'PENDING_OWNER');\nif (!pending.length) return [];\nconst lines = pending.map((r) => `- ${r.refund_id} : commande ${r.order_id}, ${r.amount_ttc} CHF intégral (${r.reason})`);\nconst cmds = pending.map((r) => `curl -fsS -X POST -H \"X-Pokeshop-Owner-Token: $JETON\" \"$API/predrop/refunds/${encodeURIComponent(r.refund_id)}/approve\"`);\nreturn [{ json: {\n  sujet: `[PRÉ-DROP] ${pending.length} remboursement(s) intégral(aux) à valider`,\n  texte: ['Remboursements préparés par le moteur (réservations non servies, réduction d\\'allocation dans l\\'ordre de paiement,',\n    'annulations demandées par écrit par le client) :',\n    ...lines, '',\n    'Validation en un clic (corps vide), depuis votre terminal, avec VOTRE jeton (API = adresse du moteur) :', ...cmds, '',\n    'Le workflow 02 exécute ensuite le remboursement chez le prestataire et le relève au moteur ; l\\'email 18 au client',\n    'reprend le montant et le motif du moteur (remboursement intégral, supplément compris). Sans validation : rien ne part.',\n    'INTERNE — ne jamais transférer ni publier.'].join('\\n'),\n} }];\n"
+      },
+      "id": "1072c4c4-fb74-584b-8069-83c74a21ba33",
+      "name": "Liste des remboursements à valider",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        840
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — remboursements à valider').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "632aef5a-5c24-56fc-a5ae-114db1a9b7e0",
+      "name": "Rappeler les remboursements à valider (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1120,
+        840
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    }
+  ],
+  "connections": {
+    "Facture extraite par l’agent 05 (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Paramètres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres": {
+      "main": [
+        [
+          {
+            "node": "Contrôles déterministes (centimes)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contrôles déterministes (centimes)": {
+      "main": [
+        [
+          {
+            "node": "Extraction cohérente ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraction cohérente ?": {
+      "main": [
+        [
+          {
+            "node": "Préparer la demande de validation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ouvrir un incident facture",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer la demande de validation": {
+      "main": [
+        [
+          {
+            "node": "Demander la validation de l’extraction (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demander la validation de l’extraction (email, désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Validation humaine de l’extraction (formulaire, 72 h)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation humaine de l’extraction (formulaire, 72 h)": {
+      "main": [
+        [
+          {
+            "node": "Extraction validée ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraction validée ?": {
+      "main": [
+        [
+          {
+            "node": "Préparer la facture validée (coût rendu ventilé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extraction refusée : incident",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer la facture validée (coût rendu ventilé)": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer la facture validée (POST /costs/invoices)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer la facture validée (POST /costs/invoices)": {
+      "main": [
+        [
+          {
+            "node": "Écart > 2 % ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Écart > 2 % ?": {
+      "main": [
+        [
+          {
+            "node": "Préparer le signalement d’écart",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Journal : coût historique à jour",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer le signalement d’écart": {
+      "main": [
+        [
+          {
+            "node": "Signaler les écarts (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmation d’allocation extraite par l’agent 02 (passerelle)": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — allocations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — allocations": {
+      "main": [
+        [
+          {
+            "node": "Contrôles de la confirmation (déterministes)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contrôles de la confirmation (déterministes)": {
+      "main": [
+        [
+          {
+            "node": "Confirmation cohérente ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmation cohérente ?": {
+      "main": [
+        [
+          {
+            "node": "Réduction annoncée ?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ouvrir un incident d’allocation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Réduction annoncée ?": {
+      "main": [
+        [
+          {
+            "node": "Pré-drops du moteur (GET /predrop/offers)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Préparer la demande de validation (allocation ou réduction)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pré-drops du moteur (GET /predrop/offers)": {
+      "main": [
+        [
+          {
+            "node": "Pré-drop ouvert de la référence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pré-drop ouvert de la référence": {
+      "main": [
+        [
+          {
+            "node": "Pré-drop ouvert ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pré-drop ouvert ?": {
+      "main": [
+        [
+          {
+            "node": "Fermer les réservations (acte protecteur, POST /predrop/{id}/close)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Préparer la demande de validation (allocation ou réduction)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fermer les réservations (acte protecteur, POST /predrop/{id}/close)": {
+      "main": [
+        [
+          {
+            "node": "Préparer la demande de validation (allocation ou réduction)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer la demande de validation (allocation ou réduction)": {
+      "main": [
+        [
+          {
+            "node": "Demander la validation de la confirmation (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demander la validation de la confirmation (email, désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Validation humaine de la confirmation fournisseur (formulaire, 72 h)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation humaine de la confirmation fournisseur (formulaire, 72 h)": {
+      "main": [
+        [
+          {
+            "node": "Confirmation validée ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmation validée ?": {
+      "main": [
+        [
+          {
+            "node": "Réduction validée ?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Confirmation refusée : incident",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Réduction validée ?": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer la réduction (POST /predrop/allocations/{référence}/reduce)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enregistrer l’allocation ferme (POST /predrop/allocations)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer la réduction (POST /predrop/allocations/{référence}/reduce)": {
+      "main": [
+        [
+          {
+            "node": "Remboursements à valider par la propriétaire ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remboursements à valider par la propriétaire ?": {
+      "main": [
+        [
+          {
+            "node": "Demander la validation des remboursements (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer l’allocation ferme (POST /predrop/allocations)": {
+      "main": [
+        [
+          {
+            "node": "Journal : allocation ferme enregistrée",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chaque jour 08:15 — remboursements pré-drop à valider": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — remboursements à valider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — remboursements à valider": {
+      "main": [
+        [
+          {
+            "node": "Remboursements en attente (GET /predrop/refunds)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remboursements en attente (GET /predrop/refunds)": {
+      "main": [
+        [
+          {
+            "node": "Liste des remboursements à valider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Liste des remboursements à valider": {
+      "main": [
+        [
+          {
+            "node": "Rappeler les remboursements à valider (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Zurich",
+    "saveManualExecutions": false,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "saveExecutionProgress": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "pkshp04Incidents"
+  },
+  "pinData": {},
+  "staticData": null,
+  "tags": [],
+  "versionId": "59e44bc3-3bef-5778-bb05-ed5a925a0401",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

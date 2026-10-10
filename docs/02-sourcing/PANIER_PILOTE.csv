@@ -1,0 +1,21 @@
+ligne,ref_id,designation_attendue,format,extension,langue,contenu_attendu,categorie_budget,statut_vise,priorite,quantite_indicative_devis,unite,demander_prix_carton,demander_paliers,sku_fournisseur,ean,remarque,fictif
+1,REF-06,Display 36 boosters Méga-Évolution – Nuit Noire (ME05) – FR,display,Méga-Évolution – Nuit Noire,FR,36 boosters,displays,STOCK,A,2,display,oui,oui,,,,false
+2,REF-09,Display 36 boosters Méga-Évolution – Chaos Ascendant – FR,display,Méga-Évolution – Chaos Ascendant,FR,36 boosters,displays,STOCK,A,2,display,oui,oui,,,,false
+3,REF-01,Coffret Dresseur d'Élite (ETB) 30ᵉ Anniversaire – FR,etb,30ᵉ Anniversaire,FR,9 boosters + accessoires (selon annonce),etb,STOCK,A,4,ETB,oui,oui,,,,false
+4,REF-07,Coffret Dresseur d'Élite (ETB) Méga-Évolution – Nuit Noire – FR,etb,Méga-Évolution – Nuit Noire,FR,9 boosters + accessoires,etb,STOCK,A,4,ETB,oui,oui,,,,false
+5,REF-11,Coffret Dresseur d'Élite (ETB) Méga-Évolution – Équilibre Parfait – FR,etb,Méga-Évolution – Équilibre Parfait,FR,9 boosters + accessoires,etb,STOCK,B,3,ETB,oui,oui,,,Disponibilité à confirmer (extension de mars 2026),false
+6,REF-02,Bundle 30ᵉ Anniversaire – FR,bundle,30ᵉ Anniversaire,FR,6 boosters (selon annonce),bundles_tripacks,STOCK,A,4,bundle,oui,oui,,,,false
+7,REF-08,Tripack Méga-Évolution – Nuit Noire – FR,tripack,Méga-Évolution – Nuit Noire,FR,3 boosters + promo (à confirmer),bundles_tripacks,STOCK,B,6,tripack,oui,oui,,,Existence du produit en FR à confirmer,false
+8,REF-19,Tripack ou bundle Méga-Évolution – Chaos Ascendant – FR,tripack,Méga-Évolution – Chaos Ascendant,FR,selon offre du fournisseur,bundles_tripacks,STOCK,B,6,unité,oui,oui,,,Le fournisseur indique le(s) format(s) disponible(s),false
+9,REF-04,Coffret 30ᵉ Anniversaire Nymphali-ex – FR,coffret,30ᵉ Anniversaire,FR,4 boosters + promo + carte grand format (selon annonce),coffrets,STOCK,A,3,coffret,oui,oui,,,Variante Amphinobi-ex acceptée si même prix (variante relevée dans la grille avant l'achat),false
+10,REF-20,Coffret ou collection – Équilibre Parfait ou Héros Transcendants – FR,coffret,Méga-Évolution – Équilibre Parfait / Héros Transcendants,FR,selon offre du fournisseur,coffrets,STOCK,B,3,coffret,oui,oui,,,Le fournisseur propose les coffrets disponibles de ces extensions,false
+11,REF-16,Protège-cartes format standard (paquet),accessoire,,n/a,marque et quantité par paquet proposées par le fournisseur,accessoires,STOCK,A,10,paquet,oui,oui,,,Ne pas imposer de marque ; demander 2 gammes de prix,false
+12,REF-17,Classeur 9 cases,accessoire,,n/a,marque proposée par le fournisseur,accessoires,STOCK,B,5,classeur,oui,oui,,,,false
+13,REF-03,Mini-Tin 30ᵉ Anniversaire – FR,coffret,30ᵉ Anniversaire,FR,2 boosters (selon annonce),coffrets,ALERTE,C,6,tin,oui,oui,,,Prix demandé pour comparaison ; pas d'achat prévu au pilote,false
+14,REF-05,Collection Classeur 30ᵉ Anniversaire – FR,coffret,30ᵉ Anniversaire,FR,classeur + 5 boosters (selon annonce),coffrets,ALERTE,C,3,coffret,oui,oui,,,Prix demandé pour comparaison ; pas d'achat au pilote ni de substitution à REF-04 (aucun relevé de marché),false
+15,REF-10,Coffret Dresseur d'Élite (ETB) Méga-Évolution – Chaos Ascendant – FR,etb,Méga-Évolution – Chaos Ascendant,FR,9 boosters + accessoires,etb,ALERTE,C,3,ETB,oui,oui,,,,false
+16,REF-12,Coffret Dresseur d'Élite (ETB) Méga-Évolution – Héros Transcendants – FR,etb,Méga-Évolution – Héros Transcendants,FR,9 boosters + accessoires,etb,ALERTE,C,3,ETB,oui,oui,,,,false
+17,REF-13,Display 36 boosters Méga-Évolution – Règne Delta (ME06) – FR,display,Méga-Évolution – Règne Delta,FR,36 boosters (sortie 6.11.2026),displays,COND,B,2,display,oui,oui,,,Allocation ferme écrite exigée ; sinon aucune précommande,false
+18,REF-14,Coffret Dresseur d'Élite (ETB) Méga-Évolution – Règne Delta – FR,etb,Méga-Évolution – Règne Delta,FR,9 boosters + accessoires (sortie 6.11.2026),etb,COND,B,4,ETB,oui,oui,,,Allocation ferme écrite exigée,false
+19,REF-15,Tripack Méga-Évolution – Règne Delta – FR,tripack,Méga-Évolution – Règne Delta,FR,3 boosters + promo (selon annonce),bundles_tripacks,COND,C,6,tripack,oui,oui,,,Allocation ferme écrite exigée,false
+20,REF-18,Boîte de rangement de deck (deck box),accessoire,,n/a,marque proposée par le fournisseur,accessoires,ALERTE,C,5,boîte,oui,oui,,,,false

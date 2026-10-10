@@ -1,0 +1,36 @@
+Objet : Réservation garantie confirmée : {{ $json.produit_titre }}
+
+VOTRE RÉSERVATION GARANTIE EST CONFIRMÉE
+
+{{ $json.salutation }}
+
+Votre réservation fait partie de la commande {{ $json.numero_commande }} ; le paiement est reçu.
+
+{{ $json.produit_titre }}
+Réservation garantie · Drop le {{ $json.date_drop }} (date estimée)
+
+Ce que garantit votre réservation
+
+- Vous êtes servi en premier : les réservations garanties passent avant toute vente au prix du drop, dans l'ordre de leur paiement.
+- Votre commande est expédiée dès réception et contrôle du produit, en principe sous {{DELAI_EXPEDITION}} après réception. Nous ne garantissons pas une livraison le jour du drop.
+- Le prix payé est définitif : il ne baisse pas et n'augmente pas.
+
+> Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.
+> Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.
+
+Si quelque chose change
+
+- Si nous recevons moins d'unités que prévu et ne pouvons pas vous servir, nous vous remboursons intégralement, supplément compris, frais de livraison payés pour la réservation inclus, et nous vous prévenons par email.
+- Si la date change, nous vous écrivons dans un délai de {{DELAI_INFORMATION_REPORT}} et la date de la fiche est mise à jour. Si le report dépasse {{SEUIL_REPORT_PRECOMMANDE}}, vous pouvez annuler et être remboursé intégralement, supplément compris.
+- Annulation gratuite {{DELAI_ANNULATION_PREDROP}} (date affichée sur la fiche) : répondez à cet email avec votre numéro de commande. Remboursement intégral, supplément compris, frais de livraison payés pour la réservation inclus.
+
+Voir ma commande : {{ $json.url_commande }}
+
+Nos conditions de réservation garantie : {{URL_PRECOMMANDES}}
+
+--
+Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
+Conditions de vente : {{URL_CGV}} · Livraison et retours : {{URL_RETOURS}}
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.

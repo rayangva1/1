@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="fr-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>En stock local : {{ $json.produit_titre }}</title>
+  <!--
+    FICHIER GÉNÉRÉ par docs/06-contenu/outils/generer_emails.py depuis EMAILS/source/emails.yaml — ne pas modifier.
+    Email 04-alerte-stock-local — Alerte : nouveau stock local — canal : n8n
+    Objet : En stock local : [[produit_titre]]
+    Pré-en-tête : Le produit que vous suivez est arrivé à Genève.
+    Déclencheur : Entrée en stock local réelle (réception contrôlée, fiche publiée) d'un produit suivi
+    Segment : Inscrits confirmés : alerte sur ce produit, ou préférences correspondant au format
+    Base : Consentement confirmé (alertes de stock choisies)
+    Fréquence : Au plus une alerte par produit et par personne ; pas d'envoi si le stock repasse à zéro avant l'envoi
+    Variables :
+      - salutation : Salutation calculée par le workflow
+      - raison_alerte : « Vous avez demandé une alerte pour ce produit. » ou « Ce produit correspond aux formats que vous suivez. »
+      - produit_titre : Titre exact de la fiche (format + extension + langue)
+      - produit_prix : Prix public relu sur la fiche au moment de l'envoi (CHF, 2 décimales)
+      - produit_limite : « Limite : » suivi de la valeur validée de LIMITE_PAR_CLIENT (registre légal), ou vide
+      - produit_url : URL de la fiche
+      - url_preferences : Page de préférences
+      - url_desinscription : Désinscription en un clic
+      - date_consentement : Date de confirmation
+    Champs fixes (MAJUSCULES entre doubles accolades) : registre docs/04-legal/champs_a_remplir.yaml, plus URL_LOGO_PNG
+    (PNG du logo hébergé, docs/05-da/logo/png/). Pour Shopify, coller la copie produite par --integration, jamais ce fichier.
+    Règles : aucune donnée interne ; prix publics relus à l'envoi ; aucune fausse urgence.
+  -->
+</head>
+<body style="margin:0;padding:0;background:#F6F5F1;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Le produit que vous suivez est arrivé à Genève.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="{{URL_LOGO_PNG}}" width="200" alt="{{NOM_BOUTIQUE}}" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">C'est en stock local</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">{{ $json.salutation }}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">{{ $json.raison_alerte }}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;border:1px solid #D9D6CF;border-top:4px solid #111111;"><tr><td style="padding:14px;font-family:Arial, Helvetica, sans-serif;"><strong style="font-size:15px;line-height:21px;color:#111111;">{{ $json.produit_titre }}</strong><div style="margin-top:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E3F4E8;color:#0F5A2A;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">STOCK LOCAL</span> <span style="font-size:13px;color:#55534E;">Expédié depuis Genève sous {{DELAI_EXPEDITION}}</span></div><div style="margin-top:8px;font-family:'Courier New', Courier, monospace;font-size:17px;font-weight:bold;color:#111111;">CHF {{ $json.produit_prix }}</div><div style="margin-top:4px;font-size:13px;color:#55534E;">{{ $json.produit_limite }}</div></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="{{ $json.produit_url }}" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Voir la fiche</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Le prix et la disponibilité affichés sur le site au moment de votre commande font foi. Nous ne réservons pas de produit par email.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.<br>{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que cette adresse est inscrite à nos alertes (inscription confirmée le {{ $json.date_consentement }}).<br><a href="{{ $json.url_preferences }}" style="color:#B33F00;">Modifier mes préférences</a> · <a href="{{ $json.url_desinscription }}" style="color:#B33F00;">Me désinscrire en un clic</a><br>Confidentialité : {{URL_CONFIDENTIALITE}}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

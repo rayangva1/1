@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="fr-CH" data-da="a">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Page produit — application DA</title>
+  <meta name="description" content="Application des directions A et B à une fiche produit mobile-first.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&amp;family=Inter:opsz,wght@14..32,400..700&amp;family=IBM+Plex+Mono:wght@500;600&amp;family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Space+Grotesk:wght@500;700&amp;display=swap">
+  <link rel="stylesheet" href="../tokens/tokens.css">
+  <link rel="stylesheet" href="components.css">
+  <link rel="icon" href="../logo/a/favicon.svg" type="image/svg+xml">
+  <script src="apercu.js" defer></script>
+</head>
+<body class="da-root">
+  <div class="da-preview-bar" role="toolbar" aria-label="Options d'aperçu">
+    <strong>Aperçu</strong>
+    <button type="button" data-set-da="a" aria-pressed="true">Direction A — Quai</button>
+    <button type="button" data-set-da="b" aria-pressed="false">Direction B — Pochette</button>
+    <span aria-hidden="true">·</span>
+    <button type="button" data-set-theme="auto" aria-pressed="true">Auto</button>
+    <button type="button" data-set-theme="light" aria-pressed="false">Clair</button>
+    <button type="button" data-set-theme="dark" aria-pressed="false">Sombre</button>
+  </div>
+  <div class="da-annonce" role="note"><span><svg class="da-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg> Livraison en Suisse uniquement · frais affichés avant paiement</span></div>
+  <header class="da-container" style="display:flex;align-items:center;justify-content:space-between;gap:var(--da-space-3);padding-block:var(--da-space-3);border-bottom:1px solid var(--da-color-line)">
+    <a href="#" aria-label="Accueil">
+      <img class="lg lg-a-light" src="../logo/a/logo-a-horizontal.svg" alt="{{NOM_BOUTIQUE}}" width="180" height="24">
+      <img class="lg lg-a-dark" src="../logo/a/logo-a-horizontal-fond-sombre.svg" alt="{{NOM_BOUTIQUE}}" width="180" height="24">
+      <img class="lg lg-b-light" src="../logo/b/logo-b-principal.svg" alt="{{NOM_BOUTIQUE}}" width="180" height="25">
+      <img class="lg lg-b-dark" src="../logo/b/logo-b-principal-fond-sombre.svg" alt="{{NOM_BOUTIQUE}}" width="180" height="25">
+    </a>
+    <nav aria-label="Raccourcis" style="display:flex;gap:var(--da-space-2)">
+      <a class="da-btn da-btn--secondary" href="#" aria-label="Rechercher" style="padding:8px"><svg class="da-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"/><path d="M16 16l5 5"/></svg></a>
+      <a class="da-btn da-btn--secondary" href="#" aria-label="Panier" style="padding:8px"><svg class="da-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 4h2l2.5 11h11L21 7H6.4"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg></a>
+    </nav>
+  </header>
+  <style>
+    html:not([data-da="b"]) [data-only="b"] { display: none !important; }
+    html[data-da="b"] [data-only="a"] { display: none !important; }
+    .lg { display: none !important; }
+    html:not([data-da="b"]):not([data-theme="dark"]) .lg-a-light,
+    html[data-da="b"]:not([data-theme="dark"]) .lg-b-light,
+    html:not([data-da="b"])[data-theme="dark"] .lg-a-dark,
+    html[data-da="b"][data-theme="dark"] .lg-b-dark { display: block !important; }
+    @media (prefers-color-scheme: dark) {
+      html:not([data-da="b"]):not([data-theme]) .lg-a-light,
+      html[data-da="b"]:not([data-theme]) .lg-b-light { display: none !important; }
+      html:not([data-da="b"]):not([data-theme]) .lg-a-dark,
+      html[data-da="b"]:not([data-theme]) .lg-b-dark { display: block !important; }
+    }
+  </style>
+  <main class="da-container">
+    <p class="da-fictif">Fiche d'exemple — FICTIF (BP §7) : titre, prix et dates ne correspondent à aucune offre réelle. En production, chaque champ vient du catalogue validé.</p>
+    <nav aria-label="Fil d'Ariane"><ol class="da-breadcrumb"><li><a href="#">Accueil</a></li><li><a href="#">Displays</a></li><li aria-current="page">Extension exemple</li></ol></nav>
+    <div class="da-product">
+      <section class="da-gallery" aria-label="Photos du produit">
+        <div class="da-photo" role="img" aria-label="Emplacement : photo réelle, face avant">Photo réelle — face avant<br>(boîte FR, fond neutre)</div>
+        <div class="da-gallery__thumbs">
+          <div class="da-photo" role="img" aria-label="Emplacement : dos">Dos</div>
+          <div class="da-photo" role="img" aria-label="Emplacement : côté avec mention de langue">Mention FR</div>
+          <div class="da-photo" role="img" aria-label="Emplacement : film scellé">Scellé</div>
+          <div class="da-photo" role="img" aria-label="Emplacement : échelle (main ou règle)">Échelle</div>
+        </div>
+      </section>
+      <section class="da-product__info" aria-labelledby="produit-titre">
+        <div class="da-badges"><span class="da-badge da-badge--fr"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M7 9v6M7 9h3M7 12h2.5M13 15V9h2.5a1.5 1.5 0 0 1 0 3H13M15.5 12l1.5 3"/></svg>FR</span><span class="da-badge da-badge--local"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 15l2 2 4-4"/></svg>Stock local</span></div>
+        <h1 class="da-title da-product__title" id="produit-titre">Display — Extension exemple — FR</h1>
+        <p class="da-muted" style="margin:0;font-size:var(--da-text-sm)">Réf. {{SKU}} · EAN {{EAN_SI_EXISTANT}}</p>
+        <div>
+          <p class="da-price da-product__price">CHF 209.90</p>
+          <p class="da-muted" style="margin:0;font-size:var(--da-text-sm)">{{MENTION_TVA}} · <a href="#">frais de livraison</a> calculés avant paiement</p>
+        </div>
+        <div class="da-panel" style="display:grid;gap:var(--da-space-3)">
+          <p class="da-stock da-stock--local"><svg class="da-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 15l2 2 4-4"/></svg><span>En stock local — prêt à partir<span class="da-stock__detail">Expédié depuis la Suisse sous {{DELAI_EXPEDITION}} · 2 maximum par foyer</span></span></p>
+          <div style="display:flex;flex-wrap:wrap;gap:var(--da-space-3);align-items:center">
+            <div class="da-qty" role="group" aria-label="Quantité">
+              <button type="button" aria-label="Retirer une unité">−</button>
+              <input type="number" value="1" min="1" max="2" inputmode="numeric" aria-label="Quantité (2 maximum)">
+              <button type="button" aria-label="Ajouter une unité">+</button>
+            </div>
+            <button type="button" class="da-btn da-btn--primary" style="flex:1 1 200px"><svg class="da-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M3 4h2l2.5 11h11L21 7H6.4"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg> Ajouter au panier</button>
+          </div>
+        </div>
+        <dl class="da-facts">
+          <dt>Format</dt><dd>Display (boîte de boosters)</dd>
+          <dt>Langue</dt><dd>Français (FR), vérifiée à réception</dd>
+          <dt>Extension</dt><dd>{{EXTENSION}}</dd>
+          <dt>Contenu</dt><dd>{{CONTENU_VALIDE}} (selon la fiche technique de l'éditeur)</dd>
+          <dt>État</dt><dd>Neuf, scellé d'origine</dd>
+          <dt>Sortie</dt><dd>{{DATE_SORTIE_CONFIRMEE}}</dd>
+        </dl>
+        <p class="da-note"><svg class="da-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5L16 9"/></svg><span>Produit scellé : le contenu des boosters est aléatoire. Nous ne promettons aucune carte particulière ni aucune valeur future.</span></p>
+        <section aria-labelledby="desc-titre">
+          <h2 class="da-title" id="desc-titre" style="font-size:var(--da-text-lg);margin-bottom:var(--da-space-2)">Pour qui ?</h2>
+          <p style="margin:0">Pour ouvrir une extension sur la durée ou compléter une collection. Pour débuter ou offrir, comparez avec l'ETB : <a href="#">ETB ou display, que choisir ?</a></p>
+        </section>
+        <section aria-labelledby="mixte-titre">
+          <h2 class="da-title" id="mixte-titre" style="font-size:var(--da-text-lg);margin-bottom:var(--da-space-2)">Commande mixte</h2>
+          <p style="margin:0">Si votre panier contient une précommande, les articles en stock local partent d'abord ; la précommande suit à réception. <a href="#">Conditions</a>.</p>
+        </section>
+      </section>
+    </div>
+    <footer class="da-footer">
+      <p>{{NOM_BOUTIQUE}} — boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus. Pokémon est une marque de ses détenteurs respectifs (mention à faire valider par le juriste).</p>
+      <p>Page de démonstration DA — données d'exemple : FICTIF — <a href="../CHARTE.html">retour à la charte</a>.</p>
+    </footer>
+  </main>
+</body>
+</html>

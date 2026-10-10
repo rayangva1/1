@@ -1,0 +1,22 @@
+Objet : Réservation garantie expédiée : commande {{ $json.numero_commande }}
+
+VOTRE RÉSERVATION EST EN ROUTE
+
+{{ $json.salutation }}
+
+Comme prévu par votre réservation garantie (commande {{ $json.numero_commande }}), vous avez été servi en premier : votre colis a été préparé dès réception et contrôle du produit, avant les commandes passées au prix du drop.
+
+Le numéro de suivi figure dans l'email d'expédition, envoyé séparément.
+
+Colis abîmé à la livraison ? Photographiez le colis et les articles, puis écrivez-nous dans un délai de {{DELAI_SIGNALEMENT}}.
+
+Comme pour tout produit scellé, le contenu des boosters est aléatoire : aucune carte précise ni aucun niveau de rareté ne sont garantis.
+
+Voir ma commande : {{ $json.url_commande }}
+
+--
+Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
+Conditions de vente : {{URL_CGV}} · Livraison et retours : {{URL_RETOURS}}
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.

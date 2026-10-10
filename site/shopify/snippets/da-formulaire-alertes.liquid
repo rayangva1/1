@@ -1,0 +1,44 @@
+{%- comment -%}
+  Inscription aux alertes avec le formulaire client natif de Shopify (variante Shopify de la landing).
+  Paramètres : contexte = 'ouverture' (défaut) | 'reassort' ; product (obligatoire si 'reassort').
+  Tags posés sur le client : « alerte-ouverture » ou « alerte-reassort » + « alerte-produit:<handle> » ; le workflow
+  n8n « nouveau stock local » lit ces tags (BP §9 : alerte aux seuls inscrits intéressés).
+  Pré-requis : confirmation d'inscription (double opt-in) ACTIVÉE dans les réglages de notifications marketing Shopify.
+  Case de consentement obligatoire et NON pré-cochée ; lien vers la confidentialité (réglage url_confidentialite).
+  À vérifier en recette : prise en compte de contact[tags] et du double opt-in sur la version de Shopify en service.
+{%- endcomment -%}
+{%- liquid
+  assign contexte = contexte | default: 'ouverture'
+  if contexte == 'reassort' and product
+    assign tags = 'alerte-reassort, alerte-produit:' | append: product.handle
+    assign id_form = 'alerte-reassort-' | append: product.id
+    assign texte_consentement = "J'accepte de recevoir un email quand ce produit revient en stock local, et au plus un email récapitulatif par semaine. Désinscription en un clic dans chaque email."
+    assign libelle_bouton = "M'alerter du retour en stock"
+  else
+    assign tags = 'alerte-ouverture'
+    assign id_form = 'alerte-ouverture'
+    assign texte_consentement = "J'accepte de recevoir l'alerte d'ouverture et, au plus, un email récapitulatif par semaine. Désinscription en un clic dans chaque email."
+    assign libelle_bouton = "M'inscrire aux alertes"
+  endif
+  assign url_confidentialite = settings.url_confidentialite | default: '/policies/privacy-policy'
+-%}
+{%- form 'customer', id: id_form, class: 'da-alerte' -%}
+  <input type="hidden" name="contact[tags]" value="{{ tags | escape }}">
+  {%- if form.posted_successfully? -%}
+    <p class="da-stock da-stock--local" role="status">Merci. Confirmez votre inscription depuis l'email que nous venons de vous envoyer&nbsp;: sans confirmation, nous ne vous écrirons pas.</p>
+  {%- else -%}
+    {%- if form.errors -%}
+      <p class="da-erreur" role="alert">{{ form.errors | default_errors }}</p>
+    {%- endif -%}
+    <div class="da-champ">
+      <label for="{{ id_form }}-email">Adresse email</label>
+      <input id="{{ id_form }}-email" type="email" name="contact[email]" autocomplete="email" maxlength="254" required>
+    </div>
+    <div class="da-champ da-champ--case">
+      <input id="{{ id_form }}-consentement" type="checkbox" required>
+      <label for="{{ id_form }}-consentement">{{ texte_consentement }}</label>
+    </div>
+    <p class="da-aide">Aucun paiement, aucune réservation. Détails&nbsp;: <a href="{{ url_confidentialite }}">déclaration de confidentialité</a>.</p>
+    <button type="submit" class="da-btn da-btn--primary">{{ libelle_bouton }}</button>
+  {%- endif -%}
+{%- endform -%}

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1350" width="1080" height="1350" role="img" aria-labelledby="titre desc">
+  <title id="titre">Guide zones sûres 4x5</title>
+  <desc id="desc">Calque guide, ne pas publier. Valeurs indicatives au 4 octobre 2026.</desc>
+  <rect width="1080" height="1350" fill="#FFFFFF"/>
+  <rect width="34" height="1350" fill="#B42318" fill-opacity="0.18"/>
+  <rect x="1046" width="34" height="1350" fill="#B42318" fill-opacity="0.18"/>
+  <text x="540" y="120" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#111111" text-anchor="middle">Bords latéraux possiblement rognés dans la grille du profil (≈ 3:4)</text>
+  <rect x="72" y="72" width="936" height="1206" fill="none" stroke="#111111" stroke-width="4" stroke-dasharray="16 10"/>
+  <text x="540" y="675" font-family="Arial, sans-serif" font-size="44" font-weight="700" fill="#111111" text-anchor="middle">Zone sûre indicative 4x5</text>
+  <text x="540" y="735" font-family="Arial, sans-serif" font-size="28" font-weight="400" fill="#111111" text-anchor="middle">À revérifier sur chaque plateforme au moment de produire (BP §8)</text>
+</svg>

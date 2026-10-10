@@ -1,0 +1,1275 @@
+{
+  "id": "pkshp04Incidents",
+  "name": "Pokeshop 04 — Incidents et erreurs",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 04 — Incident (BP §12, SOP_INCIDENTS.md)\nLe moteur met en **quarantaine** la référence ou **suspend** le workflow, puis notifie ce webhook (cause + action proposée),\navec son **secret dédié** (en-tête `X-Pokeshop-Notify`, credential « Notification moteur → 04 ») : sans lui, 403.\nS1 : alerte immédiate ; S2 : dans l'heure ; S3/INFO : digest. **Reprise** : test enregistré → validation par formulaire\n→ `POST /incidents/{id}/resume`. Un **S1** ne se reprend que par la propriétaire (son jeton, depuis son terminal).\n**Workflow d'erreur** de tous les autres workflows : toute exécution en échec ouvre un incident.\n**Activation** : en PREMIER, dès le niveau 1.\n**Validation humaine requise** : canal d'alerte S1 (SMS, notification, appel), reprise de chaque S1.",
+        "height": 380,
+        "width": 640,
+        "color": 4
+      },
+      "id": "aaa89161-8ec3-57ab-9e6d-8269bae48e47",
+      "name": "Note — à lire",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        -480
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-incidents",
+        "responseMode": "onReceived",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "358db23e-1992-5bde-b7a6-2589f0c7bf2a",
+      "name": "Notification d’incident du moteur",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "e7310f59-7076-5178-85d3-a41e538134b2",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpNotif04Mote",
+          "name": "Notification moteur → 04 — secret du moteur (POKESHOP_N8N_WEBHOOK_SECRET)"
+        }
+      },
+      "notes": "Appelé par le moteur (POKESHOP_N8N_WEBHOOK_URL=http://n8n:5678/webhook/pokeshop-incidents) avec l'en-tête X-Pokeshop-Notify = POKESHOP_N8N_WEBHOOK_SECRET (revue R6) : joignable depuis le réseau du compose et la boucle locale de l'hôte (127.0.0.1:5678), toute requête sans ce secret est refusée (403).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "430278ee-039c-5f64-bc7a-c34ab384f4ef",
+              "name": "workflow",
+              "value": "incident",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "75d64c4b-d035-5a33-873f-a04286b45c88",
+      "name": "Paramètres — incidents",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        0
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ecc2bed0-4fd8-54ec-af1f-99b476ebba45",
+              "leftValue": "={{ $json.body.incident_id }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              },
+              "rightValue": ""
+            },
+            {
+              "id": "ebe43e6c-259f-5e74-be26-fd590771eb20",
+              "leftValue": "={{ $json.body.sop }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "c9206a6f-1bce-56e1-8de5-8d29ae276134",
+      "name": "Charge valide ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        560,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "c52e718b-4989-5069-909d-23a0f8c70135",
+      "name": "Charge invalide : ignorée",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        840,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "32322dff-1234-537f-992a-543c9f168c78",
+              "name": "sop",
+              "value": "={{ $json.body.sop }}",
+              "type": "string"
+            },
+            {
+              "id": "aeba9756-05b9-50b0-93cc-3be400073645",
+              "name": "sujet",
+              "value": "=[INCIDENT {{ $json.body.sop }}] {{ $json.body.code || '' }} — {{ $json.body.title }}",
+              "type": "string"
+            },
+            {
+              "id": "ffb70ddb-c2d3-5709-b24a-6ac633863e30",
+              "name": "texte",
+              "value": "={{ $json.body.text }}\n\nReprise : corriger, tester (POST /incidents/{{ $json.body.incident_id }}/test), puis valider la reprise. Un S1 ne se reprend que par la propriétaire.\nINTERNE — ne jamais transférer ni publier.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "132cc3ab-9671-534c-8186-8f81cbd6fe7f",
+      "name": "Composer la notification (SOP §4)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        840,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c9870e4d-6621-53ef-8132-04efcbf813a0",
+                    "leftValue": "={{ $json.sop }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "S1"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "S1"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "e1e51e6e-65d1-54ea-9204-d482678acb36",
+                    "leftValue": "={{ $json.sop }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "S2"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "S2"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "S3 et INFO : digest"
+        }
+      },
+      "id": "ce6dfeae-f276-5a20-821e-6ac7d648922f",
+      "name": "Gravité",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1120,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — incidents').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "70d28171-9600-5630-8de4-bab677560832",
+      "name": "Alerte immédiate S1 (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1400,
+        -200
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#pokeshop-alertes",
+          "mode": "name"
+        },
+        "text": "={{ $json.texte }}",
+        "otherOptions": {}
+      },
+      "id": "49c56ca6-14e9-5376-9262-ba277050bab2",
+      "name": "Alerte immédiate S1 (Slack, désactivé)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        1400,
+        -80
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "pkshpSlackAlert1",
+          "name": "Slack alertes propriétaire"
+        }
+      },
+      "disabled": true,
+      "notes": "Canal facultatif : la propriétaire choisit le canal d'alerte immédiate (SOP_INCIDENTS.md §1).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — incidents').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "ac316cbe-5cb3-577a-aae1-3605e1d8187e",
+      "name": "Notification S2 dans l’heure (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1400,
+        40
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "ba01c712-c1fb-593e-aa21-ff7e6fad77d4",
+      "name": "Reporté au digest quotidien",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1400,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pokeshop-incident-reprise",
+        "responseMode": "onReceived",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "6200c737-3c68-51bf-ba9d-f510a534c0a0",
+      "name": "Demande de reprise (passerelle agents)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        440
+      ],
+      "webhookId": "97403756-c7bd-5438-92e1-1c6bce124fb7",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpGw04Repri12",
+          "name": "Passerelle 04 reprise — secret de l'agent 12 (qa-conformite)"
+        }
+      },
+      "notes": "Secret remis au seul agent 12. Corps : {\"incident_id\": \"...\"}. Le test réussi est enregistré AVANT, par le rôle qa-conformite avec SON jeton nommé (POST /incidents/{id}/test, différent de l'ouvreur, cycle réel lancé par un autre principal) ou par la propriétaire : le workflow 04 (n8n-04-incidents) ne peut pas l'attester (403, revue NEW-01) ; il ne fait que reprendre.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "430278ee-039c-5f64-bc7a-c34ab384f4ef",
+              "name": "workflow",
+              "value": "incident",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "2269db20-aef6-5c38-9eb3-d0736d461442",
+      "name": "Paramètres — reprise",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        440
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Paramètres — reprise').first().json.api_base_url }}/incidents?open_only=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "4c589fea-6594-5660-85e2-f26046ef8b87",
+      "name": "Lire le test enregistré (GET /incidents)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        440
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n04Inc",
+          "name": "Pokeshop API — jeton nommé n8n-04-incidents"
+        }
+      },
+      "notes": "Lecture seule : le test de correction est enregistré par l'agent 12 QA (jeton nommé) ou la propriétaire.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Retrouve l'incident de la demande de reprise dans GET /incidents (test enregistré par l'agent 12 QA\n// avec SON jeton nommé, ou par la propriétaire : la passerelle n'enregistre jamais un test réussi).\nconst wanted = $('Demande de reprise (passerelle agents)').first().json.body.incident_id;\nconst all = ($input.first().json.incidents || []);\nconst incident = all.find((i) => i.incident_id === wanted);\nif (!incident) {\n  return [{ json: { incident: { incident_id: wanted, test_passed: false, test_ref: null, title: 'incident inconnu', cause: 'incident introuvable' } } }];\n}\nreturn [{ json: { incident } }];\n"
+      },
+      "id": "fb6ec801-936d-5287-b3b9-55e0efc07c9f",
+      "name": "Retrouver l’incident et son test",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5ab61a16-07b9-58d1-a14f-68e15311dd11",
+              "leftValue": "={{ $json.incident.test_passed }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "6cc1fd76-d4c7-5f3e-85ab-51f704bfd906",
+      "name": "Test réussi ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5c27ecc4-1911-5505-a8dd-80133476fc28",
+              "name": "sujet",
+              "value": "=[INCIDENT] Test en échec : {{ $json.incident.incident_id }}",
+              "type": "string"
+            },
+            {
+              "id": "31c8a25d-320d-508b-9ca8-08f4d0df5c88",
+              "name": "texte",
+              "value": "=Aucun test réussi enregistré pour {{ $json.incident.incident_id }} (test {{ $json.incident.test_ref || 'absent' }}) : confinement maintenu. L'agent 12 QA enregistre le test avec SON jeton nommé (POST /incidents/{id}/test, cycle /sync/run PROPRE sur la référence), ou la propriétaire l'atteste.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "f8178f2c-7949-52ab-9c31-6c1b7c20874f",
+      "name": "Préparer l’avis d’échec du test",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1120,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — reprise').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "4511936e-6667-51be-a771-e928944495ae",
+      "name": "Test en échec : notification (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1400,
+        600
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "58e0747b-c6bc-545f-b783-6c7172372503",
+              "name": "sujet",
+              "value": "=[REPRISE] Valider la reprise de {{ $json.incident.incident_id }} ({{ $json.incident.title }})",
+              "type": "string"
+            },
+            {
+              "id": "3802b466-720b-5bcc-8ebe-44affe6b396c",
+              "name": "texte",
+              "value": "=Cause : {{ $json.incident.cause }}\nTest : {{ $json.incident.test_ref }} réussi.\nDécider la reprise : {{ $execution.resumeFormUrl }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "9b381a62-9974-5f09-bdd3-70d2b0b43f03",
+      "name": "Préparer la demande de reprise",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1120,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — reprise').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "e7bf2297-4125-5648-bf06-0b9d84240c57",
+      "name": "Demander la validation de reprise (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1400,
+        360
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "resume": "form",
+        "incomingAuthentication": "basicAuth",
+        "formTitle": "Reprise après incident",
+        "formDescription": "=Incident {{ $('Retrouver l’incident et son test').first().json.incident.incident_id }} : test réussi. Reprendre depuis le dernier état vérifié ?",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Décision",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Reprendre"
+                  },
+                  {
+                    "option": "Maintenir le confinement"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Motif",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        },
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 48,
+        "resumeUnit": "hours",
+        "options": {}
+      },
+      "id": "650d690a-46eb-57d0-9316-194af43b6dc6",
+      "name": "Validation de la reprise (formulaire, 48 h)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        360
+      ],
+      "webhookId": "544a0f60-735c-5409-9e36-06a60456a123",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "pkshpOwnerForm01",
+          "name": "Formulaires propriétaire — Basic Auth"
+        }
+      },
+      "notes": "Sans réponse sous 48 h : la branche « non » s'applique (statu quo sûr).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "875f2a25-ba1f-5089-aa2f-476667dd55cb",
+              "leftValue": "={{ $json['Décision'] }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "Reprendre"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "a06a422a-f200-5df4-aba2-340cdc36694c",
+      "name": "Reprise validée ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1960,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — reprise').first().json.api_base_url }}/incidents/{{ $('Demande de reprise (passerelle agents)').first().json.body.incident_id }}/resume",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actor: $('Demande de reprise (passerelle agents)').first().json.body.actor }) }}"
+      },
+      "id": "0dc09dda-876f-5e98-ae75-51a490ffbb7a",
+      "name": "Reprendre (POST /incidents/{id}/resume)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        280
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n04Inc",
+          "name": "Pokeshop API — jeton nommé n8n-04-incidents"
+        }
+      },
+      "notes": "Sans jeton propriétaire : un incident S1 est refusé (erreur => instructions à la propriétaire).",
+      "notesInFlow": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {},
+      "id": "323fabef-c0d3-56df-9cbf-51d4631e118c",
+      "name": "Journal : reprise effectuée",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2520,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e5410cbc-9e4a-5bf9-bd9f-67ac70b01e50",
+              "name": "sujet",
+              "value": "=[S1] Reprise réservée à la propriétaire : {{ $('Demande de reprise (passerelle agents)').first().json.body.incident_id }}",
+              "type": "string"
+            },
+            {
+              "id": "1838cce3-83d5-5767-bf69-18a4a8f12135",
+              "name": "texte",
+              "value": "=Depuis votre terminal : POST /incidents/<id>/resume avec X-Pokeshop-Token et X-Pokeshop-Owner-Token (votre jeton, jamais transmis à un agent), corps {\"actor\": \"propriétaire\"}.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "88017623-2777-5532-a0b6-201f2cdaa042",
+      "name": "Préparer les instructions S1 (propriétaire)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2520,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — reprise').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "9be87f7d-fdba-5e4d-ac8d-23fb536d6afd",
+      "name": "Reprise S1 : instructions à la propriétaire (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2800,
+        360
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "89c658f1-8ea1-50a7-ae5a-ca6fdc5cbf9d",
+      "name": "Reprise refusée : confinement maintenu",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2240,
+        480
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "1960992c-9fb6-5904-a75b-3ca718f8cc1c",
+      "name": "Échec d’exécution d’un workflow",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        840
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3908b14b-eed8-5151-860b-992c5f049c3f",
+              "name": "api_base_url",
+              "value": "http://api:8000",
+              "type": "string"
+            },
+            {
+              "id": "49bb3697-68ee-58f5-ac09-b7403c9c0ac2",
+              "name": "simulation",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "430278ee-039c-5f64-bc7a-c34ab384f4ef",
+              "name": "workflow",
+              "value": "incident",
+              "type": "string"
+            },
+            {
+              "id": "3d4a3503-9a9a-5211-8346-2b72eb2928b2",
+              "name": "responsable_email",
+              "value": "REMPLACER-responsable@exemple.invalid",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "34f00a71-cd74-56a2-a0be-fbfeeb7a0294",
+      "name": "Paramètres — erreurs",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        840
+      ],
+      "notes": "À régler après import : URL de l'API du moteur (docker compose : http://api:8000). simulation = true tant que le niveau d'autonomie 2 n'est pas décidé.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Paramètres — erreurs').first().json.api_base_url }}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cause: 'Exécution ' + ($('Échec d’exécution d’un workflow').first().json.execution.id || '?') + ' en échec au nœud ' + ($('Échec d’exécution d’un workflow').first().json.execution.lastNodeExecuted || '?') + ' : ' + (($('Échec d’exécution d’un workflow').first().json.execution.error || {}).message || 'erreur inconnue'), kind: 'WORKFLOW_EN_ECHEC', severity: 'MAJEUR', scope: 'WORKFLOW', workflow: ({\"pkshp01FournSite\": \"fournisseur-site\", \"pkshp02CmdLivrai\": \"commande-livraison\", \"pkshp03FactMarge\": \"facture-marge\", \"pkshp04Incidents\": \"incident\", \"pkshp05DigestJou\": \"digest\", \"pkshp06Marketing\": \"marketing\", \"pkshp07StopLossW\": \"stoploss-watch\", \"pkshp08MandatDep\": \"mandat-depenses\"})[($('Échec d’exécution d’un workflow').first().json.workflow || {}).id] || ({\"Pokeshop 01 — Fournisseur vers site (simulation)\": \"fournisseur-site\", \"Pokeshop 02 — Commande vers livraison\": \"commande-livraison\", \"Pokeshop 03 — Facture vers marge réelle\": \"facture-marge\", \"Pokeshop 04 — Incidents et erreurs\": \"incident\", \"Pokeshop 05 — Digest quotidien\": \"digest\", \"Pokeshop 06 — Automatisations marketing\": \"marketing\", \"Pokeshop 07 — Surveillance du stop-loss\": \"stoploss-watch\", \"Pokeshop 08 — Mandat de dépense\": \"mandat-depenses\"})[($('Échec d’exécution d’un workflow').first().json.workflow || {}).name] || ($('Échec d’exécution d’un workflow').first().json.workflow || {}).name || 'inconnu', proposed_action: 'Corriger puis relancer depuis la file de reprise avec les mêmes clés d’idempotence ; vérifier l’état réel sur le site.', actor: 'n8n:04-incident', simulation: $('Paramètres — erreurs').first().json.simulation, details: { execution_url: $('Échec d’exécution d’un workflow').first().json.execution.url || null } }) }}"
+      },
+      "id": "bea03842-2943-52f6-9d5b-83aaacab1f19",
+      "name": "Ouvrir un incident d’exécution",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        840
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pkshpApiN8n04Inc",
+          "name": "Pokeshop API — jeton nommé n8n-04-incidents"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {},
+      "id": "41ddc9fa-2ce1-5b86-869e-f3a399131b2e",
+      "name": "Journal : incident ouvert (notifié par le moteur)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        840,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "11f76b30-3ebc-55f9-9346-8318ca902db9",
+              "name": "sujet",
+              "value": "=[CRITIQUE] Moteur injoignable pendant un échec de {{ ($('Échec d’exécution d’un workflow').first().json.workflow || {}).name }}",
+              "type": "string"
+            },
+            {
+              "id": "8babfc9d-9023-5b1b-a596-ceab6c264c80",
+              "name": "texte",
+              "value": "=L'API du moteur ne répond pas : aucune écriture ne doit reprendre avant vérification (BP §6 « arrêt des écritures »).",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "111e1560-cb10-57a0-85e8-f42fd32810cc",
+      "name": "Préparer l’alerte moteur injoignable",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        840,
+        919
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agents@REMPLACER-domaine.invalid",
+        "toEmail": "={{ $('Paramètres — erreurs').first().json.responsable_email }}",
+        "subject": "={{ $json.sujet }}",
+        "emailFormat": "text",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "df9b17e3-c4d2-50cd-be47-112520ee4de9",
+      "name": "Alerte : moteur injoignable (email, désactivé)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1120,
+        919
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pkshpSmtpAgents1",
+          "name": "SMTP boîte des agents"
+        }
+      },
+      "disabled": true,
+      "notes": "Activer après création du credential SMTP et test d'envoi à la responsable (niveau 1 admis).",
+      "notesInFlow": true
+    }
+  ],
+  "connections": {
+    "Notification d’incident du moteur": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — incidents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — incidents": {
+      "main": [
+        [
+          {
+            "node": "Charge valide ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Charge valide ?": {
+      "main": [
+        [
+          {
+            "node": "Composer la notification (SOP §4)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Charge invalide : ignorée",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Composer la notification (SOP §4)": {
+      "main": [
+        [
+          {
+            "node": "Gravité",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gravité": {
+      "main": [
+        [
+          {
+            "node": "Alerte immédiate S1 (email, désactivé)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Alerte immédiate S1 (Slack, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notification S2 dans l’heure (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reporté au digest quotidien",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demande de reprise (passerelle agents)": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — reprise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — reprise": {
+      "main": [
+        [
+          {
+            "node": "Lire le test enregistré (GET /incidents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire le test enregistré (GET /incidents)": {
+      "main": [
+        [
+          {
+            "node": "Retrouver l’incident et son test",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrouver l’incident et son test": {
+      "main": [
+        [
+          {
+            "node": "Test réussi ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test réussi ?": {
+      "main": [
+        [
+          {
+            "node": "Préparer la demande de reprise",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Préparer l’avis d’échec du test",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer l’avis d’échec du test": {
+      "main": [
+        [
+          {
+            "node": "Test en échec : notification (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer la demande de reprise": {
+      "main": [
+        [
+          {
+            "node": "Demander la validation de reprise (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demander la validation de reprise (email, désactivé)": {
+      "main": [
+        [
+          {
+            "node": "Validation de la reprise (formulaire, 48 h)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation de la reprise (formulaire, 48 h)": {
+      "main": [
+        [
+          {
+            "node": "Reprise validée ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reprise validée ?": {
+      "main": [
+        [
+          {
+            "node": "Reprendre (POST /incidents/{id}/resume)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reprise refusée : confinement maintenu",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reprendre (POST /incidents/{id}/resume)": {
+      "main": [
+        [
+          {
+            "node": "Journal : reprise effectuée",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Préparer les instructions S1 (propriétaire)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer les instructions S1 (propriétaire)": {
+      "main": [
+        [
+          {
+            "node": "Reprise S1 : instructions à la propriétaire (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Échec d’exécution d’un workflow": {
+      "main": [
+        [
+          {
+            "node": "Paramètres — erreurs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres — erreurs": {
+      "main": [
+        [
+          {
+            "node": "Ouvrir un incident d’exécution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ouvrir un incident d’exécution": {
+      "main": [
+        [
+          {
+            "node": "Journal : incident ouvert (notifié par le moteur)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Préparer l’alerte moteur injoignable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer l’alerte moteur injoignable": {
+      "main": [
+        [
+          {
+            "node": "Alerte : moteur injoignable (email, désactivé)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Zurich",
+    "saveManualExecutions": false,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "saveExecutionProgress": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "staticData": null,
+  "tags": [],
+  "versionId": "ef32ba0e-5020-5f37-8592-ae68832c91bb",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

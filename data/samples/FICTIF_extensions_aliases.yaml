@@ -1,0 +1,26 @@
+# FICTIF — extensions inventées pour les jeux d'essai uniquement.
+# Ces noms n'existent pas : ils servent à tester l'import et le rapprochement sans
+# associer un prix fictif à un produit réel. Ne jamais charger ce fichier en production.
+# Chargement : catalog.load_extension_table([table réelle, ce fichier]) ou via la clé
+# `extension_tables` d'un dictionnaire de champs FICTIF (data/supplier_mappings/fictif_*.yaml).
+
+version: "2026-10-04"
+statut: "FICTIF — jeux d'essai"
+
+extensions:
+  - code: "FICTIF_ALPHA"
+    fictif: true
+    name_fr: "Extension Fictive Alpha"
+    aliases: ["Fictive Alpha", "FICT-A", "Alpha (fictif)"]
+  - code: "FICTIF_BETA"
+    fictif: true
+    name_fr: "Extension Fictive Bêta"
+    aliases: ["Fictive Bêta", "FICT-B", "Bêta (fictif)"]
+  - code: "FICTIF_GAMMA"
+    fictif: true
+    name_fr: "Extension Fictive Gamma"
+    aliases: ["Fictive Gamma", "FICT-G", "Gamma (fictif)"]
+
+# Validation humaine requise
+# - [ ] Aucune : fichier d'essai. Vérifier seulement qu'il n'est jamais référencé par un
+#       dictionnaire de champs non FICTIF.

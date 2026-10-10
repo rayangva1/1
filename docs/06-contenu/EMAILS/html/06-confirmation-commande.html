@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="fr-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>Commande {{ order_name }} confirmée</title>
+  <!--
+    FICHIER GÉNÉRÉ par docs/06-contenu/outils/generer_emails.py depuis EMAILS/source/emails.yaml — ne pas modifier.
+    Email 06-confirmation-commande — Confirmation de commande (notification Shopify) — canal : shopify
+    Objet : Commande [[order_name]] confirmée
+    Pré-en-tête : Récapitulatif, statut de chaque article et suite de votre commande.
+    Déclencheur : Commande payée (notification Shopify « Confirmation de commande »)
+    Segment : Le client de la commande
+    Base : Exécution du contrat ; aucun contenu promotionnel
+    Fréquence : Une fois par commande
+    Variables :
+      - order_name : Numéro de commande (Liquid Shopify)
+      - customer.first_name : Prénom du client
+      - subtotal_line_items : Lignes de la commande (line.title, line.quantity, line.final_line_price)
+      - subtotal_price : Sous-total
+      - shipping_price : Frais de livraison facturés
+      - total_price : Total payé
+      - shipping_address : Adresse de livraison (name, address1, zip, city)
+      - order_status_url : Page de suivi de la commande
+    Champs fixes (MAJUSCULES entre doubles accolades) : registre docs/04-legal/champs_a_remplir.yaml, plus URL_LOGO_PNG
+    (PNG du logo hébergé, docs/05-da/logo/png/). Pour Shopify, coller la copie produite par --integration, jamais ce fichier.
+    Règles : aucune donnée interne ; prix publics relus à l'envoi ; aucune fausse urgence.
+  -->
+</head>
+<body style="margin:0;padding:0;background:#F6F5F1;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Récapitulatif, statut de chaque article et suite de votre commande.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F5F1;">
+    <tr>
+      <td align="center" style="padding:16px 8px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;">
+          <tr>
+            <td style="padding:24px 24px 8px 24px;">
+              <img src="{{URL_LOGO_PNG}}" width="200" alt="{{NOM_BOUTIQUE}}" style="display:block;border:0;outline:none;text-decoration:none;height:auto;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">
+            </td>
+          </tr>
+          <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" style="height:6px;line-height:6px;font-size:0;background:#FF5B14;">&nbsp;</td></tr></table></td></tr>
+          <tr>
+            <td style="padding:20px 24px 4px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:bold;text-transform:uppercase;color:#111111;word-break:break-word;">Merci, votre commande est confirmée</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Bonjour{% if customer.first_name %} {{ customer.first_name }}{% endif %},</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:22px;color:#111111;word-break:break-word;">Nous avons bien reçu votre paiement. Voici exactement ce que vous avez commandé.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">{% assign a_precommande = false %}{% for line in subtotal_line_items %}<tr><td style="padding:14px 0;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:15px;line-height:21px;color:#111111;word-break:break-word;"><strong>{{ line.title }}</strong><br>{% if line.sku contains '-RESA-' %}{% assign a_precommande = true %}<span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E6E9FB;border:2px solid #2B3990;color:#2B3990;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">RÉSERVATION GARANTIE</span> <span style="font-size:13px;color:#55534E;">&nbsp;Servie en premier, expédiée à part dès réception</span>{% elsif line.title contains 'Précommande' %}{% assign a_precommande = true %}<span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E6E9FB;color:#2B3990;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">PRÉCOMMANDE</span> <span style="font-size:13px;color:#55534E;">&nbsp;Expédiée à part, dès réception</span>{% else %}<span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#E3F4E8;color:#0F5A2A;font-family:Arial, Helvetica, sans-serif;font-size:12px;font-weight:bold;">STOCK LOCAL</span> <span style="font-size:13px;color:#55534E;">&nbsp;Expédition sous {{DELAI_EXPEDITION}}</span>{% endif %}</td><td align="right" valign="top" style="padding:14px 0 14px 12px;border-top:1px solid #D9D6CF;font-family:'Courier New', Courier, monospace;font-size:15px;line-height:21px;color:#111111;white-space:nowrap;">{{ line.quantity }} × {{ line.final_price | money }}<br><strong>{{ line.final_line_price | money }}</strong></td></tr>{% endfor %}<tr><td style="padding:12px 0 4px 0;border-top:2px solid #111111;font-family:Arial, Helvetica, sans-serif;font-size:15px;color:#111111;">Sous-total articles</td><td align="right" style="padding:12px 0 4px 0;border-top:2px solid #111111;font-family:'Courier New', Courier, monospace;font-size:15px;color:#111111;white-space:nowrap;">{{ subtotal_price | money }}</td></tr>{% if discounts_amount > 0 %}<tr><td style="padding:4px 0;font-family:Arial, Helvetica, sans-serif;font-size:15px;color:#111111;">Réductions</td><td align="right" style="padding:4px 0;font-family:'Courier New', Courier, monospace;font-size:15px;color:#111111;">− {{ discounts_amount | money }}</td></tr>{% endif %}<tr><td style="padding:4px 0;font-family:Arial, Helvetica, sans-serif;font-size:15px;color:#111111;">Livraison</td><td align="right" style="padding:4px 0;font-family:'Courier New', Courier, monospace;font-size:15px;color:#111111;white-space:nowrap;">{{ shipping_price | money }}</td></tr><tr><td style="padding:8px 0 4px 0;font-family:Arial, Helvetica, sans-serif;font-size:18px;font-weight:bold;color:#111111;">Total payé</td><td align="right" style="padding:8px 0 4px 0;font-family:'Courier New', Courier, monospace;font-size:18px;font-weight:bold;color:#111111;white-space:nowrap;">{{ total_price | money }}</td></tr><tr><td colspan="2" style="padding:0 0 4px 0;font-family:Arial, Helvetica, sans-serif;font-size:13px;color:#55534E;">{{MENTION_TVA}}</td></tr></table>
+{% if a_precommande %}              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px 0;background:#ECEAE4;"><tr><td style="padding:16px;font-family:Arial, Helvetica, sans-serif;font-size:14px;line-height:21px;color:#111111;word-break:break-word;"><strong>Commande mixte :</strong> les articles en stock local partent dès qu'ils sont prêts ; la précommande ou la réservation garantie est expédiée séparément, dès sa réception. La livraison n'est facturée qu'une fois. Nous vous écrivons si une date change.</td></tr></table>{% endif %}
+              <p style="margin:12px 0 12px 0;font-size:14px;line-height:21px;color:#111111;word-break:break-word;"><strong>Livraison</strong> (Suisse uniquement) :<br>{{ shipping_address.name }}<br>{{ shipping_address.address1 }}{% if shipping_address.address2 %}<br>{{ shipping_address.address2 }}{% endif %}<br>{{ shipping_address.zip }} {{ shipping_address.city }}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 12px 24px;font-family:Arial, Helvetica, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 16px 0;"><tr><td style="background:#111111;border-radius:4px;"><a href="{{ order_status_url }}" style="display:inline-block;padding:13px 22px;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">Voir ma commande</a></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;border-top:1px solid #D9D6CF;font-family:Arial, Helvetica, sans-serif;font-size:12px;line-height:18px;color:#55534E;word-break:break-word;">
+              Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.<br>Conditions de vente : {{URL_CGV}} · Livraison et retours : {{URL_RETOURS}}<br>{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}<br>Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.<br>Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

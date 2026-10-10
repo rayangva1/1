@@ -1,0 +1,41 @@
+# Paramètres du PRÉ-DROP (réservation GARANTIE avant réception) — {{NOM_BOUTIQUE}}
+# Décision de la propriétaire du 6 octobre 2026. Valeurs par défaut à confirmer par elle.
+# Chargement, bornes et signature : engine/pokeshop/predrop.py (load_predrop_config).
+# Toute modification d'une VALEUR => nouveau fichier predrop.vN.yaml + nouveau predrop_version.
+# Montants et taux entre guillemets (jamais de nombre à virgule flottante).
+#
+# Deux prix par produit éligible :
+#   prix DROP     = prix normal décidé par le moteur (decide_price, inchangé) ;
+#   prix PRÉ-DROP = prix drop × (1 + premium_pct), arrondi retail du moteur (grille), marge RE-vérifiée,
+#                   jamais plus de 10 % au-dessus du prix drop ni au-dessus de la référence marché connue.
+# Le supplément paie la GARANTIE d'être servi en premier et expédié dès réception, PAS le produit.
+# Aucun remboursement de la différence si des unités restent au drop.
+#
+# SIGNATURE (même mécanisme que les seuils du stop-loss) : la propriétaire calcule l'empreinte et la recopie
+# dans le coffre (POKESHOP_PREDROP_FINGERPRINT) — c'est ce report, fait par elle seule, qui vaut signature :
+#     cd engine && python -m pokeshop.predrop fingerprint ../config/predrop.v1.yaml
+# - aucune empreinte au coffre => pré-drop DÉSACTIVÉ (fermé par défaut : aucune ouverture, aucune réservation) ;
+# - empreinte du coffre différente du fichier (fichier modifié après signature) => pré-drop DÉSACTIVÉ ;
+# - valeur hors des bornes du code => fichier refusé, pré-drop DÉSACTIVÉ.
+# Bornes du code (pokeshop.predrop) : premium_pct 0..0.10 ; per_customer_limit 1..2 ; réserve de sécurité
+# au moins 1 unité et au moins 10 % de l'allocation ferme ; part ouverte en pré-drop ]0, 1] ;
+# fenêtre prioritaire 0..168 h ; seuil de demande 0.1..10 ; annulation libre 1..60 jours avant la date du drop.
+
+predrop_version: "predrop-v1-2026-10-06"
+status: "décision de la propriétaire du 6.10.2026 ; valeurs par défaut à confirmer"
+source: "Décision « pré-drop » de la propriétaire (6.10.2026)"
+effective_date: "2026-10-06"
+
+premium_pct: "0.08"                  # supplément de garantie : 8 % du prix drop (borne du code : 0 à 10 %)
+predrop_share_of_allocation: "0.5"   # part de l'allocation ferme (hors réserve) ouverte en pré-drop
+safety_reserve_min_units: 1          # réserve de sécurité : au moins 1 unité…
+safety_reserve_share: "0.10"         # … et au moins 10 % de l'allocation ferme (la plus grande des deux)
+per_customer_limit: 1                # unités par client et par pré-drop (borne du code : 2 au plus)
+priority_window_hours: 24            # fenêtre prioritaire des inscrits aux alertes après l'ouverture
+demand_threshold: "0.5"              # inscrits consentants intéressés / allocation ferme >= seuil
+free_cancellation_days_before_drop: 7  # annulation libre d'une réservation jusqu'à 7 jours avant la date du drop
+
+approval:                            # informatif : l'empreinte qui fait foi est celle du coffre
+  approved_by: null                  # nom de la propriétaire
+  approved_at: null                  # AAAA-MM-JJTHH:MM:SS+02:00
+  fingerprint_sha256: null           # empreinte calculée par la commande ci-dessus (facultatif ici)

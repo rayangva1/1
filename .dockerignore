@@ -1,0 +1,41 @@
+# Contexte de construction de l'image de l'API (Dockerfile) : seuls engine/, config/ et data/ sont copiés.
+# Tout le reste est exclu, d'abord les secrets (jamais envoyés au démon de construction), puis les caches
+# (l'image n'embarque ni __pycache__ ni caches mypy/ruff/pytest) et les dossiers sans usage dans l'image.
+
+# Secrets et environnements locaux
+.env
+.env.*
+*.env
+*.env.local
+secrets/
+**/secrets/
+**/*.pem
+**/*.key
+
+# Gestion de version et outils locaux
+.git
+.gitignore
+.claude/
+.venv/
+**/.venv/
+
+# Caches Python et outils
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.mypy_cache
+**/.mypy_cache
+.ruff_cache
+**/.ruff_cache
+.pytest_cache
+**/.pytest_cache
+
+# Dossiers sans usage dans l'image de l'API
+docs/
+site/
+dashboard/
+orchestration/
+tests/
+scripts/
+db/
+data/imports/

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080" width="1080" height="1080" role="img" aria-labelledby="titre desc">
+  <title id="titre">Carrousel 1x1 — slide 3/3 — direction A — Quai des Cartes</title>
+  <desc id="desc">Template FICTIF à compléter. Remplacer ZONE_PHOTO par une photo réelle du produit (langue FR visible). Les {{CHAMPS}} viennent du catalogue validé ; le prix doit être le prix validé au moment de la publication. Aucune donnée interne (voir README DA). Zones sûres : social/guides/.</desc>
+  <rect id="FOND" width="1080" height="1080" fill="#F6F5F1"/>
+  <text x="1008" y="102" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="30" font-weight="700" fill="#111111" text-anchor="end">3/3</text>
+  <text x="72" y="202" font-family="'Archivo', 'Arial Narrow', Arial, sans-serif" font-size="68" font-weight="800" fill="#111111" letter-spacing="0.68">AVANT D'ACHETER,</text>
+  <text x="72" y="273.4" font-family="'Archivo', 'Arial Narrow', Arial, sans-serif" font-size="68" font-weight="800" fill="#111111" letter-spacing="0.68">VÉRIFIEZ :</text>
+  <rect x="72" y="353.4" width="34" height="34" fill="none" stroke="#111111" stroke-width="4"/>
+  <text x="132" y="383.4" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="40" font-weight="600" fill="#111111">Langue : FR</text>
+  <rect x="72" y="429.4" width="34" height="34" fill="none" stroke="#111111" stroke-width="4"/>
+  <text x="132" y="459.4" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="40" font-weight="600" fill="#111111">Extension exacte</text>
+  <rect x="72" y="505.4" width="34" height="34" fill="none" stroke="#111111" stroke-width="4"/>
+  <text x="132" y="535.4" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="40" font-weight="600" fill="#111111">Format et contenu</text>
+  <rect x="72" y="581.4" width="34" height="34" fill="none" stroke="#111111" stroke-width="4"/>
+  <text x="132" y="611.4" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="40" font-weight="600" fill="#111111">Stock local ou précommande</text>
+  <text x="72" y="717.4" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="500" fill="#111111">Stock réel affiché · prix en CHF</text>
+  <text x="72" y="763.4" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="700" fill="#111111">{{SITE}}</text>
+  <g id="LOGO">
+    <path fill="#111111" d="M100.57 958.29A14.29 14.29 0 1 1 72 958.29A14.29 14.29 0 1 1 100.57 958.29ZM95.43 958.29A9.14 9.14 0 1 0 77.14 958.29A9.14 9.14 0 1 0 95.43 958.29ZM88.57 962.29L94.86 962.29L102.29 972.57L96 972.57ZM102.86 944L108 944L108 961.43L102.86 961.43ZM120 944L125.14 944L125.14 961.43L120 961.43ZM125.14 961.43A11.14 11.14 0 0 1 102.86 961.43L108 961.43A6 6 0 0 0 120 961.43ZM127.14 972.57L136.43 944L141.86 944L132.57 972.57ZM145.71 972.57L136.43 944L141.86 944L151.14 972.57ZM133.57 961.14L144.71 961.14L144.71 966L133.57 966ZM153.43 944L158.57 944L158.57 972.57L153.43 972.57ZM170.57 944L175.71 944L175.71 972.57L170.57 972.57ZM170.57 944L180.29 944L180.29 949.14L170.57 949.14ZM170.57 967.43L180.29 967.43L180.29 972.57L170.57 972.57ZM180.29 944A14.29 14.29 0 0 1 180.29 972.57L180.29 967.43A9.14 9.14 0 0 0 180.29 949.14ZM197.43 944L202.57 944L202.57 972.57L197.43 972.57ZM197.43 944L215.14 944L215.14 949.14L197.43 949.14ZM197.43 955.71L212.86 955.71L212.86 960.86L197.43 960.86ZM197.43 967.43L215.14 967.43L215.14 972.57L197.43 972.57ZM227.14 960.86A9.14 8.43 0 1 1 235.06 948.21L230.61 950.79A4 3.29 0 1 0 227.14 955.71ZM227.14 955.71A9.14 8.43 0 1 1 219.22 968.36L223.68 965.79A4 3.29 0 1 0 227.14 960.86ZM270.72 968.39A13.14 14.29 0 1 1 270.72 948.18L267.09 951.82A8 9.14 0 1 0 267.09 964.75ZM272.29 972.57L281.57 944L287 944L277.71 972.57ZM290.86 972.57L281.57 944L287 944L296.29 972.57ZM278.71 961.14L289.86 961.14L289.86 966L278.71 966ZM299.14 944L304.29 944L304.29 972.57L299.14 972.57ZM299.14 944L307.71 944L307.71 949.14L299.14 949.14ZM299.14 958.29L307.71 958.29L307.71 963.43L299.14 963.43ZM307.71 944A9.71 9.71 0 0 1 307.71 963.43L307.71 958.29A4.57 4.57 0 0 0 307.71 949.14ZM307.71 961.14L313.43 961.14L319.14 972.57L313.43 972.57ZM320.86 944L341.43 944L341.43 949.14L320.86 949.14ZM328.57 944L333.71 944L333.71 972.57L328.57 972.57ZM342.57 944L347.71 944L347.71 972.57L342.57 972.57ZM342.57 944L360.29 944L360.29 949.14L342.57 949.14ZM342.57 955.71L358 955.71L358 960.86L342.57 960.86ZM342.57 967.43L360.29 967.43L360.29 972.57L342.57 972.57ZM372.29 960.86A9.14 8.43 0 1 1 380.2 948.21L375.75 950.79A4 3.29 0 1 0 372.29 955.71ZM372.29 955.71A9.14 8.43 0 1 1 364.37 968.36L368.82 965.79A4 3.29 0 1 0 372.29 960.86Z"/>
+    <path fill="#FF5B14" d="M72 978.86L381.43 978.86L381.43 984L72 984Z"/>
+  </g>
+  <rect id="BARRE_QUAI" x="0" y="1064" width="1080" height="16" fill="#FF5B14"/>
+</svg>

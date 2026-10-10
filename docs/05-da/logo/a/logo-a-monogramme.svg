@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-labelledby="titre desc">
+  <title id="titre">Quai des Cartes — monogramme Q, direction A</title>
+  <desc id="desc">Nom de travail NON VALIDÉ. Lettrage original construit à la main en contours pleins (aucune police, aucun personnage, symbole ou typographie de licence). Voir logo/REGLES_LOGO.md.</desc>
+  <path fill="#111111" d="M16 0L104 0A16 16 0 0 1 120 16L120 104A16 16 0 0 1 104 120L16 120A16 16 0 0 1 0 104L0 16A16 16 0 0 1 16 0Z"/>
+  <path fill="#F6F5F1" d="M89 49A29 29 0 1 1 31 49A29 29 0 1 1 89 49ZM78.56 49A18.56 18.56 0 1 0 41.44 49A18.56 18.56 0 1 0 78.56 49ZM64.64 57.12L77.4 57.12L92.48 78L79.72 78Z"/>
+  <path fill="#FF5B14" d="M22 88L98 88L98 98L22 98Z"/>
+</svg>

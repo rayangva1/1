@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080" width="1080" height="1080" role="img" aria-labelledby="titre desc">
+  <title id="titre">Couverture 1x1 — direction A — Quai des Cartes</title>
+  <desc id="desc">Template FICTIF à compléter. Remplacer ZONE_PHOTO par une photo réelle du produit (langue FR visible). Les {{CHAMPS}} viennent du catalogue validé ; le prix doit être le prix validé au moment de la publication. Aucune donnée interne (voir README DA). Zones sûres : social/guides/.</desc>
+  <rect id="FOND" width="1080" height="1080" fill="#F6F5F1"/>
+  <g id="LOGO">
+    <path fill="#111111" d="M104.86 88.43A16.43 16.43 0 1 1 72 88.43A16.43 16.43 0 1 1 104.86 88.43ZM98.94 88.43A10.51 10.51 0 1 0 77.91 88.43A10.51 10.51 0 1 0 98.94 88.43ZM91.06 93.03L98.29 93.03L106.83 104.86L99.6 104.86ZM107.49 72L113.4 72L113.4 92.04L107.49 92.04ZM127.2 72L133.11 72L133.11 92.04L127.2 92.04ZM133.11 92.04A12.81 12.81 0 0 1 107.49 92.04L113.4 92.04A6.9 6.9 0 0 0 127.2 92.04ZM135.41 104.86L146.09 72L152.34 72L141.66 104.86ZM156.77 104.86L146.09 72L152.34 72L163.01 104.86ZM142.81 91.71L155.62 91.71L155.62 97.3L142.81 97.3ZM165.64 72L171.56 72L171.56 104.86L165.64 104.86ZM185.36 72L191.27 72L191.27 104.86L185.36 104.86ZM185.36 72L196.53 72L196.53 77.91L185.36 77.91ZM185.36 98.94L196.53 98.94L196.53 104.86L185.36 104.86ZM196.53 72A16.43 16.43 0 0 1 196.53 104.86L196.53 98.94A10.51 10.51 0 0 0 196.53 77.91ZM216.24 72L222.16 72L222.16 104.86L216.24 104.86ZM216.24 72L236.61 72L236.61 77.91L216.24 77.91ZM216.24 85.47L233.99 85.47L233.99 91.39L216.24 91.39ZM216.24 98.94L236.61 98.94L236.61 104.86L216.24 104.86ZM250.41 91.39A10.51 9.69 0 1 1 259.52 76.85L254.4 79.8A4.6 3.78 0 1 0 250.41 85.47ZM250.41 85.47A10.51 9.69 0 1 1 241.31 100.01L246.43 97.05A4.6 3.78 0 1 0 250.41 91.39ZM300.53 100.05A15.11 16.43 0 1 1 300.53 76.81L296.35 80.99A9.2 10.51 0 1 0 296.35 95.86ZM302.33 104.86L313.01 72L319.25 72L308.57 104.86ZM323.69 104.86L313.01 72L319.25 72L329.93 104.86ZM309.72 91.71L322.54 91.71L322.54 97.3L309.72 97.3ZM333.21 72L339.13 72L339.13 104.86L333.21 104.86ZM333.21 72L343.07 72L343.07 77.91L333.21 77.91ZM333.21 88.43L343.07 88.43L343.07 94.34L333.21 94.34ZM343.07 72A11.17 11.17 0 0 1 343.07 94.34L343.07 88.43A5.26 5.26 0 0 0 343.07 77.91ZM343.07 91.71L349.64 91.71L356.21 104.86L349.64 104.86ZM358.19 72L381.84 72L381.84 77.91L358.19 77.91ZM367.06 72L372.97 72L372.97 104.86L367.06 104.86ZM383.16 72L389.07 72L389.07 104.86L383.16 104.86ZM383.16 72L403.53 72L403.53 77.91L383.16 77.91ZM383.16 85.47L400.9 85.47L400.9 91.39L383.16 91.39ZM383.16 98.94L403.53 98.94L403.53 104.86L383.16 104.86ZM417.33 91.39A10.51 9.69 0 1 1 426.43 76.85L421.31 79.8A4.6 3.78 0 1 0 417.33 85.47ZM417.33 85.47A10.51 9.69 0 1 1 408.22 100.01L413.34 97.05A4.6 3.78 0 1 0 417.33 91.39Z"/>
+    <path fill="#FF5B14" d="M72 112.09L427.84 112.09L427.84 118L72 118Z"/>
+  </g>
+  <g id="ZONE_PHOTO">
+    <rect x="72" y="158" width="936" height="472.8" rx="0" fill="#ECEAE4" stroke="#8A867E" stroke-width="3" stroke-dasharray="14 10"/>
+    <text x="540" y="382.58" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="29.55" font-weight="700" fill="#55534E" text-anchor="middle" letter-spacing="1">PHOTO PRODUIT RÉELLE</text>
+    <text x="540" y="426.9" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="21.28" font-weight="400" fill="#55534E" text-anchor="middle">Boîte FR, face avant, fond neutre, lumière du jour</text>
+    <text x="540" y="459.41" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="18.32" font-weight="400" fill="#55534E" text-anchor="middle">Jamais d'emballage généré ni de visuel non autorisé</text>
+  </g>
+  <rect x="72" y="666.8" width="73.32" height="52" rx="4" fill="#111111"/>
+  <text x="108.66" y="702.16" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="26" font-weight="700" fill="#FFFFFF" text-anchor="middle" letter-spacing="1.56">FR</text>
+  <rect x="160.92" y="666.8" width="227.76" height="52" rx="4" fill="#E3F4E8"/>
+  <text x="274.8" y="702.16" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="26" font-weight="700" fill="#0F5A2A" text-anchor="middle" letter-spacing="1.56">STOCK LOCAL</text>
+  <rect x="404.28" y="666.8" width="193.44" height="52" rx="4" fill="#FF5B14"/>
+  <text x="501" y="702.16" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="26" font-weight="700" fill="#111111" text-anchor="middle" letter-spacing="1.56">NOUVEAUTÉ</text>
+  <text x="72" y="776.8" font-family="'Archivo', 'Arial Narrow', Arial, sans-serif" font-size="64" font-weight="800" fill="#111111" letter-spacing="0.64">DISPLAY</text>
+  <text x="72" y="844" font-family="'Archivo', 'Arial Narrow', Arial, sans-serif" font-size="64" font-weight="800" fill="#111111" letter-spacing="0.64">{{EXTENSION}}</text>
+  <text x="72" y="918" font-family="'IBM Plex Mono', 'Courier New', monospace" font-size="56" font-weight="600" fill="#111111" id="PRIX">CHF {{PRIX_VALIDE}}</text>
+  <text x="72" y="964" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="24" font-weight="400" fill="#55534E">{{MENTION_TVA}} · frais de livraison affichés avant paiement</text>
+  <text x="72" y="1008" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="500" fill="#111111">Expédié depuis la Suisse · {{SITE}}</text>
+  <rect id="BARRE_QUAI" x="0" y="1064" width="1080" height="16" fill="#FF5B14"/>
+</svg>

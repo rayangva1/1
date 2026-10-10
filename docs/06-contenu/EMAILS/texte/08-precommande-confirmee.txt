@@ -1,0 +1,26 @@
+Objet : Précommande enregistrée : {{ $json.produit_titre }}
+
+VOTRE PRÉCOMMANDE EST ENREGISTRÉE
+
+{{ $json.salutation }}
+
+Votre précommande fait partie de la commande {{ $json.numero_commande }} ; le paiement est reçu.
+
+{{ $json.produit_titre }}
+Précommande · Sortie {{ $json.date_sortie_libelle }}
+
+- Le prix payé est définitif.
+- Nous expédions dès réception et contrôle du produit, en principe sous {{DELAI_EXPEDITION}} après réception. Nous ne garantissons pas une livraison le jour de la sortie.
+- Si la date change, nous vous écrivons dans un délai de {{DELAI_INFORMATION_REPORT}}.
+- Annulation gratuite {{DELAI_ANNULATION_PRECOMMANDE}} : répondez à cet email avec votre numéro de commande.
+
+Si votre commande contient aussi des articles en stock local, ils partent dès qu'ils sont prêts ; la précommande suit séparément. La livraison n'est facturée qu'une fois.
+
+Nos conditions de précommande : {{URL_PRECOMMANDES}}
+
+--
+Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
+Conditions de vente : {{URL_CGV}} · Livraison et retours : {{URL_RETOURS}}
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que vous avez passé commande ; il ne contient aucune publicité.

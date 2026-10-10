@@ -1,0 +1,480 @@
+{
+  "_avertissement": "Source UNIQUE des visuels de la marque : 10 illustrations du renard original (« Braise », nom provisoire ; aucun élément sous licence) et 3 photos d'ambiance du propriétaire (objets vierges, jamais présentés comme des produits en vente). Ne jamais recopier une adresse ni un texte alternatif dans une page : les balises data-visuel sont réécrites par python site/outils/visuels.py appliquer. Visuels 100 % locaux : python site/outils/rapatrier_visuels.py --importer <dossier> contrôle format et proportions, archive la source hors du dossier publié (site/visuels-sources/), produit les variantes WebP aux largeurs « largeurs » dans assets/visuels/ et remplit « variantes », « fichier_source » et « empreinte_source ». « fil » : filet orange photographié, deux points [x, y] en fractions de l'image (mesurés le 09.10.2026 ; pour le Léman, le bout de la corde orange enroulée au bollard) ; « fil_epaisseur » : son épaisseur en fraction de la hauteur de l'image et « fil_couleurs » : sa couleur près de l'entrée et de la sortie (mesurées le 10.10.2026, largeur à mi-hauteur et médiane du cœur du trait), pour raccorder le fil dessiné sans couture. Règles : docs/05-da/DIRECTION_ATELIER.md §7 à §9.",
+  "source": "local",
+  "base_distante": null,
+  "dossier_local": "assets/visuels/",
+  "visuels": {
+    "renard-heros": {
+      "fichier": "renard-heros",
+      "fichier_source": "renard-heros.jpg",
+      "nature": "illustration",
+      "format": "21:9",
+      "largeur": 2688,
+      "hauteur": 1152,
+      "largeurs": [
+        640,
+        960,
+        1280,
+        1920,
+        2688
+      ],
+      "variantes": [
+        640,
+        960,
+        1280,
+        1920,
+        2688
+      ],
+      "empreinte_source": "1903835898334729de575c13211262f1bf763cb20a1b9625cfbd36fc4b4e680b",
+      "usage": "Héro de la landing (ordinateur, 21:9) : renard à droite, moitié gauche libre pour le titre",
+      "description": "Le renard noir aux pointes d'oreilles orange est assis à droite sur un papier crème, sourire en coin, à côté d'une boîte noire vierge et d'une pile d'étuis rigides transparents vierges ; ombres de feuillage sur le mur, filet orange en bas à gauche ; moitié gauche libre.",
+      "alt": "Illustration : notre renard noir aux oreilles et à la queue orange, assis à côté d'une boîte noire vierge et d'étuis transparents vierges, dans la lumière d'une fenêtre.",
+      "fil": [
+        [
+          0.012,
+          0.871
+        ],
+        [
+          0.729,
+          0.997
+        ]
+      ],
+      "fil_epaisseur": 0.013,
+      "fil_couleurs": [
+        "#FEAA68",
+        "#FE8F41"
+      ]
+    },
+    "renard-heros-portrait": {
+      "fichier": "renard-heros-portrait",
+      "fichier_source": "renard-heros-portrait.jpg",
+      "nature": "illustration",
+      "format": "9:16",
+      "largeur": 1520,
+      "hauteur": 2688,
+      "largeurs": [
+        480,
+        760,
+        1180,
+        1520
+      ],
+      "variantes": [
+        480,
+        760,
+        1180,
+        1520
+      ],
+      "empreinte_source": "769d0258d4257997ae9ac809bdb291adb0ea559ab1bd384b6584b749b457d350",
+      "usage": "Héro de la landing (mobile, 9:16) : tiers supérieur libre pour le titre",
+      "description": "Le renard assis de face, tête inclinée, sourire en coin, à côté d'une boîte noire vierge ; ombres de feuillage en haut à gauche, filet orange en bas ; tiers supérieur libre.",
+      "alt": "Illustration : notre renard noir aux oreilles et à la queue orange, assis, tête inclinée, à côté d'une boîte noire vierge.",
+      "fil": [
+        [
+          0.0,
+          0.869
+        ],
+        [
+          0.997,
+          0.978
+        ]
+      ],
+      "fil_epaisseur": 0.0093,
+      "fil_couleurs": [
+        "#FD9744",
+        "#FE8B32"
+      ]
+    },
+    "renard-assis": {
+      "fichier": "renard-assis",
+      "fichier_source": "renard-assis.jpg",
+      "nature": "illustration",
+      "format": "4:5",
+      "largeur": 1280,
+      "hauteur": 1600,
+      "largeurs": [
+        480,
+        800,
+        1280
+      ],
+      "variantes": [
+        480,
+        800,
+        1280
+      ],
+      "empreinte_source": "b4df67f712ab1604d27dffbe7fabe6954d3bf59bb7ffe360a9fd8578ebe29fe2",
+      "usage": "Présentation de la mascotte (portrait en pied)",
+      "description": "Portrait en pied du renard assis de face : pelage noir, plastron et museau crème, grands yeux ambrés, pointes des oreilles et bout de l'unique queue orange vif ; papier crème, ombres de feuillage, filet orange en bas.",
+      "alt": "Illustration : notre renard mascotte assis de face, pelage noir, plastron crème, grands yeux ambrés et sourire en coin ; les pointes de ses oreilles et le bout de sa queue sont orange vif.",
+      "fil": [
+        [
+          0.0,
+          0.877
+        ],
+        [
+          0.909,
+          1.0
+        ]
+      ],
+      "fil_epaisseur": 0.0136,
+      "fil_couleurs": [
+        "#FDA75C",
+        "#FE9645"
+      ]
+    },
+    "renard-couche": {
+      "fichier": "renard-couche",
+      "fichier_source": "renard-couche.jpg",
+      "nature": "illustration",
+      "format": "4:5",
+      "largeur": 1280,
+      "hauteur": 1600,
+      "largeurs": [
+        480,
+        800,
+        1280
+      ],
+      "variantes": [
+        480,
+        800,
+        1280
+      ],
+      "empreinte_source": "77db95fffd6afc43f1a71f1b81492cea7e28845cf72963222d8f29fe1f066a64",
+      "usage": "Pages « Inscription reçue » et « Inscription confirmée » (merci, confirmation)",
+      "description": "Le renard couché, la queue enroulée devant lui, regard malicieux et sourire en coin ; papier crème, ombres de feuillage, filet orange en bas.",
+      "alt": "Illustration : notre renard couché, la queue orange enroulée devant lui, nous regarde d'un air malicieux.",
+      "fil": [
+        [
+          0.0,
+          0.875
+        ],
+        [
+          0.963,
+          1.0
+        ]
+      ],
+      "fil_epaisseur": 0.0154,
+      "fil_couleurs": [
+        "#FDA353",
+        "#FE9641"
+      ]
+    },
+    "renard-jour-de-drop": {
+      "fichier": "renard-jour-de-drop",
+      "fichier_source": "renard-jour-de-drop.jpg",
+      "nature": "illustration",
+      "format": "16:9",
+      "largeur": 1920,
+      "hauteur": 1086,
+      "largeurs": [
+        640,
+        960,
+        1280,
+        1920
+      ],
+      "variantes": [
+        640,
+        960,
+        1280,
+        1920
+      ],
+      "empreinte_source": "a26fe78da46e1fe0f8dd2321ce7c1f95f1262c33f4c4a4f356221de5d2ede46f",
+      "usage": "Chapitre « Le jour du drop », toujours légendé : la boîte ouverte est un symbole du drop, jamais un produit ouvert (il n'en sort qu'une lumière, aucune carte illustrée)",
+      "description": "Le renard, à quatre pattes, soulève de la patte le couvercle d'une boîte noire vierge d'où sort une lumière dorée (symbole du drop : aucun contenu visible, aucune carte illustrée) ; cartes noires vierges au sol, étuis transparents vierges à droite ; filet orange en bas à gauche.",
+      "alt": "Illustration : notre renard, ravi, soulève de la patte le couvercle d'une boîte noire vierge, symbole du drop, d'où sort une lumière dorée.",
+      "fil": [
+        [
+          0.0,
+          0.795
+        ],
+        [
+          0.794,
+          1.0
+        ]
+      ],
+      "fil_epaisseur": 0.02,
+      "fil_couleurs": [
+        "#F9A048",
+        "#FD8936"
+      ]
+    },
+    "renard-reservation": {
+      "fichier": "renard-reservation",
+      "fichier_source": "renard-reservation.jpg",
+      "nature": "illustration",
+      "format": "4:5",
+      "largeur": 1152,
+      "hauteur": 1440,
+      "largeurs": [
+        480,
+        800,
+        1152
+      ],
+      "variantes": [
+        480,
+        800,
+        1152
+      ],
+      "empreinte_source": "97d687f20d5a33005bd3073b94381d9d7aedf97f902e2c09d9b31a709a0b819b",
+      "usage": "Chapitre « Réservation garantie » et maquettes",
+      "description": "Le renard assis garde d'une patte une pile de boîtes noires vierges à bande orange (quatre, la dernière en partie cachée par sa queue) et fait un clin d'œil ; papier crème, ombres de feuillage.",
+      "alt": "Illustration : notre renard fait un clin d'œil en gardant d'une patte une pile de boîtes noires vierges à bande orange.",
+      "fil": null,
+      "fil_epaisseur": null,
+      "fil_couleurs": null
+    },
+    "renard-alertes": {
+      "fichier": "renard-alertes",
+      "fichier_source": "renard-alertes.jpg",
+      "nature": "illustration",
+      "format": "16:9",
+      "largeur": 1920,
+      "hauteur": 1086,
+      "largeurs": [
+        640,
+        960,
+        1280,
+        1920
+      ],
+      "variantes": [
+        640,
+        960,
+        1280,
+        1920
+      ],
+      "empreinte_source": "eced4fec13dbd9ef288e76bfd5fb94cfb6643cdf1eab1772f913a730d9c5928f",
+      "usage": "Chapitre « Alertes » et formulaire : renard à gauche, droite libre",
+      "description": "Le renard assis à gauche, oreilles dressées, lève les yeux, attentif ; grand mur crème libre à droite ; filet orange en bas à gauche.",
+      "alt": "Illustration : notre renard assis, oreilles dressées, lève les yeux, attentif.",
+      "fil": [
+        [
+          0.0,
+          0.908
+        ],
+        [
+          0.483,
+          1.0
+        ]
+      ],
+      "fil_epaisseur": 0.0101,
+      "fil_couleurs": [
+        "#FBA45A",
+        "#FE9144"
+      ]
+    },
+    "renard-classeur": {
+      "fichier": "renard-classeur",
+      "fichier_source": "renard-classeur.jpg",
+      "nature": "illustration",
+      "format": "16:9",
+      "largeur": 1728,
+      "hauteur": 977,
+      "largeurs": [
+        640,
+        960,
+        1280,
+        1728
+      ],
+      "variantes": [
+        640,
+        960,
+        1280,
+        1728
+      ],
+      "empreinte_source": "abc6d2949eedf526f1a32a17bd92870613941316fa6de325d803f137c3c910e2",
+      "usage": "Chapitre « Collection » et formats prévus (jamais à côté de la carte « Accessoires »)",
+      "description": "Vu de dessus, le renard passe la tête au-dessus d'un classeur ouvert rempli de cartes vierges crème, grises et orange ; tasse de café et crayon sur le papier crème, ombres de feuillage.",
+      "alt": "Illustration : notre renard passe la tête au-dessus d'un classeur ouvert rempli de cartes vierges.",
+      "fil": null,
+      "fil_epaisseur": null,
+      "fil_couleurs": null
+    },
+    "renard-leman": {
+      "fichier": "renard-leman",
+      "fichier_source": "renard-leman.jpg",
+      "nature": "illustration",
+      "format": "21:9",
+      "largeur": 2688,
+      "hauteur": 1152,
+      "largeurs": [
+        640,
+        960,
+        1280,
+        1920,
+        2688
+      ],
+      "variantes": [
+        640,
+        960,
+        1280,
+        1920,
+        2688
+      ],
+      "empreinte_source": "625439573e96105156d766d24f605e295c8d9bbd30560281f3a1f00bd17ce4b6",
+      "usage": "Chapitre « Expédié depuis Genève »",
+      "description": "Le renard assis sur un quai en pierre de Genève, au matin, regarde vers le Jet d'eau ; lac, vieille ville et Alpes enneigées dans la brume ; cordage orange autour d'une bitte d'amarrage à droite.",
+      "alt": "Illustration : notre renard assis sur un quai de Genève, avec le Jet d'eau, le lac et les Alpes dans la lumière du matin.",
+      "fil": [
+        [
+          0.852,
+          0.845
+        ],
+        [
+          0.836,
+          0.862
+        ]
+      ],
+      "fil_epaisseur": 0.03,
+      "fil_couleurs": [
+        "#BE4814",
+        "#D8622A"
+      ]
+    },
+    "renard-pied-de-page": {
+      "fichier": "renard-pied-de-page",
+      "fichier_source": "renard-pied-de-page.jpg",
+      "nature": "illustration",
+      "format": "21:9",
+      "largeur": 2688,
+      "hauteur": 1152,
+      "largeurs": [
+        640,
+        960,
+        1280,
+        1920,
+        2688
+      ],
+      "variantes": [
+        640,
+        960,
+        1280,
+        1920,
+        2688
+      ],
+      "empreinte_source": "f7d793ff3879463014285c9dc5c1d6dcb88fea3e0f3c50e8d74fede186019575",
+      "usage": "Pied de page (décor, texte alternatif vide)",
+      "description": "Le renard dort roulé en boule contre une boîte noire vierge, la queue orange sous le museau ; filet orange en diagonale en bas ; moitié gauche libre.",
+      "alt": "",
+      "decoratif": true,
+      "fil": [
+        [
+          0.0,
+          0.793
+        ],
+        [
+          0.999,
+          0.993
+        ]
+      ],
+      "fil_epaisseur": 0.0138,
+      "fil_couleurs": [
+        "#F79B5C",
+        "#FD893D"
+      ]
+    },
+    "photo-boite-etuis": {
+      "fichier": "photo-boite-etuis",
+      "fichier_source": "photo-boite-etuis.webp",
+      "nature": "photo",
+      "format": "16:9",
+      "largeur": 2000,
+      "hauteur": 1131,
+      "largeurs": [
+        640,
+        960,
+        1280,
+        2000
+      ],
+      "variantes": [
+        640,
+        960,
+        1280,
+        2000
+      ],
+      "empreinte_source": "6c3cb4130554ab1968710c3ec83e9e271b63cd154d97821aa21732a045bcd5af",
+      "usage": "Photo d'ambiance (atelier) : intermèdes et chapitres ; jamais à côté d'un format, d'un prix ou d'un statut",
+      "description": "Photo d'ambiance du propriétaire : une boîte noire mate, une pile d'étuis rigides transparents et trois cartes noires, tous vierges, sur un papier crème ; ombres de feuillage à gauche, filet orange en bas.",
+      "alt": "Photo d'ambiance : une boîte noire, des étuis transparents et des cartes vierges sur un papier crème, dans la lumière d'une fenêtre.",
+      "fil": [
+        [
+          0.0,
+          0.918
+        ],
+        [
+          0.998,
+          0.918
+        ]
+      ],
+      "fil_epaisseur": 0.0389,
+      "fil_couleurs": [
+        "#F4722D",
+        "#E76622"
+      ]
+    },
+    "photo-mains-sleeve": {
+      "fichier": "photo-mains-sleeve",
+      "fichier_source": "photo-mains-sleeve.webp",
+      "nature": "photo",
+      "format": "4:5",
+      "largeur": 1600,
+      "hauteur": 2000,
+      "largeurs": [
+        480,
+        800,
+        1200,
+        1600
+      ],
+      "variantes": [
+        480,
+        800,
+        1200,
+        1600
+      ],
+      "empreinte_source": "c4edec439acad9809b8478e59d37928b86f2a46320eb11afb3bb350a0ee30c1a",
+      "usage": "Photo d'ambiance (geste du collectionneur) ; jamais pour illustrer un service de cartes à l'unité ni le contrôle à réception",
+      "description": "Photo d'ambiance du propriétaire : deux mains glissent une carte grise vierge dans une pochette transparente, à côté d'un étui rigide vierge ; papier crème, filet orange en diagonale en haut à gauche.",
+      "alt": "Photo d'ambiance : deux mains glissent une carte vierge dans une pochette transparente.",
+      "fil": [
+        [
+          0.0,
+          0.253
+        ],
+        [
+          0.517,
+          0.148
+        ]
+      ],
+      "fil_epaisseur": 0.0102,
+      "fil_couleurs": [
+        "#F17223",
+        "#EF6F1C"
+      ]
+    },
+    "photo-classeur": {
+      "fichier": "photo-classeur",
+      "fichier_source": "photo-classeur.webp",
+      "nature": "photo",
+      "format": "3:2",
+      "largeur": 2000,
+      "hauteur": 1328,
+      "largeurs": [
+        640,
+        960,
+        1280,
+        2000
+      ],
+      "variantes": [
+        640,
+        960,
+        1280,
+        2000
+      ],
+      "empreinte_source": "9e0e40a21635e85f0112f02b43b900dd87670a6bf01f0014ab45928ec73315ed",
+      "usage": "Photo d'ambiance (collection) ; jamais à côté de la carte « Accessoires »",
+      "description": "Photo d'ambiance du propriétaire, vue de dessus : un classeur noir ouvert, pages de pochettes remplies de cartes vierges crème, grises et une orange ; plante, tasse, crayon et carnet sur le papier crème.",
+      "alt": "Photo d'ambiance : un classeur ouvert rempli de cartes vierges, vu de dessus, sur un bureau clair.",
+      "fil": null,
+      "fil_epaisseur": null,
+      "fil_couleurs": null
+    }
+  }
+}

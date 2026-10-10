@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 111 154" width="111mm" height="154mm" role="img" aria-labelledby="titre desc">
+  <title id="titre">Carte de remerciement A6 verso — direction B — Quai des Cartes</title>
+  <desc id="desc">Fichier d'impression en millimètres. Fond perdu inclus (voir NOTE_CHIFFRAGE.md). Le calque DECOUPE_ne_pas_imprimer indique la coupe. Convertir les textes en contours et vérifier le profil couleur demandé par l'imprimeur avant envoi (BAT obligatoire).</desc>
+  <rect id="FOND_PERDU" width="111" height="154" fill="#FFFFFF"/>
+  <text x="11" y="22" font-family="'Bricolage Grotesque', 'Trebuchet MS', Arial, sans-serif" font-size="6.4" font-weight="800" fill="#0B0B12">tout est conforme ?</text>
+  <text x="11" y="31" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="3.8" font-weight="600" fill="#0B0B12">À réception, vérifiez :</text>
+  <rect x="11" y="33.9" width="2.8" height="2.8" rx="0.6" fill="none" stroke="#0B0B12" stroke-width="0.3"/>
+  <text x="15.2" y="36.6" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="3.8" font-weight="400" fill="#0B0B12">la langue (FR) et l'extension</text>
+  <rect x="11" y="39.5" width="2.8" height="2.8" rx="0.6" fill="none" stroke="#0B0B12" stroke-width="0.3"/>
+  <text x="15.2" y="42.2" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="3.8" font-weight="400" fill="#0B0B12">le format et la quantité</text>
+  <rect x="11" y="45.1" width="2.8" height="2.8" rx="0.6" fill="none" stroke="#0B0B12" stroke-width="0.3"/>
+  <text x="15.2" y="47.8" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="3.8" font-weight="400" fill="#0B0B12">l'emballage scellé intact</text>
+  <text x="11" y="57.4" font-family="'Bricolage Grotesque', 'Trebuchet MS', Arial, sans-serif" font-size="6.4" font-weight="800" fill="#0B0B12">un souci ?</text>
+  <text x="11" y="65.4" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="3.8" font-weight="400" fill="#0B0B12">Écrivez-nous sous {{DELAI_SIGNALEMENT}}</text>
+  <text x="11" y="71" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="3.8" font-weight="400" fill="#0B0B12">avec votre n° de commande et une photo :</text>
+  <text x="11" y="76.6" font-family="'Space Grotesk', 'DM Sans', Arial, sans-serif" font-size="3.8" font-weight="600" fill="#0B0B12">{{EMAIL_SUPPORT}}</text>
+  <text x="11" y="82.2" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="3.8" font-weight="400" fill="#0B0B12">Retours : {{URL_RETOURS}}</text>
+  <text x="11" y="91.8" font-family="'Bricolage Grotesque', 'Trebuchet MS', Arial, sans-serif" font-size="6.4" font-weight="800" fill="#0B0B12">protéger vos cartes</text>
+  <text x="11" y="99.8" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="3.8" font-weight="400" fill="#0B0B12">Pochettes de protection + classeur,</text>
+  <text x="11" y="105.4" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="3.8" font-weight="400" fill="#0B0B12">à l'abri de l'humidité et du soleil.</text>
+  <rect x="11" y="121" width="89" height="0.3" fill="#83839A"/>
+  <text x="11" y="127" font-family="'Space Grotesk', 'DM Sans', Arial, sans-serif" font-size="3.6" font-weight="600" fill="#0B0B12">Commande n° ____________</text>
+  <text x="11" y="134" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="2.9" font-weight="400" fill="#545466">Boutique indépendante, sans lien officiel avec les éditeurs</text>
+  <text x="11" y="137.8" font-family="'DM Sans', 'Helvetica Neue', Arial, sans-serif" font-size="2.9" font-weight="400" fill="#545466">des jeux vendus. {{RAISON_SOCIALE}} · {{ADRESSE}}</text>
+  <g id="DECOUPE_ne_pas_imprimer" fill="none" stroke="#FF00FF" stroke-width="0.15">
+    <rect x="3" y="3" width="105" height="148"/>
+  </g>
+</svg>

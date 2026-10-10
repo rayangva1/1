@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920" role="img" aria-labelledby="titre desc">
+  <title id="titre">Guide zones sûres 9x16</title>
+  <desc id="desc">Calque guide, ne pas publier. Valeurs indicatives au 4 octobre 2026.</desc>
+  <rect width="1080" height="1920" fill="#FFFFFF"/>
+  <rect width="1080" height="250" fill="#B42318" fill-opacity="0.18"/>
+  <rect y="1580" width="1080" height="340" fill="#B42318" fill-opacity="0.18"/>
+  <text x="540" y="140" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#111111" text-anchor="middle">Réservé interface (≈ 250 px)</text>
+  <text x="540" y="1760" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#111111" text-anchor="middle">Réservé interface / légende (≈ 340 px)</text>
+  <rect x="64" y="250" width="952" height="1330" fill="none" stroke="#111111" stroke-width="4" stroke-dasharray="16 10"/>
+  <text x="540" y="960" font-family="Arial, sans-serif" font-size="44" font-weight="700" fill="#111111" text-anchor="middle">Zone sûre indicative 9x16</text>
+  <text x="540" y="1020" font-family="Arial, sans-serif" font-size="28" font-weight="400" fill="#111111" text-anchor="middle">À revérifier sur chaque plateforme au moment de produire (BP §8)</text>
+</svg>

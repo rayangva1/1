@@ -1,0 +1,25 @@
+Objet : Vos alertes {{NOM_BOUTIQUE}} sont actives
+
+VOS ALERTES SONT ACTIVES
+
+{{ $json.salutation }}
+
+Merci d'avoir confirmé. Voici ce que vous recevrez :
+
+- l'alerte d'ouverture de la boutique, quand les produits sont reçus et contrôlés ;
+- les alertes de stock local pour : {{ $json.formats_choisis }} ;
+- au plus un email récapitulatif par semaine, seulement s'il y a quelque chose d'utile.
+
+> Nos règles. « Stock local » : le produit est chez nous, à Genève. « Précommande » : seulement quand la quantité nous est confirmée par écrit. Aucune fausse urgence, aucune promesse de carte rare ni de valeur.
+
+Modifier mes préférences : {{ $json.url_preferences }}
+
+Pour commencer : ETB ou display, lequel choisir ? : {{ $json.url_guide }}
+
+--
+Une question ? Répondez à cet email ou écrivez à {{EMAIL_SUPPORT}}.
+{{RAISON_SOCIALE}} · {{ADRESSE_POSTALE}}
+Boutique indépendante, sans lien officiel avec les éditeurs des jeux vendus.
+Vous recevez cet email parce que cette adresse est inscrite à nos alertes (inscription confirmée le {{ $json.date_consentement }}).
+Modifier mes préférences : {{ $json.url_preferences }} · Me désinscrire en un clic : {{ $json.url_desinscription }}
+Confidentialité : {{URL_CONFIDENTIALITE}}

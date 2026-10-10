@@ -1,0 +1,70 @@
+/*
+ * Ambiance « Atelier (lumière de fenêtre, papier crème, charbon mat et un fil orange ; bâtie sur la direction A) » — Quai des Cartes (nom de travail, non validé)
+ * FICHIER GÉNÉRÉ par docs/05-da/tools/generer_da.py depuis tokens.json — ne pas éditer à la main.
+ * À charger APRÈS tokens.css ; s'active avec data-ambiance="atelier" et data-da="a" sur <html>.
+ * Toujours claire : aucun mode sombre (contrastes calculés dans DIRECTION_ATELIER.md).
+ * Polices Google Fonts : URL dans tokens.json > ambiances > googleFonts.
+ */
+:root[data-ambiance="atelier"][data-da] {
+  color-scheme: light;
+  --da-font-display: "Geist", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --da-font-accent: "Instrument Serif", "Times New Roman", Georgia, serif;
+  --da-font-text: "Geist", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --da-font-price: "Geist Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --da-title-weight: 560;
+  --da-title-transform: none;
+  --da-title-tracking: -0.035em;
+  --da-title-stretch: 100%;
+  --da-radius-sm: 2px;
+  --da-radius-md: 4px;
+  --da-radius-lg: 8px;
+  --da-radius-pill: 999px;
+  --da-border-width: 1px;
+  --da-shadow-card: 0 1px 2px rgba(29, 27, 25, 0.05), 0 18px 40px -24px rgba(29, 27, 25, 0.28);
+  --da-shadow-raised: 0 2px 6px rgba(29, 27, 25, 0.06), 0 40px 80px -40px rgba(29, 27, 25, 0.35);
+  --da-display-xl: clamp(3.25rem, 1.4rem + 7.6vw, 9.5rem);
+  --da-display-l: clamp(2.5rem, 1.3rem + 4.6vw, 6rem);
+  --da-surtitre-taille: 0.75rem;
+  --da-largeur-max: 1360px;
+  --da-largeur-texte: 38rem;
+  --da-marge-page: clamp(20px, 5vw, 80px);
+  --da-espace-section: clamp(96px, 14vw, 208px);
+  --da-fil-epaisseur: 2px;
+  --da-duree-apparition: 800ms;
+  --da-courbe-douce: cubic-bezier(0.22, 1, 0.36, 1);
+  --da-color-bg: #EFEAE1;
+  --da-color-surface: #F8F5EF;
+  --da-color-surface-alt: #E4DED3;
+  --da-color-ink: #1D1B19;
+  --da-color-ink-muted: #5D5750;
+  --da-color-on-ink: #F8F5EF;
+  --da-color-line: #D8D1C5;
+  --da-color-line-strong: #7A7268;
+  --da-color-accent: #F26A1B;
+  --da-color-on-accent: #1D1B19;
+  --da-color-accent-text: #A6420C;
+  --da-color-accent-soft: #FBE3D2;
+  --da-color-focus: #1D1B19;
+  --da-color-error: #B42318;
+  --da-color-status-local-bg: #F8F5EF;
+  --da-color-status-local-fg: #1D1B19;
+  --da-color-status-preorder-bg: #E4DED3;
+  --da-color-status-preorder-fg: #1D1B19;
+  --da-color-status-new-bg: #F26A1B;
+  --da-color-status-new-fg: #1D1B19;
+  --da-color-status-out-bg: #E4DED3;
+  --da-color-status-out-fg: #5D5750;
+  --da-color-status-restock-bg: #FBE3D2;
+  --da-color-status-restock-fg: #1D1B19;
+  --da-color-lang-fr-bg: #1D1B19;
+  --da-color-lang-fr-fg: #F8F5EF;
+  --da-color-papier-chaud: #F1E4D3;
+  --da-color-ombre: #DDD5C8;
+  --da-color-inverse-bg: #1D1B19;
+  --da-color-inverse-surface: #2A2724;
+  --da-color-inverse-ink: #EFEAE1;
+  --da-color-inverse-muted: #B8AFA4;
+  --da-color-inverse-line: #4A453F;
+  --da-color-inverse-accent: #F26A1B;
+  --da-color-inverse-focus: #EFEAE1;
+}

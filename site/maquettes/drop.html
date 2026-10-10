@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="fr-CH" data-da="a" data-ambiance="atelier">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!--
+    MAQUETTE (non publiée) — page d'un drop FICTIF, ambiance « Atelier » (docs/05-da/DIRECTION_ATELIER.md) : le héro
+    charbon montre l'emplacement de la PHOTO RÉELLE du produit (jamais une illustration) ; Braise (nom provisoire)
+    n'apparaît que dans l'explication du déroulement, jamais dans une section qui porte le titre du produit ou ses prix.
+    Réutilise les feuilles de la landing (site/landing/). Produit, prix et dates FICTIFS ; statut limité à « Réservations
+    ouvertes / fermées » (moteur) ; aucun minuteur, aucun nombre d'unités. Contrôlée par site/outils/verifier_site.py.
+  -->
+  <meta name="robots" content="noindex, nofollow">
+  <title>Maquette FICTIVE — page d'un drop — Quai des Cartes</title>
+  <meta name="description" content="Maquette interne de la page d'un drop (réservation garantie puis vente au prix du drop) : produit, prix et dates FICTIFS, jamais publiée.">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="../landing/assets/da/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&amp;family=Geist+Mono:wght@400..600&amp;family=Instrument+Serif:ital@0;1&amp;display=swap">
+  <link rel="stylesheet" href="../landing/assets/da/tokens.css">
+  <link rel="stylesheet" href="../landing/assets/da/components.css">
+  <link rel="stylesheet" href="../landing/assets/da/ambiance.css">
+  <link rel="stylesheet" href="../landing/css/landing.css">
+  <script src="../landing/js/theme.js"></script>
+  <script src="../landing/js/atelier.js" defer></script>
+</head>
+<body class="da-root lp-atelier lp-maquette">
+  <a class="lp-evitement" href="#contenu">Aller au contenu</a>
+  <aside class="lp-apercu lp-apercu--maquette" aria-label="Maquette">
+    <p><strong>Maquette FICTIVE, ne pas publier.</strong> Drop, produit, prix et dates inventés pour montrer la page d'un drop. Les vrais statuts et prix viennent du moteur.</p>
+  </aside>
+  <header class="lp-entete" id="entete">
+    <div class="lp-cadre lp-entete__inner">
+      <a class="lp-logo" href="../landing/index.html"><img class="lp-logo__img" src="../landing/assets/da/logo-horizontal.svg" alt="Quai des Cartes" width="1083" height="140"></a>
+      <div class="lp-entete__actions">
+        <button type="button" class="lp-animations" id="lp-animations" data-pause-animations aria-pressed="false" title="Pause des animations" hidden>
+          <svg class="lp-animations__pause" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M9 6v12M15 6v12"/></svg>
+          <svg class="lp-animations__lecture" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5.5v13l11-6.5z"/></svg>
+          <span class="lp-animations__texte">Pause des animations</span>
+        </button>
+        <a class="da-btn lp-btn lp-btn--plein lp-entete__cta" href="fiche-produit.html">La fiche</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="contenu">
+    <section class="lp-chapitre--charbon lp-drop-hero" aria-labelledby="titre-drop">
+      <div class="lp-cadre lp-grille lp-drop-hero__grille">
+        <div class="lp-drop-hero__photo">
+          <div class="da-photo" role="img" aria-label="Emplacement : photo réelle du produit scellé, face avant">Photo réelle du produit scellé<br>(face avant, langue visible)<br><span class="lp-fictif">À remplacer</span></div>
+        </div>
+        <div class="lp-drop-hero__texte">
+          <p class="lp-surtitre">Drop FICTIF · maquette</p>
+          <h1 id="titre-drop" class="da-title lp-hero__titre">Coffret Dresseur d'élite, <em class="lp-accent">Extension FICTIVE</em></h1>
+          <dl class="lp-drop-statut">
+            <div><dt>Statut</dt><dd><span class="da-badge da-badge--reservation"><svg class="da-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5L16 9"/></svg>Réservations ouvertes</span> <span class="lp-fictif">FICTIF</span></dd></div>
+            <div><dt>Drop</dt><dd><span class="lp-drop-statut__date">20.11.2026</span> (date estimée) <span class="lp-fictif">FICTIF</span></dd></div>
+          </dl>
+          <p>Réservez avec garantie pour être servi en premier et expédié dès réception, ou attendez le drop pour acheter au prix du drop, s'il reste des unités. Les deux prix sont sur la fiche.</p>
+          <div class="lp-actions">
+            <a class="da-btn lp-btn lp-btn--clair" href="fiche-produit.html">Voir la fiche et les deux prix</a>
+            <a class="lp-lien-fleche" href="../landing/index.html#alertes">Activer l'alerte</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="lp-chapitre lp-formats" aria-labelledby="titre-chrono">
+      <div class="lp-cadre">
+        <div class="lp-grille lp-drop-deroule">
+          <div class="lp-entete-section" data-apparition>
+            <p class="lp-numero"><span class="lp-numero__chiffre">01</span> Comment se passe ce drop</p>
+            <h2 id="titre-chrono" class="da-title lp-h2">Trois moments, <em class="lp-accent">aucune course</em>.</h2>
+            <p class="lp-intro">Pas de minuteur, pas de nombre d'unités : un statut et une date estimée, mis à jour si la date change.</p>
+          </div>
+          <figure class="lp-drop-deroule__image" data-apparition>
+            <div class="lp-media lp-media--fondu"><img alt="Illustration : notre renard assis, oreilles dressées, lève les yeux, attentif." sizes="(min-width: 900px) 40vw, 92vw" loading="lazy" decoding="async" data-visuel="renard-alertes" src="../landing/assets/visuels/renard-alertes-1280.webp" width="1920" height="1086" srcset="../landing/assets/visuels/renard-alertes-640.webp 640w, ../landing/assets/visuels/renard-alertes-960.webp 960w, ../landing/assets/visuels/renard-alertes-1280.webp 1280w, ../landing/assets/visuels/renard-alertes-1920.webp 1920w" data-fil="0 0.908 0.483 1" data-fil-ep="0.0101" data-fil-couleurs="#FBA45A #FE9144"></div>
+            <figcaption class="lp-note">Illustration : Braise (nom provisoire), création originale pour la boutique, ne représente pas ce produit.</figcaption>
+          </figure>
+        </div>
+        <ol class="lp-chrono">
+          <li class="lp-chrono__etape" data-apparition>
+            <span class="lp-etapes__num" aria-hidden="true">01</span>
+            <h3 class="lp-h3">Réservations ouvertes</h3>
+            <p>D'abord pour les personnes inscrites aux alertes de ce produit, puis pour tout le monde. Réservations ouvertes depuis le 06.11.2026 <span class="lp-fictif">FICTIF</span>.</p>
+          </li>
+          <li class="lp-chrono__etape" data-apparition>
+            <span class="lp-etapes__num" aria-hidden="true">02</span>
+            <h3 class="lp-h3">Réception à Genève</h3>
+            <p>Contrôle de chaque produit sans l'ouvrir : film, langue, extension. Les réservations garanties sont préparées en premier et partent dès réception.</p>
+          </li>
+          <li class="lp-chrono__etape" data-apparition>
+            <span class="lp-etapes__num" aria-hidden="true">03</span>
+            <h3 class="lp-h3">Le jour du drop</h3>
+            <p>Le 20.11.2026 (date estimée) <span class="lp-fictif">FICTIF</span> : mise en vente au prix du drop, en « Stock local », s'il reste des unités.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="lp-chapitre lp-reservation" aria-labelledby="titre-explication">
+      <div class="lp-cadre lp-grille lp-histoire">
+        <div class="lp-histoire__texte lp-histoire__texte--seul" data-apparition>
+          <p class="lp-numero"><span class="lp-numero__chiffre">02</span> La réservation garantie</p>
+          <h2 id="titre-explication" class="da-title lp-h2 lp-h2--petit">Deux prix, <em class="lp-accent">côte à côte</em>.</h2>
+          <div class="lp-deux-prix">
+            <div class="lp-deux-prix__bloc lp-deux-prix__bloc--resa">
+              <p class="lp-deux-prix__libelle">Réservation garantie</p>
+              <p class="lp-deux-prix__montant"><span class="da-price">CHF 69.90</span> <span class="lp-fictif">FICTIF</span></p>
+              <p class="lp-deux-prix__detail">Prix du drop + supplément (au plus 10&nbsp;%)</p>
+            </div>
+            <div class="lp-deux-prix__bloc">
+              <p class="lp-deux-prix__libelle">Au drop</p>
+              <p class="lp-deux-prix__montant"><span class="da-price">CHF 64.90</span> <span class="lp-fictif">FICTIF</span></p>
+              <p class="lp-deux-prix__detail">S'il reste des unités</p>
+            </div>
+          </div>
+          <div class="lp-garantie">
+            <p class="lp-garantie__texte">Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit.</p>
+            <p class="lp-garantie__texte lp-garantie__texte--limite">Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.</p>
+          </div>
+          <p class="lp-note">Si nous ne pouvons pas vous servir (par exemple si nous recevons moins d'unités que prévu), nous vous remboursons intégralement, supplément compris, ainsi que les frais de livraison payés pour la réservation, et nous vous prévenons par email. Pas de garantie de livraison le jour du drop.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="lp-chapitre lp-faq-zone" aria-labelledby="titre-faq-drop">
+      <div class="lp-cadre lp-grille">
+        <div class="lp-faq-intro" data-apparition>
+          <p class="lp-numero"><span class="lp-numero__chiffre">03</span> Questions</p>
+          <h2 id="titre-faq-drop" class="da-title lp-h2">Le drop, <em class="lp-accent">en clair</em>.</h2>
+        </div>
+        <div class="lp-faq" data-apparition>
+          <details>
+            <summary>Pourquoi deux prix ?</summary>
+            <p>Le supplément pré-drop paie la garantie d'être servi en premier et expédié dès réception du stock, pas le produit. Pas besoin de garantie ? Attendez le drop : même produit, au prix du drop, s'il en reste.</p>
+          </details>
+          <details>
+            <summary>Si des unités restent au drop, suis-je remboursé de la différence ?</summary>
+            <p>Non. Aucun remboursement de la différence avec le prix du drop, même s'il reste des unités au drop.</p>
+          </details>
+          <details>
+            <summary>Et si la date du drop change ?</summary>
+            <p>Nous vous prévenons et la date de la fiche est mise à jour ; votre réservation reste servie en premier. Au-delà du report prévu par nos conditions, vous pouvez annuler et être remboursé intégralement, supplément compris.</p>
+          </details>
+          <details>
+            <summary>Et si vous recevez moins d'unités que prévu ?</summary>
+            <p>Les réservations garanties sont servies en premier, dans l'ordre de leur paiement. Les personnes que nous ne pouvons pas servir sont remboursées intégralement, supplément compris, et prévenues par email.</p>
+          </details>
+          <details>
+            <summary>Combien de réservations puis-je faire ?</summary>
+            <p>La limite est affichée sur la fiche : elle s'entend par foyer, toutes commandes confondues (dans cette maquette : 1, valeur FICTIVE).</p>
+          </details>
+          <details>
+            <summary>Puis-je obtenir une carte précise ?</summary>
+            <p>Non. Le contenu des boosters est aléatoire : aucune carte précise, aucune rareté et aucune valeur de revente ne sont garanties.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="lp-pied lp-pied--simple">
+    <div class="lp-pied__charbon">
+      <div class="lp-cadre lp-pied__legal">
+        <p class="lp-pied__mention" id="mention-independance">Quai des Cartes est une boutique indépendante. Elle n'est ni affiliée, ni sponsorisée, ni approuvée par The Pokémon Company, Nintendo, Creatures Inc. ou GAME FREAK inc. Pokémon et les noms associés sont des marques de leurs titulaires respectifs ; nous les utilisons uniquement pour désigner les produits authentiques que nous revendons.</p>
+        <p>Maquette interne : exploitant, conditions et prix réels sur la boutique publiée.</p>
+        <p><a href="../landing/index.html">Accueil</a> · <a href="../landing/confidentialite.html">Déclaration de confidentialité</a> <button type="button" class="lp-lien-bouton" data-pause-animations aria-pressed="false" hidden>Pause des animations</button></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
