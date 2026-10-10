@@ -46,6 +46,7 @@ OWNED_MD = {
         "QUESTIONNAIRE.md",
         "PROTOCOLE_LANDING_TEST.md",
         "ASSORTIMENT_PILOTE.md",
+        "RELEVES_MAGASIN.md",
         "README.md",
     ),
     "SOURCING": ("DOSSIER_B2B.md", "EMAILS_FOURNISSEURS.md", "CHECKLIST_DUE_DILIGENCE_FOURNISSEUR.md", "README.md"),
@@ -298,6 +299,47 @@ def gtin_valid(code: str) -> bool:
     body, check = digits[:-1], digits[-1]
     total = sum(d * (3 if i % 2 == 0 else 1) for i, d in enumerate(reversed(body)))
     return (10 - total % 10) % 10 == check
+
+
+MAGASIN_HEADER = [
+    "obs_id", "date_obs", "source", "magasin", "ville", "ref_id_proche", "designation_lue", "format",
+    "extension", "langue", "prix_etiquette_chf", "meme_reference", "utilisable_reference_marche",
+    "photo_fichier", "commentaire", "fictif",
+]
+
+
+def check_releves_magasin(path: Path = MARCHE / "RELEVES_MAGASIN.csv") -> list[str]:
+    """Prix d'étiquette en magasin : datés, sourcés, jamais référence marché (pas de port ni d'URL)."""
+    errors: list[str] = []
+    header, rows = read_csv(path)
+    if header != MAGASIN_HEADER:
+        return [f"MAGASIN : en-tête inattendu {header}"]
+    ids = [r["obs_id"] for r in rows]
+    if len(ids) != len(set(ids)):
+        errors.append("MAGASIN : obs_id en double")
+    refs = {r["ref_id"] for r in read_csv(MARCHE / "GRILLE_CONCURRENCE.csv")[1]}
+    for r in rows:
+        oid = r["obs_id"]
+        if not re.fullmatch(r"MAG-\d{3}", oid):
+            errors.append(f"MAGASIN {oid!r} : identifiant attendu MAG-NNN")
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", r["date_obs"]):
+            errors.append(f"MAGASIN {oid} : date_obs non datée (AAAA-MM-JJ)")
+        if not r["source"].strip():
+            errors.append(f"MAGASIN {oid} : source vide")
+        if r["utilisable_reference_marche"] != "non":
+            errors.append(f"MAGASIN {oid} : un prix magasin n'est jamais une référence marché (§5)")
+        if r["meme_reference"] not in ("oui", "non"):
+            errors.append(f"MAGASIN {oid} : meme_reference {r['meme_reference']!r}")
+        if r["meme_reference"] == "oui" and (r["ref_id_proche"] not in refs or r["langue"] != "FR"):
+            errors.append(f"MAGASIN {oid} : même référence sans ref_id de la grille ou hors FR")
+        if r["ref_id_proche"] and r["ref_id_proche"] not in refs:
+            errors.append(f"MAGASIN {oid} : ref_id_proche {r['ref_id_proche']!r} absent de la grille")
+        price = r["prix_etiquette_chf"].strip()
+        if price and (not re.fullmatch(r"\d+\.\d{2}", price) or Decimal(price) <= 0):
+            errors.append(f"MAGASIN {oid} : prix {price!r} invalide (montant étiquette, 2 décimales)")
+        if r["fictif"] not in ("true", "false"):
+            errors.append(f"MAGASIN {oid} : colonne fictif {r['fictif']!r}")
+    return errors
 
 
 def check_panier(path: Path = SOURCING / "PANIER_PILOTE.csv") -> list[str]:
@@ -746,6 +788,7 @@ ALL_CHECKS = (
     check_backlog,
     check_tracker,
     check_grille,
+    check_releves_magasin,
     check_panier,
     check_assortiment_envelopes,
     check_cross_refs,

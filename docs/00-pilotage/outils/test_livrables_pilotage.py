@@ -57,6 +57,8 @@ def test_expected_files_exist():
             "QUESTIONNAIRE.md",
             "PROTOCOLE_LANDING_TEST.md",
             "ASSORTIMENT_PILOTE.md",
+            "RELEVES_MAGASIN.csv",
+            "RELEVES_MAGASIN.md",
         ],
         v.SOURCING: [
             "DOSSIER_B2B.md",
@@ -205,6 +207,23 @@ def test_grid_accepts_dated_reading(tmp_path):
 
     ok = _rewrite_csv(v.MARCHE / "GRILLE_CONCURRENCE.csv", tmp_path / "G.csv", mutate)
     assert v.check_grille(ok) == []
+
+
+def test_store_prices_never_market_reference(tmp_path):
+    def mutate(rows):
+        rows[0]["utilisable_reference_marche"] = "oui"
+        rows[1].update(meme_reference="oui", ref_id_proche="REF-11")  # ligne EN
+        rows[2].update(prix_etiquette_chf="69.9", date_obs="10.10.2026")
+        rows[3]["ref_id_proche"] = "REF-99"
+        return rows
+
+    bad = _rewrite_csv(v.MARCHE / "RELEVES_MAGASIN.csv", tmp_path / "M.csv", mutate)
+    errors = " | ".join(v.check_releves_magasin(bad))
+    assert "jamais une référence marché" in errors
+    assert "hors FR" in errors
+    assert "prix '69.9' invalide" in errors
+    assert "non datée" in errors
+    assert "REF-99" in errors
 
 
 def test_basket_detects_bad_counts_and_ean(tmp_path):

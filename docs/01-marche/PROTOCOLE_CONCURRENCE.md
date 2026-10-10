@@ -82,6 +82,8 @@ Pour chaque `ref_id` :
 
 > Notre prix public n'inclut pas forcément les frais de livraison. La comparaison se fait sur le **prix total livré** d'une commande d'une unité, notre propre tarif de livraison compris, pour rester à égalité.
 
+> Les prix d'étiquette relevés **en magasin physique** (`RELEVES_MAGASIN.csv`) n'entrent jamais dans cette médiane : pas de port, pas d'URL. Ils servent de plafond de crédibilité et au calcul du prix d'achat maximal (`RELEVES_MAGASIN.md`).
+
 ## 6. Synthèse à produire (une page)
 
 | Indicateur | Valeur |
