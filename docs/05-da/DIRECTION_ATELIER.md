@@ -1,14 +1,14 @@
 # Ambiance « Atelier » (bâtie sur la direction A)
 
 > Direction retenue par le propriétaire le 06.10.2026 : elle **remplace** l'ambiance « Nuit sur le Léman » et la loutre « Lumi » (`DIRECTION_NUIT.md`, archivée). Nom de travail de la boutique : **Quai des Cartes** (non validé). Mascotte : un **renard original**, nom provisoire **Braise** (à valider, §8.5).
-> Sources : `tokens/tokens.json` (bloc `ambiances.atelier`, généré en `tokens/tokens-atelier.css`), les 3 photos du propriétaire et les 10 illustrations du renard (`site/config/visuels.json`), `DIRECTION_A.md` (lettrage, composants), `docs/04-legal/USAGE_MARQUES.md`, BP §7 et §8. Application : `site/landing/` (landing et pages secondaires) et `site/maquettes/`, refaites en Atelier le 10.10.2026 (étape 2), puis corrigées après deux critiques (DA, accessibilité et honnêteté) le même jour : un seul papier, statuts monochromes, héro plein écran, fil qui traverse les illustrations.
+> Sources : `tokens/tokens.json` (bloc `ambiances.atelier`, généré en `tokens/tokens-atelier.css`), les 3 photos du propriétaire et les 10 illustrations du renard (`site/config/visuels.json`), `DIRECTION_A.md` (lettrage, composants), `docs/04-legal/USAGE_MARQUES.md`, BP §7 et §8. Application : `site/landing/` (landing et pages secondaires) et `site/maquettes/`, refaites en Atelier le 10.10.2026 (étape 2), puis corrigées après deux critiques (DA, accessibilité et honnêteté) le même jour : un seul papier, statuts monochromes, héro plein écran, fil qui traverse les illustrations ; derniers constats traités le même jour (HON-02 boîte du drop légendée, A11Y-02 et A11Y-03 textes alternatifs, PERF-01 héro mobile, IP-02 image de partage, IP-03 mascotte générée).
 
 ## 1. Intention
 
 **Un établi de collectionneur, le matin, à Genève.** Du papier crème dans la lumière d'une fenêtre, l'ombre douce d'un feuillage, une boîte noire mate, des étuis transparents — et un seul fil orange qui traverse la scène. C'est la photographie produit « quiet luxury » des photos du propriétaire, transposée en page : éditorial suisse, très grande typographie, beaucoup d'air, presque rien à l'écran sinon ce qui compte.
 
 - **Effet visé** : « le plus beau site de cartes que j'ai vu », sans rien de tape-à-l'œil. La qualité vient de la retenue : un charbon, un papier, un orange ; des marges généreuses ; des images qui respirent.
-- **Fil narratif** : le renard (Braise, nom provisoire) traverse les chapitres. Il attend à côté d'une boîte, se présente, ouvre la boîte le jour du drop, garde les réservations avec un clin d'œil, passe la tête au-dessus d'un classeur, dresse les oreilles pour les alertes, regarde le Jet d'eau depuis le quai, puis s'endort contre une boîte en pied de page.
+- **Fil narratif** : le renard (Braise, nom provisoire) traverse les chapitres. Il attend à côté d'une boîte, se présente, soulève le jour du drop le couvercle d'une boîte symbolique (il n'en sort qu'une lumière), garde les réservations avec un clin d'œil, passe la tête au-dessus d'un classeur, dresse les oreilles pour les alertes, regarde le Jet d'eau depuis le quai, puis s'endort contre une boîte en pied de page.
 - **Signature** : **le fil orange** (§6). Le filet orange posé sur le papier dans les photos devient une ligne continue qui relie les chapitres.
 - **Ce qu'elle n'est pas** : ni personnage, symbole, police ou logo de la licence ; ni jaune et bleu de la licence ; ni effet qui presse l'achat (aucun compte à rebours, aucun « plus que N », aucun stock fictif) ; ni décor « gaming » (néon, holographique, arc-en-ciel).
 
@@ -199,18 +199,19 @@ Visuels de référence : `renard-assis` (pied, face), `renard-couche`, `renard-h
 | **Une seule queue**, touffue, au bout orange | Jamais deux, trois ou neuf queues (→ **Feunard / Ninetales**, le renard à neuf queues **Kurama** de Naruto, **Tails** de Sega) |
 | Corps nu de renard : sa fourrure suffit | **Jamais de gants, de chaussures ni de vêtements** (→ **Tails**, Sega), ni écharpe, ni sac, ni accessoire porté |
 | Plastron crème en V étroit, queue noire au bout **orange**, front noir | **Aucun trait d'Évoli** ni d'un Pokémon : pas de **collerette** crème géante autour du cou, pas de **bout de queue crème**, pas de **mèche frontale** orange ; pas non plus de crinière ou de mèche rouge, ni de maquillage rouge autour des yeux (Zorua, Zoroark) |
+| Oreilles de renard proportionnées, **intérieur des oreilles crème**, l'orange seulement aux **pointes** (sur le bord extérieur) | **Jamais de touffe orange à l'intérieur des oreilles**, ni de très grandes oreilles à touffe orange ou rouge (→ **Feunnec / Fennekin** et **Roussil / Braixen**, renards de la licence aux grandes oreilles à touffe orange intérieure ; Roussil est aussi proche du nom « Braise », §8.5) |
 | Montrer des **boîtes noires, étuis et cartes vierges**, sans logo ni texte | Il **ne tient jamais un produit Pokémon** (vrai ou imité) : aucun booster, display, coffret, carte illustrée, Poké Ball, énergie, type |
 | Narrateur discret : il veille, garde, salue, dort | Lui faire dire « vite », « dernière chance », un prix ou un stock ; l'associer à un compte à rebours |
 | Afficher « Braise (nom provisoire) » tant que le nom n'est pas validé | Le présenter comme un personnage de la licence ou « officiel » |
 
-**Les illustrations n'illustrent jamais un produit vendu** : elles accompagnent un chapitre (drop, réservation, alertes, expédition) et ne remplacent jamais une photo réelle de produit. Les boîtes noires des illustrations sont des symboles (« un produit scellé »), pas un article du catalogue. Les boîtes ne sont jamais ouvertes sur un contenu identifiable (le jour du drop : une lumière, rien d'autre). Sur une page de produit (maquettes), le renard n'est **jamais dans la même section** que le titre du produit ou ses prix, et il est accompagné de la mention « Braise (nom provisoire), création originale de la boutique, ne représente pas ce produit » ; le héro d'une page de drop montre l'emplacement de la photo réelle du produit (contrôlé par `site/tests/test_atelier.py`).
+**Les illustrations n'illustrent jamais un produit vendu** : elles accompagnent un chapitre (drop, réservation, alertes, expédition) et ne remplacent jamais une photo réelle de produit. Les boîtes noires des illustrations sont des symboles (« un produit scellé »), pas un article du catalogue. Les boîtes ne sont jamais ouvertes sur un contenu identifiable (le jour du drop : une lumière, rien d'autre). **Une boîte ouverte dessinée est un symbole du drop, jamais un produit ouvert** : elle est toujours légendée comme telle (« La boîte noire est un symbole du drop, pas un produit ouvert : il n'en sort qu'une lumière, et les cartes posées au sol sont vierges. »), et aucun texte ne dit que Braise ou la boutique « ouvre la boîte » — à réception, les produits scellés sont contrôlés sans être ouverts, et le drop « n'ouvre » qu'une fois le produit à Genève (`site/outils/verifier_site.py` refuse « ouvre la boîte », « ouvrir les produits »… ; `site/tests/test_atelier.py` exige la légende). Sur une page de produit (maquettes), le renard n'est **jamais dans la même section** que le titre du produit ou ses prix, et il est accompagné de la mention « Braise (nom provisoire), création originale pour la boutique, ne représente pas ce produit » ; le héro d'une page de drop montre l'emplacement de la photo réelle du produit (contrôlé par `site/tests/test_atelier.py`).
 
 ### 8.3 Contrôle d'un nouveau visuel (avant import)
 
 1. Quadrupède ? Une seule queue ? Aucun vêtement, gant, chaussure ?
-2. Bout de la queue et pointes des oreilles orange (jamais crème) ? Pas de collerette ni de mèche frontale ?
+2. Bout de la queue et pointes des oreilles orange (jamais crème) ? Pas de collerette ni de mèche frontale ? Intérieur des oreilles crème, **sans touffe orange** (Feunnec / Fennekin, Roussil / Braixen) ? Recherche d'image inversée faite (aucune ressemblance avec un personnage existant) ?
 3. Aucun logo, texte, carte illustrée, symbole ou couleur de la licence ? Boîtes et cartes vierges ?
-4. Description et texte alternatif dans `site/config/visuels.json` sans nom de la licence ni promesse ; `site/outils/visuels.py` refuse une description d'illustration qui évoquerait plusieurs queues, des gants, des vêtements, une posture debout ou un nom de la licence, et exige « vierge » ou « sans marque » dès qu'une boîte, un étui ou une carte est décrit.
+4. Description et texte alternatif dans `site/config/visuels.json` sans nom de la licence ni promesse ; `site/outils/visuels.py` refuse une description d'illustration qui évoquerait plusieurs queues, des gants, des vêtements, une posture debout, une touffe orange ou un nom de la licence (Feunnec, Roussil, Feunard…), et exige « vierge » ou « sans marque » dès qu'une boîte, un étui ou une carte est décrit.
 5. Fichier importé en local (`python site/outils/rapatrier_visuels.py --importer <dossier>`) : jamais servi depuis le service de génération.
 
 ### 8.4 Style et cohérence
@@ -236,11 +237,11 @@ Treize visuels, déclarés dans **un seul fichier** (`site/config/visuels.json` 
 | Clé | Format | Nature | Chapitre |
 |---|---|---|---|
 | `renard-heros` | 21:9, 2688 × 1152 | Illustration | Héro ordinateur (renard à droite, boîte noire et étuis ; moitié gauche libre) |
-| `renard-heros-portrait` | 9:16, 1520 × 2688 | Illustration | Héro mobile (haut libre) |
+| `renard-heros-portrait` | 9:16, 1520 × 2688 | Illustration | Héro mobile (haut libre) ; variantes 480, 760, **1180** (390 et 393 px en densité 3) et 1520 px |
 | `renard-assis` | 4:5, 1280 × 1600 | Illustration | Présentation de la mascotte |
 | `renard-couche` | 4:5, 1280 × 1600 | Illustration | Page merci, confirmation |
-| `renard-jour-de-drop` | 16:9, 1920 × 1086 | Illustration | « Le jour du drop » (il ouvre une boîte noire lumineuse) |
-| `renard-reservation` | 4:5, 1152 × 1440 | Illustration | « Réservation garantie » (clin d'œil, trois boîtes noires à bande orange) |
+| `renard-jour-de-drop` | 16:9, 1920 × 1086 | Illustration | « Le jour du drop » (il soulève le couvercle d'une boîte noire lumineuse : **symbole du drop**, légendé ; il n'en sort qu'une lumière, les cartes au sol sont vierges) |
+| `renard-reservation` | 4:5, 1152 × 1440 | Illustration | « Réservation garantie » (clin d'œil, une pile de boîtes noires vierges à bande orange : quatre, la dernière en partie cachée par la queue) |
 | `renard-alertes` | 16:9, 1920 × 1086 | Illustration | Alertes et formulaire (oreilles dressées à gauche, droite libre) |
 | `renard-classeur` | 16:9, 1728 × 977 | Illustration | Collection et formats (tête au-dessus d'un classeur) |
 | `renard-leman` | 21:9, 2688 × 1152 | Illustration | « Expédié depuis Genève » (quai, Jet d'eau) |
@@ -251,9 +252,10 @@ Treize visuels, déclarés dans **un seul fichier** (`site/config/visuels.json` 
 
 ## 10. Mouvement et accessibilité
 
-- **Un seul geste signature** : le fil orange qui se dessine au défilement (§6), et le tiret de chaque numéro qui se dessine quand le fil l'atteint. Deux mises en scène discrètes, sans minuteur ni compteur : l'illustration du héro se pose (échelle seule, jamais d'opacité : le décor de secours ne transparaît pas) et le Léman recule légèrement au défilement (`animation-timeline: view()`, centré sur la corde). Apparitions sobres (opacité et translation de 16 px, 800 ms, courbe `cubic-bezier(0.22, 1, 0.36, 1)`), aucun rebond, aucune rotation 3D, aucun reflet holographique.
+- **Un seul geste signature** : le fil orange qui se dessine au défilement (§6), et le tiret de chaque numéro qui se dessine quand le fil l'atteint. Deux mises en scène discrètes, sans minuteur ni compteur : l'illustration du héro se pose (échelle seule, `transform` uniquement, jamais d'opacité : le décor de secours ne transparaît pas et l'image principale est peinte dès sa première image, sans retarder le LCP) et le Léman recule légèrement au défilement (`animation-timeline: view()`, centré sur la corde). Apparitions sobres (opacité et translation de 16 px, 800 ms, courbe `cubic-bezier(0.22, 1, 0.36, 1)`), aucun rebond, aucune rotation 3D, aucun reflet holographique.
 - `prefers-reduced-motion: reduce` coupe **toutes** les animations, transitions et effets de défilement ; le bouton « Pause des animations » (discret dans l'en-tête, libellé lu par les lecteurs d'écran, et dans le pied de page ; état mémorisé) met tout en pause pour tout le monde (WCAG 2.2.2), **défilement doux compris** (`scroll-behavior` porté par `<html>`).
 - Sans JavaScript, tout le contenu est visible (les apparitions ne masquent rien sans script) et le fil est entier.
+- Image indisponible : masquée à l'écran (opacité nulle et découpage), **jamais** `visibility: hidden` ni `display: none` : son texte alternatif reste dans l'arbre d'accessibilité, la silhouette de secours étant `aria-hidden` (contrôlé par `site/tests/e2e/atelier.mjs`).
 - Seules l'opacité et les transformations sont animées ; aucun mouvement ne porte d'information (jamais un stock, une date, une urgence).
 
 ## 11. À faire / à ne pas faire
@@ -276,7 +278,7 @@ Treize visuels, déclarés dans **un seul fichier** (`site/config/visuels.json` 
 
 - [ ] **C10 bis** : valider l'ambiance « Atelier » (papier `#EFEAE1`, charbon `#1D1B19`, fil orange `#F26A1B`, rouille `#A6420C` pour les liens) et la retenue des proportions (80 / 15 / 5).
 - [ ] Valider les polices **Geist**, **Instrument Serif**, **Geist Mono** (licence OFL à reconfirmer sur fonts.google.com au moment de valider) ou une alternative du §4 ; trancher Google Fonts ou auto-hébergement (nLPD).
-- [ ] Valider la mascotte (fiche §8.1, règles §8.2) et **son nom** : Braise, Suie ou Kit, après la recherche de marque du §8.5 (Braixen à examiner en priorité) ; juriste : antériorité du dessin et conditions d'utilisation commerciale de l'outil de génération des illustrations.
+- [ ] Valider la mascotte (fiche §8.1, règles §8.2) et **son nom** : Braise, Suie ou Kit, après la recherche de marque du §8.5 (Braixen à examiner en priorité) ; juriste : antériorité du dessin (recherche d'image inversée, ressemblance avec Feunnec / Roussil), conditions d'utilisation commerciale de l'outil de génération des illustrations, dépôt d'une **marque figurative** pour protéger Braise (protection par le droit d'auteur d'une image générée incertaine en Suisse, LDA art. 2 : `docs/04-legal/USAGE_MARQUES.md`, ligne « Mascotte illustrée générée »).
 - [ ] Confirmer que les 3 photos sont bien les photos du propriétaire (droits d'auteur et droit à l'image pour la photo des mains) et qu'elles peuvent être publiées comme photos d'ambiance.
 - [ ] Juriste : relire les textes alternatifs des photos d'ambiance (aucune promesse de vente d'un accessoire montré) et la mention d'indépendance.
 - [ ] Valider le papier unique `#F1E4D3` (au lieu de `#FCF2E2` et de l'alternance avec `#EFEAE1`) et les **badges de statut monochromes** (plus d'indigo ni de vert ; « Réservation garantie » en boîte noire à bande orange).

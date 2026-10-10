@@ -71,7 +71,15 @@ def test_manifeste_unique_valide_et_complet() -> None:
 def test_sources_hors_du_dossier_publie() -> None:
     publies = sorted((LANDING / "assets" / "visuels").iterdir())
     assert publies and all(p.suffix == ".webp" for p in publies)
-    assert not list(LANDING.rglob("*.jpg")) and not list(LANDING.rglob("*.jpeg"))
+    # Aucune source (JPEG) publiée. Seule exception : l'image de partage produite par site/outils/generer_og.py (IP-02),
+    # dérivée du gabarit, JPEG sans aucune métadonnée (ni EXIF, ni XMP, ni commentaire).
+    import generer_og
+    import verifier_site
+
+    jpeg = sorted(LANDING.rglob("*.jpg")) + sorted(LANDING.rglob("*.jpeg"))
+    assert jpeg == [LANDING / generer_og.CHEMIN_PUBLIE], jpeg
+    assert verifier_site.segments_metadonnees_jpeg(jpeg[0].read_bytes()) == []
+    assert verifier_site.segments_metadonnees_jpeg(b"\xff\xd8\xff\xe1\x00\x04Ex\xff\xda") == ["APP1"]
     assert "site/visuels-sources/" in (visuels.REPO / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert rv.ARCHIVE == visuels.REPO / "site" / "visuels-sources"
     for f in publies:
@@ -115,6 +123,9 @@ def test_sources_hors_du_dossier_publie() -> None:
         (("visuels", "renard-assis", "alt"), "Illustration : le renard et ses neuf queues.", "une seule queue"),
         (("visuels", "renard-assis", "alt"), "Illustration : le renard porte des gants blancs.", "sans vêtement"),
         (("visuels", "renard-couche", "alt"), "Illustration : le renard comme Évoli.", "licence"),
+        # Feunnec / Roussil : renards de la licence aux grandes oreilles à touffe orange intérieure (IP-03).
+        (("visuels", "renard-assis", "description"), "Un renard façon Feunnec, grandes oreilles.", "licence"),
+        (("visuels", "renard-couche", "alt"), "Illustration : le renard, une touffe orange dans chaque oreille.", "une seule queue"),
         (("visuels", "renard-couche", "description"), "Il tient un booster Pokémon.", "licence"),
         (("visuels", "renard-reservation", "alt"), "Illustration : le renard garde trois boîtes noires.", "vierge"),
     ],
@@ -165,7 +176,9 @@ def test_attributs_sans_png_et_largeurs_exactes(source: str) -> None:
         maquette = MAQUETTES / "drop.html"
         assert visuels.src(m, "renard-heros", maquette) == f"../landing/assets/visuels/{nom}-1280.webp"
         assert visuels.src(m, "renard-couche", page).endswith("-1280.webp")
-        assert visuels.src(m, "renard-heros-portrait", page).endswith("-1140.webp")
+        # PERF-01 : variante intermédiaire du héro mobile (390 et 393 px en densité 3), aussi en repli et en préchargement.
+        assert visuels.src(m, "renard-heros-portrait", page).endswith("-1180.webp")
+        assert any(1170 <= w <= 1206 for w in m["visuels"]["renard-heros-portrait"]["largeurs"])
     assert set(visuels.attributs(m, "renard-heros", "link", page)) == {"href", "imagesrcset"}
     # Filet orange mesuré (« fil ») : écrit sur <img> et <source> d'un visuel qui en a un, jamais sur un <link>.
     assert set(visuels.attributs(m, "renard-heros", "source", page)) == {"srcset", "width", "height", "data-fil", "data-fil-ep", "data-fil-couleurs"}

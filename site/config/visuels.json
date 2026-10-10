@@ -55,13 +55,13 @@
       "largeurs": [
         480,
         760,
-        1140,
+        1180,
         1520
       ],
       "variantes": [
         480,
         760,
-        1140,
+        1180,
         1520
       ],
       "empreinte_source": "769d0258d4257997ae9ac809bdb291adb0ea559ab1bd384b6584b749b457d350",
@@ -178,9 +178,9 @@
         1920
       ],
       "empreinte_source": "a26fe78da46e1fe0f8dd2321ce7c1f95f1262c33f4c4a4f356221de5d2ede46f",
-      "usage": "Chapitre « Le jour du drop » et héro de la maquette de page de drop",
-      "description": "Le renard, à quatre pattes, soulève de la patte le couvercle d'une boîte noire vierge d'où sort une lumière dorée ; cartes noires vierges au sol, étuis transparents vierges à droite ; filet orange en bas à gauche.",
-      "alt": "Illustration : notre renard, ravi, soulève de la patte le couvercle d'une boîte noire vierge d'où sort une lumière dorée.",
+      "usage": "Chapitre « Le jour du drop », toujours légendé : la boîte ouverte est un symbole du drop, jamais un produit ouvert (il n'en sort qu'une lumière, aucune carte illustrée)",
+      "description": "Le renard, à quatre pattes, soulève de la patte le couvercle d'une boîte noire vierge d'où sort une lumière dorée (symbole du drop : aucun contenu visible, aucune carte illustrée) ; cartes noires vierges au sol, étuis transparents vierges à droite ; filet orange en bas à gauche.",
+      "alt": "Illustration : notre renard, ravi, soulève de la patte le couvercle d'une boîte noire vierge, symbole du drop, d'où sort une lumière dorée.",
       "fil": [
         [
           0.0,
@@ -216,8 +216,8 @@
       ],
       "empreinte_source": "97d687f20d5a33005bd3073b94381d9d7aedf97f902e2c09d9b31a709a0b819b",
       "usage": "Chapitre « Réservation garantie » et maquettes",
-      "description": "Le renard assis garde d'une patte trois boîtes noires vierges à bande orange et fait un clin d'œil ; papier crème, ombres de feuillage.",
-      "alt": "Illustration : notre renard fait un clin d'œil en gardant d'une patte trois boîtes noires vierges à bande orange.",
+      "description": "Le renard assis garde d'une patte une pile de boîtes noires vierges à bande orange (quatre, la dernière en partie cachée par sa queue) et fait un clin d'œil ; papier crème, ombres de feuillage.",
+      "alt": "Illustration : notre renard fait un clin d'œil en gardant d'une patte une pile de boîtes noires vierges à bande orange.",
       "fil": null,
       "fil_epaisseur": null,
       "fil_couleurs": null

@@ -20,7 +20,9 @@ Contrôles :
 9. Documents .md : dernière section « Validation humaine requise ».
 10. Affirmations inexactes : « une personne vous répond » (les réponses courantes sont automatisées),
     « le contenu de chaque boîte est vérifié » (les produits ne sont jamais ouverts), exclusivité de finalité
-    (« servent uniquement à ces envois ») alors que le formulaire collecte des réponses facultatives.
+    (« servent uniquement à ces envois ») alors que le formulaire collecte des réponses facultatives, « ouvre la boîte »
+    ou « ouvrir les produits » (HON-02 : les produits scellés ne sont jamais ouverts ; une boîte ouverte dessinée est
+    un symbole du drop, légendé comme tel).
 11. Notice de confidentialité : chaque champ du formulaire d'inscription y est déclaré (liste fermée
     CHAMPS_NOTICE : un nouveau champ sans entrée fait échouer le contrôle).
 12. Nom de travail : jamais dans un modèle Shopify (fiches, snippets) hors des notes d'en-tête.
@@ -38,7 +40,12 @@ Contrôles :
     inexacte ; mention d'indépendance ; aucun formulaire qui envoie ; ressources, liens et typographie contrôlés.
 17. Mascotte (DIRECTION_ATELIER.md §8) : aucune trace de la mascotte abandonnée (la loutre « Lumi », décision du
     06.10.2026) dans le texte, les attributs ou les commentaires d'une page ; une page qui nomme Braise dit que ce nom
-    est provisoire et que le renard est une création (ou illustration) originale.
+    est provisoire et que le renard est une création (ou illustration) originale « pour la boutique », jamais « de la
+    boutique » (IP-03 : droits d'auteur sur une illustration générée incertains, LDA art. 2).
+18. Image de partage (IP-02) : ``og:image`` et ``twitter:image`` identiques, vers un JPEG ou WebP local de 1200 × 630
+    d'au plus 300 Ko, sans métadonnées (jamais l'ancienne PNG) ; aucune affirmation de stock dans les balises de
+    partage ; gabarit ``site/outils/og/og-image.html`` sans « stock réel », fausse urgence ni promesse, avec la mention
+    « Boutique indépendante · non affiliée à Pokémon / Nintendo / The Pokémon Company ».
 
 Usage :
     python site/outils/verifier_site.py                         # dépôt
@@ -108,6 +115,15 @@ AFFIRMATIONS_INEXACTES: tuple[tuple[re.Pattern[str], str], ...] = (
         "sur-promesse de contrôle (seul le contenu annoncé sur l'emballage est vérifié, sans ouvrir)",
     ),
     (
+        re.compile(
+            r"(?<!sans )(?<!sans\u00a0)\bouvr(?:e|ent|ons|ez|ir|ira|iront)[\s\u00a0\u202f]+(?:la|les|une|des|chaque|nos|vos)[\s\u00a0\u202f]+"
+            r"(?:bo[iî]tes?|produits?|displays?|coffrets?|boosters?)\b",
+            re.IGNORECASE,
+        ),
+        "affirmation contradictoire : les produits scellés ne sont jamais ouverts (une boîte ouverte dessinée est un "
+        "symbole du drop, légendé comme tel)",
+    ),
+    (
         re.compile(r"servent[\s\u00a0\u202f]+uniquement|uniquement[\s\u00a0\u202f]+(?:pour|à)[\s\u00a0\u202f]+(?:ces|les)[\s\u00a0\u202f]+envois", re.IGNORECASE),
         "exclusivité de finalité inexacte (réponses facultatives et origine aussi utilisées, en agrégé)",
     ),
@@ -144,6 +160,25 @@ ENCADRE_NEGATIONS_RE = re.compile(r'<div class="lp-encadre">.*?</div>', re.DOTAL
 MASCOTTE_ABANDONNEE_RE = re.compile(r"\bLumi\b|\bloutres?\b", re.IGNORECASE)
 NOM_PROVISOIRE_RE = re.compile(r"nom[\s\u00a0\u202f]+(?:est[\s\u00a0\u202f]+)?provisoire", re.IGNORECASE)
 CREATION_ORIGINALE_RE = re.compile(r"(?:création|illustration)[\s\u00a0\u202f]+originale", re.IGNORECASE)
+#: Une illustration générée n'est pas, de façon certaine, une œuvre protégée appartenant à la boutique (LDA art. 2) :
+#: « création originale POUR la boutique », jamais « de la boutique » (USAGE_MARQUES.md, IP-03).
+CREATION_DE_LA_BOUTIQUE_RE = re.compile(
+    r"(?:créations?|illustrations?)[\s\u00a0\u202f]+originales?[\s\u00a0\u202f]+de[\s\u00a0\u202f]+la[\s\u00a0\u202f]+boutique",
+    re.IGNORECASE,
+)
+#: Image de partage (IP-02) : JPEG ou WebP léger (jamais l'ancienne PNG de 588 Ko), 1200 × 630, mêmes adresses pour
+#: og:image et twitter:image ; ni le gabarit ni les balises n'affirment ce que la boutique ne peut pas encore tenir.
+OG_GABARIT = OUTILS / "og" / "og-image.html"
+OG_FORMATS = ("jpeg", "webp")
+OG_DIMENSIONS = (1200, 630)
+OG_PLAFOND_OCTETS = 300 * 1024
+#: Affirmation de stock qu'une boutique pas encore ouverte (sans stock) ne peut pas faire sur un support de partage.
+STOCK_AFFIRME_RE = re.compile(
+    r"stock[\s\u00a0\u202f]+r[ée]el|\ben[\s\u00a0\u202f]+stock\b|disponibles?[\s\u00a0\u202f]+(?:imm[ée]diatement|maintenant|d[èe]s[\s\u00a0\u202f]+aujourd)",
+    re.IGNORECASE,
+)
+#: Mention de non-affiliation lisible sur l'image de partage (le renard y est accolé au titre qui nomme Pokémon).
+OG_NON_AFFILIATION = ("Boutique indépendante", "non affiliée à Pokémon / Nintendo / The Pokémon Company")
 COULEUR_EN_DUR_RE = re.compile(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(")
 COMMENTAIRE_CSS_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 PAGES_TOUJOURS_NOINDEX = {"merci.html", "inscription-confirmee.html", "desinscription.html"}
@@ -335,6 +370,7 @@ def verifier_page(chemin: Path, racine: Path, *, publication_mode: bool = False)
                 err.append(f"{nom} : meta {cle} absente")
         if not a.liens_head.get("canonical"):
             err.append(f"{nom} : lien canonical absent")
+        err += [f"{nom} : {e}" for e in verifier_partage(a, chemin)]
 
     # Ressources et liens
     for balise, url in a.ressources:
@@ -457,6 +493,110 @@ def verifier_images(a: Analyse) -> list[str]:
             err.append(f"image sans width/height (décalage de mise en page) : {nom}")
         if "data-visuel" in i and i.get("fetchpriority") != "high" and i.get("loading") != "lazy":
             err.append(f"visuel sans loading=\"lazy\" (seule l'image principale se charge d'emblée) : {nom}")
+    return err
+
+
+def lire_entete_image(octets: bytes) -> tuple[str, int, int] | None:
+    """(format, largeur, hauteur) d'un JPEG ou d'un WebP lu dans son en-tête ; None pour tout autre format (PNG…)."""
+    if octets[:3] == b"\xff\xd8\xff":
+        i = 2
+        while i + 9 < len(octets) and octets[i] == 0xFF:
+            marqueur = octets[i + 1]
+            if marqueur == 0xFF:
+                i += 1
+                continue
+            if marqueur in (0x01, 0xD8) or 0xD0 <= marqueur <= 0xD7:
+                i += 2
+                continue
+            if 0xC0 <= marqueur <= 0xCF and marqueur not in (0xC4, 0xC8, 0xCC):
+                return "jpeg", int.from_bytes(octets[i + 7 : i + 9], "big"), int.from_bytes(octets[i + 5 : i + 7], "big")
+            i += 2 + int.from_bytes(octets[i + 2 : i + 4], "big")
+        return "jpeg", 0, 0
+    if octets[:4] == b"RIFF" and octets[8:12] == b"WEBP":
+        bloc = octets[12:16]
+        if bloc == b"VP8X":
+            return "webp", 1 + int.from_bytes(octets[24:27], "little"), 1 + int.from_bytes(octets[27:30], "little")
+        if bloc == b"VP8 ":
+            return "webp", int.from_bytes(octets[26:28], "little") & 0x3FFF, int.from_bytes(octets[28:30], "little") & 0x3FFF
+        if bloc == b"VP8L":
+            bits = int.from_bytes(octets[21:25], "little")
+            return "webp", (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+        return "webp", 0, 0
+    return None
+
+
+def segments_metadonnees_jpeg(octets: bytes) -> list[str]:
+    """Segments de métadonnées d'un JPEG (EXIF ou XMP en APP1, IPTC en APP13…) ; seul APP0 (JFIF) est admis."""
+    trouves: list[str] = []
+    i = 2
+    while i + 4 <= len(octets) and octets[i] == 0xFF:
+        marqueur = octets[i + 1]
+        if marqueur == 0xDA:  # début des données de l'image : plus de métadonnées au-delà
+            break
+        if 0xE1 <= marqueur <= 0xEF or marqueur == 0xFE:
+            trouves.append("COM" if marqueur == 0xFE else f"APP{marqueur - 0xE0}")
+        i += 2 + int.from_bytes(octets[i + 2 : i + 4], "big")
+    return trouves
+
+
+def verifier_partage(a: Analyse, chemin: Path) -> list[str]:
+    """Balises de partage de la page principale (IP-02) : image locale JPEG ou WebP de 1200 × 630, au plus 300 Ko,
+    même adresse pour og:image et twitter:image ; aucune affirmation de stock dans les textes de partage."""
+    err: list[str] = []
+    image, twitter = a.meta.get("og:image", ""), a.meta.get("twitter:image", "")
+    if not twitter:
+        err.append("meta twitter:image absente (image de partage)")
+    elif twitter != image:
+        err.append(f"twitter:image ({twitter}) différente de og:image ({image})")
+    for cle in ("og:title", "og:description", "og:image:alt", "twitter:image:alt"):
+        m = STOCK_AFFIRME_RE.search(a.meta.get(cle, ""))
+        if m:
+            err.append(f"meta {cle} : affirmation de stock « {m.group(0)} » (la boutique n'a pas encore de stock)")
+    if "non affiliée" not in a.meta.get("og:image:alt", ""):
+        err.append("meta og:image:alt sans la mention de non-affiliation portée par l'image de partage")
+    if not image or "assets/" not in image:
+        return err
+    relatif = image[image.index("assets/") :]
+    fichier = chemin.parent / relatif
+    if not fichier.exists():
+        err.append(f"image de partage introuvable {relatif} (lancer site/outils/generer_og.py)")
+        return err
+    octets = fichier.read_bytes()
+    entete = lire_entete_image(octets)
+    if entete is None or entete[0] not in OG_FORMATS:
+        err.append(f"image de partage {relatif} : JPEG ou WebP attendu (jamais de PNG)")
+        return err
+    if len(octets) > OG_PLAFOND_OCTETS:
+        err.append(f"image de partage {relatif} : {len(octets) // 1024} Ko > {OG_PLAFOND_OCTETS // 1024} Ko")
+    if entete[1:] != OG_DIMENSIONS:
+        err.append(f"image de partage {relatif} : {entete[1]} × {entete[2]} px (attendu 1200 × 630)")
+    if entete[0] == "jpeg" and segments_metadonnees_jpeg(octets):
+        err.append(f"image de partage {relatif} : métadonnées publiées ({', '.join(segments_metadonnees_jpeg(octets))})")
+    attendu = {"og:image:width": str(OG_DIMENSIONS[0]), "og:image:height": str(OG_DIMENSIONS[1]),
+               "og:image:type": f"image/{entete[0]}"}
+    err += [f"meta {cle} ≠ {val}" for cle, val in attendu.items() if a.meta.get(cle) != val]
+    return err
+
+
+def verifier_gabarit_og(gabarit: Path = OG_GABARIT, racine: Path = LANDING) -> list[str]:
+    """Gabarit de l'image de partage (IP-02) : aucune affirmation de stock ni promesse, non-affiliation lisible ; image
+    produite au chemin des balises de la landing ; plus aucune PNG de partage dans la landing."""
+    if not gabarit.exists():
+        return [f"{gabarit.name} absent (gabarit de l'image de partage)"]
+    err: list[str] = []
+    visible = _normaliser(_texte_visible(gabarit.read_text(encoding="utf-8")))
+    for motif, libelle in ((STOCK_AFFIRME_RE, "affirmation de stock"), (URGENCE_RE, "fausse urgence"), (PROMESSES_RE, "promesse interdite")):
+        m = motif.search(visible)
+        if m:
+            err.append(f"{gabarit.name} : {libelle} « {m.group(0)} »")
+    err += [f"{gabarit.name} : mention de non-affiliation absente « {p} »" for p in OG_NON_AFFILIATION if p not in visible]
+    import generer_og  # import tardif : outil facultatif, sans dépendance au chargement
+
+    image = analyser((racine / "index.html").read_text(encoding="utf-8")).meta.get("og:image", "")
+    if not image.endswith(generer_og.CHEMIN_PUBLIE):
+        err.append(f"og:image ({image}) ≠ sortie de generer_og.py ({generer_og.CHEMIN_PUBLIE})")
+    err += [f"ancienne image de partage {p.relative_to(racine).as_posix()} encore présente"
+            for p in sorted((racine / "assets").glob("og-image*.png"))]
     return err
 
 
@@ -682,6 +822,10 @@ def verifier_mascotte(texte: str, visible: str) -> list[str]:
             err.append("Braise nommé sans la mention « nom provisoire » (nom à valider, recherche de marque en cours)")
         if not CREATION_ORIGINALE_RE.search(visible):
             err.append("Braise nommé sans dire qu'il est une création originale (sans lien avec la licence)")
+    m = CREATION_DE_LA_BOUTIQUE_RE.search(visible)
+    if m:
+        err.append(f"« {m.group(0)} » : écrire « création originale pour la boutique » (droits sur une illustration "
+                   "générée incertains, LDA art. 2 ; USAGE_MARQUES.md)")
     return err
 
 
@@ -926,6 +1070,7 @@ def tout_verifier() -> dict[str, list[str]]:
         "snippets Liquid": verifier_liquid(SNIPPETS),
         "nom de travail (Shopify)": verifier_nom_de_travail(SITE / "shopify"),
         "documents": verifier_docs(SITE),
+        "image de partage (gabarit)": verifier_gabarit_og(),
         "landing publiable à J10": verifier_champs_landing_planifies(),
         "workflow d'inscription (contrat §4)": verifier_workflow_inscription(),
     }

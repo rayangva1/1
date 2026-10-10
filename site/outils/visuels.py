@@ -33,7 +33,7 @@ le filet orange photographié (``fil`` : deux points en fractions de l'image, ou
 ``fichier_source`` et ``empreinte_source`` (SHA-256 du fichier d'origine). Règles de rédaction contrôlées (fermé par
 défaut, ``docs/05-da/DIRECTION_ATELIER.md`` §7 et §8) : aucun nom de la licence ; une photo d'ambiance ne se présente
 jamais comme un produit en vente ; une illustration du renard ne décrit ni plusieurs queues, ni une posture debout, ni
-vêtements, et toute boîte, carte ou étui décrit est « vierge » ou « sans marque ».
+vêtements, ni touffe orange (Feunnec, Roussil), et toute boîte, carte ou étui décrit est « vierge » ou « sans marque ».
 
 La publication est refusée tant que la source n'est pas ``local`` (``erreurs_publication``) : la page publiée ne
 charge aucune image d'un tiers (politique de sécurité ``img-src 'self'``, aucune adresse IP de visiteur transmise).
@@ -85,7 +85,8 @@ GERES = {
 ALT_CONTEXTE = "data-alt-contexte"
 #: Règles de rédaction (descriptions et textes alternatifs), DIRECTION_ATELIER.md §7–§8.
 TERMES_LICENCE = re.compile(
-    r"pok[ée]\s*-?\s*(?:mon|ball)|[ée]voli|eevee|feunard|ninetales|goupix|vulpix|roussil|braixen|zorua|zoroark|pikachu"
+    r"pok[ée]\s*-?\s*(?:mon|ball)|[ée]voli|eevee|feunard|ninetales|goupix|vulpix|feunnec|fennekin|roussil|braixen|"
+    r"goupelin|delphox|zorua|zoroark|pikachu"
     r"|kurama|\btails\b|\bsega\b|\bnaruto\b",
     re.IGNORECASE,
 )
@@ -94,7 +95,7 @@ TERMES_VENTE = re.compile(
 )
 TERMES_MASCOTTE_INTERDITS = re.compile(
     r"\bqueues\b|deux queues|neuf queues|\bdebout\b|deux pattes|\bgants?\b|chaussures?|v[êe]tements?|habill[ée]|"
-    r"[ée]charpe|collerette|m[èe]che frontale",
+    r"[ée]charpe|collerette|m[èe]che frontale|touffes?\s+(?:orange|rouge)s?",
     re.IGNORECASE,
 )
 OBJETS_DECRITS = re.compile(r"\b(?:bo[îi]tes?|[ée]tuis?|cartes?|classeurs?|pochettes?|sleeves?|toploaders?)\b", re.IGNORECASE)

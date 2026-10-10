@@ -483,6 +483,8 @@ class TestAmbianceAtelier:
             ("Kurama", "une seule queue"),
             ("Tails", "gants"),
             ("collerette", "Évoli"),
+            ("Feunnec", "touffe orange"),
+            ("touffe orange à l'intérieur des oreilles", "Fennekin"),
             ("jamais debout sur deux pattes", "debout"),
             ("ne tient jamais un produit Pokémon", "produit Pokémon"),
             ("n'illustrent jamais un produit vendu", "produit vendu"),

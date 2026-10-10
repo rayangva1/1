@@ -8,10 +8,11 @@
 //
 // Garde-fous : formulaire (désactivé sans webhook, consentement non pré-coché, champ piège, envoi réel intercepté),
 // mouvement (pause mémorisée, défilement doux coupé, prefers-reduced-motion), sans JavaScript, clavier, images
-// indisponibles, WebP budgété, contraste AA des textes posés sur une illustration (images remplacées par du noir et du
-// blanc purs), aucun débordement ni erreur console, et les corrections des critiques : bouton du héro au-dessus du pli,
-// aucun renard fantôme pendant la pose, aucun mot coupé dans un titre, fil orange jamais sur un texte, hiérarchie des
-// titres, longueur de page bornée.
+// indisponibles (masquées mais lues : A11Y-03), WebP budgété (variante intermédiaire du héro mobile : PERF-01), contraste
+// AA des textes posés sur une illustration (images remplacées par du noir et du blanc purs), aucun débordement ni erreur
+// console, et les corrections des critiques : bouton du héro au-dessus du pli, aucun renard fantôme pendant la pose,
+// aucun mot coupé dans un titre, fil orange jamais sur un texte, hiérarchie des titres, longueur de page bornée, boîte
+// du drop légendée comme un symbole (HON-02).
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -169,13 +170,35 @@ const lum = c => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : 
     }
   });
 
-  await test('images indisponibles : masquées, silhouette du renard visible', async () => {
-    const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
-    await routerPolices(ctx); const p = await ctx.newPage();
-    await p.route('**/assets/visuels/**', r => r.abort());
-    await p.goto(url + 'landing/index.html'); await p.waitForTimeout(400);
-    assert(await p.evaluate("getComputedStyle(document.querySelector('.lp-hero__img')).visibility") === 'hidden');
-    assert(await p.isVisible('.lp-hero .lp-secours')); await ctx.close();
+  await test('images indisponibles : masquées à l’écran, texte alternatif gardé dans l’arbre d’accessibilité (A11Y-03)', async () => {
+    for (const [l, h] of [[390, 844], [1440, 900]]) {
+      const ctx = await b.newContext({ viewport: { width: l, height: h }, reducedMotion: 'reduce' });
+      await routerPolices(ctx); const p = await ctx.newPage();
+      await p.route('**/assets/visuels/**', r => r.abort());
+      await p.goto(url + 'landing/index.html'); await p.waitForTimeout(400);
+      // Toutes les images paresseuses sont demandées (et refusées) : défilement jusqu'au pied de page.
+      await p.evaluate(async () => { for (let y = 0; y < document.body.scrollHeight; y += 500) { scrollTo(0, y); await new Promise(r => setTimeout(r, 25)); } });
+      await p.waitForTimeout(400);
+      for (const pause of [false, true]) {
+        if (pause) { await p.click(l < 700 ? '.lp-lien-bouton' : '#lp-animations'); await p.waitForTimeout(100); }
+        const etat = await p.evaluate(() => [...document.querySelectorAll('.lp-media img[data-visuel]')].filter(i => i.closest('.lp-media').getClientRects().length > 0).map(i => {
+          const s = getComputedStyle(i);
+          return { cle: i.dataset.visuel, indispo: i.classList.contains('est-indisponible'), visibilite: s.visibility, affichage: s.display,
+            masquee: s.opacity === '0' || s.clipPath !== 'none', alt: i.alt };
+        }));
+        assert(etat.length >= 9 && etat.every(e => e.indispo), `${l}px : images non marquées indisponibles ${etat.filter(e => !e.indispo).map(e => e.cle)}`);
+        // Masquée à l'écran (aucune icône d'image cassée, même en pause où l'opacité est forcée à 1)…
+        assert(etat.every(e => e.masquee), `${l}px${pause ? ' (pause)' : ''} : image cassée visible ${etat.filter(e => !e.masquee).map(e => e.cle)}`);
+        // … mais jamais retirée de l'arbre d'accessibilité : le texte alternatif reste lu (le secours est aria-hidden).
+        assert(etat.every(e => e.visibilite !== 'hidden' && e.affichage !== 'none'), `${l}px : image retirée de l'arbre d'accessibilité`);
+      }
+      const nommees = await p.getByRole('img', { name: /assis à côté d’une boîte noire vierge|assis à côté d'une boîte noire vierge/ }).count();
+      assert(nommees >= 1, `${l}px : texte alternatif du héro absent de l'arbre d'accessibilité`);
+      assert(await p.getByRole('img', { name: /symbole du drop/ }).count() === 1, `${l}px : texte alternatif du drop absent`);
+      assert(await p.isVisible('.lp-hero .lp-secours'), `${l}px : silhouette de secours absente`);
+      assert(await p.getAttribute('.lp-hero .lp-secours', 'aria-hidden') === 'true');
+      await ctx.close();
+    }
   });
 
   await test('sans JavaScript : tout visible, ligne CSS du fil, en-tête plein, formulaire désactivé avec message', async () => {
@@ -213,7 +236,8 @@ const lum = c => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : 
     await ctx.close();
   });
 
-  for (const [l, h, d, attendu] of [[390, 844, 3, '-1520.webp'], [1440, 900, 2, '-2688.webp'], [1280, 720, 1, '-1280.webp'], [1440, 900, 1, '-1920.webp']]) {
+  // PERF-01 : sur mobile en densité 3 (390 et 393 px), la variante intermédiaire de 1180 px, jamais celle de 1520 px.
+  for (const [l, h, d, attendu] of [[390, 844, 3, '-1180.webp'], [393, 852, 3, '-1180.webp'], [1440, 900, 2, '-2688.webp'], [1280, 720, 1, '-1280.webp'], [1440, 900, 1, '-1920.webp']]) {
     await test(`image principale en WebP budgétée (${l}×${h} @${d}x → ${attendu}), jamais de PNG`, async () => {
       const images = [];
       const ctx = await b.newContext({ viewport: { width: l, height: h }, deviceScaleFactor: d });
@@ -242,6 +266,23 @@ const lum = c => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : 
       assert(r.bas <= h, `${l}×${h} : bouton sous le pli (${Math.round(r.bas)})`);
       assert(r.img >= Math.min(640, h - 76) - 1, `${l}×${h} : illustration trop basse (${Math.round(r.img)})`);
       assert(r.intro === r.encre, `${l}×${h} : introduction en ${r.intro}, charbon attendu sur le voile`);
+      await ctx.close();
+    }
+  });
+
+  await test('jour du drop : la boîte ouverte est légendée comme un symbole, sous l’illustration (HON-02)', async () => {
+    for (const [l, h] of [[390, 844], [1024, 768], [1440, 900]]) {
+      const { p, ctx } = await ouvrir(url, 'landing/index.html', { viewport: { width: l, height: h }, reducedMotion: 'reduce' });
+      const r = await p.evaluate(() => {
+        const img = document.querySelector('.lp-drop__image').getBoundingClientRect();
+        const lg = document.querySelector('.lp-drop__legende');
+        const b = lg.getBoundingClientRect();
+        return { haut: b.top - img.bottom, gauche: b.left - img.left, texte: lg.textContent, h: b.height, couleur: getComputedStyle(lg).color };
+      });
+      assert(r.h > 0 && r.haut >= 0 && r.haut <= 40, `${l}px : légende à ${Math.round(r.haut)} px sous l'illustration`);
+      assert(Math.abs(r.gauche) <= 1, `${l}px : légende décalée de l'illustration (${Math.round(r.gauche)} px)`);
+      assert(/symbole du drop, pas un produit ouvert/.test(r.texte) && /cartes posées au sol sont vierges/.test(r.texte));
+      assert(r.couleur === 'rgb(184, 175, 164)', `${l}px : légende en ${r.couleur} (gris chaud sur charbon attendu)`);
       await ctx.close();
     }
   });

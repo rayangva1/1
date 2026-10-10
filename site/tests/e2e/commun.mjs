@@ -13,7 +13,7 @@ export const SITE = path.resolve(ICI, '..', '..');
 const POLICES = path.join(ICI, 'polices');
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml',
-  '.png': 'image/png', '.webp': 'image/webp', '.json': 'application/json', '.woff2': 'font/woff2',
+  '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.json': 'application/json', '.woff2': 'font/woff2',
 };
 
 export async function chargerPlaywright() {

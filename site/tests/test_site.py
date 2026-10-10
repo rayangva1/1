@@ -86,6 +86,13 @@ def _source() -> str:
         (lambda t: t.replace("Pour qui achetez-vous ?", "Pour qui achetez-vous ?"), "espace insécable"),
         (lambda t: t.replace('<p class="lp-surtitre">', '<p class="lp-surtitre"><span>'), "balises"),
         (lambda t: t.replace('<meta property="og:image"', '<meta property="og:imagex"'), "og:image"),
+        # Image de partage (IP-02) : JPEG ou WebP local, mêmes adresses, aucune affirmation de stock, non-affiliation.
+        (lambda t: t.replace('<meta name="twitter:image" ', '<meta name="twitter:imagex" '), "twitter:image"),
+        (lambda t: t.replace('twitter:image" content="{{URL_LANDING}}assets/og-image.jpg', 'twitter:image" content="{{URL_LANDING}}assets/autre.jpg'), "différente de og:image"),
+        (lambda t: t.replace("assets/og-image.jpg", "assets/og-image-absente.jpg"), "image de partage introuvable"),
+        (lambda t: t.replace('content="Boutique indépendante en préparation à Genève : produits scellés en français,', 'content="Produits scellés en français, stock réel,'), "affirmation de stock"),
+        (lambda t: t.replace("Boutique indépendante, non affiliée à", "Boutique indépendante, liée à"), "non-affiliation"),
+        (lambda t: t.replace('content="image/jpeg"', 'content="image/png"'), "og:image:type"),
         (lambda t: t.replace("Recevoir l'alerte d'ouverture</a>", "Précommander</a>"), "action d'achat"),
         (lambda t: t.replace('id="titre-promesse"', 'id="titre-principal"'), "identifiant en double"),
         (lambda t: t.replace('name="prenom"', 'name="telephone"'), "inscription.schema.json"),
@@ -100,6 +107,69 @@ def _source() -> str:
 def test_controles_detectent_les_defauts(tmp_path: Path, modification, attendu: str) -> None:  # type: ignore[no-untyped-def]
     erreurs = _page(tmp_path, modification(_source()))
     assert any(attendu in e for e in erreurs), erreurs
+
+
+def test_image_de_partage_legere_et_honnete(tmp_path: Path) -> None:
+    """IP-02 : image de partage JPEG (ou WebP) de 1200 × 630, au plus 300 Ko, sans « stock réel » et avec la mention de
+    non-affiliation ; la PNG de 588 Ko n'existe plus ; balises og:image et twitter:image identiques."""
+    import generer_og
+
+    octets = (LANDING / generer_og.CHEMIN_PUBLIE).read_bytes()
+    assert vs.lire_entete_image(octets) == ("jpeg", 1200, 630)
+    assert len(octets) <= vs.OG_PLAFOND_OCTETS == generer_og.PLAFOND_OCTETS
+    assert not (LANDING / "assets" / "og-image.png").exists()
+    a = vs.analyser(_source())
+    assert a.meta["og:image"] == a.meta["twitter:image"] == "{{URL_LANDING}}" + generer_og.CHEMIN_PUBLIE
+    assert a.meta["og:image:type"] == "image/jpeg"
+    assert vs.verifier_gabarit_og() == []
+    gabarit = vs._texte_visible(vs.OG_GABARIT.read_text(encoding="utf-8"))
+    assert "Boutique indépendante · non affiliée à Pokémon / Nintendo / The Pokémon Company" in vs._normaliser(gabarit)
+    assert not vs.STOCK_AFFIRME_RE.search(gabarit)
+    # En-têtes lus sans dépendance : WebP des visuels, PNG refusée.
+    variante = LANDING / "assets" / "visuels" / "renard-heros-640.webp"
+    assert vs.lire_entete_image(variante.read_bytes()) == ("webp", 640, 274)
+    assert vs.lire_entete_image((LANDING / "assets" / "da" / "favicon-32.png").read_bytes()) is None
+
+
+@pytest.mark.parametrize(
+    ("modification", "attendu"),
+    [
+        (lambda t: t.replace("Produits scellés · ouverture prochaine", "Scellé · stock réel · livraison en Suisse"), "affirmation de stock"),
+        (lambda t: t.replace("Produits scellés · ouverture prochaine", "Plus que 3 boîtes"), "fausse urgence"),
+        (lambda t: t.replace(" · non affiliée à Pokémon / Nintendo / The Pokémon Company", ""), "non-affiliation"),
+        (lambda t: t.replace("Boutique indépendante · ", ""), "Boutique indépendante"),
+    ],
+)
+def test_gabarit_de_l_image_de_partage_controle(tmp_path: Path, modification, attendu: str) -> None:  # type: ignore[no-untyped-def]
+    gabarit = tmp_path / "og-image.html"
+    gabarit.write_text(modification(vs.OG_GABARIT.read_text(encoding="utf-8")), encoding="utf-8")
+    erreurs = vs.verifier_gabarit_og(gabarit)
+    assert any(attendu in e for e in erreurs), erreurs
+
+
+def test_image_de_partage_lourde_png_ou_mal_cadree_refusee(tmp_path: Path) -> None:
+    image_pil = pytest.importorskip("PIL.Image")
+    import os
+
+    dossier = tmp_path / "lp"
+    shutil.copytree(LANDING, dossier)
+    cible = dossier / "assets" / "og-image.jpg"
+    index = dossier / "index.html"
+
+    def erreurs() -> list[str]:
+        return [e for e in vs.verifier_page(index, dossier) if "partage" in e or "og:image" in e]
+
+    assert erreurs() == []
+    bruit = image_pil.frombytes("RGB", (1200, 630), os.urandom(1200 * 630 * 3))
+    bruit.save(cible, "JPEG", quality=100)
+    assert any("Ko >" in e for e in erreurs())
+    image_pil.new("RGB", (800, 600), (239, 234, 225)).save(cible, "JPEG")
+    assert any("800 × 600" in e for e in erreurs())
+    image_pil.new("RGB", (1200, 630), (239, 234, 225)).save(cible, "PNG")  # PNG renommée en .jpg : refusée
+    assert any("JPEG ou WebP attendu" in e for e in erreurs())
+    # L'ancienne PNG oubliée dans la landing est signalée.
+    (dossier / "assets" / "og-image.png").write_bytes(b"\x89PNG")
+    assert any("og-image.png" in e for e in vs.verifier_gabarit_og(racine=dossier))
 
 
 def test_negations_de_lencadre_ne_sont_pas_de_la_fausse_urgence(tmp_path: Path) -> None:

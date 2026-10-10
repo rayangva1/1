@@ -188,7 +188,7 @@ def test_pause_des_animations_et_absence_de_debordement(navigateur: Any, site: t
 
 def test_mouvement_reduit_et_images_indisponibles(navigateur: Any, site: tuple[Path, str]) -> None:
     """prefers-reduced-motion coupe toutes les animations (fil entier et immobile) ; une image qui ne charge pas est
-    masquée et laisse la silhouette du renard."""
+    masquée à l'écran (son texte alternatif reste lu) et laisse la silhouette du renard."""
     _, url = site
     contexte = navigateur.new_context(viewport={"width": 390, "height": 844}, reduced_motion="reduce")
     page = contexte.new_page()
@@ -200,7 +200,10 @@ def test_mouvement_reduit_et_images_indisponibles(navigateur: Any, site: tuple[P
     page.wait_for_timeout(300)
     assert page.evaluate("getComputedStyle(document.querySelector('.lp-hero__img')).animationName") == "none"
     assert page.evaluate("[...document.querySelectorAll('[data-apparition]')].every(e => getComputedStyle(e).opacity === '1')")
-    assert page.evaluate("getComputedStyle(document.querySelector('.lp-hero__img')).visibility") == "hidden"
+    # Masquée à l'écran, jamais retirée de l'arbre d'accessibilité : son texte alternatif reste lu (A11Y-03).
+    style = page.evaluate("(() => { const s = getComputedStyle(document.querySelector('.lp-hero__img')); return [s.visibility, s.opacity, s.clipPath]; })()")
+    assert style[0] != "hidden" and (style[1] == "0" or style[2] != "none"), style
+    assert page.get_by_role("img", name="Illustration : notre renard noir aux oreilles et à la queue orange", exact=False).count() >= 1
     assert page.is_visible(".lp-hero .lp-secours")
     contexte.close()
 
@@ -231,7 +234,7 @@ def site_rapatrie(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     serveur.shutdown()
 
 
-@pytest.mark.parametrize(("largeur", "hauteur", "densite", "attendu"), [(390, 844, 3, "-1520.webp"), (1440, 900, 2, "-2688.webp"), (1280, 720, 1, "-1280.webp")])
+@pytest.mark.parametrize(("largeur", "hauteur", "densite", "attendu"), [(390, 844, 3, "-1180.webp"), (1440, 900, 2, "-2688.webp"), (1280, 720, 1, "-1280.webp")])
 def test_image_principale_en_webp_jamais_en_png(navigateur: Any, site_rapatrie: str, largeur: int, hauteur: int, densite: int, attendu: str) -> None:
     """Après rapatriement, aucun écran ne charge de PNG : le srcset ne contient que des variantes WebP budgétées."""
     import visuels

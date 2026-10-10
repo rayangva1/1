@@ -3,7 +3,8 @@ aux filets photographiés, mascotte Braise (nom provisoire), maquettes contrôl�
 
 Décision du propriétaire du 06.10.2026 : l'Atelier remplace « Nuit sur le Léman » et la loutre « Lumi ». Refonte de la
 landing, des pages secondaires et des maquettes : étape 2 (10.10.2026), puis corrections des deux critiques (DA-01 à
-DA-17, HON-01, A11Y-01, TST-01). Chaque garde-fou des étapes précédentes est gardé et adapté au nouveau contenu.
+DA-17, HON-01, A11Y-01, TST-01) et des derniers constats (HON-02, A11Y-02, A11Y-03, PERF-01, IP-02, IP-03). Chaque
+garde-fou des étapes précédentes est gardé et adapté au nouveau contenu.
 """
 
 from __future__ import annotations
@@ -185,6 +186,8 @@ def test_index_garde_le_contrat_et_les_textes_exacts() -> None:
     assert all(i.get("width") and i.get("height") for i in a.imgs)
     assert re.search(r'<source media="\(max-width: 699px\)"[^>]*data-visuel="renard-heros-portrait"', texte)
     assert texte.count('rel="preload" as="image"') == 2
+    # PERF-01 : le portrait de Braise (chapitre 01) ne concurrence jamais l'image du héro.
+    assert [i.get("fetchpriority") for i in a.imgs if i.get("data-visuel") == "renard-assis"] == ["low"]
     consentement = next(c for c in a.champs if c.get("name") == "consentement")
     assert "checked" not in consentement and "required" in consentement
 
@@ -286,6 +289,47 @@ def test_photos_d_ambiance_jamais_presentees_comme_des_produits() -> None:
     assert "data-visuel" not in formats  # le chapitre qui annonce ce qui sera vendu n'a aucune image
 
 
+def test_jour_du_drop_boite_symbolique_legendee() -> None:
+    """HON-02 : la boîte ouverte de l'illustration du drop est un symbole, légendé comme tel ; aucun texte ne dit que
+    Braise ou la boutique « ouvre la boîte » (les produits scellés sont contrôlés sans être ouverts)."""
+    texte = _index()
+    drop = re.search(r'<section [^>]*id="drop".*?</section>', texte, re.DOTALL).group(0)
+    legende = re.search(r'data-visuel="renard-jour-de-drop".*?</figure>\s*<p class="lp-legende[^"]*"[^>]*>(.*?)</p>', drop, re.DOTALL)
+    assert legende, "légende absente juste après l'illustration du drop"
+    lg = vs._normaliser(legende.group(1))
+    assert "symbole du drop" in lg and "pas un produit ouvert" in lg and "qu'une lumière" in lg and "vierges" in lg, lg
+    visible = vs._texte_visible(drop)
+    assert "Le drop n'ouvre que lorsque le produit est là" in visible and "toujours scellé" in visible
+    assert "symbole du drop" in visuels.charger()["visuels"]["renard-jour-de-drop"]["alt"]
+    motif = next(m for m, libelle in vs.AFFIRMATIONS_INEXACTES if "jamais ouverts" in libelle)
+    # La règle elle-même (« sans ouvrir les produits ») n'est jamais prise pour une affirmation contradictoire.
+    assert not motif.search("Contrôlés à réception sans ouvrir les produits.")
+    assert motif.search("Nous ouvrons les boîtes devant vous.")
+    for page in [*LANDING.glob("*.html"), *MAQUETTES.glob("*.html")]:
+        assert not motif.search(vs._texte_visible(page.read_text(encoding="utf-8"))), page.name
+
+
+def test_textes_alternatifs_fideles_aux_images() -> None:
+    """A11Y-02 : l'illustration de la réservation montre quatre boîtes (la dernière en partie cachée par la queue) : le
+    texte alternatif ne les compte pas."""
+    v = visuels.charger()["visuels"]["renard-reservation"]
+    assert "une pile de boîtes noires vierges à bande orange" in v["alt"]
+    assert not re.search(r"\b(?:trois|deux|3)\b", v["alt"] + " " + v["description"])
+    for page in (LANDING / "index.html", MAQUETTES / "fiche-produit.html"):
+        assert visuels.alt_html(visuels.charger(), "renard-reservation") in page.read_text(encoding="utf-8"), page.name
+
+
+def test_creations_originales_pour_la_boutique() -> None:
+    """IP-03 : « création originale pour la boutique », jamais « de la boutique » (droits sur une illustration générée
+    incertains, LDA art. 2) : pages, pages générées, maquettes et DA."""
+    textes = {p.name: p.read_text(encoding="utf-8") for p in [*LANDING.glob("*.html"), *MAQUETTES.glob("*.html")]}
+    textes.update({f"généré {k}": v for k, v in publication.pages_secondaires().items()})
+    textes["DIRECTION_ATELIER.md"] = (da_sync.DA / "DIRECTION_ATELIER.md").read_text(encoding="utf-8")
+    for nom, texte in textes.items():
+        assert not vs.CREATION_DE_LA_BOUTIQUE_RE.search(texte), nom
+    assert "créations originales pour la boutique" in vs._texte_visible(_index())
+
+
 def test_textes_de_garantie_identiques_au_moteur() -> None:
     predrop = pytest.importorskip("pokeshop.predrop")
     assert vs.textes_garantie_moteur() == (predrop.GUARANTEE_TEXT_FR, predrop.NO_DIFFERENCE_REFUND_FR)
@@ -305,6 +349,10 @@ def test_textes_de_garantie_identiques_au_moteur() -> None:
         (lambda t: t.replace("<!-- APERCU:DEBUT -->", "<!-- APERCU:DEBUT (loutre) -->", 1), "mascotte abandonnée"),
         (lambda t: re.sub(r"[Nn]om (?:est )?provisoire", "nom", t), "nom provisoire"),
         (lambda t: re.sub(r"(?:création|illustration) originale", "création", t), "création originale"),
+        (lambda t: t.replace("création originale pour la boutique", "création originale de la boutique"), "pour la boutique"),
+        # HON-02 : la boutique n'ouvre jamais un produit scellé.
+        (lambda t: t.replace("Le drop n'ouvre que lorsque", "Braise n'ouvre la boîte que lorsque"), "jamais ouverts"),
+        (lambda t: t.replace("Aucun prix n'est encore fixé.", "Nous ouvrons chaque display pour vous."), "jamais ouverts"),
     ],
 )
 def test_regles_images_et_contenu_detectees(tmp_path: Path, modification, attendu: str) -> None:  # type: ignore[no-untyped-def]

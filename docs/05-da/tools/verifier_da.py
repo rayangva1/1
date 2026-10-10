@@ -333,6 +333,8 @@ REGLES_MASCOTTE: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("jamais debout sur deux pattes", (r"jamais debout sur (?:ses )?deux pattes",)),
     ("jamais de gants, chaussures ni vêtements (Tails, Sega)", (r"gants", r"chaussures", r"vêtements", r"Tails")),
     ("aucun trait d'Évoli ni d'un Pokémon", (r"Évoli", r"collerette", r"bout de (?:la )?queue crème", r"mèche frontale")),
+    ("jamais de touffe orange à l'intérieur des oreilles (Feunnec / Fennekin, Roussil / Braixen)",
+     (r"touffe orange à l['’]intérieur des oreilles", r"intérieur des oreilles crème", r"Feunnec", r"Fennekin", r"Roussil / Braixen")),
     ("ne tient jamais un vrai produit Pokémon", (r"ne tient jamais un (?:vrai )?produit Pokémon",)),
     ("les illustrations n'illustrent jamais un produit vendu", (r"n['’]illustrent jamais un produit vendu",)),
     ("nom provisoire, alternatives et recherche de marque", (r"Braise[^.\n]{0,40}nom provisoire", r"\bSuie\b", r"\bKit\b", r"Swissreg")),

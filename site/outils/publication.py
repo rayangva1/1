@@ -243,7 +243,7 @@ def _corps(nom: str, contenu: str) -> str:
         <p class="lp-pied__mention" id="mention-independance">{MENTION_INDEPENDANCE}</p>
         <p>Exploitant : {{{{RAISON_SOCIALE}}}}, {{{{ADRESSE_POSTALE}}}}, Suisse. Contact : <a href="mailto:{{{{EMAIL_SUPPORT}}}}">{{{{EMAIL_SUPPORT}}}}</a></p>
         <p><a href="./">Accueil</a> · <a href="confidentialite.html">Déclaration de confidentialité</a></p>
-        <p class="lp-pied__credits">Braise, notre renard mascotte (nom provisoire) : création originale de la boutique, sans lien avec Pokémon.</p>
+        <p class="lp-pied__credits">Braise, notre renard mascotte (nom provisoire) : création originale pour la boutique, sans lien avec Pokémon.</p>
       </div>
     </div>
   </footer>

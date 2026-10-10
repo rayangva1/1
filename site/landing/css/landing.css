@@ -329,7 +329,10 @@ html:not(.lp-js) .lp-entete { background: var(--da-color-papier-chaud); }
   height: 100%;
   object-fit: cover;
 }
-.lp-media img.est-indisponible { visibility: hidden; }
+/* Image indisponible : masquée à l'écran (icône d'image cassée et texte de secours du navigateur), mais gardée dans
+   l'arbre d'accessibilité (jamais visibility: hidden ni display: none) : son texte alternatif reste lu, le décor de
+   secours étant aria-hidden (A11Y-03). Le découpage la garde masquée même quand la pause rend l'opacité à 1. */
+.lp-media img.est-indisponible { opacity: 0; clip-path: inset(50%); }
 /* Bords des illustrations fondus dans le papier : ce ne sont plus des rectangles collés sur la page. */
 .lp-media--fondu,
 .lp-page__figure {
@@ -538,6 +541,8 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
 .lp-drop__corps { margin-top: clamp(40px, 6vw, 72px); align-items: end; }
 .lp-drop__image { aspect-ratio: 1920 / 1086; background: var(--da-color-inverse-surface); }
 .lp-drop__texte { margin-top: 56px; }
+/* Légende de l'illustration : la boîte ouverte est un symbole du drop, jamais un produit ouvert (HON-02). */
+.lp-drop__legende { max-width: 34rem; }
 .lp-etapes__num {
   display: block;
   margin-bottom: 18px;
@@ -549,8 +554,9 @@ html:not(.lp-fil-pret) body:has(> .lp-fil) .lp-chapitre::before {
 @media (min-width: 900px) {
   .lp-drop__entete .lp-numero { grid-column: 1 / span 12; }
   .lp-drop__entete .lp-h2 { grid-column: 1 / span 11; }
-  .lp-drop__image { grid-column: 1 / span 8; }
-  .lp-drop__texte { grid-column: 9 / span 4; margin-top: 0; }
+  .lp-drop__image { grid-column: 1 / span 8; grid-row: 1; }
+  .lp-drop__legende { grid-column: 1 / span 8; grid-row: 2; }
+  .lp-drop__texte { grid-column: 9 / span 4; grid-row: 1; margin-top: 0; }
 }
 
 /* 03 · Réservation garantie : la garantie est la phrase la plus importante de la page, dite comme une citation. */
