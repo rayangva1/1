@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="titre desc">
-  <title id="titre">Quai des Cartes — favicon, direction B</title>
+  <title id="titre">Quai des Cartes — favicon, ambiance Atelier</title>
   <desc id="desc">Nom de travail NON VALIDÉ. Lettrage original construit à la main en contours pleins (aucune police, aucun personnage, symbole ou typographie de licence). Voir logo/REGLES_LOGO.md.</desc>
-  <path fill="#5A31F4" d="M7 0L25 0A7 7 0 0 1 32 7L32 25A7 7 0 0 1 25 32L7 32A7 7 0 0 1 0 25L0 7A7 7 0 0 1 7 0Z"/>
-  <path fill="#FFFFFF" d="M22 15A8 8 0 1 1 6 15A8 8 0 1 1 22 15ZM18 15A4 4 0 1 0 10 15A4 4 0 1 0 18 15ZM18 9L22 9L22 25L18 25ZM22 9A2 2 0 1 1 18 9A2 2 0 1 1 22 9ZM22 25A2 2 0 1 1 18 25A2 2 0 1 1 22 25Z"/>
+  <path fill="#1D1B19" d="M6 0L26 0A6 6 0 0 1 32 6L32 26A6 6 0 0 1 26 32L6 32A6 6 0 0 1 0 26L0 6A6 6 0 0 1 6 0Z"/>
+  <path fill="#EFEAE1" d="M25.5 13.5A9.5 9.5 0 1 1 6.5 13.5A9.5 9.5 0 1 1 25.5 13.5ZM21.2 13.5A5.2 5.2 0 1 0 10.8 13.5A5.2 5.2 0 1 0 21.2 13.5ZM17.2 16.6L21.4 16.6L26.4 23.5L22.2 23.5Z"/>
+  <path fill="#F26A1B" d="M5.5 25.5L26.5 25.5L26.5 29L5.5 29Z"/>
 </svg>

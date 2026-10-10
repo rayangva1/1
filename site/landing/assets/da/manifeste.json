@@ -1,40 +1,40 @@
 {
   "avertissement": "Copies générées par site/outils/da_sync.py depuis docs/05-da : ne pas modifier ici.",
-  "direction": "b",
-  "ambiance": "nuit",
-  "google_fonts": "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700..800&family=DM+Sans:opsz,wght@9..40,400..700&family=Fraunces:ital,opsz,wght,SOFT@1,144,500,100&display=swap",
+  "direction": "a",
+  "ambiance": "atelier",
+  "google_fonts": "https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@400..600&family=Instrument+Serif:ital@0;1&display=swap",
   "fichiers": {
     "ambiance.css": {
-      "source": "docs/05-da/tokens/tokens-nuit.css",
-      "sha256": "ea22366afe1302298ee682e0b320e59b547ec6c25cc0d1378a53ccae7121b7a4"
+      "source": "docs/05-da/tokens/tokens-atelier.css",
+      "sha256": "9fa0bfb20e166d9845f83a6ba2f98ab5e392b57cf5522c3317c7f99027123cc5"
     },
     "apple-touch-icon.png": {
-      "source": "docs/05-da/logo/png/favicon-b-180.png",
-      "sha256": "79f3587a45bb9897f01a5df8c596c9bc806074070798ad2d36ae779e2c561a9d"
+      "source": "docs/05-da/logo/png/favicon-a-180.png",
+      "sha256": "d9c661f9740fa322c47fc7c52dc609be9138b1b9d3cd7c4a32d7a893c51059de"
     },
     "components.css": {
       "source": "docs/05-da/components/components.css",
       "sha256": "edba3eb363e316ae8fd8496db5a70739f9298ac20a2363757afc3f867566e4db"
     },
     "favicon-32.png": {
-      "source": "docs/05-da/logo/png/favicon-b-32.png",
-      "sha256": "3a9d98ce9e83e99ed183f9bf71a2c9c6dba1f246dde6aaa6ea6ba67711ea0892"
+      "source": "docs/05-da/logo/png/favicon-a-32.png",
+      "sha256": "59ef5422cacb9b1d17d8a320006bc622ae6d2d2a3f67ce8d6fd8d150d250c9f6"
     },
     "favicon.svg": {
-      "source": "docs/05-da/logo/b/favicon.svg",
-      "sha256": "c5f311b8a1abfcc6110a36286e4a7308b3b4cdfaa9978864ae9d7495a6fed8b9"
+      "source": "docs/05-da/logo/a/favicon-atelier.svg",
+      "sha256": "e2717840418359b1f5425109ed9a7ea683ce72053055163c7e29d441a907df99"
     },
     "logo-1200.png": {
-      "source": "docs/05-da/logo/png/logo-b-principal-1200.png",
-      "sha256": "e5f2138365268c1f633894f4b439f458d82218c1f39de663db5ce07f835d5b70"
+      "source": "docs/05-da/logo/png/logo-a-principal-1200.png",
+      "sha256": "881a1bce00ac9a8a96fa99fe90bc192b54688c1e3eb755ce2bb81c8b89d4d87b"
     },
     "logo-horizontal-fond-sombre.svg": {
-      "source": "docs/05-da/logo/b/logo-b-nuit.svg",
-      "sha256": "fbb27b648bf326d6fa3ca3a92a3ff306db612c3fef7bef9f4943c0ce90583533"
+      "source": "docs/05-da/logo/a/logo-a-atelier-fond-sombre.svg",
+      "sha256": "253863936c896b4a4065df240d81ae7e5036c7a85103b012e4b5e9dd0535127f"
     },
     "logo-horizontal.svg": {
-      "source": "docs/05-da/logo/b/logo-b-principal.svg",
-      "sha256": "429187ab9d11e8d8f4863623dbcf913b12b23702fa85539e5850992cf1c35150"
+      "source": "docs/05-da/logo/a/logo-a-atelier.svg",
+      "sha256": "64c9125e5166632e3d476d4a4b03e300c8bbd7e6555872bc9232034dc3778957"
     },
     "tokens.css": {
       "source": "docs/05-da/tokens/tokens.css",

@@ -1,42 +1,39 @@
 <!DOCTYPE html>
-<html lang="fr-CH" data-da="b" data-ambiance="nuit" data-animations="pause">
+<html lang="fr-CH" data-da="a" data-ambiance="atelier" data-animations="pause">
 <head>
   <meta charset="utf-8">
-  <!-- Gabarit de l'image de partage (1200 × 630), ambiance « Nuit sur le Léman » — rendu par site/outils/generer_og.py.
-       Décor 100 % CSS (aucune image distante, aucun élément sous licence). Nom de travail NON VALIDÉ. -->
+  <!-- Gabarit de l'image de partage (1200 × 630), ambiance « Atelier » — rendu par site/outils/generer_og.py.
+       Visuel local (renard-heros, variante WebP de site/landing/assets/visuels/ : renard original « Braise », nom
+       provisoire, aucun élément sous licence). Texte posé dans la moitié libre de l'illustration, sur un voile papier.
+       Nom de travail NON VALIDÉ. -->
   <title>Image de partage — Quai des Cartes</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Fraunces:ital,opsz,wght,SOFT@1,144,500,100&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&amp;family=Geist+Mono:wght@400..600&amp;family=Instrument+Serif:ital@0;1&amp;display=swap">
   <link rel="stylesheet" href="../../landing/assets/da/tokens.css">
   <link rel="stylesheet" href="../../landing/assets/da/components.css">
   <link rel="stylesheet" href="../../landing/assets/da/ambiance.css">
   <link rel="stylesheet" href="../../landing/css/landing.css">
   <style>
     html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
-    .og { position: relative; isolation: isolate; width: 1200px; height: 630px; overflow: hidden; --lp-lune-x: 78%; --lp-lune-y: 18%; }
-    .og .lp-hero__scene { inset: 0; }
-    .og .lp-hero__voile { background: linear-gradient(90deg, color-mix(in srgb, var(--da-color-nuit-profonde) 88%, transparent) 0%, color-mix(in srgb, var(--da-color-nuit-profonde) 55%, transparent) 50%, transparent 72%); }
-    .og .lp-hero__lune { width: 110px; margin: -55px 0 0 -55px; }
-    .og__texte { position: absolute; left: 72px; top: 64px; width: 700px; }
-    .og__texte img { height: 34px; width: auto; display: block; margin-bottom: 40px; }
-    .og .lp-hero__titre { margin: 0; font-size: 76px; }
-    .og__preuves { margin: 30px 0 0; font-family: var(--da-font-price); font-size: 20px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--da-color-or); }
+    .og { position: relative; width: 1200px; height: 630px; overflow: hidden; background: var(--da-color-papier-chaud); }
+    .og .og__image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 100% 100%; }
+    .og__texte { position: absolute; left: 64px; top: 72px; width: 540px; isolation: isolate; }
+    .og__texte::before {
+      content: ""; position: absolute; inset: -48px -64px; z-index: -1; background: var(--lp-voile);
+      mask-image: linear-gradient(90deg, transparent, black 56px, black calc(100% - 56px), transparent), linear-gradient(180deg, transparent, black 48px, black calc(100% - 48px), transparent);
+      mask-composite: intersect;
+    }
+    .og .og__logo { display: block; width: auto; height: 24px; margin-bottom: 44px; }
+    .og__titre { margin: 0; font-size: 64px; line-height: 0.98; }
+    .og__preuves { margin: 28px 0 0; font-family: var(--da-font-price); font-size: 15px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--da-color-ink); }
   </style>
 </head>
 <body class="da-root">
   <div class="og">
-    <div class="lp-hero__scene nt-scene nt-scene--nuit">
-      <span class="nt-s nt-s--ciel"></span>
-      <span class="nt-s nt-etoiles"></span>
-      <span class="nt-s lp-hero__lune"><span class="nt-lune"></span></span>
-      <span class="nt-s nt-s--relief"></span>
-      <span class="nt-s nt-s--lac"></span>
-      <span class="nt-s nt-s--quai"><span></span><span></span></span>
-    </div>
-    <div class="lp-hero__voile"></div>
+    <img class="og__image" src="../../landing/assets/visuels/renard-heros-1920.webp" alt="" width="2688" height="1152">
     <div class="og__texte">
-      <img src="../../landing/assets/da/logo-horizontal-fond-sombre.svg" alt="Quai des Cartes">
-      <h1 class="da-title lp-hero__titre"><span class="lp-hero__ligne">Pokémon JCC en français,</span><em class="lp-accent lp-hero__ligne">expédié depuis Genève.</em></h1>
-      <p class="og__preuves">Neufs et scellés · stock réel · livraison en Suisse</p>
+      <img class="og__logo" src="../../landing/assets/da/logo-horizontal.svg" alt="Quai des Cartes" width="1083" height="140">
+      <h1 class="da-title og__titre">Pokémon JCC en français, <em class="lp-accent">expédié</em> depuis Genève.</h1>
+      <p class="og__preuves">Scellé · stock réel · livraison en Suisse</p>
     </div>
   </div>
 </body>

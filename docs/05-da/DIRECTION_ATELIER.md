@@ -1,7 +1,7 @@
 # Ambiance « Atelier » (bâtie sur la direction A)
 
 > Direction retenue par le propriétaire le 06.10.2026 : elle **remplace** l'ambiance « Nuit sur le Léman » et la loutre « Lumi » (`DIRECTION_NUIT.md`, archivée). Nom de travail de la boutique : **Quai des Cartes** (non validé). Mascotte : un **renard original**, nom provisoire **Braise** (à valider, §8.5).
-> Sources : `tokens/tokens.json` (bloc `ambiances.atelier`, généré en `tokens/tokens-atelier.css`), les 3 photos du propriétaire et les 10 illustrations du renard (`site/config/visuels.json`), `DIRECTION_A.md` (lettrage, composants), `docs/04-legal/USAGE_MARQUES.md`, BP §7 et §8. Application : `site/landing/` et `site/maquettes/` (refonte à l'étape 2 ; la landing actuelle garde l'ambiance Nuit jusque-là, avec les nouveaux visuels).
+> Sources : `tokens/tokens.json` (bloc `ambiances.atelier`, généré en `tokens/tokens-atelier.css`), les 3 photos du propriétaire et les 10 illustrations du renard (`site/config/visuels.json`), `DIRECTION_A.md` (lettrage, composants), `docs/04-legal/USAGE_MARQUES.md`, BP §7 et §8. Application : `site/landing/` (landing et pages secondaires) et `site/maquettes/`, refaites en Atelier le 10.10.2026 (étape 2).
 
 ## 1. Intention
 
@@ -70,7 +70,7 @@ Règles qui en découlent (ratios recalculés par `tools/verifier_da.py`) :
 - **L'orange s'écrit sur charbon** : 5.60:1 entre `#F26A1B` et `#1D1B19` (surtitres des chapitres inversés).
 - Liens sur papier : rouille, 5.14:1 entre `#A6420C` et `#EFEAE1`, toujours soulignés.
 - Pas de noir pur : le charbon `#1D1B19` (14.33:1 entre `#1D1B19` et `#EFEAE1`) garde la douceur mate des photos.
-- **Texte posé sur une illustration** : jamais directement sur l'image. Le texte vit dans la moitié libre des visuels (gauche du héro, droite des alertes), sur `papier-chaud` ou `bg` ; si une image passe sous du texte (mobile), un voile `bg` d'au moins 88 % est posé dessous, et la preuve se fait comme pour Nuit (image remplacée par du noir et du blanc purs, contrôle Playwright, étape 2).
+- **Texte posé sur une illustration** : jamais directement sur l'image. Le texte vit dans la moitié libre des visuels (gauche du héro), sur `papier-chaud` ou `bg` ; sur mobile et tablette, le titre du héro est posé au-dessus de l'image, sur `papier-chaud`. Seul le titre du héro sur ordinateur (dès 1280 px) passe sur l'illustration : il est **charbon** et posé sur un voile `papier-chaud` d'au moins **64 %** (bords fondus, cœur plein sous le texte) : 6.22:1 même si l'image devenait noire (`#A19B91`), 16.10:1 si elle devenait blanche ; un texte gris (`ink-muted`) n'y est jamais posé (2.58:1 sur le voile noirci, il exigerait 88 %). Preuve Playwright : chaque image remplacée par du noir et du blanc purs, contraste mesuré sous chaque texte (`site/tests/test_landing_e2e.py`, script Node de l'étape 2).
 
 ### 3.3 Contrastes WCAG 2.x (calculés, tronqués à 2 décimales)
 
@@ -154,7 +154,7 @@ Dans les photos, un filet orange est posé sur le papier. Sur le site, il devien
 2. **Parcours** : entre deux chapitres, il suit la marge gauche (colonne 1), passe sous les numéros de chapitre, longe une image puis **rejoint le filet photographié** de l'image suivante quand elle en a un (points d'entrée et de sortie mesurés et stockés dans `site/config/visuels.json`, champ `fil`, en fractions de largeur et de hauteur). Il s'efface derrière les images sans filet (classeur, Léman, réservation).
 3. **Arrivée** : il se pose sous le renard endormi du pied de page (`renard-pied-de-page`, filet de (0, 0.793) à (0.999, 0.993)).
 
-Réalisation (étape 2) : SVG `aria-hidden="true"`, un `path` par chapitre ou un seul pour la page, trait `accent` de `fil-epaisseur` (2 px), extrémités arrondies, angles adoucis (rayon ≥ 24 px). **Dessiné au défilement** (`stroke-dasharray` / `stroke-dashoffset` piloté par `animation-timeline: view()` en amélioration progressive, sinon par la position de défilement en JavaScript) ; **coupé** avec `prefers-reduced-motion: reduce` et avec le bouton « Pause des animations » : la ligne est alors affichée entière, immobile. Sans JavaScript, la ligne est entière. Le fil ne porte **aucune information** (décor, 2.55:1 sur le papier : jamais un repère de navigation ni un indicateur de progression).
+Réalisation (landing, 10.10.2026) : SVG `aria-hidden="true"` (`.lp-fil`, tracé par `site/landing/js/atelier.js`), un `path` par tronçon entre deux filets photographiés, trait `accent` de `fil-epaisseur` (2 px), angles adoucis (rayon 32 px, 16 px sur mobile). Les points d'entrée et de sortie viennent du manifeste : `site/outils/visuels.py` écrit le champ `fil` dans l'attribut `data-fil` de chaque image (et de la `<source>` portrait du héro) ; le script les projette dans la page (cadrage `object-fit` compris). Les figures `[data-fil-ancre]` (héro, Braise assis, jour du drop, alertes, pied de page) sont raccordées ; les figures `[data-fil-masque]` (Léman plein cadre) masquent le fil, qui passe derrière. Abscisse du fil : milieu de la marge gauche, à côté du contenu (jamais sur un texte). **Dessiné au défilement** (`stroke-dashoffset` suivant le niveau de lecture, à 85 % de la fenêtre, avec une transition douce) ; **coupé** avec `prefers-reduced-motion: reduce` et avec le bouton « Pause des animations » : la ligne est alors affichée entière, immobile. Sans JavaScript, une ligne continue est tracée en CSS dans la marge des chapitres. Le fil ne porte **aucune information** (décor, 2.55:1 sur le papier : jamais un repère de navigation ni un indicateur de progression).
 
 ## 7. Photographie
 
@@ -262,7 +262,7 @@ Treize visuels, déclarés dans **un seul fichier** (`site/config/visuels.json` 
 
 ## 12. Nuit sur le Léman (archivée)
 
-`DIRECTION_NUIT.md`, ses tokens (`tokens/tokens-nuit.css`) et la loutre Lumi sont **archivés** (décision du propriétaire du 06.10.2026). Les tokens restent générés tant que la landing actuelle n'est pas refaite (étape 2) ; ils seront ensuite retirés. Aucun nouveau visuel ni texte n'utilise Lumi.
+`DIRECTION_NUIT.md`, ses tokens (`tokens/tokens-nuit.css`) et la loutre Lumi sont **archivés** (décision du propriétaire du 06.10.2026). La landing est refaite en Atelier (10.10.2026) : les tokens Nuit restent générés comme archive documentaire, mais `site/outils/da_sync.py` refuse toute ambiance archivée et `site/outils/verifier_site.py` refuse toute mention de Lumi ou de la loutre dans le site. Aucun nouveau visuel ni texte n'utilise Lumi.
 
 ## Validation humaine requise
 

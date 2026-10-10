@@ -3,7 +3,24 @@
 > Propriétaire (build) : agent « site-contenu ». Exploitation : agent 07 Site (BL-031), suivi KPI agent 10 (BL-034), contrôle agent 12.
 > Sources : BP §1 (« Tester une page de présentation avec inscription aux alertes. Aucun faux stock et aucune précommande encaissée sans allocation »), §7, §8, §9 (J1-15) ; protocole `docs/01-marche/PROTOCOLE_LANDING_TEST.md` ; DA `docs/05-da/`.
 > Nom de travail **« Quai des Cartes » — provisoire, non validé** (décision C06). Statut : **aperçu prêt ; publication bloquée** tant que les champs ne sont pas validés (voir §6). Les visuels sont déjà servis **en local** (§3.0).
-> **Transition** : la mise en page garde l'ambiance **« Nuit sur le Léman »** (direction B, toujours sombre, `docs/05-da/DIRECTION_NUIT.md`, **archivée le 06.10.2026**) jusqu'à sa refonte en ambiance **« Atelier »** (`docs/05-da/DIRECTION_ATELIER.md`, étape 2). Les visuels et la mascotte sont déjà ceux de l'Atelier : un renard original, **Braise (nom provisoire)**, et trois photos d'ambiance du propriétaire.
+> **Ambiance « Atelier »** (direction A, toujours claire, `docs/05-da/DIRECTION_ATELIER.md`), retenue par le propriétaire le 06.10.2026 et appliquée le 10.10.2026 : papier crème, charbon mat, un seul **fil orange**. La page est un récit en chapitres porté par un renard original, **Braise (nom provisoire)**, avec trois photos d'ambiance du propriétaire. L'ambiance « Nuit sur le Léman » et l'ancienne mascotte sont abandonnées (archives de la DA seulement, refusées par les outils du site).
+
+### 0. Le récit (ordre des chapitres)
+
+| Chapitre | Visuel | Contenu |
+|---|---|---|
+| Héro | `renard-heros` (ordinateur, titre posé dans la moitié libre, voile papier 64 %) · `renard-heros-portrait` (mobile, titre au-dessus) | Titre `h1` : « Pokémon JCC en français, expédié depuis Genève » + accroche **« Le calme avant le drop. »** (proposition à valider) ; alerte d'ouverture ; six engagements |
+| 01 Rencontre | `renard-assis` | Braise (nom provisoire), sa fiche (caractère, rôle, ce qu'il ne fait jamais), création originale sans lien avec Pokémon |
+| 02 Le jour du drop (charbon) | `renard-jour-de-drop` | Une date, un statut ; trois étapes avec les badges DA |
+| 03 Réservation garantie | `renard-reservation` | Les deux phrases du moteur mot pour mot, trois garanties, renvoi aux questions |
+| 04 Formats | `photo-classeur` (photo d'ambiance, légende neutre) + `renard-classeur` | Formats prévus, aucun prix ; la photo est séparée de la liste (et de « Accessoires ») par le titre du chapitre |
+| 05 Le soin | `photo-mains-sleeve` + `photo-boite-etuis` (photos d'ambiance) | Stock réel, français vérifié, service qui répond ; trois statuts ; ce que vous ne verrez pas chez nous |
+| 06 Au bord du Léman | `renard-leman` (plein cadre) | Expédié depuis Genève, livré en Suisse |
+| 07 Alertes | `renard-alertes` (le renard lève les yeux vers le formulaire, posé comme une feuille dans l'espace libre) | Formulaire d'inscription (consentement non pré-coché, lien confidentialité, désactivé sans webhook) |
+| 08 Questions | — | Questions fréquentes, dont « Qui est Braise ? » |
+| Pied de page | `renard-pied-de-page` (décoratif) | Braise s'endort contre une boîte ; le fil orange se pose sous lui ; mention d'indépendance |
+
+**Le fil orange** (DIRECTION_ATELIER.md §6) : une ligne SVG continue qui sort du filet photographié du héro, descend dans la marge gauche et rejoint le filet photographié de chaque figure `[data-fil-ancre]` (points mesurés : champ `fil` de `site/config/visuels.json`, écrit dans `data-fil` par `site/outils/visuels.py`) ; il passe derrière le Léman (`[data-fil-masque]`) et se pose sous le renard du pied de page. Dessiné au défilement ; entier et immobile en mouvement réduit ou en pause ; sans JavaScript, une ligne CSS court dans la marge. Décor `aria-hidden` : il ne porte aucune information.
 
 ## 1. Ce que la page fait, et ce qu'elle ne fait jamais
 
@@ -15,7 +32,7 @@
 | Liste les formats prévus, sans engagement de sélection | Prendre une précommande, un acompte ou une réservation |
 | Recueille l'inscription aux alertes : email, prénom facultatif, formats, budget, pour qui, canton, **consentement non pré-coché** | Envoyer un email sans confirmation (double opt-in fait par n8n) |
 | Affiche la mention d'indépendance (non-affiliation à The Pokémon Company), l'exploitant et le lien confidentialité | Utiliser un logo, un personnage ou une police de la licence ; contenir un coût, une marge ou un nom de fournisseur |
-| Ambiance de nuit immersive, toujours sombre (contrastes AA calculés, `DIRECTION_NUIT.md`), mobile d'abord, accessible (libellés, erreurs annoncées, focus visible en or, cibles de 44 px, textes alternatifs) ; animations coupées par `prefers-reduced-motion` et par le bouton « Pause des animations » (WCAG 2.2.2) ; rien n'est masqué sans JavaScript | Charger un script tiers, un pixel publicitaire ou un cookie (ressources externes : Google Fonts, retirable ; en **aperçu seulement**, les visuels de la marque à leur adresse distante — jamais dans le dossier publié) |
+| Ambiance « Atelier », toujours claire (contrastes AA calculés, `DIRECTION_ATELIER.md`), éditoriale, mobile d'abord, accessible (libellés, erreurs annoncées, focus charbon visible, cibles de 44 px, textes alternatifs) ; fil orange et apparitions coupés par `prefers-reduced-motion` et par le bouton « Pause des animations » (WCAG 2.2.2) ; rien n'est masqué sans JavaScript | Charger un script tiers, un pixel publicitaire ou un cookie (ressources externes : Google Fonts, retirable ; en **aperçu seulement**, les visuels de la marque à leur adresse distante — jamais dans le dossier publié) |
 
 ## 2. Fichiers
 
@@ -24,15 +41,15 @@
 | `index.html` | Page principale (source, champs `{{…}}` visibles) | À la main (agent 07) |
 | `merci.html`, `inscription-confirmee.html`, `desinscription.html` | Pages de retour du workflow n8n (sans JavaScript, après confirmation, après désinscription) | **Générées** : `python site/outils/publication.py source` |
 | `confidentialite.html` | Notice de confidentialité **de la landing** = bloc public de `docs/04-legal/CONFIDENTIALITE_LANDING.md` converti en HTML (chaque champ du formulaire y est déclaré : contrôlé par `verifier_site.py`) ; la déclaration complète de la boutique (`CONFIDENTIALITE.md`) la remplace à l'ouverture | **Générée** (même commande) ; le texte se corrige dans `docs/04-legal/` |
-| `css/landing.css` | Mise en page de la landing **et des maquettes** (`site/maquettes/`) : récit en chapitres (« la nuit avance »), héro, scènes de secours dessinées en CSS et SVG (ciel tourbillonnant, lune en croissant, lac, montagnes, silhouette du renard), voiles de lisibilité (texte sur illustration toujours AA, même sur une image blanche), cartes, formulaire ; uniquement des variables `--da-*` ; mouvement (dont les effets liés au défilement, `animation-timeline`) seulement sous `prefers-reduced-motion: no-preference` | À la main |
+| `css/landing.css` | Mise en page de la landing, des pages secondaires **et des maquettes** (`site/maquettes/`) : grille 4/8/12 colonnes, chapitres (papier, papier chaud, charbon), héro (titre posé sur un voile papier de 64 % sur ordinateur : AA même si l'image devenait noire), fil orange (SVG et repli CSS sans script), cadres d'images avec silhouette du renard en secours, formulaire en « feuille de papier », questions, pied de page ; uniquement des variables `--da-*` ; tout mouvement seulement sous `prefers-reduced-motion: no-preference`, coupé par la pause | À la main |
 | `js/theme.js` | Avant affichage : classe `lp-js` (les apparitions ne masquent rien sans script) et choix « Pause des animations » mémorisé | À la main |
 | `js/landing.js` | Formulaire (validation, envoi, messages) ; fonctions pures dans `LandingCore` | À la main |
-| `js/nuit.js` | Effets : fondu des visuels (classe `a-visuel` : le décor de secours n'est plus peint quand l'illustration est chargée ; si elle ne charge pas, le décor reste), apparitions au défilement, en-tête opaque au défilement, survol 3D des cartes, rail des formats accessible au clavier, question fréquente ouverte par un lien, boutons « Pause des animations » (en-tête et pied de page). Aucun appel réseau | À la main |
+| `js/atelier.js` | Effets : **fil orange** (projection des filets mesurés `data-fil` dans la page, cadrage `object-fit` compris ; tronçons arrondis dans la marge ; masque derrière `[data-fil-masque]` ; dessin au défilement), image indisponible masquée (la silhouette du renard reste), apparitions au défilement, en-tête au défilement, question fréquente ouverte par un lien, boutons « Pause des animations » (en-tête et pied de page). Aucun appel réseau | À la main |
 | `assets/visuels/` | Variantes WebP des 13 visuels de la marque (`<clé>-<largeur>.webp`, sans métadonnées) ; les fichiers d'origine restent archivés dans `site/visuels-sources/` (hors du dossier publié, ignoré par git) | **Générées** : `python site/outils/rapatrier_visuels.py` |
 | `../config/visuels.json` | **Source unique** des 13 visuels (clé, dimensions, format, nature, usage, description, texte alternatif, filet orange mesuré, largeurs des variantes) ; les pages n'ont que des balises `data-visuel` | `rapatrier_visuels.py --importer` (remplit `variantes`, `fichier_source`, `empreinte_source`, source « local »), à la main pour ajouter un visuel |
 | `js/config.js` | `webhookUrl` (vide = formulaire désactivé avec message), `mode`, `emailSupport` | `publication.py` (ou à la main, §3.4) |
-| `assets/da/` | Copies des fichiers DA (tokens, composants, `ambiance.css` = tokens Nuit jusqu'à la refonte, logos, favicons) + `manifeste.json` (direction **b**, ambiance **nuit** ; Atelier : `--direction a --ambiance atelier`) | **Générées** : `python site/outils/da_sync.py` |
-| `assets/og-image.png` | Image de partage 1200 × 630 (ambiance Nuit, décor CSS, sans image distante) | `python site/outils/generer_og.py` (outil local facultatif) |
+| `assets/da/` | Copies des fichiers DA (tokens, composants, `ambiance.css` = `tokens-atelier.css`, logos et favicon de l'Atelier) + `manifeste.json` (direction **a**, ambiance **atelier**) | **Générées** : `python site/outils/da_sync.py` |
+| `assets/og-image.png` | Image de partage 1200 × 630 (Atelier : `renard-heros` local et titre sur voile papier ; aucune image distante) | `python site/outils/generer_og.py` (outil local facultatif) |
 | `inscription.schema.json` | Contrat des champs envoyés au webhook n8n | À la main, avec l'agent integrations |
 | `../config/publication_landing.yaml` | `URL_LANDING`, `MOIS_OUVERTURE`, `WEBHOOK_INSCRIPTION` (mêmes statuts que le registre légal) | Agent 07, propriétaire |
 
@@ -146,13 +163,13 @@ python -m pytest site/tests -q
 - [ ] Page publiée : le message sans JavaScript dit que le formulaire fonctionne aussi sans script (contrôle 13 de `verifier_site.py`).
 - [ ] Aucune donnée interne dans le code source.
 - [ ] Notice de la landing relue par le juriste (relecture express) et datée ; `publication.py etat` : tous les champs de la liste fermée `valide`.
-- [ ] Affichage mobile (390 px) et ordinateur (1440 px) vérifié avec les visuels réels (l'ambiance est toujours sombre), animations en pause et `prefers-reduced-motion` testés, navigation au clavier testée.
+- [ ] Affichage mobile (390 px) et ordinateur (1440 px) vérifié avec les visuels réels (l'ambiance est toujours claire), fil orange raccordé aux filets photographiés, animations en pause et `prefers-reduced-motion` testés, navigation au clavier testée.
 - [ ] Liens UTM générés pour chaque source.
 
 ## 7. Changer la direction DA ou le nom
 
-- Direction cible : **A + ambiance Atelier** (`python site/outils/da_sync.py --direction a --ambiance atelier`, toujours claire, logos et favicon de l'Atelier), à appliquer avec la refonte de la landing (étape 2). Direction actuelle, de transition : **B + ambiance Nuit**, archivée (`python site/outils/da_sync.py --direction b --ambiance nuit` : copie les fichiers B et `tokens-nuit.css`, le logo Nuit, aligne `data-da`, `data-ambiance`, la feuille d'ambiance et Google Fonts sur toutes les pages, maquettes comprises). La feuille `css/landing.css` est dessinée pour l'ambiance Nuit : revenir à A ou à B sans ambiance (`--ambiance aucune`) demande de reprendre la mise en page.
-- Image de partage : `python site/outils/generer_og.py` (gabarit `site/outils/og/og-image.html`, décor CSS).
+- Direction appliquée : **A + ambiance Atelier** (`python site/outils/da_sync.py --direction a --ambiance atelier` : copie les fichiers A et `tokens-atelier.css`, les logos et le favicon de l'Atelier, aligne `data-da`, `data-ambiance`, la feuille d'ambiance, `color-scheme` et Google Fonts sur toutes les pages, maquettes comprises). Une ambiance **archivée** (« nuit ») est refusée par `da_sync.py`. La feuille `css/landing.css` est dessinée pour l'Atelier : revenir à A sans ambiance (`--ambiance aucune`) demande de reprendre la mise en page.
+- Image de partage : `python site/outils/generer_og.py` (gabarit `site/outils/og/og-image.html` : `renard-heros` local, titre sur voile papier ; Playwright et Chromium requis, outil local facultatif).
 - Maquettes de la boutique (jamais publiées) : `site/maquettes/fiche-produit.html` (fiche d'un produit FICTIF en réservation garantie, deux prix FICTIFS) et `site/maquettes/drop.html` (page d'un drop FICTIF) ; mêmes feuilles que la landing ; contrôlées par `verifier_site.py` (FICTIF à côté de chaque prix et date, textes de garantie exacts, aucune urgence).
 - Nom validé différent de « Quai des Cartes » : saisir `NOM_BOUTIQUE` (statut `valide`) dans le registre légal ; la publication remplace le nom partout, mais **refuse** tant que le logo DA n'a pas été refait pour ce nom (le logo est un lettrage du nom de travail) ; régénérer ensuite l'image de partage.
 
@@ -163,6 +180,7 @@ python -m pytest site/tests -q
 - [ ] Valider `MOIS_OUVERTURE` (proposé : « novembre 2026 », sans date ferme) dans `site/config/publication_landing.yaml`.
 - [ ] Valider le texte de consentement (avec le juriste si souhaité) : toute modification crée une nouvelle `consentement_version`.
 - [ ] Choisir : Google Fonts (DA) ou polices système (`--sans-google-fonts`), et renseigner `ST_POLICES` en conséquence ; choisir l'outil de mesure des visiteurs (ou aucun : la notice dit « aucun outil de mesure d'audience », à modifier avant d'en ajouter un).
-- [ ] **C10** : ambiance « Nuit sur le Léman » abandonnée (06.10.2026) ; valider l'ambiance « Atelier » et la mascotte (renard, nom provisoire « Braise ») avec `docs/05-da/DIRECTION_ATELIER.md` ; juriste : usage des visuels générés (renard original, boîtes vierges sans marque), conditions commerciales de l'outil de génération, photos d'ambiance (droits, droit à l'image des mains).
-- [ ] Avant la mise en ligne : vérifier le rendu avec les vraies images (héro 21:9 sur ordinateur, portrait 9:16 sur mobile) après la refonte en ambiance Atelier.
+- [ ] **C10** : valider l'ambiance « Atelier » appliquée (papier, charbon, fil orange) et la mascotte (renard, nom provisoire « Braise » ; alternatives : Suie, Kit ; recherche de marque, Braixen à examiner en priorité) avec `docs/05-da/DIRECTION_ATELIER.md` ; juriste : usage des visuels générés (renard original, boîtes vierges sans marque), conditions commerciales de l'outil de génération, photos d'ambiance (droits, droit à l'image des mains).
+- [ ] Valider l'accroche du héro, proposée : **« Le calme avant le drop. »** (alternatives : « Rien d'inventé, tout en français. », « Le scellé, sans le bruit. ») ; le `h1` garde « Pokémon JCC en français, expédié depuis Genève » pour le référencement.
+- [ ] Valider les titres de chapitre (« Une date, un statut, rien d'autre. », « Le soin, sans effet d'annonce. », « L'ouverture, sans la guetter. »…) et le texte de la fiche de Braise.
 - [ ] **C07** : donner le GO de publication après la checklist §6 et les tests de recette du contrat n8n (§4).

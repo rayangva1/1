@@ -161,7 +161,28 @@ def test_attributs_sans_png_et_largeurs_exactes(source: str) -> None:
         assert visuels.src(m, "renard-couche", page).endswith("-1280.webp")
         assert visuels.src(m, "renard-heros-portrait", page).endswith("-1140.webp")
     assert set(visuels.attributs(m, "renard-heros", "link", page)) == {"href", "imagesrcset"}
-    assert set(visuels.attributs(m, "renard-heros", "source", page)) == {"srcset", "width", "height"}
+    # Filet orange mesuré (« fil ») : écrit sur <img> et <source> d'un visuel qui en a un, jamais sur un <link>.
+    assert set(visuels.attributs(m, "renard-heros", "source", page)) == {"srcset", "width", "height", "data-fil"}
+    assert a["data-fil"] == "0.012 0.871 0.729 0.997" == visuels.fil_html(m, "renard-heros")
+    assert "data-fil" not in visuels.attributs(m, "renard-leman", "img", page)  # visuel sans filet
+    assert set(visuels.attributs(m, "renard-leman", "source", page)) == {"srcset", "width", "height"}
+
+
+def test_data_fil_ecrit_retire_et_jamais_a_la_main(tmp_path: Path) -> None:
+    """Le filet vient du manifeste : réécrit s'il est modifié, retiré d'un visuel sans filet, désynchronisation détectée."""
+    m = fictifs.manifeste("local")
+    page = tmp_path / "p.html"
+    sortie = visuels.appliquer_texte('<img alt="" data-visuel="renard-assis" data-fil="0 0 1 1" src="">', m, page, racine=tmp_path)
+    assert 'data-fil="0 0.877 0.909 1"' in sortie and 'data-fil="0 0 1 1"' not in sortie
+    sans = visuels.appliquer_texte('<img alt="" data-visuel="renard-classeur" data-fil="0 0.5 1 0.5" src="">', m, page, racine=tmp_path)
+    assert "data-fil" not in sans
+    assert visuels.appliquer_texte(sortie, m, page, racine=tmp_path) == sortie  # idempotent
+    dossier, m2 = fictifs.landing_aux_visuels(tmp_path, "local", nom="fil")
+    index = dossier / "index.html"
+    texte = index.read_text(encoding="utf-8")
+    assert 'data-fil="0 0.877 0.909 1"' in texte
+    index.write_text(texte.replace('data-fil="0 0.877 0.909 1"', 'data-fil="0 0.5 0.9 1"', 1), encoding="utf-8")
+    assert any("désynchronisées" in e for e in visuels.verifier(m2, [index], dossier))
 
 
 def test_pages_synchronisees_et_desynchronisation_detectee(tmp_path: Path) -> None:
@@ -177,11 +198,11 @@ def test_pages_synchronisees_et_desynchronisation_detectee(tmp_path: Path) -> No
     assert any("visuel inconnu" in e for e in visuels.verifier(m, [page], dossier))
     page.write_text(texte + f'<!-- {m["base_distante"]}x.png -->', encoding="utf-8")
     assert any("hors d'une balise data-visuel" in e for e in visuels.verifier(m, [page], dossier))
-    page.write_text(texte.replace('<img class="nt-visuel__img"', '<img srcset="x.png 2688w" class="nt-visuel__img"', 1), encoding="utf-8")
+    page.write_text(texte.replace('<img class="lp-hero__img"', '<img srcset="x.png 2688w" class="lp-hero__img"', 1), encoding="utf-8")
     assert any("PNG dans un srcset" in e for e in visuels.verifier(m, [page], dossier))
     # Le texte alternatif vient du manifeste : une page qui le modifie à la main est désynchronisée.
     alt = m["visuels"]["renard-heros"]["alt"]
-    page.write_text(texte.replace(f'alt="{alt}"', 'alt="Lumi sur le quai"', 1), encoding="utf-8")
+    page.write_text(texte.replace(f'alt="{alt}"', 'alt="Un renard sur le quai"', 1), encoding="utf-8")
     assert any("désynchronisées" in e for e in visuels.verifier(m, [page], dossier))
 
 

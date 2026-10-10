@@ -1,66 +1,63 @@
 <!DOCTYPE html>
-<html lang="fr-CH" data-da="b" data-ambiance="nuit">
+<html lang="fr-CH" data-da="a" data-ambiance="atelier">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <!--
-    MAQUETTE (non publiée) — fiche d'un produit FICTIF en pré-drop, ambiance « Nuit sur le Léman »
-    (docs/05-da/DIRECTION_NUIT.md). Réutilise les feuilles de la landing (site/landing/). Produit, prix et dates FICTIFS.
+    MAQUETTE (non publiée) — fiche d'un produit FICTIF en pré-drop, ambiance « Atelier »
+    (docs/05-da/DIRECTION_ATELIER.md). Réutilise les feuilles de la landing (site/landing/). Produit, prix et dates FICTIFS.
     Règles de la fiche réelle : site/shopify/snippets/da-reservation-garantie.liquid (textes de garantie du moteur,
-    engine/pokeshop/predrop.py), docs/04-legal/PRECOMMANDES.md. Contrôlée par site/outils/verifier_site.py (maquettes).
+    engine/pokeshop/predrop.py), docs/04-legal/PRECOMMANDES.md. Photos réelles du produit uniquement : l'illustration de
+    Braise (nom provisoire) accompagne l'explication, elle ne représente jamais le produit.
+    Contrôlée par site/outils/verifier_site.py (maquettes).
   -->
   <meta name="robots" content="noindex, nofollow">
   <title>Maquette FICTIVE — fiche produit en réservation garantie — Quai des Cartes</title>
   <meta name="description" content="Maquette interne d'une fiche produit en pré-drop (réservation garantie) : produit, prix et dates FICTIFS, jamais publiée.">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="light">
   <link rel="icon" href="../landing/assets/da/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700..800&amp;family=DM+Sans:opsz,wght@9..40,400..700&amp;family=Fraunces:ital,opsz,wght,SOFT@1,144,500,100&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&amp;family=Geist+Mono:wght@400..600&amp;family=Instrument+Serif:ital@0;1&amp;display=swap">
   <link rel="stylesheet" href="../landing/assets/da/tokens.css">
   <link rel="stylesheet" href="../landing/assets/da/components.css">
   <link rel="stylesheet" href="../landing/assets/da/ambiance.css">
   <link rel="stylesheet" href="../landing/css/landing.css">
   <script src="../landing/js/theme.js"></script>
-  <script src="../landing/js/nuit.js" defer></script>
+  <script src="../landing/js/atelier.js" defer></script>
 </head>
-<body class="da-root lp-nuit lp-maquette">
+<body class="da-root lp-atelier lp-maquette">
   <a class="lp-evitement" href="#contenu">Aller au contenu</a>
   <aside class="lp-apercu lp-apercu--maquette" aria-label="Maquette">
     <p><strong>Maquette FICTIVE, ne pas publier.</strong> Produit, prix, date et statut inventés pour montrer la fiche en réservation garantie. Les vrais prix viennent du moteur au moment de l'ouverture.</p>
   </aside>
   <header class="lp-entete" id="entete">
-    <div class="lp-entete__inner">
-      <a class="lp-logo" href="../landing/index.html">
-        <img class="lp-logo__img lp-logo__img--clair" src="../landing/assets/da/logo-horizontal.svg" alt="Quai des Cartes" width="963" height="132" loading="lazy">
-        <img class="lp-logo__img lp-logo__img--sombre" src="../landing/assets/da/logo-horizontal-fond-sombre.svg" alt="Quai des Cartes" width="963" height="132">
-      </a>
+    <div class="lp-cadre lp-entete__inner">
+      <a class="lp-logo" href="../landing/index.html"><img class="lp-logo__img" src="../landing/assets/da/logo-horizontal.svg" alt="Quai des Cartes" width="1083" height="140"></a>
       <div class="lp-entete__actions">
         <button type="button" class="lp-animations" id="lp-animations" data-pause-animations aria-pressed="false" title="Pause des animations" hidden>
-          <svg class="lp-animations__pause" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M9 6v12M15 6v12"/></svg>
-          <svg class="lp-animations__lecture" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5.5v13l11-6.5z"/></svg>
+          <svg class="lp-animations__pause" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M9 6v12M15 6v12"/></svg>
+          <svg class="lp-animations__lecture" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5.5v13l11-6.5z"/></svg>
           <span class="lp-animations__texte">Pause des animations</span>
         </button>
-        <a class="da-btn lp-btn-verre lp-entete__cta" href="drop.html"><span class="lp-cta__long">Page du drop</span><span class="lp-cta__court">Le drop</span></a>
+        <a class="da-btn lp-btn lp-btn--plein lp-entete__cta" href="drop.html">Page du drop</a>
       </div>
     </div>
   </header>
 
-  <main id="contenu" class="lp-maquette__main">
-    <div class="da-container">
-      <nav aria-label="Fil d'Ariane">
-        <ol class="da-breadcrumb lp-fil">
+  <main id="contenu">
+    <div class="lp-cadre">
+      <nav class="lp-fil-ariane" aria-label="Fil d'Ariane">
+        <ol class="da-breadcrumb">
           <li><a href="../landing/index.html">Accueil</a></li>
           <li><a href="drop.html">Drops</a></li>
           <li aria-current="page">Coffret Dresseur d'élite FICTIF</li>
         </ol>
       </nav>
 
-      <div class="lp-fiche">
-        <div class="lp-fiche__galerie" data-apparition>
-          <div class="lp-fiche__photo">
-            <div class="da-photo" role="img" aria-label="Emplacement : photo réelle du produit scellé, face avant">Photo réelle du produit scellé<br>(face avant, langue visible)<br><span class="lp-fictif">À remplacer</span></div>
-          </div>
+      <div class="lp-grille lp-fiche">
+        <div class="lp-fiche__galerie">
+          <div class="da-photo" role="img" aria-label="Emplacement : photo réelle du produit scellé, face avant">Photo réelle du produit scellé<br>(face avant, langue visible)<br><span class="lp-fictif">À remplacer</span></div>
           <ul class="lp-fiche__vignettes" aria-label="Autres photos réelles à prévoir">
             <li><div class="da-photo" role="img" aria-label="Emplacement : dos du produit">Dos</div></li>
             <li><div class="da-photo" role="img" aria-label="Emplacement : mention de langue">Mention FR</div></li>
@@ -80,7 +77,7 @@
           <h1 class="da-title lp-fiche__titre">Coffret Dresseur d'élite — <em class="lp-accent">Extension FICTIVE</em> (FR)</h1>
           <p class="lp-fiche__sous-titre">Format : coffret Dresseur d'élite · Langue : français · Neuf et scellé</p>
 
-          <section class="lp-fiche__resa nt-holo" aria-labelledby="titre-resa">
+          <section class="lp-fiche__resa" aria-labelledby="titre-resa">
             <h2 class="lp-fiche__resa-titre" id="titre-resa"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5L16 9"/></svg>Réservation garantie</h2>
             <dl class="lp-fiche__faits">
               <div><dt>Réservations</dt><dd><span class="lp-statut-resa">Réservations ouvertes</span>, d'abord aux inscrits aux alertes de ce produit, puis à tous. <span class="lp-fictif">FICTIF</span></dd></div>
@@ -105,8 +102,8 @@
             </div>
             <p class="lp-note">Si nous ne pouvons pas vous servir (par exemple si nous recevons moins d'unités que prévu), nous vous remboursons intégralement, supplément compris, ainsi que les frais de livraison payés pour la réservation, et nous vous prévenons par email. Pas de garantie de livraison le jour du drop.</p>
             <div class="lp-fiche__actions">
-              <button class="da-btn da-btn--primary lp-btn-lune" type="button" disabled>Réserver avec garantie (maquette)</button>
-              <a class="da-btn lp-btn-verre" href="drop.html">Voir la page du drop</a>
+              <button class="da-btn lp-btn lp-btn--plein" type="button" disabled>Réserver avec garantie (maquette)</button>
+              <a class="lp-lien-fleche" href="drop.html">Voir la page du drop</a>
             </div>
             <p class="lp-note">Maquette : le bouton est inactif. Sur la boutique, il ajoute la fiche « Réservation garantie » au panier.</p>
           </section>
@@ -119,25 +116,27 @@
           <p class="da-note">Le contenu des boosters est aléatoire : aucune carte précise, aucune rareté et aucune valeur de revente ne sont garanties.</p>
         </div>
       </div>
+    </div>
 
-      <section class="lp-section lp-deux-facons" aria-labelledby="titre-facons">
+    <section class="lp-chapitre lp-formats" aria-labelledby="titre-facons">
+      <div class="lp-cadre">
         <div class="lp-entete-section" data-apparition>
-          <p class="lp-surtitre-section">Deux façons d'acheter</p>
-          <h2 id="titre-facons" class="da-title lp-h2">Réserver ou <em class="lp-accent">attendre le drop</em></h2>
+          <p class="lp-numero"><span class="lp-numero__chiffre">01</span> Deux façons d'acheter</p>
+          <h2 id="titre-facons" class="da-title lp-h2">Réserver ou <em class="lp-accent">attendre</em> le drop.</h2>
           <p class="lp-intro">Même produit, deux prix affichés côte à côte. À vous de choisir : la garantie d'être servi en premier, ou le prix du drop s'il reste des unités.</p>
         </div>
         <div class="lp-comparaison">
-          <div class="lp-comparaison__col nt-holo" data-apparition>
+          <div class="lp-comparaison__col" data-apparition>
             <p class="lp-comparaison__tag"><span class="da-badge da-badge--reservation">Réservation garantie</span></p>
             <h3 class="lp-h3">Avant la réception</h3>
             <ul class="lp-liste-coches">
-              <li>Prix du drop augmenté d'un supplément (au plus 10 %)</li>
+              <li>Prix du drop augmenté d'un supplément (au plus 10&nbsp;%)</li>
               <li>Servi en premier, dans l'ordre des paiements</li>
               <li>Expédié dès réception du stock</li>
               <li>Remboursé intégralement si nous ne pouvons pas vous servir</li>
             </ul>
           </div>
-          <div class="lp-comparaison__col nt-holo" data-apparition>
+          <div class="lp-comparaison__col" data-apparition>
             <p class="lp-comparaison__tag"><span class="da-badge da-badge--drop">Au drop</span></p>
             <h3 class="lp-h3">À la date du drop</h3>
             <ul class="lp-liste-coches">
@@ -147,34 +146,31 @@
             </ul>
           </div>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <section class="lp-section lp-fiche__histoire" aria-labelledby="titre-garde">
-        <div class="lp-reservation__grille">
-          <div class="lp-reservation__media" data-apparition>
-            <figure class="nt-cadre nt-cadre--arche nt-scene nt-scene--reservation">
-              <span class="nt-s nt-s--ciel" aria-hidden="true"></span>
-              <span class="nt-s nt-s--fenetre" aria-hidden="true"></span>
-              <span class="nt-s nt-s--pile" aria-hidden="true"><span></span><span></span><span></span></span>
-              <img class="nt-visuel__img" alt="Illustration : notre renard fait un clin d'œil en gardant d'une patte trois boîtes noires vierges à bande orange." sizes="(min-width: 900px) 30vw, 80vw" loading="lazy" decoding="async" data-visuel="renard-reservation" src="../landing/assets/visuels/renard-reservation-1152.webp" srcset="../landing/assets/visuels/renard-reservation-480.webp 480w, ../landing/assets/visuels/renard-reservation-800.webp 800w, ../landing/assets/visuels/renard-reservation-1152.webp 1152w" width="1152" height="1440">
-            </figure>
-          </div>
-          <div data-apparition>
-            <p class="lp-surtitre-section">Ce que le supplément ne garantit pas</p>
-            <h2 id="titre-garde" class="da-title lp-h2 lp-h2--petit">Une garantie <em class="lp-accent">claire</em>, sans promesse de trop</h2>
-            <p class="lp-intro">Le supplément ne garantit pas une livraison à une date précise (la date du drop est une date estimée : pas de garantie de livraison le jour du drop), ni un contenu, une carte ou une rareté. Il ne garantit pas non plus qu'il ne restera aucune unité au drop.</p>
-            <p class="lp-note">Braise, notre renard mascotte (nom provisoire), est une illustration originale : il garde des boîtes génériques, sans marque, et ne représente pas ce produit.</p>
-          </div>
+    <section class="lp-chapitre lp-reservation" aria-labelledby="titre-garde">
+      <div class="lp-cadre lp-grille lp-histoire">
+        <figure class="lp-histoire__image" data-apparition>
+          <div class="lp-media"><img alt="Illustration : notre renard fait un clin d'œil en gardant d'une patte trois boîtes noires vierges à bande orange." sizes="(min-width: 900px) 36vw, 92vw" loading="lazy" decoding="async" data-visuel="renard-reservation" src="../landing/assets/visuels/renard-reservation-1152.webp" srcset="../landing/assets/visuels/renard-reservation-480.webp 480w, ../landing/assets/visuels/renard-reservation-800.webp 800w, ../landing/assets/visuels/renard-reservation-1152.webp 1152w" width="1152" height="1440"></div>
+        </figure>
+        <div class="lp-histoire__texte" data-apparition>
+          <p class="lp-numero"><span class="lp-numero__chiffre">02</span> Ce que le supplément ne garantit pas</p>
+          <h2 id="titre-garde" class="da-title lp-h2 lp-h2--petit">Une garantie <em class="lp-accent">claire</em>, sans promesse de trop.</h2>
+          <p class="lp-intro">Le supplément ne garantit pas une livraison à une date précise (la date du drop est une date estimée : pas de garantie de livraison le jour du drop), ni un contenu, une carte ou une rareté. Il ne garantit pas non plus qu'il ne restera aucune unité au drop.</p>
+          <p class="lp-note">Braise, notre renard mascotte (nom provisoire), est une illustration originale : il garde des boîtes génériques, sans marque, et ne représente pas ce produit.</p>
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
   </main>
 
   <footer class="lp-pied lp-pied--simple">
-    <div class="da-container lp-pied__legal">
-      <p class="lp-pied__mention" id="mention-independance">Quai des Cartes est une boutique indépendante. Elle n'est ni affiliée, ni sponsorisée, ni approuvée par The Pokémon Company, Nintendo, Creatures Inc. ou GAME FREAK inc. Pokémon et les noms associés sont des marques de leurs titulaires respectifs ; nous les utilisons uniquement pour désigner les produits authentiques que nous revendons.</p>
-      <p>Maquette interne : exploitant, conditions et prix réels sur la boutique publiée.</p>
-      <p><a href="../landing/index.html">Accueil</a> · <a href="../landing/confidentialite.html">Déclaration de confidentialité</a></p>
+    <div class="lp-pied__charbon">
+      <div class="lp-cadre lp-pied__legal">
+        <p class="lp-pied__mention" id="mention-independance">Quai des Cartes est une boutique indépendante. Elle n'est ni affiliée, ni sponsorisée, ni approuvée par The Pokémon Company, Nintendo, Creatures Inc. ou GAME FREAK inc. Pokémon et les noms associés sont des marques de leurs titulaires respectifs ; nous les utilisons uniquement pour désigner les produits authentiques que nous revendons.</p>
+        <p>Maquette interne : exploitant, conditions et prix réels sur la boutique publiée.</p>
+        <p><a href="../landing/index.html">Accueil</a> · <a href="../landing/confidentialite.html">Déclaration de confidentialité</a> <button type="button" class="lp-lien-bouton" data-pause-animations aria-pressed="false" hidden>Pause des animations</button></p>
+      </div>
     </div>
   </footer>
 </body>

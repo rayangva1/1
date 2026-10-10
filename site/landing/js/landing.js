@@ -1,5 +1,5 @@
 /*
- * Landing — formulaire d'inscription aux alertes (les effets visuels sont dans js/nuit.js).
+ * Landing — formulaire d'inscription aux alertes (les effets visuels sont dans js/atelier.js).
  *
  * Contrat d'envoi : POST application/x-www-form-urlencoded vers LANDING_CONFIG.webhookUrl
  * (requête « simple », sans pré-vérification CORS). Champs : voir site/landing/inscription.schema.json.

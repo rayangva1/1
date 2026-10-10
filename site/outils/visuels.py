@@ -5,12 +5,15 @@ Les pages (landing ``site/landing/*.html`` et maquettes ``site/maquettes/*.html`
 marquées ``data-visuel="<identifiant>"`` : ``<img>``, ``<source>`` (dans ``<picture>``) et ``<link rel="preload">``.
 Ce module réécrit leurs attributs gérés à partir du manifeste :
 
-* ``<img>`` : ``src``, ``srcset``, ``width``, ``height`` et ``alt`` (texte alternatif du manifeste ; une page qui doit
-  dire autre chose dans son contexte pose ``data-alt-contexte`` et garde son propre ``alt``) ;
-* ``<source>`` : ``srcset``, ``width``, ``height`` ;
+* ``<img>`` : ``src``, ``srcset``, ``width``, ``height``, ``alt`` (texte alternatif du manifeste ; une page qui doit
+  dire autre chose dans son contexte pose ``data-alt-contexte`` et garde son propre ``alt``) et ``data-fil`` ;
+* ``<source>`` : ``srcset``, ``width``, ``height`` et ``data-fil`` ;
 * ``<link rel="preload">`` : ``href``, ``imagesrcset``.
 
-``sizes``, ``loading``, ``fetchpriority`` et ``media`` restent écrits dans la page (ils dépendent de la mise en page).
+``data-fil`` : le filet orange photographié (« x1 y1 x2 y2 » en fractions de l'image d'origine, champ ``fil``), lu par
+le script de la page pour raccorder le « fil orange » dessiné (DIRECTION_ATELIER.md §6) ; absent si ``fil`` est nul (un
+``data-fil`` resté dans la page est alors retiré). ``sizes``, ``loading``, ``fetchpriority`` et ``media`` restent écrits
+dans la page (ils dépendent de la mise en page).
 Deux sources :
 
 * ``local`` (publication, état normal) : variantes WebP à plusieurs largeurs (``<fichier>-<largeur>.webp``) dans
@@ -71,8 +74,8 @@ NATURES = ("illustration", "photo")
 BALISE_RE = re.compile(r"<(img|source|link)\b([^<>]*?)\s*(/?)>", re.IGNORECASE | re.DOTALL)
 ATTR_RE = re.compile(r'([^\s=/>"]+)(?:\s*=\s*"([^"]*)")?')
 GERES = {
-    "img": ("src", "srcset", "width", "height", "alt"),
-    "source": ("srcset", "width", "height"),
+    "img": ("src", "srcset", "width", "height", "alt", "data-fil"),
+    "source": ("srcset", "width", "height", "data-fil"),
     "link": ("href", "imagesrcset"),
 }
 #: Attribut d'une balise <img> qui garde son propre texte alternatif (contexte de la page).
@@ -274,6 +277,14 @@ def hote_distant(m: dict) -> str:
     return urlparse(m.get("base_distante") or "").hostname or ""
 
 
+def fil_html(m: dict, ident: str) -> str | None:
+    """Filet photographié « x1 y1 x2 y2 » (fractions de l'image d'origine) ; None si le visuel n'en a pas."""
+    fil = m["visuels"][ident].get("fil")
+    if not fil:
+        return None
+    return " ".join(f"{c:g}" for point in fil for c in point)
+
+
 def alt_html(m: dict, ident: str) -> str:
     """Texte alternatif du manifeste, échappé pour un attribut entre guillemets doubles."""
     return html.escape(str(m["visuels"][ident].get("alt", "")), quote=False).replace('"', "&quot;")
@@ -307,9 +318,9 @@ def srcset(m: dict, ident: str, page: Path, racine: Path = LANDING) -> str:
 
 
 def attributs(m: dict, ident: str, balise: str, page: Path, racine: Path = LANDING) -> dict[str, str]:
-    """Valeurs des attributs gérés d'une balise ``data-visuel``."""
+    """Valeurs des attributs gérés d'une balise ``data-visuel`` (``data-fil`` omis si le visuel n'a pas de filet)."""
     v = m["visuels"][ident]
-    tout = {
+    tout: dict[str, str | None] = {
         "src": src(m, ident, page, racine),
         "href": src(m, ident, page, racine),
         "srcset": srcset(m, ident, page, racine),
@@ -317,8 +328,9 @@ def attributs(m: dict, ident: str, balise: str, page: Path, racine: Path = LANDI
         "width": str(v["largeur"]),
         "height": str(v["hauteur"]),
         "alt": alt_html(m, ident),
+        "data-fil": fil_html(m, ident),
     }
-    return {k: tout[k] for k in GERES[balise]}
+    return {k: val for k in GERES[balise] if (val := tout[k]) is not None}
 
 
 # --------------------------------------------------------------------------- pages
@@ -352,9 +364,11 @@ def _reecrire(m: dict, page: Path, balise: str, brut: str, ferme: str, erreurs: 
         if cle in valeurs:
             sortie.append(f'{nom}="{valeurs[cle]}"')
             vus.add(cle)
+        elif cle in geres:
+            continue  # attribut géré sans valeur pour ce visuel (ex. data-fil sans filet) : retiré
         else:
             sortie.append(nom if val is None else f'{nom}="{val}"')
-    sortie += [f'{k}="{valeurs[k]}"' for k in geres if k not in vus]
+    sortie += [f'{k}="{valeurs[k]}"' for k in geres if k in valeurs and k not in vus]
     return f"<{balise} {' '.join(sortie)}{' /' if ferme else ''}>"
 
 

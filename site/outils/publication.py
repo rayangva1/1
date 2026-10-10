@@ -176,7 +176,7 @@ def _tete(titre: str, description: str, indexable: bool) -> str:
   <link rel="stylesheet" href="assets/da/components.css">
   <link rel="stylesheet" href="css/landing.css">
   <script src="js/theme.js"></script>
-  <script src="js/nuit.js" defer></script>
+  <script src="js/atelier.js" defer></script>
 </head>
 """
 # Direction, ambiance (feuille assets/da/ambiance.css, data-ambiance) et URL Google Fonts sont posées ensuite par
@@ -191,46 +191,60 @@ MENTION_INDEPENDANCE = (
 )
 
 
-#: Accueil illustré des pages de remerciement (revue DA-22) : le renard de la marque (« Braise », nom provisoire)
-#: au-dessus du titre, avec sa silhouette SVG en décor de secours si l'illustration ne charge pas (renard_svg.py).
-#: Balises data-visuel synchronisées par site/outils/visuels.py (adresses et texte alternatif du manifeste).
-ACCUEIL_RENARD = (
-    '        <figure class="lp-page__renard nt-scene nt-scene--papier">\n'
-    f'          <span class="nt-s lp-page__renard-fond" aria-hidden="true">{RENARD_ASSIS}</span>\n'
-    '          <img class="nt-visuel__img" alt="" sizes="9rem" fetchpriority="high" decoding="async" data-visuel="renard-couche" src="">\n'
-    "        </figure>\n"
-)
-ACCUEILS: dict[str, str] = {"merci.html": ACCUEIL_RENARD, "inscription-confirmee.html": ACCUEIL_RENARD}
+#: Illustration de chaque page secondaire (DIRECTION_ATELIER.md §9) : Braise (nom provisoire) couché ou assis, à côté
+#: du texte, avec sa silhouette SVG en décor de secours si l'illustration ne charge pas (renard_svg.py). Balises
+#: data-visuel synchronisées par site/outils/visuels.py (adresses et texte alternatif du manifeste).
+ILLUSTRATIONS: dict[str, str] = {
+    "merci.html": "renard-couche",
+    "inscription-confirmee.html": "renard-assis",
+    "desinscription.html": "renard-couche",
+    "confidentialite.html": "renard-assis",
+}
 
 
-def _corps(contenu: str, accueil: str | None = None) -> str:
-    carte = (
-        f'      <div class="lp-page__carte lp-page__carte--accueil">\n{accueil}{contenu}\n      </div>'
-        if accueil
-        else f'      <div class="lp-page__carte">\n{contenu}\n      </div>'
+def _figure(nom: str) -> str:
+    """Figure illustrée d'une page secondaire (image principale, sauf la vignette de la notice)."""
+    ident = ILLUSTRATIONS[nom]
+    if nom == "confidentialite.html":
+        return (
+            '      <figure class="lp-media lp-page__vignette">\n'
+            f'        <span class="lp-secours" aria-hidden="true">{RENARD_ASSIS}</span>\n'
+            f'        <img alt="" sizes="15rem" loading="lazy" decoding="async" data-visuel="{ident}" src="">\n'
+            "      </figure>\n"
+        )
+    return (
+        '      <figure class="lp-media lp-page__figure">\n'
+        f'        <span class="lp-secours" aria-hidden="true">{RENARD_ASSIS}</span>\n'
+        f'        <img alt="" sizes="(min-width: 900px) 34vw, 92vw" fetchpriority="high" decoding="async" data-visuel="{ident}" src="">\n'
+        "      </figure>\n"
     )
-    ciel = '    <span class="nt-s nt-etoiles lp-page__ciel" aria-hidden="true"></span>\n' if accueil else ""
-    return f"""<body class="da-root lp-nuit lp-page-simple">
+
+
+def _corps(nom: str, contenu: str) -> str:
+    legal = nom == "confidentialite.html"
+    return f"""<body class="da-root lp-atelier lp-page-simple">
   <a class="lp-evitement" href="#contenu">Aller au contenu</a>
-  <header class="lp-entete">
-    <div class="lp-entete__inner">
-      <a class="lp-logo" href="./">
-        <img class="lp-logo__img lp-logo__img--clair" src="assets/da/logo-horizontal.svg" alt="{NOM_DE_TRAVAIL}" width="963" height="132" loading="lazy">
-        <img class="lp-logo__img lp-logo__img--sombre" src="assets/da/logo-horizontal-fond-sombre.svg" alt="{NOM_DE_TRAVAIL}" width="963" height="132">
-      </a>
-      <a class="da-btn lp-btn-verre lp-entete__cta" href="./">Accueil</a>
+  <header class="lp-entete" id="entete">
+    <div class="lp-cadre lp-entete__inner">
+      <a class="lp-logo" href="./"><img class="lp-logo__img" src="assets/da/logo-horizontal.svg" alt="{NOM_DE_TRAVAIL}" width="1083" height="140"></a>
+      <a class="da-btn lp-btn lp-btn--plein lp-entete__cta" href="./">Accueil</a>
     </div>
   </header>
-  <main id="contenu" class="lp-page">
-{ciel}    <div class="da-container">
-{carte}
+  <main id="contenu" class="lp-page{' lp-page__legal' if legal else ''}">
+    <div class="lp-cadre lp-grille lp-page__grille">
+{_figure(nom)}      <div class="lp-page__texte">
+{contenu}
+      </div>
     </div>
   </main>
   <footer class="lp-pied lp-pied--simple">
-    <div class="da-container lp-pied__legal">
-      <p class="lp-pied__mention" id="mention-independance">{MENTION_INDEPENDANCE}</p>
-      <p>Exploitant : {{{{RAISON_SOCIALE}}}}, {{{{ADRESSE_POSTALE}}}}, Suisse. Contact : <a href="mailto:{{{{EMAIL_SUPPORT}}}}">{{{{EMAIL_SUPPORT}}}}</a></p>
-      <p><a href="./">Accueil</a> · <a href="confidentialite.html">Déclaration de confidentialité</a></p>
+    <div class="lp-pied__charbon">
+      <div class="lp-cadre lp-pied__legal">
+        <p class="lp-pied__mention" id="mention-independance">{MENTION_INDEPENDANCE}</p>
+        <p>Exploitant : {{{{RAISON_SOCIALE}}}}, {{{{ADRESSE_POSTALE}}}}, Suisse. Contact : <a href="mailto:{{{{EMAIL_SUPPORT}}}}">{{{{EMAIL_SUPPORT}}}}</a></p>
+        <p><a href="./">Accueil</a> · <a href="confidentialite.html">Déclaration de confidentialité</a></p>
+        <p class="lp-pied__credits">Braise, notre renard mascotte (nom provisoire) : création originale de la boutique, sans lien avec Pokémon.</p>
+      </div>
     </div>
   </footer>
 </body>
@@ -245,7 +259,7 @@ PAGES_SIMPLES: dict[str, tuple[str, str, str]] = {
         """      <h1 class="da-title">Merci, vérifiez votre boîte mail</h1>
       <p>Nous venons de vous envoyer un email de confirmation. Cliquez sur son lien pour activer vos alertes : sans confirmation, nous ne vous écrirons pas.</p>
       <p>Rien reçu d'ici quelques minutes ? Regardez dans les courriers indésirables, puis réessayez depuis la <a href="./#alertes">page d'accueil</a>.</p>
-      <p class="lp-signature">— Braise (nom provisoire), notre renard, vous fait signe depuis l'atelier.</p>
+      <p class="lp-signature">Braise (nom provisoire) attend votre clic, roulé en boule.</p>
       <p class="lp-note">Cette inscription ne réserve aucun produit et n'engage aucun paiement.</p>""",
     ),
     "inscription-confirmee.html": (
@@ -254,8 +268,8 @@ PAGES_SIMPLES: dict[str, tuple[str, str, str]] = {
         """      <h1 class="da-title">C'est confirmé</h1>
       <p>Vous recevrez l'alerte d'ouverture, puis les alertes de stock correspondant à vos choix et, au plus, un email récapitulatif par semaine.</p>
       <p>Chaque email contient un lien pour modifier vos préférences ou vous désinscrire en un clic.</p>
-      <p class="lp-signature">— Braise (nom provisoire) dresse l'oreille jusqu'à l'ouverture.</p>
-      <p><a class="da-btn da-btn--secondary" href="./">Retour à l'accueil</a></p>""",
+      <p class="lp-signature">Braise (nom provisoire) dresse l'oreille jusqu'à l'ouverture.</p>
+      <p><a class="da-btn lp-btn lp-btn--plein" href="./">Retour à l'accueil</a></p>""",
     ),
     "desinscription.html": (
         # Page affichée par le workflow n8n 06 APRÈS les appels de retrait (outil d'emailing, Shopify) et
@@ -291,7 +305,7 @@ def contenu_confidentialite(texte_md: str) -> str:
 def pages_secondaires(texte_confidentialite: str | None = None) -> dict[str, str]:
     """Contenu source (champs ``{{…}}`` non remplis) de chaque page secondaire."""
     pages = {
-        nom: typographier(_tete(titre, desc, indexable=False) + _corps(contenu, ACCUEILS.get(nom)))
+        nom: typographier(_tete(titre, desc, indexable=False) + _corps(nom, contenu))
         for nom, (titre, desc, contenu) in PAGES_SIMPLES.items()
     }
     md = texte_confidentialite if texte_confidentialite is not None else CONFIDENTIALITE_MD.read_text(encoding="utf-8")
@@ -301,7 +315,7 @@ def pages_secondaires(texte_confidentialite: str | None = None) -> dict[str, str
             "Inscription aux alertes : quelles données nous traitons, pourquoi, combien de temps, et vos droits (LPD).",
             indexable=True,
         )
-        + _corps(contenu_confidentialite(md))
+        + _corps("confidentialite.html", contenu_confidentialite(md))
     )
     m = visuels.charger()
     return {nom: visuels.appliquer_texte(texte, m, LANDING / nom) for nom, texte in pages.items()}

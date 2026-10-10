@@ -153,17 +153,20 @@ def test_champ_piege_simule_un_succes_sans_envoi(navigateur: Any, site: tuple[Pa
 
 
 def test_pause_des_animations_et_absence_de_debordement(navigateur: Any, site: tuple[Path, str]) -> None:
-    """Ambiance Nuit (toujours sombre) : plus de bascule de thème, un bouton « Pause des animations » (WCAG 2.2.2)."""
+    """Ambiance Atelier (toujours claire) : un bouton « Pause des animations » (WCAG 2.2.2) fige tout, fil orange compris."""
     _, url = site
     page = _page(navigateur, url, [])
     assert page.query_selector("#lp-theme") is None
-    assert page.get_attribute("html", "data-ambiance") == "nuit"
-    assert page.is_visible(".lp-logo__img--sombre") and not page.is_visible(".lp-logo__img--clair")
+    assert page.get_attribute("html", "data-ambiance") == "atelier"
+    assert page.is_visible(".lp-logo__img")
+    page.wait_for_function("document.documentElement.classList.contains('lp-fil-pret')")
+    assert page.evaluate("document.querySelectorAll('.lp-fil__trait').length") == 4  # héro → Braise → drop → alertes → pied
     assert page.get_attribute("#lp-animations", "aria-pressed") == "false"
     page.click("#lp-animations")
     assert page.get_attribute("html", "data-animations") == "pause"
     assert page.get_attribute("#lp-animations", "aria-pressed") == "true"
-    assert page.evaluate("getComputedStyle(document.querySelector('.nt-lune')).animationName") == "none"
+    assert page.evaluate("[...document.querySelectorAll('.lp-fil__trait')].every(p => getComputedStyle(p).strokeDasharray === 'none')")
+    assert page.evaluate("getComputedStyle(document.querySelector('.lp-hero__img')).animationName") == "none"
     page.reload()
     assert page.get_attribute("html", "data-animations") == "pause"  # choix mémorisé
     page.click("#lp-animations")
@@ -175,7 +178,8 @@ def test_pause_des_animations_et_absence_de_debordement(navigateur: Any, site: t
 
 
 def test_mouvement_reduit_et_images_indisponibles(navigateur: Any, site: tuple[Path, str]) -> None:
-    """prefers-reduced-motion coupe toutes les animations ; une image qui ne charge pas laisse le décor CSS."""
+    """prefers-reduced-motion coupe toutes les animations (fil entier et immobile) ; une image qui ne charge pas est
+    masquée et laisse la silhouette du renard."""
     _, url = site
     contexte = navigateur.new_context(viewport={"width": 390, "height": 844}, reduced_motion="reduce")
     page = contexte.new_page()
@@ -185,11 +189,22 @@ def test_mouvement_reduit_et_images_indisponibles(navigateur: Any, site: tuple[P
     page.route("https://**/*.png", lambda route: route.abort())
     page.goto(url + "index.html")
     page.wait_for_timeout(300)
-    for selecteur in (".nt-lune", ".nt-etoiles", ".lp-defile__piste", ".nt-s--tourbillons"):
-        assert page.evaluate(f"getComputedStyle(document.querySelector('{selecteur}')).animationName") == "none", selecteur
+    assert page.evaluate("getComputedStyle(document.querySelector('.lp-hero__img')).animationName") == "none"
     assert page.evaluate("[...document.querySelectorAll('[data-apparition]')].every(e => getComputedStyle(e).opacity === '1')")
     assert page.evaluate("getComputedStyle(document.querySelector('.lp-hero__img')).visibility") == "hidden"
-    assert page.is_visible(".lp-hero .nt-s--ciel")
+    assert page.is_visible(".lp-hero .lp-secours")
+    contexte.close()
+
+
+def test_fil_entier_en_mouvement_reduit(navigateur: Any, site: tuple[Path, str]) -> None:
+    """Le fil se raccorde aux filets photographiés ; en mouvement réduit, il est affiché entier, sans tirets."""
+    _, url = site
+    contexte = navigateur.new_context(viewport={"width": 1440, "height": 900}, reduced_motion="reduce")
+    page = contexte.new_page()
+    page.goto(url + "index.html", wait_until="networkidle")
+    page.wait_for_function("document.documentElement.classList.contains('lp-fil-pret')")
+    traits = page.evaluate("[...document.querySelectorAll('.lp-fil__trait')].map(p => [getComputedStyle(p).strokeDasharray, p.getTotalLength()])")
+    assert len(traits) == 4 and all(d == "none" and longueur > 100 for d, longueur in traits)
     contexte.close()
 
 
@@ -207,7 +222,7 @@ def site_rapatrie(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     serveur.shutdown()
 
 
-@pytest.mark.parametrize(("largeur", "hauteur", "densite", "attendu"), [(390, 844, 3, "-1520.webp"), (1440, 900, 2, "-2688.webp"), (1280, 720, 1, "-1920.webp")])
+@pytest.mark.parametrize(("largeur", "hauteur", "densite", "attendu"), [(390, 844, 3, "-1520.webp"), (1440, 900, 2, "-2688.webp"), (1280, 720, 1, "-1280.webp")])
 def test_image_principale_en_webp_jamais_en_png(navigateur: Any, site_rapatrie: str, largeur: int, hauteur: int, densite: int, attendu: str) -> None:
     """Après rapatriement, aucun écran ne charge de PNG : le srcset ne contient que des variantes WebP budgétées."""
     import visuels
@@ -234,26 +249,27 @@ def _luminance(rgb: tuple[float, ...]) -> float:
     return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2])
 
 
+#: Textes posés sur (ou contre) une illustration : le titre du héro (sur l'image dès 1280 px, au-dessus ailleurs).
 TEXTES_SUR_ILLUSTRATION = (
-    ".lp-hero .lp-surtitre", ".lp-hero__accroche", ".lp-hero__ligne", ".lp-hero__texte", ".lp-nav a",
-    ".lp-alertes__intro .lp-surtitre-section", "#titre-alertes", ".lp-alertes__intro .lp-intro",
-    ".lp-leman__texte .lp-surtitre-section", "#titre-promesse", ".lp-leman__texte .lp-intro",
+    ".lp-hero .lp-surtitre", ".lp-hero__seo", ".lp-hero__accroche .lp-ligne", ".lp-hero__accroche .lp-accent", ".lp-nav a",
+    "#titre-mascotte", "#titre-alertes", "#titre-promesse",
 )
 
 
+@pytest.mark.parametrize("couleur", [(255, 255, 255), (0, 0, 0)], ids=["image-blanche", "image-noire"])
 @pytest.mark.parametrize(("largeur", "hauteur"), [(1440, 900), (1024, 768), (390, 844)])
-def test_texte_sur_illustration_contraste_aa_meme_sur_une_image_blanche(navigateur: Any, site: tuple[Path, str], largeur: int, hauteur: int) -> None:
-    """Chaque illustration remplacée par du blanc pur (pire cas) : le texte posé dessus reste AA grâce aux voiles."""
+def test_texte_sur_illustration_contraste_aa_meme_sur_une_image_blanche(navigateur: Any, site: tuple[Path, str], largeur: int, hauteur: int, couleur: tuple[int, int, int]) -> None:
+    """Chaque illustration remplacée par du blanc pur puis du noir pur (pires cas) : le texte reste AA (voile du héro)."""
     import io
     import re
 
     image = pytest.importorskip("PIL.Image")
     _, url = site
     tampon = io.BytesIO()
-    image.new("RGB", (8, 8), (255, 255, 255)).save(tampon, format="PNG")
+    image.new("RGB", (8, 8), couleur).save(tampon, format="PNG")
     blanc = tampon.getvalue()
     contexte = navigateur.new_context(viewport={"width": largeur, "height": hauteur}, reduced_motion="reduce")
-    # Pire cas : chaque visuel (local, ou distant en aperçu) remplacé par du blanc pur.
+    # Pire cas : chaque visuel (local, ou distant en aperçu) remplacé par un aplat pur.
     contexte.route("**/assets/visuels/**", lambda route: route.fulfill(status=200, content_type="image/png", body=blanc))
     contexte.route("https://**/*.webp", lambda route: route.fulfill(status=200, content_type="image/png", body=blanc))
     page = contexte.new_page()
@@ -281,8 +297,10 @@ def test_texte_sur_illustration_contraste_aa_meme_sur_une_image_blanche(navigate
             masque.evaluate("t => t.remove()")
             octets = image.open(io.BytesIO(capture)).convert("RGB").tobytes()
             fonds = sorted(_luminance(tuple(octets[i : i + 3])) for i in range(0, len(octets), 3))
-            fond = fonds[int(len(fonds) * 0.99) - 1]  # 99e centile : le fond le plus clair derrière le texte
-            rgb = (0xFF, 0x7A, 0xB8) if info["accent"] else tuple(float(v) for v in re.findall(r"[\d.]+", info["couleur"])[:3])
+            # Pire fond derrière un texte sombre : le plus sombre (1er centile) ; derrière un texte clair : le plus clair.
+            texte_sombre = _luminance(tuple(float(v) for v in re.findall(r"[\d.]+", info["couleur"])[:3])) < 0.2
+            fond = fonds[max(0, int(len(fonds) * 0.01))] if texte_sombre else fonds[int(len(fonds) * 0.99) - 1]
+            rgb = tuple(float(v) for v in re.findall(r"[\d.]+", info["couleur"])[:3])
             texte = _luminance(rgb)
             ratio = (max(texte, fond) + 0.05) / (min(texte, fond) + 0.05)
             seuil = 3.0 if info["taille"] >= 24 or (info["taille"] >= 18.66 and info["graisse"] >= 700) else 4.5

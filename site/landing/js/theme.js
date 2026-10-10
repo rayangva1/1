@@ -3,7 +3,7 @@
  *  - marque la présence de JavaScript (classe lp-js sur <html>) : les apparitions au défilement et le fondu des
  *    images ne masquent un contenu que lorsque le script peut le révéler ; sans script, tout est visible ;
  *  - applique le choix « Pause des animations » mémorisé (data-animations="pause", WCAG 2.2.2).
- * L'ambiance « Nuit sur le Léman » est toujours sombre : il n'y a plus de choix clair / sombre.
+ * L'ambiance « Atelier » est toujours claire : il n'y a pas de choix clair / sombre.
  * Le stockage local peut être indisponible (navigation privée) : on l'ignore alors.
  */
 (function () {

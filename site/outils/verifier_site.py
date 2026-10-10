@@ -36,6 +36,9 @@ Contrôles :
     pré-drop repris mot pour mot du moteur (``GUARANTEE_TEXT_FR``, ``NO_DIFFERENCE_REFUND_FR``) ; statut limité à
     « Réservations ouvertes / fermées » ; aucune fausse urgence, promesse interdite, terme interne ni affirmation
     inexacte ; mention d'indépendance ; aucun formulaire qui envoie ; ressources, liens et typographie contrôlés.
+17. Mascotte (DIRECTION_ATELIER.md §8) : aucune trace de la mascotte abandonnée (la loutre « Lumi », décision du
+    06.10.2026) dans le texte, les attributs ou les commentaires d'une page ; une page qui nomme Braise dit que ce nom
+    est provisoire et que le renard est une création (ou illustration) originale.
 
 Usage :
     python site/outils/verifier_site.py                         # dépôt
@@ -137,6 +140,10 @@ CHAMPS_NOTICE: dict[str, str | None] = {
     "site_web": None,
 }
 ENCADRE_NEGATIONS_RE = re.compile(r'<div class="lp-encadre">.*?</div>', re.DOTALL)
+#: Mascotte abandonnée (loutre « Lumi », remplacée par le renard « Braise » le 06.10.2026) : aucune trace dans le site.
+MASCOTTE_ABANDONNEE_RE = re.compile(r"\bLumi\b|\bloutres?\b", re.IGNORECASE)
+NOM_PROVISOIRE_RE = re.compile(r"nom[\s\u00a0\u202f]+(?:est[\s\u00a0\u202f]+)?provisoire", re.IGNORECASE)
+CREATION_ORIGINALE_RE = re.compile(r"(?:création|illustration)[\s\u00a0\u202f]+originale", re.IGNORECASE)
 COULEUR_EN_DUR_RE = re.compile(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(")
 COMMENTAIRE_CSS_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 PAGES_TOUJOURS_NOINDEX = {"merci.html", "inscription-confirmee.html", "desinscription.html"}
@@ -388,6 +395,7 @@ def verifier_page(chemin: Path, racine: Path, *, publication_mode: bool = False)
             err.append(f"{nom} : {libelle} « {m.group(0)} »")
     if nom not in PAGES_TEXTE_LEGAL:
         err += [f"{nom} : {e}" for e in verifier_textes_garantie(visible)]
+    err += [f"{nom} : {e}" for e in verifier_mascotte(texte, visible)]
     for balise, libelle in a.actions:
         if ACHAT_RE.search(libelle):
             err.append(f"{nom} : action d'achat ou de précommande « {libelle} » sur la landing")
@@ -663,6 +671,20 @@ def verifier_textes_garantie(visible: str) -> list[str]:
     ]
 
 
+def verifier_mascotte(texte: str, visible: str) -> list[str]:
+    """Aucune trace de la mascotte abandonnée ; Braise toujours « nom provisoire » et création originale."""
+    err: list[str] = []
+    m = MASCOTTE_ABANDONNEE_RE.search(texte)
+    if m:
+        err.append(f"mascotte abandonnée « {m.group(0)} » (remplacée par le renard Braise, DIRECTION_ATELIER.md §8)")
+    if "Braise" in visible:
+        if not NOM_PROVISOIRE_RE.search(visible):
+            err.append("Braise nommé sans la mention « nom provisoire » (nom à valider, recherche de marque en cours)")
+        if not CREATION_ORIGINALE_RE.search(visible):
+            err.append("Braise nommé sans dire qu'il est une création originale (sans lien avec la licence)")
+    return err
+
+
 def _sans_fictif_proche(visible: str, motif: re.Pattern[str], autorises: tuple[str, ...], fenetre: int = 48) -> list[str]:
     manquants = []
     for m in motif.finditer(visible):
@@ -722,6 +744,7 @@ def verifier_maquette(chemin: Path) -> list[str]:
     err += [f"{nom} : date sans mention FICTIF ni « date estimée » « {d} »"
             for d in _sans_fictif_proche(visible, DATE_RE, ("FICTIF", "date estimée"), 60)]
     err += [f"{nom} : {e}" for e in verifier_textes_garantie(visible)]
+    err += [f"{nom} : {e}" for e in verifier_mascotte(texte, visible)]
     m = STATUT_RESA_INTERDIT_RE.search(visible)
     if m:
         err.append(f"{nom} : statut de réservation non admis « {m.group(0)} » (ouvertes ou fermées seulement)")

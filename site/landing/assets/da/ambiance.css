@@ -1,67 +1,70 @@
 /*
- * Ambiance « Nuit sur le Léman (ambiance immersive bâtie sur la direction B) » — Quai des Cartes (nom de travail, non validé)
+ * Ambiance « Atelier (lumière de fenêtre, papier crème, charbon mat et un fil orange ; bâtie sur la direction A) » — Quai des Cartes (nom de travail, non validé)
  * FICHIER GÉNÉRÉ par docs/05-da/tools/generer_da.py depuis tokens.json — ne pas éditer à la main.
- * À charger APRÈS tokens.css ; s'active avec data-ambiance="nuit" et data-da="b" sur <html>.
- * Toujours sombre : aucun mode clair (contrastes calculés dans DIRECTION_NUIT.md).
+ * À charger APRÈS tokens.css ; s'active avec data-ambiance="atelier" et data-da="a" sur <html>.
+ * Toujours claire : aucun mode sombre (contrastes calculés dans DIRECTION_ATELIER.md).
  * Polices Google Fonts : URL dans tokens.json > ambiances > googleFonts.
  */
-:root[data-ambiance="nuit"][data-da] {
-  color-scheme: dark;
-  --da-font-display: "Bricolage Grotesque", "Trebuchet MS", Arial, sans-serif;
-  --da-font-accent: "Fraunces", Georgia, "Times New Roman", serif;
-  --da-font-text: "DM Sans", "Helvetica Neue", Arial, sans-serif;
-  --da-font-price: "DM Sans", "Helvetica Neue", Arial, sans-serif;
-  --da-title-weight: 800;
+:root[data-ambiance="atelier"][data-da] {
+  color-scheme: light;
+  --da-font-display: "Geist", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --da-font-accent: "Instrument Serif", "Times New Roman", Georgia, serif;
+  --da-font-text: "Geist", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --da-font-price: "Geist Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --da-title-weight: 560;
   --da-title-transform: none;
-  --da-title-tracking: -0.025em;
+  --da-title-tracking: -0.035em;
   --da-title-stretch: 100%;
-  --da-radius-sm: 8px;
-  --da-radius-md: 16px;
-  --da-radius-lg: 28px;
+  --da-radius-sm: 2px;
+  --da-radius-md: 4px;
+  --da-radius-lg: 8px;
   --da-radius-pill: 999px;
   --da-border-width: 1px;
-  --da-shadow-card: 0 1px 0 rgba(245, 242, 255, 0.06) inset, 0 24px 60px rgba(3, 2, 14, 0.55);
-  --da-shadow-raised: 0 1px 0 rgba(245, 242, 255, 0.10) inset, 0 30px 80px rgba(3, 2, 14, 0.65);
-  --da-glow-accent: 0 0 0 1px rgba(255, 111, 174, 0.35), 0 12px 40px rgba(255, 111, 174, 0.35);
-  --da-glow-or: 0 0 24px rgba(255, 200, 87, 0.45);
-  --da-blur-verre: 16px;
-  --da-duree-apparition: 900ms;
+  --da-shadow-card: 0 1px 2px rgba(29, 27, 25, 0.05), 0 18px 40px -24px rgba(29, 27, 25, 0.28);
+  --da-shadow-raised: 0 2px 6px rgba(29, 27, 25, 0.06), 0 40px 80px -40px rgba(29, 27, 25, 0.35);
+  --da-display-xl: clamp(3.25rem, 1.4rem + 7.6vw, 9.5rem);
+  --da-display-l: clamp(2.5rem, 1.3rem + 4.6vw, 6rem);
+  --da-surtitre-taille: 0.75rem;
+  --da-largeur-max: 1360px;
+  --da-largeur-texte: 38rem;
+  --da-marge-page: clamp(20px, 5vw, 80px);
+  --da-espace-section: clamp(96px, 14vw, 208px);
+  --da-fil-epaisseur: 2px;
+  --da-duree-apparition: 800ms;
   --da-courbe-douce: cubic-bezier(0.22, 1, 0.36, 1);
-  --da-color-bg: #0B0A1F;
-  --da-color-surface: #16143A;
-  --da-color-surface-alt: #1F1C4D;
-  --da-color-ink: #F5F2FF;
-  --da-color-ink-muted: #BDB7DE;
-  --da-color-on-ink: #0B0A1F;
-  --da-color-line: #2F2B66;
-  --da-color-line-strong: #8079BD;
-  --da-color-accent: #FF6FAE;
-  --da-color-on-accent: #1A0826;
-  --da-color-accent-text: #FF9ACB;
-  --da-color-accent-soft: #3A1745;
-  --da-color-focus: #FFD27A;
-  --da-color-error: #FF8F87;
-  --da-color-status-local-bg: #0E3227;
-  --da-color-status-local-fg: #8FF0C3;
-  --da-color-status-preorder-bg: #1B2560;
-  --da-color-status-preorder-fg: #BCCBFF;
-  --da-color-status-new-bg: #FF6FAE;
-  --da-color-status-new-fg: #1A0826;
-  --da-color-status-out-bg: #27254A;
-  --da-color-status-out-fg: #D2CEEB;
-  --da-color-status-restock-bg: #3B2B07;
-  --da-color-status-restock-fg: #FFD978;
-  --da-color-lang-fr-bg: #F5F2FF;
-  --da-color-lang-fr-fg: #0B0A1F;
-  --da-color-or: #FFC857;
-  --da-color-or-doux: #FFE6A8;
-  --da-color-lune: #FF7AB8;
-  --da-color-aurore: #5FE3C8;
-  --da-color-ciel-1: #141155;
-  --da-color-ciel-2: #213A9E;
-  --da-color-ciel-3: #7C9BFF;
-  --da-color-lac-1: #0D2052;
-  --da-color-lac-2: #1A4C7A;
-  --da-color-nuit-profonde: #06051A;
-  --da-color-papier: #F6F1E7;
+  --da-color-bg: #EFEAE1;
+  --da-color-surface: #F8F5EF;
+  --da-color-surface-alt: #E4DED3;
+  --da-color-ink: #1D1B19;
+  --da-color-ink-muted: #5D5750;
+  --da-color-on-ink: #F8F5EF;
+  --da-color-line: #D8D1C5;
+  --da-color-line-strong: #7A7268;
+  --da-color-accent: #F26A1B;
+  --da-color-on-accent: #1D1B19;
+  --da-color-accent-text: #A6420C;
+  --da-color-accent-soft: #FBE3D2;
+  --da-color-focus: #1D1B19;
+  --da-color-error: #B42318;
+  --da-color-status-local-bg: #DDEBDC;
+  --da-color-status-local-fg: #1F5130;
+  --da-color-status-preorder-bg: #E2E5F1;
+  --da-color-status-preorder-fg: #2B3577;
+  --da-color-status-new-bg: #F26A1B;
+  --da-color-status-new-fg: #1D1B19;
+  --da-color-status-out-bg: #E4DED3;
+  --da-color-status-out-fg: #4A453F;
+  --da-color-status-restock-bg: #F5E6C0;
+  --da-color-status-restock-fg: #5C4300;
+  --da-color-lang-fr-bg: #1D1B19;
+  --da-color-lang-fr-fg: #F8F5EF;
+  --da-color-papier-chaud: #FCF2E2;
+  --da-color-ombre: #DDD5C8;
+  --da-color-inverse-bg: #1D1B19;
+  --da-color-inverse-surface: #2A2724;
+  --da-color-inverse-ink: #EFEAE1;
+  --da-color-inverse-muted: #B8AFA4;
+  --da-color-inverse-line: #4A453F;
+  --da-color-inverse-accent: #F26A1B;
+  --da-color-inverse-focus: #EFEAE1;
 }

@@ -6,17 +6,18 @@ peut donc pas pointer vers ``../../docs/05-da``. La source de vérité reste ``d
 ce script recopie les fichiers sous des noms neutres et écrit un manifeste (direction,
 source, empreinte SHA-256). ``verifier_site.py`` refuse toute copie désynchronisée.
 
-Ambiance (facultative) : une ambiance de ``tokens.json > ambiances`` (« atelier », bâtie sur A, toujours claire ;
-« nuit », bâtie sur B, toujours sombre, archivée) ajoute ``ambiance.css`` (copie de ``tokens/tokens-<ambiance>.css``),
+Ambiance (facultative) : une ambiance de ``tokens.json > ambiances`` (« atelier », bâtie sur A, toujours claire, celle
+du site) ajoute ``ambiance.css`` (copie de ``tokens/tokens-<ambiance>.css``),
 remplace les logos par ceux de l'ambiance (``logo-<d>-<ambiance>.svg`` pour le logo de son mode, et s'ils existent
 ``logo-<d>-<ambiance>-fond-sombre.svg`` et ``favicon-<ambiance>.svg``), pose ``data-ambiance`` sur ``<html>``,
 ``color-scheme`` selon le mode de l'ambiance et l'URL Google Fonts de l'ambiance sur chaque page (landing et
-maquettes ``site/maquettes/``).
+maquettes ``site/maquettes/``). Une ambiance **archivée** (``statut`` commençant par « ARCHIVÉE » dans ``tokens.json``,
+ex. « nuit », remplacée par l'Atelier le 06.10.2026) reste documentée dans ``docs/05-da`` mais n'est plus applicable
+au site : ``plan_copie`` la refuse (fermé par défaut, pas de retour accidentel à une ambiance abandonnée).
 
 Usage :
     python site/outils/da_sync.py                                     # direction et ambiance du manifeste
     python site/outils/da_sync.py --direction a --ambiance atelier    # Atelier (retenue le 06.10.2026)
-    python site/outils/da_sync.py --direction b --ambiance nuit       # Nuit sur le Léman (archivée)
     python site/outils/da_sync.py --direction a --ambiance aucune     # direction A sans ambiance
     python site/outils/da_sync.py --verifier                       # contrôle seul (code 1 si désynchronisé)
 """
@@ -50,8 +51,18 @@ def _tokens() -> dict:
 
 
 def ambiances() -> tuple[str, ...]:
-    """Ambiances déclarées dans tokens.json (« atelier », « nuit »)."""
+    """Ambiances déclarées dans tokens.json, archivées comprises (« atelier », « nuit »)."""
     return tuple(_tokens().get("ambiances", {}))
+
+
+def ambiance_archivee(ambiance: str) -> bool:
+    """Vrai si l'ambiance est archivée (``statut`` « ARCHIVÉE… ») : documentée dans la DA, jamais appliquée au site."""
+    return str(_tokens().get("ambiances", {}).get(ambiance, {}).get("statut", "")).upper().startswith("ARCHIVÉE")
+
+
+def ambiances_actives() -> tuple[str, ...]:
+    """Ambiances applicables au site (non archivées)."""
+    return tuple(a for a in ambiances() if not ambiance_archivee(a))
 
 
 def mode_ambiance(ambiance: str | None) -> str | None:
@@ -67,6 +78,9 @@ def _verifier_ambiance(direction: str, ambiance: str | None) -> None:
     amb = _tokens().get("ambiances", {}).get(ambiance)
     if amb is None:
         raise ValueError(f"ambiance inconnue : {ambiance!r} (attendu : {', '.join(ambiances()) or 'aucune'})")
+    if ambiance_archivee(ambiance):
+        raise ValueError(f"ambiance {ambiance!r} archivée ({amb.get('statut', '')}) : non applicable au site "
+                         f"(ambiances actives : {', '.join(ambiances_actives()) or 'aucune'})")
     if amb["base"] != direction:
         raise ValueError(f"l'ambiance {ambiance} est bâtie sur la direction {amb['base']} (direction demandée : {direction})")
 
@@ -240,7 +254,7 @@ def verifier(cible: Path = ASSETS_DA, racine: Path = LANDING) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--direction", choices=DIRECTIONS, default=None, help="direction DA à copier (défaut : celle du manifeste, sinon a)")
-    parser.add_argument("--ambiance", choices=(*ambiances(), "aucune"), default=None,
+    parser.add_argument("--ambiance", choices=(*ambiances_actives(), "aucune"), default=None,
                         help="ambiance à appliquer (défaut : celle du manifeste ; « aucune » pour la retirer)")
     parser.add_argument("--verifier", action="store_true", help="contrôle seul, sans écrire")
     args = parser.parse_args(argv)
